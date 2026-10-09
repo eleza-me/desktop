@@ -88,6 +88,12 @@ public:
 	void setSideSection(Tab tab, SectionFactory factory);
 	[[nodiscard]] SectionWidget *sideSection(Tab tab) const; // null until first shown
 	void setTabBadge(Tab tab, int count, bool muted = false);
+	// Side sub-tabs (window_embeds.h): asks the side column of `tab` to show
+	// its sub-tab `id` ("topics"). The host of the segmented control listens
+	// to sideSubTabRequested() and, when it is created later, takes the
+	// pending request once with takeRequestedSideSubTab().
+	void requestSideSubTab(Tab tab, const QString &id);
+	[[nodiscard]] QString takeRequestedSideSubTab(Tab tab);
 
 	// ---- the main column
 	void showMainSection(SectionFactory factory, SectionShow options = {});
@@ -128,6 +134,7 @@ public:
 
 Q_SIGNALS:
 	void tabChanged(Window::Tab tab);
+	void sideSubTabRequested(Window::Tab tab, const QString &id);
 	void mainSectionChanged();
 	// The layout switched between one and several columns.
 	void columnsChanged(bool singleColumn);
@@ -138,6 +145,7 @@ private:
 	MainWindow *_window = nullptr;
 	Main::Session *_session = nullptr;
 	MainLayout *_layout = nullptr;
+	QString _requestedSideSubTabs[kTabsCount];
 
 };
 

@@ -38,6 +38,33 @@ if (TARGET ElezaCore)
 	target_include_directories(test_error_text PRIVATE "${_eleza_app_src}")
 endif()
 
+
+# ---- conversation / search (widget-free logic of the two modules)
+eleza_add_test(test_conversation_time app/test_conversation_time.cpp LIBS ElezaLang)
+target_sources(test_conversation_time PRIVATE
+	"${_eleza_app_src}/conversation/conversation_time.cpp")
+target_include_directories(test_conversation_time PRIVATE "${_eleza_app_src}")
+if (TARGET ElezaCore)
+	eleza_add_test(test_conversation_radar app/test_conversation_radar.cpp LIBS ElezaCore ElezaLang)
+	target_sources(test_conversation_radar PRIVATE
+		"${_eleza_app_src}/conversation/conversation_radar_model.cpp"
+		"${_eleza_app_src}/conversation/conversation_radar_model.h")
+	target_include_directories(test_conversation_radar PRIVATE
+		"${_eleza_app_src}"
+		"${CMAKE_CURRENT_SOURCE_DIR}/core")
+	target_compile_definitions(test_conversation_radar PRIVATE
+		ELEZA_TESTDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/core/testdata")
+	set_tests_properties(test_conversation_radar PROPERTIES TIMEOUT 120)
+
+	eleza_add_test(test_search_logic app/test_search_logic.cpp LIBS ElezaCore ElezaLang)
+	target_sources(test_search_logic PRIVATE
+		"${_eleza_app_src}/search/search_recent.cpp"
+		"${_eleza_app_src}/search/search_debounce.cpp"
+		"${_eleza_app_src}/search/search_debounce.h"
+		"${_eleza_app_src}/search/search_people.cpp")
+	target_include_directories(test_search_logic PRIVATE "${_eleza_app_src}")
+endif()
+
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/core/CMakeLists.txt")
 	add_subdirectory(core)
 endif()
