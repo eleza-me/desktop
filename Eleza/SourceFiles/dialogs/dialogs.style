@@ -1,0 +1,92 @@
+// The chat list: the side column of the «گفتگو» tab.
+using "ui/basic.style";
+using "ui/widgets/widgets.style";
+
+// ---- the column
+dialogsSearchPadding: margins(12px, 2px, 12px, 8px);
+dialogsNewMessageButton: IconButton(topBarCreateButton) {
+}
+dialogsTabs: TabBar(defaultTabBar) {
+	height: 40px;
+}
+dialogsBannerHeight: 36px;
+dialogsBannerBg: statusErrorSoft;
+dialogsBannerFg: textPrimary;
+dialogsBannerFont: font(13px);
+dialogsBannerActionFont: font(13px semibold);
+dialogsBannerActionFg: statusError;
+dialogsBannerPadding: margins(16px, 0px, 16px, 0px);
+
+// ---- rows
+dialogsRowHeight: 68px;
+dialogsPadding: margins(12px, 10px, 12px, 10px);
+dialogsUserpicSize: 48px;
+dialogsUserpicSkip: 12px;
+dialogsRowRadius: 12px;
+dialogsRowMargin: 6px;      // horizontal inset of the hover / active highlight
+dialogsBg: bgCanvas;
+dialogsBgOver: stateHover;
+dialogsBgActive: stateActive;
+dialogsRipple: RippleAnimation(defaultRipple) {
+}
+
+dialogsNameFont: font(15px semibold);
+dialogsNameFg: textPrimary;
+dialogsTopicFont: font(17px bold "display");
+dialogsAnonFg: anonContent;
+dialogsNameTop: 11px;
+dialogsVerifiedIcon: icon {{ "verified_active", brandPrimary, 16px }};
+dialogsMuteIcon: icon {{ "mute", textTertiary, 14px }};
+dialogsPinIcon: icon {{ "pin", textTertiary, 16px }};
+dialogsNameIconSkip: 4px;
+
+dialogsDateFont: font(12px);
+dialogsDateFg: textTertiary;
+dialogsDateFgUnread: brandText;
+dialogsDateTop: 13px;
+dialogsDateSkip: 8px;
+dialogsTickSent: icon {{ "check", brandPrimary, 16px }};
+dialogsTickRead: icon {{ "check-double", brandPrimary, 16px }};
+dialogsTickPending: icon {{ "clock", textTertiary, 14px }};
+dialogsTickFailed: icon {{ "warning", statusError, 16px }};
+dialogsTickSkip: 3px;
+
+dialogsTextFont: font(14px);
+dialogsTextFg: textSecondary;
+dialogsTextFgService: brandText;
+dialogsTextFgDraft: statusError;
+dialogsTextFgActivity: brandText;
+dialogsTextTop: 35px;
+dialogsThumbSize: 20px;
+dialogsThumbRadius: 4px;
+dialogsThumbSkip: 6px;
+dialogsThumbTop: 36px;
+
+dialogsBadge: Badge(defaultBadge) {
+	font: font(12px semibold);
+	height: 20px;
+	padding: 6px;
+}
+dialogsBadgeTop: 36px;
+dialogsBadgeSkip: 8px;
+
+// ---- the «درخواست‌ها» / «بایگانی» entries
+dialogsFolderBg: bgSunken;
+dialogsFolderRequestsIcon: icon {{ "request", textSecondary, 24px }};
+dialogsFolderArchiveIcon: icon {{ "archive", textSecondary, 24px }};
+dialogsFolderTextFg: textTertiary;
+
+// ---- dragging a pinned chat
+dialogsDragBg: bgRaised;
+dialogsDragShadow: Shadow(smallShadow) {
+	blur: 10px;
+	offset: point(0px, 2px);
+	extend: margins(12px, 10px, 12px, 14px);
+}
+
+// ---- menus and boxes
+dialogsMenuRead: icon {{ "check-double", menuIconFg, 20px }};
+dialogsMenuProfile: icon {{ "me", menuIconFg, 20px }};
+dialogsMenuAccept: icon {{ "check", menuIconFg, 20px }};
+dialogsMenuDecline: icon {{ "close", menuIconFg, 20px }};
+dialogsMenuClock: icon {{ "clock", menuIconFg, 20px }};

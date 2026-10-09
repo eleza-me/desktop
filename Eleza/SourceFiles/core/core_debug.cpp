@@ -275,16 +275,24 @@ void DebugActions::wheel(QPoint position, int dy) {
 		return;
 	}
 	// Moving the content down by dy pixels = a negative wheel delta.
-	auto event = QWheelEvent(
-		QPointF(receiver->mapFromGlobal(global)),
-		QPointF(global),
-		QPoint(0, -dy),
-		QPoint(0, -dy),
-		Qt::NoButton,
-		Qt::NoModifier,
-		Qt::ScrollUpdate,
-		false);
-	QCoreApplication::sendEvent(receiver, &event);
+	// Qt does not propagate synthesized wheel events to the parents the way it
+	// does with real ones: walk up until somebody takes it (a scroll area).
+	for (auto widget = receiver; widget; widget = widget->parentWidget()) {
+		auto event = QWheelEvent(
+			QPointF(widget->mapFromGlobal(global)),
+			QPointF(global),
+			QPoint(0, -dy),
+			QPoint(0, -dy),
+			Qt::NoButton,
+			Qt::NoModifier,
+			Qt::ScrollUpdate,
+			false);
+		event.ignore();
+		QCoreApplication::sendEvent(widget, &event);
+		if (event.isAccepted() || widget->isWindow()) {
+			break;
+		}
+	}
 }
 
 void DebugActions::key(const QString &name) {

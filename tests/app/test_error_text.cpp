@@ -51,6 +51,25 @@ private Q_SLOTS:
 		QVERIFY(Support::ErrorPhrase(QString()).isEmpty());
 	}
 
+	void settingsCodes() {
+		// Two-step verification, sensitive actions and the data export.
+		QCOMPARE(
+			Support::ErrorText(Problem(400, "two_step.password_weak")),
+			tr::lng_settings_error_password_weak(tr::now));
+		QCOMPARE(
+			Support::ErrorText(Problem(400, "two_step.code_expired")),
+			tr::lng_intro_code_has_expired_request_new(tr::now));
+		QCOMPARE(
+			Support::ErrorText(Problem(403, "account.sensitive_cooldown", "x")),
+			tr::lng_settings_error_sensitive_cooldown(tr::now));
+		QCOMPARE(
+			Support::ErrorText(Problem(422, "export.email_required")),
+			tr::lng_settings_export_email_required(tr::now));
+		QCOMPARE(
+			Support::ErrorText(Problem(409, "two_step.no_pending")),
+			tr::lng_settings_error_no_pending(tr::now));
+	}
+
 	void statuses() {
 		QCOMPARE(
 			Support::ErrorText(Problem(429, "rate.limited", "slow down")),

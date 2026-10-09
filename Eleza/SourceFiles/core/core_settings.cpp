@@ -100,6 +100,11 @@ void Settings::read() {
 		1.);
 	const auto speed = root.value(QStringLiteral("voice_speed")).toDouble(1.);
 	_voicePlaybackSpeed = (speed == 1.5 || speed == 2.) ? speed : 1.;
+	_sendByCtrlEnter = root.value(
+		QStringLiteral("send_by_ctrl_enter")).toBool(false);
+	_mediaCacheLimit = std::max(
+		qint64(root.value(QStringLiteral("media_cache_limit")).toDouble(0.)),
+		qint64(0));
 }
 
 QJsonObject Settings::serialize() const {
@@ -145,6 +150,12 @@ QJsonObject Settings::serialize() const {
 	}
 	root.insert(QStringLiteral("playback_volume"), _playbackVolume);
 	root.insert(QStringLiteral("voice_speed"), _voicePlaybackSpeed);
+	root.insert(QStringLiteral("send_by_ctrl_enter"), _sendByCtrlEnter);
+	if (_mediaCacheLimit > 0) {
+		root.insert(
+			QStringLiteral("media_cache_limit"),
+			double(_mediaCacheLimit));
+	}
 	return root;
 }
 
@@ -242,6 +253,21 @@ void Settings::setVoicePlaybackSpeed(double speed) {
 	}
 	if (_voicePlaybackSpeed != speed) {
 		_voicePlaybackSpeed = speed;
+		scheduleWrite();
+	}
+}
+
+void Settings::setSendByCtrlEnter(bool enabled) {
+	if (_sendByCtrlEnter != enabled) {
+		_sendByCtrlEnter = enabled;
+		scheduleWrite();
+	}
+}
+
+void Settings::setMediaCacheLimit(qint64 bytes) {
+	bytes = std::max(bytes, qint64(0));
+	if (_mediaCacheLimit != bytes) {
+		_mediaCacheLimit = bytes;
 		scheduleWrite();
 	}
 }

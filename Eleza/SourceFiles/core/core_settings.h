@@ -106,6 +106,19 @@ public:
 	}
 	void setVoicePlaybackSpeed(double speed);
 
+	// The composer: false = Enter sends and Shift+Enter breaks the line,
+	// true = Ctrl+Enter sends and Enter breaks the line.
+	[[nodiscard]] bool sendByCtrlEnter() const {
+		return _sendByCtrlEnter;
+	}
+	void setSendByCtrlEnter(bool enabled);
+
+	// The user's limit for the media cache on disk in bytes (0 = the default).
+	[[nodiscard]] qint64 mediaCacheLimit() const {
+		return _mediaCacheLimit;
+	}
+	void setMediaCacheLimit(qint64 bytes);
+
 	// Writes pending changes right now (on quit).
 	void flush();
 
@@ -131,6 +144,8 @@ private:
 	QString _lastDialogDirectory;
 	double _playbackVolume = 1.;
 	double _voicePlaybackSpeed = 1.;
+	bool _sendByCtrlEnter = false;
+	qint64 _mediaCacheLimit = 0;
 
 };
 

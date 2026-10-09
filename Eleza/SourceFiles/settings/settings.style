@@ -1,0 +1,172 @@
+// Settings: the list of sections in the side column and the pages in the main one.
+using "ui/basic.style";
+using "ui/widgets/widgets.style";
+using "ui/layers/layers.style";
+
+// ---- the side list
+settingsProfileHeight: 84px;
+settingsProfilePadding: margins(16px, 14px, 16px, 14px);
+settingsProfileUserpic: 56px;
+settingsProfileSkip: 14px;
+settingsProfileNameFont: titleFontS;
+settingsProfileNameFg: textPrimary;
+settingsProfileNameTop: 19px;
+settingsProfileStatusFont: font(13px);
+settingsProfileStatusFg: textTertiary;
+settingsProfileStatusTop: 45px;
+settingsProfileVerified: icon {{ "verified_active", brandPrimary, 18px }};
+settingsProfileVerifiedSkip: 5px;
+settingsProfileChevron: icon {{ "chevron-left:mirror-ltr", textTertiary, 18px }};
+settingsSideButton: SettingsButton(defaultSettingsButton) {
+	height: 46px;
+	padding: margins(18px, 0px, 14px, 0px);
+	iconSkip: 40px;
+}
+settingsSideLogout: SettingsButton(settingsSideButton) {
+	textFg: statusError;
+	textFgOver: statusError;
+	ripple: dangerRipple;
+}
+settingsSideSkip: 8px;
+settingsVersionLabel: FlatLabel(captionLabel) {
+	align: align(top);
+}
+settingsVersionPadding: margins(16px, 12px, 16px, 16px);
+settingsIconStorage: icon {{ "download", textSecondary }};
+settingsIconTwoStep: icon {{ "lock", textSecondary }};
+settingsIconExport: icon {{ "copy", textSecondary }};
+settingsIconPhone: icon {{ "call", textSecondary }};
+settingsIconHandle: icon {{ "me", textSecondary }};
+settingsIconRequests: icon {{ "request", textSecondary }};
+settingsIconWords: icon {{ "mute", textSecondary }};
+settingsIconTopics: icon {{ "hashtag", textSecondary }};
+settingsIconVolume: icon {{ "volume", textSecondary }};
+settingsIconLogoutDanger: icon {{ "logout:mirror-rtl", statusError }};
+settingsIconDeleteDanger: icon {{ "trash", statusError }};
+settingsIconHelp: icon {{ "help", textSecondary }};
+settingsIconReport: icon {{ "report", textSecondary }};
+settingsIconExternal: icon {{ "external", textSecondary }};
+
+// ---- pages
+settingsContentWidth: 620px;
+settingsPageTopSkip: 8px;
+settingsPageBottomSkip: 24px;
+settingsButton: SettingsButton(defaultSettingsButton) {
+	height: 48px;
+	padding: margins(24px, 0px, 24px, 0px);
+	iconSkip: 40px;
+}
+settingsButtonNoIcon: SettingsButton(settingsButton) {
+	iconSkip: 0px;
+}
+settingsDangerButton: SettingsButton(settingsButton) {
+	textFg: statusError;
+	textFgOver: statusError;
+	ripple: dangerRipple;
+}
+settingsSubsectionTitle: FlatLabel(defaultFlatLabel) {
+	style: semiboldTextStyle;
+	textFg: brandText;
+}
+settingsSubsectionTitlePadding: margins(24px, 14px, 24px, 6px);
+settingsFootnote: FlatLabel(defaultFlatLabel) {
+	style: smallTextStyle;
+	textFg: textTertiary;
+}
+settingsFootnotePadding: margins(24px, 6px, 24px, 10px);
+settingsDividerHeight: 9px;
+settingsDividerFg: borderSubtle;
+settingsInfoLabelStyle: TextStyle(defaultTextStyle) {
+	font: font(15px);
+	lineHeight: 24px;
+}
+settingsInfoLabel: FlatLabel(defaultFlatLabel) {
+	style: settingsInfoLabelStyle;
+	textFg: textSecondary;
+}
+settingsInfoPadding: margins(24px, 10px, 24px, 10px);
+settingsRadioPadding: margins(16px, 0px, 16px, 0px);
+settingsLoadingHeight: 220px;
+
+// ---- about header
+settingsAboutMarkSize: size(80px, 64px);
+settingsAboutHeight: 168px;
+settingsAboutNameFont: wordmarkFont;
+settingsAboutNameFg: textPrimary;
+settingsAboutVersionFont: font(13px);
+settingsAboutVersionFg: textTertiary;
+
+// ---- device sessions
+settingsSessionHeight: 64px;
+settingsSessionPadding: margins(24px, 0px, 12px, 0px);
+settingsSessionIconSize: 40px;
+settingsSessionIconBg: bgSunken;
+settingsSessionIconSkip: 14px;
+settingsSessionNameFont: font(15px medium);
+settingsSessionNameFg: textPrimary;
+settingsSessionNameTop: 12px;
+settingsSessionInfoFont: font(13px);
+settingsSessionInfoFg: textTertiary;
+settingsSessionInfoTop: 35px;
+settingsSessionCurrentFg: brandText;
+settingsSessionDesktop: icon {{ "devices", textSecondary }};
+settingsSessionWeb: icon {{ "globe", textSecondary }};
+settingsSessionTerminate: IconButton(defaultIconButton) {
+	icon: icon {{ "close", textTertiary, 20px }};
+	iconOver: icon {{ "close", statusError, 20px }};
+}
+
+// ---- people rows (blocked, muted)
+settingsPeerHeight: 56px;
+settingsPeerPadding: margins(24px, 0px, 16px, 0px);
+settingsPeerUserpic: 40px;
+settingsPeerSkip: 12px;
+settingsPeerNameFont: font(15px medium);
+settingsPeerNameFg: textPrimary;
+settingsPeerNameTop: 9px;
+settingsPeerStatusFont: font(13px);
+settingsPeerStatusFg: textTertiary;
+settingsPeerStatusTop: 31px;
+settingsPeerButtonSkip: 10px;
+settingsWordHeight: 44px;
+settingsWordFont: font(15px);
+settingsWordFg: textPrimary;
+settingsWordRemove: IconButton(smallCloseButton) {
+}
+settingsBoxListHeight: 360px;
+settingsBoxEmptyHeight: 120px;
+settingsAddFieldPadding: margins(24px, 4px, 24px, 12px);
+settingsAddButtonSkip: 8px;
+
+// ---- storage
+settingsUsageHeight: 76px;
+settingsUsagePadding: margins(24px, 12px, 24px, 8px);
+settingsUsageValueFont: numericFontM;
+settingsUsageValueFg: textPrimary;
+settingsUsageLabelFont: font(13px);
+settingsUsageLabelFg: textTertiary;
+settingsUsageBarHeight: 6px;
+settingsUsageBarBg: borderSubtle;
+settingsUsageBarFg: brandPrimary;
+settingsSliderHeight: 52px;
+settingsSliderPadding: margins(24px, 0px, 24px, 0px);
+settingsSliderLine: 4px;
+settingsSliderKnob: 18px;
+settingsSliderFg: brandPrimary;
+settingsSliderBg: borderStrong;
+settingsSliderTickFont: font(11px);
+settingsSliderTickFg: textTertiary;
+
+// ---- two-step verification
+settingsTwoStepField: InputField(defaultInputField) {
+}
+settingsFieldPadding: margins(24px, 0px, 24px, 10px);
+settingsErrorLabel: FlatLabel(defaultFlatLabel) {
+	style: smallTextStyle;
+	textFg: statusError;
+}
+settingsErrorPadding: margins(26px, 0px, 26px, 8px);
+settingsCodePadding: margins(24px, 8px, 24px, 12px);
+settingsStatusIconOn: icon {{ "lock", brandPrimary, 48px }};
+settingsStatusIconOff: icon {{ "lock", textTertiary, 48px }};
+settingsStatusHeight: 96px;
