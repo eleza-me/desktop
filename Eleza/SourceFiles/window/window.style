@@ -58,3 +58,19 @@ placeholderIconChats: icon {{ "conversation", textTertiary, 48px }};
 placeholderIconSearch: icon {{ "search", textTertiary, 48px }};
 placeholderIconMe: icon {{ "me", textTertiary, 48px }};
 placeholderIconSettings: icon {{ "settings", textTertiary, 48px }};
+
+// ---- the "update required" screen
+upgradeWidth: 380px;
+upgradePadding: 24px;
+upgradeMarkSize: size(90px, 72px);
+upgradeMarkSkip: 28px;
+upgradeTitleStyle: TextStyle(defaultTextStyle) {
+	font: titleFontL;
+}
+upgradeTitleSkip: 10px;
+upgradeTextStyle: TextStyle(defaultTextStyle) {
+	font: font(15px);
+	lineHeight: 24px;
+}
+upgradeButtonSkip: 28px;
+upgradeQuitSkip: 14px;

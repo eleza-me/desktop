@@ -68,6 +68,15 @@ CommandLine ParseCommandLine(const QStringList &arguments) {
 			result.debugGrab = value;
 		} else if (TakeValue(argument, "--debug-grab-delay", value)) {
 			result.debugGrabDelay = qMax(value.toInt(), 0);
+		} else if (TakeValue(argument, "--debug-login", value)) {
+			const auto parts = value.split(QLatin1Char(':'));
+			if (parts.size() >= 2) {
+				result.debugLoginPhone = parts[0];
+				result.debugLoginCode = parts[1];
+				result.debugLoginPassword = parts.mid(2).join(QLatin1Char(':'));
+			}
+		} else if (TakeValue(argument, "--debug-actions", value)) {
+			result.debugActions = value;
 		} else if (argument == QStringLiteral("--no-single-instance")) {
 			result.noSingleInstance = true;
 		}

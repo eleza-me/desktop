@@ -53,6 +53,29 @@ private:
 
 };
 
+// What a canonical route (window_routes.h) opens until the module that owns it
+// registers a handler: the tab's title, the route and a "coming soon" state.
+class RoutePlaceholderSection final : public SectionWidget {
+public:
+	RoutePlaceholderSection(
+		QWidget *parent,
+		SessionController *controller,
+		const Route &route);
+
+	[[nodiscard]] static SectionFactory Factory(const Route &route);
+
+	QString sectionKey() const override;
+
+protected:
+	void resizeEvent(QResizeEvent *e) override;
+
+private:
+	QString _key;
+	Ui::TopBar *_bar = nullptr;
+	Ui::EmptyPlaceholder *_placeholder = nullptr;
+
+};
+
 // Title of a tab for top bars: «الی», «پیام‌ها», «جستجو», «من», «تنظیمات».
 [[nodiscard]] QString TabTitle(Tab tab);
 // The hint shown in the empty main column of a tab.

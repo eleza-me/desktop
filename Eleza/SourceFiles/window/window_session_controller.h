@@ -29,8 +29,11 @@
 // narrower than st::layoutSingleColumnWidth) the main section covers the whole window
 // and showBack() returns to the list.
 //
-// session() is the signed-in session of the core library, or null when the app runs
-// without it (placeholders, the gallery).
+// session() is the signed-in session (it outlives the controller and every section):
+//
+//   auto &data = controller->session().data();     // Data::Session: the stores
+//   controller->session().api().request(...)       // plain HTTP
+//   controller->requestLogout();                   // «خروج» with its confirmation
 #pragma once
 
 #include "ui/effects/animation_value.h"
@@ -41,6 +44,7 @@
 #include <QtCore/QObject>
 
 namespace Main {
+class Account;
 class Session;
 } // namespace Main
 
@@ -68,9 +72,10 @@ public:
 	SessionController(MainWindow *window, Main::Session *session);
 	~SessionController();
 
-	[[nodiscard]] Main::Session *session() const {
-		return _session;
+	[[nodiscard]] Main::Session &session() const {
+		return *_session;
 	}
+	[[nodiscard]] Main::Account &account() const;
 	[[nodiscard]] MainWindow *window() const {
 		return _window;
 	}
@@ -106,9 +111,14 @@ public:
 	void showToast(const QString &text);
 	void showToast(Ui::Toast::Config config);
 
-	// ---- routes
-	// "chats", "eli", "settings", "chat/<id>"… Returns false if nobody took it.
+	// ---- routes (window_routes.h)
+	// "chats", "chat/<id>", "u/<handle>", "eli/post/<id>"… Returns false for a
+	// string that is not a route.
 	bool openRoute(const QString &route);
+
+	// ---- account
+	// Asks for a confirmation, then signs out (the app returns to the intro).
+	void requestLogout();
 
 	// Called by the layout.
 	void setLayout(MainLayout *layout);
@@ -123,6 +133,8 @@ Q_SIGNALS:
 	void columnsChanged(bool singleColumn);
 
 private:
+	void refreshBadges();
+
 	MainWindow *_window = nullptr;
 	Main::Session *_session = nullptr;
 	MainLayout *_layout = nullptr;

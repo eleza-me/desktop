@@ -314,9 +314,16 @@ void FlatLabel::activateLink(int index, Qt::MouseButton button) {
 	if (_linkHandler && _linkHandler(link, button)) {
 		return;
 	}
-	const auto url = Text::LinkUrl(link);
-	if (!url.isEmpty()) {
-		QDesktopServices::openUrl(QUrl(url));
+	// Without a handler only addresses that are safe to hand to the system are
+	// opened: a "file:" or a custom scheme inside somebody's text is not.
+	const auto url = QUrl(Text::LinkUrl(link));
+	const auto scheme = url.scheme().toLower();
+	if (url.isValid()
+		&& (scheme == QStringLiteral("https")
+			|| scheme == QStringLiteral("http")
+			|| scheme == QStringLiteral("mailto")
+			|| scheme == QStringLiteral("tel"))) {
+		QDesktopServices::openUrl(url);
 	}
 }
 

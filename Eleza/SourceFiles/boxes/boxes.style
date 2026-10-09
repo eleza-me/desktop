@@ -1,0 +1,85 @@
+// Boxes shared by several sections: the peer list, the country list, the photo
+// crop box, the about box.
+using "ui/basic.style";
+using "ui/widgets/widgets.style";
+using "ui/layers/layers.style";
+
+// ---- lists inside boxes
+boxListHeight: 420px;
+boxSearchPadding: margins(16px, 4px, 16px, 8px);
+boxListEmptyFg: textTertiary;
+boxListEmptyTop: 48px;
+
+peerListRowHeight: 56px;
+peerListUserpicSize: 40px;
+peerListPadding: margins(20px, 0px, 20px, 0px);
+peerListUserpicSkip: 12px;
+peerListNameFont: font(15px medium);
+peerListNameFg: textPrimary;
+peerListStatusFont: font(13px);
+peerListStatusFg: textTertiary;
+peerListNameTop: 9px;
+peerListStatusTop: 31px;
+peerListVerifiedIcon: icon {{ "verified_active", brandPrimary, 16px }};
+peerListVerifiedSkip: 4px;
+peerListCheckSize: 22px;
+peerListCheckIcon: icon {{ "check", textOnBrand, 16px }};
+peerListCheckBorder: borderStrong;
+peerListCheckBg: brandPrimary;
+
+countryRowHeight: 48px;
+countryPadding: margins(20px, 0px, 20px, 0px);
+countryFlagWidth: 34px;
+countryFlagFont: font(20px);
+countryIsoFont: smallSemiboldFont;
+countryIsoFg: textSecondary;
+countryIsoBg: bgSunken;
+countryIsoRadius: 8px;
+countryNameFont: font(15px);
+countryNameFg: textPrimary;
+countryCodeFont: font(14px);
+countryCodeFg: textTertiary;
+countrySkip: 12px;
+
+// ---- photo crop
+cropSize: 340px;
+cropPadding: margins(20px, 4px, 20px, 0px);
+cropBg: #0d0f0d;
+cropDimFg: #0d0f0db8;
+cropCircleFg: #ffffffd9;
+cropCircleStroke: 2px;
+cropSliderHeight: 44px;
+cropSliderWidth: 220px;
+cropSliderLine: 3px;
+cropSliderKnob: 16px;
+cropSliderFg: brandPrimary;
+cropSliderBg: borderStrong;
+cropSliderIconSkip: 12px;
+cropZoomOutIcon: icon {{ "minus", textTertiary, 18px }};
+cropZoomInIcon: icon {{ "plus", textTertiary, 18px }};
+cropHintFont: font(13px);
+cropHintFg: textTertiary;
+cropHintHeight: 30px;
+
+// ---- about
+aboutMarkSize: size(80px, 64px);
+aboutTopSkip: 12px;
+aboutMarkSkip: 14px;
+aboutNameFont: wordmarkFont;
+aboutNameFg: textPrimary;
+aboutVersionFont: font(13px);
+aboutVersionFg: textTertiary;
+aboutVersionSkip: 2px;
+aboutTextSkip: 16px;
+aboutTextStyle: TextStyle(defaultTextStyle) {
+	font: font(14px);
+	lineHeight: 23px;
+}
+aboutText: FlatLabel(defaultFlatLabel) {
+	style: aboutTextStyle;
+	textFg: textSecondary;
+	align: align(top);
+}
+aboutLinksSkip: 14px;
+aboutLinkSkip: 8px;
+aboutBottomSkip: 8px;

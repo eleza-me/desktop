@@ -1,7 +1,7 @@
 // Core::Launcher — process start: command line, HiDPI setup, single instance,
 // QApplication and Core::Application.
 //
-// Command line (see docs/ARCHITECTURE.md "Debug / test hooks"):
+// Command line (see docs/DEVELOPING.md "Debug hooks"):
 //   --api=<url>               API base (or env ELEZA_API), default https://api.eleza.me
 //   --workdir=<dir>           data directory (default: platform app-data)
 //   --lang=fa|en              interface language for this run
@@ -14,7 +14,15 @@
 //   --debug-size=<W>x<H>      window size
 //   --debug-scale=<factor>    device pixel ratio (sets QT_SCALE_FACTOR)
 //   --debug-grab=<png>        save a grab of the main window and exit
-//   --debug-grab-delay=<ms>   delay before the grab (default 600)
+//   --debug-grab-delay=<ms>   delay before the grab, counted from the moment the
+//                             route was opened and the scripted actions finished
+//                             (default 600)
+//   --debug-login=<phone>:<code>[:<password>]
+//                             sign in through the API at startup when nobody is
+//                             signed in (skips the intro screens)
+//   --debug-actions=<script>  scripted input played on the main window, e.g.
+//                             "click:600,400;type:متن;key:Return;wait:300;grab:/tmp/a.png"
+//                             (core_debug.h has the whole list)
 //   --no-single-instance      allow a second process with the same workdir
 #pragma once
 
@@ -41,11 +49,19 @@ struct CommandLine {
 	double debugScale = 0.;
 	QString debugGrab;
 	int debugGrabDelay = 600;
+	QString debugLoginPhone;
+	QString debugLoginCode;
+	QString debugLoginPassword;
+	QString debugActions;
 	bool noSingleInstance = false;
 
-	// True for screenshot runs: nothing is written to disk, no tray icon.
+	// True for screenshot / scripted runs: preferences are not written to disk,
+	// no tray icon, animations jump to the end, the process exits when done.
 	[[nodiscard]] bool ephemeral() const {
-		return !debugGrab.isEmpty();
+		return !debugGrab.isEmpty() || !debugActions.isEmpty();
+	}
+	[[nodiscard]] bool debugLogin() const {
+		return !debugLoginPhone.isEmpty() && !debugLoginCode.isEmpty();
 	}
 };
 

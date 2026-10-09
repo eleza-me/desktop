@@ -2,6 +2,7 @@
 #
 #   tests/ui/    style codegen, lang codegen, lang formatting (Jalali, digits), Ui::Text
 #   tests/core/  the non-GUI core (added when present)
+#   tests/app/   widget-free parts of the application: routes, error texts
 
 find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Test)
 
@@ -24,6 +25,18 @@ eleza_add_test(test_lang_codegen ui/test_lang_codegen.cpp LIBS codegen_lang_lib)
 eleza_add_test(test_lang_format ui/test_lang_format.cpp LIBS ElezaLang)
 eleza_add_test(test_ui_text ui/test_ui_text.cpp LIBS ElezaUi Qt6::Gui GUI)
 eleza_add_test(test_ui_style ui/test_ui_style.cpp LIBS ElezaUi Qt6::Gui GUI)
+
+# Parts of the executable that have no widget dependencies are compiled straight
+# into their tests.
+set(_eleza_app_src "${CMAKE_CURRENT_SOURCE_DIR}/../Eleza/SourceFiles")
+eleza_add_test(test_routes app/test_routes.cpp)
+target_sources(test_routes PRIVATE "${_eleza_app_src}/window/window_routes.cpp")
+target_include_directories(test_routes PRIVATE "${_eleza_app_src}")
+if (TARGET ElezaCore)
+	eleza_add_test(test_error_text app/test_error_text.cpp LIBS ElezaCore ElezaLang)
+	target_sources(test_error_text PRIVATE "${_eleza_app_src}/support/error_text.cpp")
+	target_include_directories(test_error_text PRIVATE "${_eleza_app_src}")
+endif()
 
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/core/CMakeLists.txt")
 	add_subdirectory(core)

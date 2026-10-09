@@ -1,6 +1,13 @@
 #include "window/window_session_controller.h"
 
+#include "data/data_chats.h"
+#include "data/data_notifications.h"
+#include "data/data_session.h"
+#include "lang_auto.h"
+#include "main/main_account.h"
+#include "main/main_session.h"
 #include "ui/layers/box_content.h"
+#include "ui/layers/generic_box.h"
 #include "window/window_main_layout.h"
 #include "window/window_main_window.h"
 #include "window/window_section_widget.h"
@@ -11,6 +18,18 @@ SessionController::SessionController(MainWindow *window, Main::Session *session)
 : QObject(window)
 , _window(window)
 , _session(session) {
+	Q_ASSERT(session != nullptr);
+	auto &data = session->data();
+	QObject::connect(
+		&data.chats(),
+		&Data::Chats::unreadChanged,
+		this,
+		[this] { refreshBadges(); });
+	QObject::connect(
+		&data.notifications(),
+		&Data::Notifications::unreadChanged,
+		this,
+		[this] { refreshBadges(); });
 }
 
 SessionController::~SessionController() = default;
@@ -19,8 +38,42 @@ Ui::RpWidget *SessionController::bodyWidget() const {
 	return _window->bodyWidget();
 }
 
+Main::Account &SessionController::account() const {
+	return _session->account();
+}
+
 void SessionController::setLayout(MainLayout *layout) {
 	_layout = layout;
+	if (layout) {
+		refreshBadges();
+	}
+}
+
+void SessionController::refreshBadges() {
+	auto &data = _session->data();
+	const auto chats = data.chats().unreadChats();
+	// The window title and the taskbar / tray icon count unread chats.
+	_window->setUnreadCount(chats);
+	if (_layout) {
+		_layout->setTabBadge(Tab::Chats, chats, false);
+		_layout->setTabBadge(Tab::Eli, data.notifications().unread(), false);
+	}
+}
+
+void SessionController::requestLogout() {
+	auto args = Ui::ConfirmBoxArgs();
+	args.title = tr::lng_settings_sign_out_sure(tr::now);
+	args.text = tr::lng_settings_sign_out_about(tr::now);
+	args.confirmText = tr::lng_sign_out(tr::now);
+	args.destructive = true;
+	const auto account = &_session->account();
+	args.confirmed = [account](std::function<void()> close) {
+		close();
+		// The request is best effort; the account ends the session either way
+		// and the application shows the intro.
+		account->logout();
+	};
+	show(Ui::MakeConfirmBox(std::move(args)));
 }
 
 void SessionController::showTab(Tab tab) {

@@ -306,6 +306,10 @@ public:
 Q_SIGNALS:
 	void changed();
 	void countryCodeChanged(QString code);
+	// A number with its international prefix ("+98912…", "0098912…") was pasted
+	// into the number part: all its digits. The owner knows the calling codes:
+	// it calls setCountryCode() and setNumber() with the two halves.
+	void internationalNumberEntered(QString digits);
 	void submitted();
 	void cancelled();
 

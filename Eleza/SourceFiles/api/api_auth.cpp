@@ -155,6 +155,7 @@ void Auth::requestRecovery(
 			auto challenge = RecoveryChallenge();
 			challenge.codeLength = IntOr(result, u"code_length"_s, 6);
 			challenge.resendAfter = IntOr(result, u"resend_after"_s, 60);
+			challenge.expiresIn = qMax(1, IntOr(result, u"expires_in"_s, 600));
 			challenge.email = result.value(u"email"_s).isString()
 				? result.value(u"email"_s).toString()
 				: form.recoveryEmail;

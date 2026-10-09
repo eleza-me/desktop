@@ -865,3 +865,64 @@
 "lng_language_en" = "English";
 "lng_unread_messages#one" = "{count} پیام خوانده‌نشده";
 "lng_unread_messages#other" = "{count} پیام خوانده‌نشده";
+
+// ---- window ----
+"lng_window_account_deleted" = "این حساب حذف شده است.";
+"lng_window_upgrade_title" = "نسخهٔ تازه لازم است";
+"lng_window_upgrade_text" = "این نسخهٔ الزا دیگر پشتیبانی نمی‌شود. برای ادامه، نسخهٔ تازه را نصب کن.";
+
+// ---- support ----
+// pwa: درخواست‌ها زیاد شد؛ کمی بعد دوباره امتحان کن
+"lng_support_error_rate_limited" = "درخواست‌ها زیاد شد؛ کمی بعد دوباره امتحان کن";
+// pwa: خطای سرور ({code})
+"lng_support_error_server" = "خطای سرور ({code})";
+// pwa: تاریخ تولد را امسال بیش از حد مجاز تغییر داده‌اید
+"lng_support_error_birthday_limit" = "تاریخ تولد را امسال بیش از حد مجاز تغییر داده‌اید";
+"lng_support_connecting" = "در حال اتصال…";
+"lng_support_waiting_for_network" = "در انتظار شبکه…";
+"lng_support_open_link_title" = "باز کردن پیوند";
+"lng_support_open_link_text" = "این پیوند در مرورگر باز شود؟";
+"lng_support_open_link_open" = "باز کن";
+"lng_support_files_all" = "همهٔ فایل‌ها";
+"lng_support_files_images" = "عکس‌ها";
+"lng_support_files_videos" = "ویدیوها";
+"lng_support_files_media" = "عکس‌ها و ویدیوها";
+"lng_support_files_audio" = "فایل‌های صوتی";
+"lng_support_pick_image" = "انتخاب عکس";
+"lng_support_pick_file" = "انتخاب فایل";
+"lng_support_save_as" = "ذخیره به‌نام";
+"lng_support_notify_new_message" = "پیام تازه";
+
+// ---- intro ----
+// pwa: کشور
+"lng_intro_country" = "کشور";
+// pwa: جستجوی کشور
+"lng_intro_country_search" = "جستجوی کشور";
+// pwa: کشوری پیدا نشد
+"lng_intro_country_not_found" = "کشوری پیدا نشد";
+"lng_intro_other_language" = "English";
+// pwa: Continue in English
+"lng_intro_switch_language" = "Continue in English";
+"lng_intro_terms_link" = "قوانین";
+"lng_intro_privacy_link" = "سیاست حریم خصوصی";
+"lng_intro_phone_placeholder" = "۹۱۲ ۳۴۵ ۶۷۸۹";
+"lng_intro_adult_confirm" = "تأیید می‌کنم که ۱۸ سال یا بیشتر دارم";
+"lng_intro_recovery_sent_to" = "کد به {email} فرستاده شد.";
+"lng_intro_name_required" = "نامت را بنویس";
+"lng_intro_photo_not_picture" = "این فایل عکس نیست";
+
+// ---- boxes ----
+"lng_boxes_crop_title" = "برش عکس";
+"lng_boxes_crop_done" = "تأیید";
+"lng_boxes_crop_hint" = "برای جابه‌جایی بکش؛ برای بزرگ‌نمایی چرخ موس را بچرخان";
+"lng_boxes_about_version" = "نسخهٔ {version}";
+"lng_boxes_about_text" = "الزا جایی است برای گفتن و شنیدن: پیام‌رسان، گفت‌وگوی ناشناس و الی، همه در یک برنامه.";
+// pwa: شرایط استفاده
+"lng_boxes_about_terms" = "شرایط استفاده";
+// pwa: سیاست حریم خصوصی
+"lng_boxes_about_privacy" = "سیاست حریم خصوصی";
+// pwa: رهنمودهای جامعه
+"lng_boxes_about_guidelines" = "رهنمودهای جامعه";
+
+// ---- media ----
+"lng_viewer_counter" = "{index} از {total}";

@@ -244,6 +244,11 @@ public:
 	[[nodiscard]] QNetworkAccessManager &manager() {
 		return _manager;
 	}
+	// False after a JSON request got no HTTP answer at all (no network, the
+	// server is unreachable), true again once one did.
+	[[nodiscard]] bool reachable() const {
+		return _reachable;
+	}
 
 	[[nodiscard]] RequestBuilder request(Method method, const QString &path);
 	[[nodiscard]] DownloadBuilder download(const QString &pathOrUrl);
@@ -259,6 +264,7 @@ public:
 Q_SIGNALS:
 	// The server answered 426: this build is too old.
 	void upgradeRequired();
+	void reachableChanged(bool reachable);
 	// Every failed JSON request, for logging / diagnostics.
 	void requestFailed(const QString &method, const QString &path, const Api::Error &error);
 
@@ -287,6 +293,7 @@ private:
 
 	void performUpload(RequestId id);
 
+	void setReachable(bool reachable);
 	void applyCommonHeaders(QNetworkRequest &request) const;
 	[[nodiscard]] bool sameOriginAsBase(const QUrl &url) const;
 
@@ -296,6 +303,7 @@ private:
 	QString _language = QStringLiteral("fa");
 	QNetworkAccessManager _manager;
 	TokenProvider *_tokens = nullptr;
+	bool _reachable = true;
 	RequestId _lastId = 0;
 	std::map<RequestId, std::unique_ptr<Call>> _calls;
 	std::map<RequestId, std::unique_ptr<Download>> _downloads;

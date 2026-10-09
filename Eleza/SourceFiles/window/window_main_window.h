@@ -50,7 +50,7 @@ public:
 
 	// Replaces what the body shows (the previous content is destroyed).
 	void setContent(Ui::object_ptr<Ui::RpWidget> content);
-	// Creates the session layout; `session` may be null (no core library).
+	// Creates the session layout for the signed-in session.
 	void showSession(Main::Session *session);
 	void destroySession();
 	[[nodiscard]] SessionController *sessionController() const {
@@ -77,13 +77,26 @@ public:
 		return _unreadCount;
 	}
 
+	// The server refuses this build: a blocking screen with the update link
+	// covers everything until the app is restarted.
+	void showUpgradeRequired(const QString &updateUrl);
+	[[nodiscard]] bool upgradeRequired() const {
+		return _upgrade != nullptr;
+	}
+
 	// Screenshot helpers (--debug-size / --debug-grab).
 	void setFixedDebugSize(QSize size);
 	[[nodiscard]] QImage grabForDebug();
 
+Q_SIGNALS:
+	// The window was activated / deactivated, minimized, hidden or shown.
+	void activeChanged();
+
 protected:
 	void resizeEvent(QResizeEvent *e) override;
 	void moveEvent(QMoveEvent *e) override;
+	void showEvent(QShowEvent *e) override;
+	void hideEvent(QHideEvent *e) override;
 	void closeEvent(QCloseEvent *e) override;
 	void changeEvent(QEvent *e) override;
 	void keyPressEvent(QKeyEvent *e) override;
@@ -103,6 +116,7 @@ private:
 	Ui::RpWidget *_body = nullptr;
 	Ui::LayerStackWidget *_layers = nullptr;
 	Ui::object_ptr<Ui::RpWidget> _content;
+	Ui::RpWidget *_upgrade = nullptr;
 	std::unique_ptr<SessionController> _controller;
 	QSystemTrayIcon *_tray = nullptr;
 	std::unique_ptr<QMenu> _trayMenu;

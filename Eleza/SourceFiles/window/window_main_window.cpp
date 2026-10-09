@@ -8,6 +8,7 @@
 #include "ui/toast/toast.h"
 #include "ui/ui_utility.h"
 #include "window/window_main_layout.h"
+#include "window/window_upgrade_blocker.h"
 #include "window/window_session_controller.h"
 #include "styles/style_window.h"
 
@@ -60,19 +61,26 @@ MainWindow::MainWindow()
 		p.fillRect(_body->rect(), st::bgCanvas);
 	});
 
+	// The keyboard goes back to the content when the last box closes.
+	QObject::connect(
+		_layers,
+		&Ui::LayerStackWidget::layersShownChanged,
+		this,
+		[this](bool shown) {
+			if (shown || !_content || _upgrade) {
+				return;
+			} else if (const auto layout = dynamic_cast<MainLayout*>(
+					_content.data())) {
+				layout->setInnerFocus();
+			} else {
+				_content->setFocus();
+			}
+		});
+
 	setupShortcuts();
 	if (!Core::App().commandLine().ephemeral()) {
 		setupTray();
 	}
-	QObject::connect(
-		&Core::App(),
-		&Core::Application::routeRequested,
-		this,
-		[this](const QString &route) {
-			if (_controller) {
-				_controller->openRoute(route);
-			}
-		});
 }
 
 MainWindow::~MainWindow() {
@@ -97,6 +105,21 @@ void MainWindow::setContent(Ui::object_ptr<Ui::RpWidget> content) {
 		_content->setFocus();
 	}
 	_layers->raise();
+	if (_upgrade) {
+		_upgrade->raise();
+	}
+}
+
+void MainWindow::showUpgradeRequired(const QString &updateUrl) {
+	if (_upgrade) {
+		return;
+	}
+	_layers->hideLayers(anim::type::instant);
+	_upgrade = new UpgradeBlocker(_body, updateUrl);
+	_upgrade->setGeometry(_body->rect());
+	_upgrade->show();
+	_upgrade->raise();
+	_upgrade->setFocus();
 }
 
 void MainWindow::showSession(Main::Session *session) {
@@ -208,7 +231,7 @@ void MainWindow::setupShortcuts() {
 	};
 	const auto tab = [this](Tab value) {
 		return [this, value] {
-			if (_controller && !_layers->hasLayers()) {
+			if (_controller && !_upgrade && !_layers->hasLayers()) {
 				_controller->showTab(value);
 			}
 		};
@@ -365,7 +388,9 @@ QImage MainWindow::grabForDebug() {
 }
 
 void MainWindow::handleBack() {
-	if (_layers->hasLayers()) {
+	if (_upgrade) {
+		return;
+	} else if (_layers->hasLayers()) {
 		_layers->hideTopLayer();
 	} else if (_controller) {
 		_controller->showBack();
@@ -378,7 +403,20 @@ void MainWindow::resizeEvent(QResizeEvent *e) {
 	if (_content) {
 		_content->setGeometry(_body->rect());
 	}
+	if (_upgrade) {
+		_upgrade->setGeometry(_body->rect());
+	}
 	scheduleGeometrySave();
+}
+
+void MainWindow::showEvent(QShowEvent *e) {
+	RpWidget::showEvent(e);
+	emit activeChanged();
+}
+
+void MainWindow::hideEvent(QHideEvent *e) {
+	RpWidget::hideEvent(e);
+	emit activeChanged();
 }
 
 void MainWindow::moveEvent(QMoveEvent *e) {
@@ -401,6 +439,9 @@ void MainWindow::closeEvent(QCloseEvent *e) {
 void MainWindow::changeEvent(QEvent *e) {
 	if (e->type() == QEvent::WindowStateChange) {
 		scheduleGeometrySave();
+		emit activeChanged();
+	} else if (e->type() == QEvent::ActivationChange) {
+		emit activeChanged();
 	}
 	RpWidget::changeEvent(e);
 }

@@ -6,6 +6,8 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QSaveFile>
 
+#include <algorithm>
+
 namespace Core {
 namespace {
 
@@ -88,6 +90,16 @@ void Settings::read() {
 		QStringLiteral("count_muted")).toBool(false);
 	_notifications.flashTaskbar = notify.value(
 		QStringLiteral("flash")).toBool(true);
+	_notifications.onlyWhenInactive = notify.value(
+		QStringLiteral("only_inactive")).toBool(false);
+	_lastDialogDirectory = root.value(
+		QStringLiteral("last_dialog_directory")).toString();
+	_playbackVolume = std::clamp(
+		root.value(QStringLiteral("playback_volume")).toDouble(1.),
+		0.,
+		1.);
+	const auto speed = root.value(QStringLiteral("voice_speed")).toDouble(1.);
+	_voicePlaybackSpeed = (speed == 1.5 || speed == 2.) ? speed : 1.;
 }
 
 QJsonObject Settings::serialize() const {
@@ -108,6 +120,9 @@ QJsonObject Settings::serialize() const {
 		QStringLiteral("count_muted"),
 		_notifications.countUnreadMuted);
 	notify.insert(QStringLiteral("flash"), _notifications.flashTaskbar);
+	notify.insert(
+		QStringLiteral("only_inactive"),
+		_notifications.onlyWhenInactive);
 
 	auto root = QJsonObject();
 	root.insert(QStringLiteral("language"), Lang::Id(_language));
@@ -123,6 +138,13 @@ QJsonObject Settings::serialize() const {
 		root.insert(QStringLiteral("last_tab"), _lastTab);
 	}
 	root.insert(QStringLiteral("notifications"), notify);
+	if (!_lastDialogDirectory.isEmpty()) {
+		root.insert(
+			QStringLiteral("last_dialog_directory"),
+			_lastDialogDirectory);
+	}
+	root.insert(QStringLiteral("playback_volume"), _playbackVolume);
+	root.insert(QStringLiteral("voice_speed"), _voicePlaybackSpeed);
 	return root;
 }
 
@@ -195,6 +217,31 @@ void Settings::setNotifications(const NotificationSettings &settings) {
 void Settings::setLastTab(const QString &tab) {
 	if (_lastTab != tab) {
 		_lastTab = tab;
+		scheduleWrite();
+	}
+}
+
+void Settings::setLastDialogDirectory(const QString &path) {
+	if (_lastDialogDirectory != path) {
+		_lastDialogDirectory = path;
+		scheduleWrite();
+	}
+}
+
+void Settings::setPlaybackVolume(double volume) {
+	volume = std::clamp(volume, 0., 1.);
+	if (_playbackVolume != volume) {
+		_playbackVolume = volume;
+		scheduleWrite();
+	}
+}
+
+void Settings::setVoicePlaybackSpeed(double speed) {
+	if (speed != 1.5 && speed != 2.) {
+		speed = 1.;
+	}
+	if (_voicePlaybackSpeed != speed) {
+		_voicePlaybackSpeed = speed;
 		scheduleWrite();
 	}
 }

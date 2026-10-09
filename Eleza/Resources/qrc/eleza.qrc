@@ -7,5 +7,6 @@
 		<file alias="art/icon32.png">../art/icon32.png</file>
 		<file alias="art/icon24.png">../art/icon24.png</file>
 		<file alias="art/icon16.png">../art/icon16.png</file>
+		<file alias="sounds/notify.wav">../sounds/notify.wav</file>
 	</qresource>
 </RCC>

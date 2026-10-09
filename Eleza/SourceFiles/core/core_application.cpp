@@ -1,9 +1,17 @@
 #include "core/core_application.h"
 
+#include "api/api_auth.h"
+#include "api/api_client_config.h"
+#include "core/core_debug.h"
 #include "core/core_modules.h"
 #include "gallery/gallery_widget.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
+#include "main/main_account.h"
+#include "main/main_session.h"
+#include "media/media_audio_player.h"
+#include "storage/storage_key_value.h"
+#include "support/session_services.h"
 #include "ui/style/style_core.h"
 #include "ui/ui_phrases.h"
 #include "ui/ui_utility.h"
@@ -12,11 +20,14 @@
 #include "window/window_session_controller.h"
 
 #include <QtCore/QDir>
-#include <QtCore/QTimer>
+#include <QtCore/QTemporaryDir>
 #include <QtWidgets/QApplication>
 
 namespace Core {
 namespace {
+
+constexpr auto kBackgroundDelay = 5000;
+const auto kNeedsProfileKey = QStringLiteral("intro.needs_profile");
 
 Application *InstanceValue = nullptr;
 
@@ -31,13 +42,24 @@ Application::Application(Launcher *launcher)
 , _debugRoute(launcher->commandLine().debugRoute) {
 	InstanceValue = this;
 	const auto &arguments = launcher->commandLine();
+	if (arguments.ephemeral() && arguments.workDir.isEmpty()) {
+		// A screenshot run must not touch the real data directory.
+		_temporaryDir = std::make_unique<QTemporaryDir>();
+	}
 	_settings = std::make_unique<Settings>(arguments.ephemeral()
 		? QString()
-		: QDir(launcher->workDir()).filePath(QStringLiteral("settings.json")));
+		: QDir(workDir()).filePath(QStringLiteral("settings.json")));
+	_backgroundTimer.setSingleShot(true);
+	QObject::connect(&_backgroundTimer, &QTimer::timeout, this, [this] {
+		applyBackground();
+	});
 }
 
 Application::~Application() {
+	_debugActions = nullptr;
+	// The window's sections use the session: they go first.
 	_window = nullptr;
+	_account = nullptr;
 	_settings = nullptr;
 	InstanceValue = nullptr;
 }
@@ -49,6 +71,21 @@ Application &Application::Instance() {
 
 bool Application::Exists() {
 	return InstanceValue != nullptr;
+}
+
+QString Application::workDir() const {
+	return (_temporaryDir && _temporaryDir->isValid())
+		? _temporaryDir->path()
+		: _launcher->workDir();
+}
+
+Main::Account &Application::account() const {
+	Q_ASSERT(_account != nullptr);
+	return *_account;
+}
+
+Main::Session *Application::session() const {
+	return _account ? _account->session() : nullptr;
 }
 
 void Application::start() {
@@ -71,44 +108,141 @@ void Application::start() {
 
 	RegisterModules();
 
+	if (!arguments.gallery) {
+		createAccount();
+	}
 	_window = std::make_unique<Window::MainWindow>();
 	if (arguments.debugSize.isValid()) {
 		_window->setFixedDebugSize(arguments.debugSize);
 	}
+	QObject::connect(
+		_window.get(),
+		&Window::MainWindow::activeChanged,
+		this,
+		[this] { windowActiveChanged(); });
+
 	if (arguments.gallery) {
 		showGallery(arguments.galleryPage);
-	} else if (Window::HasIntro() && !_session) {
-		// The module that registered the intro decides when to switch to the
-		// session (Core::App().showSession).
-		showIntro();
 	} else {
-		showSession(nullptr);
+		_account->start();
+		if (_account->session() && !introNeedsProfile()) {
+			showSession();
+		} else {
+			showIntro();
+			if (!_account->session() && arguments.debugLogin()) {
+				startDebugLogin();
+			}
+		}
+		checkUpgradeRequired();
 	}
 	_window->showFirstTime();
 
-	if (!_debugRoute.isEmpty()) {
-		const auto route = _debugRoute;
-		QTimer::singleShot(0, this, [this, route] {
-			emit routeRequested(route);
-		});
-	}
-	if (!arguments.debugGrab.isEmpty()) {
-		scheduleDebugGrab();
+	if (!_debugLoginRunning) {
+		runDebugScenario();
 	}
 }
 
-void Application::scheduleDebugGrab() {
-	const auto &arguments = _launcher->commandLine();
-	const auto path = arguments.debugGrab;
-	QTimer::singleShot(arguments.debugGrabDelay, this, [this, path] {
-		auto image = _window->grabForDebug();
-		if (!image.save(path)) {
-			qWarning("Could not save the grab to '%s'.", qPrintable(path));
-			QCoreApplication::exit(1);
-			return;
+void Application::createAccount() {
+	auto config = Main::Account::Config();
+	config.workdir = workDir();
+	config.apiBase = apiUrl();
+	config.version = QStringLiteral(ELEZA_VERSION_STRING);
+	config.language = Lang::CurrentId();
+	_account = std::make_unique<Main::Account>(std::move(config));
+	// The stored language of the account may be older than the settings.
+	if (_account->language() != Lang::CurrentId()) {
+		_account->setLanguage(Lang::CurrentId());
+	}
+	QObject::connect(
+		_account.get(),
+		&Main::Account::sessionChanged,
+		this,
+		[this] { sessionChanged(); });
+	QObject::connect(
+		_account.get(),
+		&Main::Account::sessionEnded,
+		this,
+		[this](Main::SessionEndReason reason) { sessionEnded(reason); });
+	QObject::connect(
+		&_account->api(),
+		&Api::Client::upgradeRequired,
+		this,
+		[this] {
+			if (_window) {
+				_window->showUpgradeRequired(_account->clientConfig().updateUrl());
+			}
+		});
+}
+
+void Application::checkUpgradeRequired() {
+	// The cached document answers at once, the fresh one a moment later.
+	const auto check = [this] {
+		const auto &config = _account->clientConfig();
+		if (_window
+			&& config.updateRequired(QStringLiteral(ELEZA_VERSION_STRING))) {
+			_window->showUpgradeRequired(config.updateUrl());
 		}
-		QCoreApplication::exit(0);
-	});
+	};
+	check();
+	_account->clientConfig().load(this, [check](bool) { check(); });
+}
+
+void Application::sessionChanged() {
+	if (_account->session()) {
+		// Signed in. The intro stays until it reports that the profile step is
+		// done (introFinished); the debug sign-in does the same.
+		return;
+	}
+	// The session is going away: nothing may keep using it after we return.
+	Media::Player().stop();
+	if (_content == Content::Session) {
+		_window->destroySession();
+		_content = Content::None;
+		emit sessionShownChanged();
+	}
+}
+
+void Application::sessionEnded(Main::SessionEndReason reason) {
+	if (_quitting || !_window) {
+		return;
+	}
+	setIntroNeedsProfile(false);
+	// Also when the intro was on screen (the profile step): start it over.
+	showIntro();
+	switch (reason) {
+	case Main::SessionEndReason::Expired:
+	case Main::SessionEndReason::Revoked:
+		_window->showToast(tr::lng_app_session_has_ended_sign_again(tr::now));
+		break;
+	case Main::SessionEndReason::AccountDeleted:
+		_window->showToast(tr::lng_window_account_deleted(tr::now));
+		break;
+	case Main::SessionEndReason::SignedOut:
+		break;
+	}
+}
+
+bool Application::introNeedsProfile() const {
+	return _account && _account->settings().boolean(kNeedsProfileKey);
+}
+
+void Application::setIntroNeedsProfile(bool needs) {
+	if (!_account || introNeedsProfile() == needs) {
+		return;
+	}
+	if (needs) {
+		_account->settings().set(kNeedsProfileKey, true);
+	} else {
+		_account->settings().remove(kNeedsProfileKey);
+	}
+	_account->settings().flush();
+}
+
+void Application::introFinished() {
+	setIntroNeedsProfile(false);
+	if (_account && _account->session()) {
+		showSession();
+	}
 }
 
 void Application::applyLanguage(Lang::Language language) {
@@ -148,6 +282,10 @@ void Application::setLanguage(Lang::Language language) {
 		return;
 	}
 	applyLanguage(language);
+	if (_account) {
+		// Accept-Language of every request from now on.
+		_account->setLanguage(Lang::Id(language));
+	}
 	// The layout direction changed: rebuild everything the window shows.
 	rebuildContent();
 	emit languageChanged();
@@ -156,6 +294,11 @@ void Application::setLanguage(Lang::Language language) {
 void Application::setThemeMode(style::ThemeMode mode) {
 	_settings->setThemeMode(mode);
 	style::SetThemeMode(mode);
+	if (_window) {
+		// The palette notifier repaints widgets; cached snapshots (a running
+		// transition, the window icon) are refreshed by a full update.
+		_window->update();
+	}
 	emit themeChanged();
 }
 
@@ -173,7 +316,7 @@ void Application::rebuildContent() {
 	switch (_content) {
 	case Content::Gallery: showGallery(_galleryPage); break;
 	case Content::Intro: showIntro(); break;
-	case Content::Session: showSession(_session); break;
+	case Content::Session: showSession(); break;
 	case Content::None: break;
 	}
 }
@@ -200,19 +343,73 @@ void Application::showGallery(const QString &page) {
 }
 
 void Application::showIntro() {
-	if (!Window::HasIntro()) {
-		showSession(nullptr);
-		return;
-	}
+	const auto wasSession = (_content == Content::Session);
 	_content = Content::Intro;
 	_window->destroySession();
+	_window->setUnreadCount(0);
 	_window->setContent(Window::CreateIntro(_window->bodyWidget(), _window.get()));
+	if (wasSession) {
+		emit sessionShownChanged();
+	}
 }
 
-void Application::showSession(Main::Session *session) {
+void Application::showSession() {
+	const auto session = _account ? _account->session() : nullptr;
+	if (!session) {
+		showIntro();
+		return;
+	}
 	_content = Content::Session;
-	_session = session;
 	_window->showSession(session);
+	// Error toasts for background actions and desktop notifications.
+	[[maybe_unused]] const auto services = Support::SessionServices::For(
+		_window->sessionController());
+	applyBackground();
+	emit sessionShownChanged();
+	if (const auto route = std::exchange(_pendingRoute, QString());
+		!route.isEmpty()) {
+		openRoute(route);
+	}
+}
+
+void Application::openRoute(const QString &route) {
+	if (route.isEmpty()) {
+		return;
+	}
+	const auto controller = _window ? _window->sessionController() : nullptr;
+	if (controller) {
+		controller->openRoute(route);
+	} else if (_content != Content::Gallery) {
+		_pendingRoute = route;
+	}
+}
+
+bool Application::windowActive() const {
+	return _window
+		&& _window->isVisible()
+		&& !_window->isMinimized()
+		&& _window->isActiveWindow();
+}
+
+void Application::windowActiveChanged() {
+	if (windowActive()) {
+		_backgroundTimer.stop();
+		applyBackground();
+	} else if (_window->isMinimized() || !_window->isVisible()) {
+		_backgroundTimer.stop();
+		applyBackground();
+	} else {
+		// Switching to another window for a moment does not make us "away".
+		_backgroundTimer.start(kBackgroundDelay);
+	}
+}
+
+void Application::applyBackground() {
+	if (const auto session = this->session()) {
+		// Screenshot runs have no window manager to activate the window.
+		const auto active = windowActive() || commandLine().ephemeral();
+		session->rt().setBackground(!active);
+	}
 }
 
 void Application::handleActivation(const QString &message) {
@@ -221,15 +418,113 @@ void Application::handleActivation(const QString &message) {
 	}
 	const auto prefix = QStringLiteral("route:");
 	if (message.startsWith(prefix)) {
-		emit routeRequested(message.mid(prefix.size()));
+		openRoute(message.mid(prefix.size()));
 	}
 }
 
 void Application::quit() {
+	_quitting = true;
 	if (_settings) {
 		_settings->flush();
 	}
 	QCoreApplication::quit();
+}
+
+// ---- debug hooks
+
+void Application::startDebugLogin() {
+	const auto &arguments = _launcher->commandLine();
+	_debugLoginRunning = true;
+	const auto phone = Lang::E164(arguments.debugLoginPhone);
+	if (phone.isEmpty()) {
+		debugLoginFailed(QStringLiteral("the phone number is not valid"));
+		return;
+	}
+	const auto code = arguments.debugLoginCode;
+	const auto password = arguments.debugLoginPassword;
+	const auto fail = [this](const Api::Error &error) {
+		debugLoginFailed(error.describe());
+	};
+	const auto done = [this](const Api::VerifyOutcome &outcome) {
+		if (outcome.kind != Api::VerifyOutcome::Kind::SignedIn) {
+			debugLoginFailed(QStringLiteral("a second password step"));
+			return;
+		}
+		_debugLoginRunning = false;
+		if (outcome.needsProfile) {
+			// The profile step is the intro's: it is on screen already.
+			setIntroNeedsProfile(true);
+			showIntro();
+		} else {
+			introFinished();
+		}
+		runDebugScenario();
+	};
+	auto &auth = _account->auth();
+	auth.requestCode(phone, this, [=, this, &auth](
+			const Api::OtpChallenge &challenge) {
+		auth.verifyCode(challenge.challengeId, code, true, this, [=, this, &auth](
+				const Api::VerifyOutcome &outcome) {
+			if (outcome.kind != Api::VerifyOutcome::Kind::TwoStep) {
+				done(outcome);
+			} else if (password.isEmpty()) {
+				debugLoginFailed(QStringLiteral(
+					"the account has a two-step password; "
+					"pass --debug-login=<phone>:<code>:<password>"));
+			} else {
+				auth.signInWithPassword(outcome.form, password, this, done, fail);
+			}
+		}, fail);
+	}, fail);
+}
+
+void Application::debugLoginFailed(const QString &why) {
+	qWarning("--debug-login failed: %s", qPrintable(why));
+	_debugLoginRunning = false;
+	if (commandLine().ephemeral()) {
+		QCoreApplication::exit(2);
+	}
+}
+
+void Application::runDebugScenario() {
+	if (_debugScenarioStarted) {
+		return;
+	}
+	_debugScenarioStarted = true;
+	const auto &arguments = _launcher->commandLine();
+	const auto route = _debugRoute;
+	// On the next turn of the loop: the window is laid out and shown by then.
+	QTimer::singleShot(0, this, [=, this] {
+		if (_content == Content::Session) {
+			openRoute(route);
+		}
+		if (arguments.debugActions.isEmpty()) {
+			finishDebugScenario();
+			return;
+		}
+		_debugActions = std::make_unique<DebugActions>(
+			_window.get(),
+			arguments.debugActions,
+			[this](const QString &value) { openRoute(value); });
+		_debugActions->start([this] { finishDebugScenario(); });
+	});
+}
+
+void Application::finishDebugScenario() {
+	const auto &arguments = _launcher->commandLine();
+	if (!arguments.ephemeral()) {
+		return;
+	}
+	const auto path = arguments.debugGrab;
+	QTimer::singleShot(arguments.debugGrabDelay, this, [this, path] {
+		if (!path.isEmpty()
+			&& !GrabWindowWithPopups(_window.get()).save(path)) {
+			qWarning("Could not save the grab to '%s'.", qPrintable(path));
+			QCoreApplication::exit(1);
+			return;
+		}
+		QCoreApplication::exit(0);
+	});
 }
 
 } // namespace Core

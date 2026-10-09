@@ -25,6 +25,7 @@ struct NotificationSettings {
 	bool showSender = true;
 	bool countUnreadMuted = false; // muted chats in the taskbar / tray badge
 	bool flashTaskbar = true;
+	bool onlyWhenInactive = false; // no toasts while the window is active
 
 	friend bool operator==(
 			const NotificationSettings &a,
@@ -34,7 +35,8 @@ struct NotificationSettings {
 			&& (a.showPreview == b.showPreview)
 			&& (a.showSender == b.showSender)
 			&& (a.countUnreadMuted == b.countUnreadMuted)
-			&& (a.flashTaskbar == b.flashTaskbar);
+			&& (a.flashTaskbar == b.flashTaskbar)
+			&& (a.onlyWhenInactive == b.onlyWhenInactive);
 	}
 };
 
@@ -88,6 +90,22 @@ public:
 	}
 	void setLastTab(const QString &tab);
 
+	// The directory the last file dialog was left in ("" = the home folder).
+	[[nodiscard]] QString lastDialogDirectory() const {
+		return _lastDialogDirectory;
+	}
+	void setLastDialogDirectory(const QString &path);
+
+	// Audio / video playback: 0..1 volume and the voice message speed (1, 1.5, 2).
+	[[nodiscard]] double playbackVolume() const {
+		return _playbackVolume;
+	}
+	void setPlaybackVolume(double volume);
+	[[nodiscard]] double voicePlaybackSpeed() const {
+		return _voicePlaybackSpeed;
+	}
+	void setVoicePlaybackSpeed(double speed);
+
 	// Writes pending changes right now (on quit).
 	void flush();
 
@@ -110,6 +128,9 @@ private:
 	bool _closeToTray = true;
 	NotificationSettings _notifications;
 	QString _lastTab;
+	QString _lastDialogDirectory;
+	double _playbackVolume = 1.;
+	double _voicePlaybackSpeed = 1.;
 
 };
 

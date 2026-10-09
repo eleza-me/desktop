@@ -46,6 +46,9 @@ struct VerifyOutcome {
 struct RecoveryChallenge {
 	int codeLength = 6;
 	int resendAfter = 60;
+	// Lifetime of the mailed code in seconds. The login ticket lives as long
+	// (the server extends it): restart its countdown from this.
+	int expiresIn = 600;
 	QString email;
 };
 

@@ -5,9 +5,10 @@
 # in SourceFiles/core/core_modules.cpp; this file picks the sources up by itself.
 
 include("${CMAKE_CURRENT_LIST_DIR}/lang.cmake")
-# The non-GUI core (crypto, api, rt, storage, data, main) is built by core.cmake when
-# it is present; the app also builds and runs without it (UI gallery / placeholders).
-include("${CMAKE_CURRENT_LIST_DIR}/core.cmake" OPTIONAL)
+# The non-GUI core (crypto, api, rt, storage, data, main): the ElezaCore library.
+include("${CMAKE_CURRENT_LIST_DIR}/core.cmake")
+
+find_package(Qt6 6.4 REQUIRED COMPONENTS Multimedia)
 
 set(eleza_gui_modules
 	core
@@ -23,6 +24,7 @@ set(eleza_gui_modules
 	settings
 	boxes
 	media
+	support
 )
 set(eleza_sources)
 set(eleza_styles)
@@ -45,18 +47,15 @@ target_include_directories(Eleza PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/SourceFile
 target_link_libraries(Eleza PRIVATE
 	ElezaUi
 	ElezaLang
+	ElezaCore
 	Qt6::Core
 	Qt6::Gui
 	Qt6::Widgets
-	Qt6::Network)
+	Qt6::Network
+	Qt6::Multimedia)
 eleza_target_defaults(Eleza)
 target_compile_definitions(Eleza PRIVATE
 	ELEZA_VERSION_STRING="${PROJECT_VERSION}")
-
-if (TARGET ElezaCore)
-	target_link_libraries(Eleza PRIVATE ElezaCore)
-	target_compile_definitions(Eleza PRIVATE ELEZA_HAS_CORE)
-endif()
 
 if (eleza_styles)
 	eleza_generate_styles(Eleza
@@ -71,7 +70,8 @@ eleza_add_resources(Eleza
 	DEPENDS
 		"${CMAKE_CURRENT_SOURCE_DIR}/Resources/art/icon512.png"
 		"${CMAKE_CURRENT_SOURCE_DIR}/Resources/art/icon256.png"
-		"${CMAKE_CURRENT_SOURCE_DIR}/Resources/art/icon64.png")
+		"${CMAKE_CURRENT_SOURCE_DIR}/Resources/art/icon64.png"
+		"${CMAKE_CURRENT_SOURCE_DIR}/Resources/sounds/notify.wav")
 
 if (WIN32)
 	set(ELEZA_RC_VERSION_COMMA

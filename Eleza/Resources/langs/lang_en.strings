@@ -856,3 +856,54 @@
 "lng_language_en" = "English";
 "lng_unread_messages#one" = "{count} unread message";
 "lng_unread_messages#other" = "{count} unread messages";
+
+// ---- window ----
+"lng_window_account_deleted" = "This account was deleted.";
+"lng_window_upgrade_title" = "A new version is required";
+"lng_window_upgrade_text" = "This version of Eleza is no longer supported. Install the new version to continue.";
+
+// ---- support ----
+"lng_support_error_rate_limited" = "Too many requests. Try again in a moment.";
+"lng_support_error_server" = "Server error ({code})";
+"lng_support_error_birthday_limit" = "You changed your birthday too many times this year";
+"lng_support_connecting" = "Connecting…";
+"lng_support_waiting_for_network" = "Waiting for network…";
+"lng_support_open_link_title" = "Open link";
+"lng_support_open_link_text" = "Open this link in your browser?";
+"lng_support_open_link_open" = "Open";
+"lng_support_files_all" = "All files";
+"lng_support_files_images" = "Images";
+"lng_support_files_videos" = "Videos";
+"lng_support_files_media" = "Photos and videos";
+"lng_support_files_audio" = "Audio files";
+"lng_support_pick_image" = "Choose a photo";
+"lng_support_pick_file" = "Choose a file";
+"lng_support_save_as" = "Save as";
+"lng_support_notify_new_message" = "New message";
+
+// ---- intro ----
+"lng_intro_country" = "Country";
+"lng_intro_country_search" = "Search countries";
+"lng_intro_country_not_found" = "No country found";
+"lng_intro_other_language" = "Persian";
+"lng_intro_switch_language" = "Continue in Persian";
+"lng_intro_terms_link" = "terms";
+"lng_intro_privacy_link" = "privacy policy";
+"lng_intro_phone_placeholder" = "201 555 0123";
+"lng_intro_adult_confirm" = "I confirm that I am 18 or older";
+"lng_intro_recovery_sent_to" = "The code was sent to {email}.";
+"lng_intro_name_required" = "Enter your name";
+"lng_intro_photo_not_picture" = "This file is not a picture";
+
+// ---- boxes ----
+"lng_boxes_crop_title" = "Crop photo";
+"lng_boxes_crop_done" = "Done";
+"lng_boxes_crop_hint" = "Drag to move; use the mouse wheel to zoom";
+"lng_boxes_about_version" = "Version {version}";
+"lng_boxes_about_text" = "Eleza is a place to speak and to listen: a messenger, anonymous conversations and Eli, all in one app.";
+"lng_boxes_about_terms" = "Terms of Use";
+"lng_boxes_about_privacy" = "Privacy Policy";
+"lng_boxes_about_guidelines" = "Community Guidelines";
+
+// ---- media ----
+"lng_viewer_counter" = "{index} of {total}";

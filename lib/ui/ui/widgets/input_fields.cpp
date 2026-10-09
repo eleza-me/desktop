@@ -1134,6 +1134,10 @@ class PhoneInput::NumberPart final : public MaskedInputField {
 public:
 	using MaskedInputField::MaskedInputField;
 
+	// A whole number in the international form ("+98 912…", "0098912…") was
+	// pasted or typed: its digits without the prefix.
+	std::function<void(QString digits)> international;
+
 protected:
 	void correctValue(
 			const QString &was,
@@ -1143,6 +1147,22 @@ protected:
 		Q_UNUSED(was);
 		Q_UNUSED(wasCursor);
 		const auto latin = LatinizeDigits(now);
+		const auto trimmed = latin.trimmed();
+		const auto plus = trimmed.startsWith(QLatin1Char('+'));
+		if (international
+			&& (plus || trimmed.startsWith(QStringLiteral("00")))) {
+			auto all = QString();
+			for (const auto ch : trimmed.mid(plus ? 1 : 2)) {
+				if (ch.unicode() >= '0' && ch.unicode() <= '9') {
+					all.append(ch);
+				}
+			}
+			if (all.size() >= 5) {
+				// The owner splits it into the code and the number.
+				const auto callback = international;
+				PostponeCall(this, [=] { callback(all); });
+			}
+		}
 		auto digits = QString();
 		auto cursor = nowCursor;
 		for (auto i = 0; i != latin.size(); ++i) {
@@ -1179,6 +1199,9 @@ PhoneInput::PhoneInput(
 		_number->setText(overflow + _number->text());
 		_number->setFocusFast();
 		_number->setCursorPosition(int(overflow.size()));
+	};
+	_number->international = [this](QString digits) {
+		emit internationalNumberEntered(digits);
 	};
 	const auto watchFocus = [this](bool) {
 		setFocused(_code->hasFocus() || _number->hasFocus());

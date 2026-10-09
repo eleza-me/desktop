@@ -15,6 +15,7 @@ struct Registry {
 	std::array<SectionFactory, kTabsCount> tabs;
 	IntroFactory intro;
 	std::vector<RouteHandler> routes;
+	std::vector<std::pair<RouteType, TypedRouteHandler>> typedRoutes;
 };
 
 [[nodiscard]] Registry &Data() {
@@ -56,6 +57,30 @@ void RegisterRouteHandler(RouteHandler handler) {
 	Data().routes.push_back(std::move(handler));
 }
 
+void RegisterRouteHandler(RouteType type, TypedRouteHandler handler) {
+	Data().typedRoutes.emplace_back(type, std::move(handler));
+}
+
+Tab RouteTab(const Route &route, Tab current) {
+	switch (route.type) {
+	case RouteType::Chats:
+	case RouteType::Chat:
+	case RouteType::ConversationTopics:
+	case RouteType::Conversation: return Tab::Chats;
+	case RouteType::Eli:
+	case RouteType::Post:
+	case RouteType::Topic:
+	case RouteType::EliNotifications: return Tab::Eli;
+	case RouteType::Search: return Tab::Search;
+	case RouteType::Me: return Tab::Me;
+	case RouteType::Settings: return Tab::Settings;
+	case RouteType::User:
+	case RouteType::Handle:
+	case RouteType::Unknown: break;
+	}
+	return current;
+}
+
 SectionFactory RegisteredTabFactory(Tab tab) {
 	return Data().tabs[int(tab)];
 }
@@ -79,6 +104,14 @@ bool HandleRoute(SessionController *controller, const QString &route) {
 			return true;
 		}
 	}
+	const auto parsed = ParseRoute(route);
+	if (parsed.valid()) {
+		for (const auto &[type, handler] : Data().typedRoutes) {
+			if (type == parsed.type && handler(controller, parsed)) {
+				return true;
+			}
+		}
+	}
 	// "debug/main[/<n>]": n placeholder sections in the main column.
 	const auto debugPrefix = QStringLiteral("debug/main");
 	if (route.startsWith(debugPrefix)) {
@@ -90,13 +123,31 @@ bool HandleRoute(SessionController *controller, const QString &route) {
 		}
 		return true;
 	}
-	const auto slash = route.indexOf(QLatin1Char('/'));
-	const auto head = (slash < 0) ? route : route.left(slash);
-	if (const auto tab = TabFromId(head)) {
-		controller->showTab(*tab);
-		return true;
+	if (!parsed.valid()) {
+		return false;
 	}
-	return false;
+	// Nobody took it yet: the tab, and a stand-in for what opens in the main
+	// column.
+	const auto tab = RouteTab(parsed, controller->currentTab());
+	switch (parsed.type) {
+	case RouteType::Chats:
+	case RouteType::Eli:
+	case RouteType::Search:
+	case RouteType::Me:
+		controller->showTab(tab);
+		return true;
+	case RouteType::Settings:
+		controller->showTab(tab);
+		if (parsed.id.isEmpty()) {
+			return true;
+		}
+		break;
+	default: break;
+	}
+	controller->showMainSection(
+		RoutePlaceholderSection::Factory(parsed),
+		{ .tab = tab });
+	return true;
 }
 
 } // namespace Window

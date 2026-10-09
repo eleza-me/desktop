@@ -606,9 +606,11 @@ void Client::finished(RequestId id) {
 	const auto &spec = call->spec;
 	if (status == 0) {
 		// No HTTP answer at all: DNS, refused, reset, timeout, TLS.
+		setReachable(false);
 		failCall(id, Error::Offline(reply->errorString()));
 		return;
 	}
+	setReachable(true);
 	if (status >= 200 && status < 300) {
 		if (body.trimmed().isEmpty()) {
 			finishCall(id, QJsonObject());
@@ -675,6 +677,13 @@ void Client::finished(RequestId id) {
 		}
 	}
 	failCall(id, error);
+}
+
+void Client::setReachable(bool reachable) {
+	if (_reachable != reachable) {
+		_reachable = reachable;
+		Q_EMIT reachableChanged(reachable);
+	}
 }
 
 void Client::finishCall(RequestId id, const QJsonValue &result) {

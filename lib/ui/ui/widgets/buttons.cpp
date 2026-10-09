@@ -293,7 +293,11 @@ int RoundButton::contentWidth() const {
 }
 
 int RoundButton::naturalWidth() const {
-	return std::max(contentWidth() + 2 * _st.padding, _st.minWidth);
+	// A fixed width wins also where the natural one is asked for (rows of a
+	// VerticalLayout placed with an alignment).
+	return (_fullWidth > 0)
+		? _fullWidth
+		: std::max(contentWidth() + 2 * _st.padding, _st.minWidth);
 }
 
 int RoundButton::resizeGetHeight(int newWidth) {

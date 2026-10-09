@@ -122,4 +122,44 @@ void PlaceholderMainSection::resizeEvent(QResizeEvent *e) {
 		std::max(height() - _bar->height(), 0));
 }
 
+RoutePlaceholderSection::RoutePlaceholderSection(
+	QWidget *parent,
+	SessionController *controller,
+	const Route &route)
+: SectionWidget(parent, controller)
+, _key(route.toString())
+, _bar(new Ui::TopBar(this)) {
+	const auto tab = RouteTab(route, controller->currentTab());
+	_bar->setTitle(TabTitle(tab));
+	_bar->setSubtitle(_key);
+	setTopBar(_bar);
+	auto descriptor = Ui::EmptyPlaceholderDescriptor();
+	descriptor.icon = TabIcon(tab);
+	descriptor.title = tr::lng_soon(tr::now);
+	descriptor.text = tr::lng_main_section_soon(tr::now);
+	_placeholder = new Ui::EmptyPlaceholder(this, std::move(descriptor));
+}
+
+SectionFactory RoutePlaceholderSection::Factory(const Route &route) {
+	return [route](QWidget *parent, SessionController *controller) {
+		return Ui::Owned<SectionWidget>(
+			new RoutePlaceholderSection(parent, controller, route));
+	};
+}
+
+QString RoutePlaceholderSection::sectionKey() const {
+	return _key;
+}
+
+void RoutePlaceholderSection::resizeEvent(QResizeEvent *e) {
+	Q_UNUSED(e);
+	_bar->resizeToWidth(width());
+	_bar->move(0, 0);
+	_placeholder->setGeometry(
+		0,
+		_bar->height(),
+		width(),
+		std::max(height() - _bar->height(), 0));
+}
+
 } // namespace Window
