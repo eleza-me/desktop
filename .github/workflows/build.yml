@@ -1,0 +1,211 @@
+# Builds Eleza Desktop for Windows (MSVC 2022, Qt from the online repository,
+# OpenSSL from the vcpkg manifest) and for Linux (the distribution's Qt 6), runs
+# the unit tests and uploads the packages. No secrets are used.
+#
+#   Windows: Eleza-<version>-windows-x64-portable (unpack and run Eleza.exe)
+#            Eleza-<version>-windows-x64-setup    (the Inno Setup installer)
+#   Linux:   Eleza-<version>-linux-x86_64         (usr/… tarball and a .deb)
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # 6.7 kits are published as msvc2019_64; they are what MSVC 2022 links against.
+  QT_VERSION: '6.7.3'
+  QT_ARCH: win64_msvc2019_64
+
+jobs:
+  windows:
+    name: Windows x64 (MSVC 2022)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read the version
+        id: version
+        shell: pwsh
+        run: |
+          $match = Select-String -Path CMakeLists.txt -Pattern '^\s*VERSION\s+([0-9]+\.[0-9]+\.[0-9]+)' | Select-Object -First 1
+          if (-not $match) { throw 'No VERSION in CMakeLists.txt' }
+          "value=$($match.Matches[0].Groups[1].Value)" >> $env:GITHUB_OUTPUT
+
+      # Qt SVG is part of the base package in Qt 6; the add-on modules are the
+      # multimedia backend, websockets and the extra image formats (WebP stickers).
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: windows
+          target: desktop
+          arch: ${{ env.QT_ARCH }}
+          modules: qtmultimedia qtwebsockets qtimageformats
+          cache: true
+
+      - name: Set up the MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # The developer prompt points VCPKG_ROOT at the copy bundled with Visual
+      # Studio; the preset must use the full checkout of the runner image.
+      - name: Point vcpkg at the runner's checkout
+        shell: pwsh
+        run: |
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          $cache = Join-Path $env:GITHUB_WORKSPACE '.vcpkg-cache'
+          New-Item -ItemType Directory -Force $cache | Out-Null
+          "VCPKG_DEFAULT_BINARY_CACHE=$cache" >> $env:GITHUB_ENV
+
+      - name: Cache vcpkg packages (OpenSSL)
+        uses: actions/cache@v4
+        with:
+          path: .vcpkg-cache
+          key: vcpkg-x64-windows-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-x64-windows-
+
+      - name: Configure
+        run: cmake --preset windows-msvc-release
+
+      - name: Build
+        run: cmake --build --preset windows-msvc-release
+
+      # GUI tests run on the offscreen platform (set per test by CMake); the
+      # realtime interop test skips itself without the web client sources.
+      - name: Test
+        run: ctest --preset windows-msvc-release
+
+      - name: Deploy (windeployqt)
+        shell: pwsh
+        run: |
+          $build = 'build/windows-msvc-release'
+          $dist = 'dist/Eleza'
+          New-Item -ItemType Directory -Force $dist | Out-Null
+          Copy-Item "$build/Eleza/Eleza.exe" $dist
+          windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw --no-compiler-runtime "$dist/Eleza.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'windeployqt failed' }
+          # OpenSSL 3: our own crypto and Qt's TLS backend (tls/qopensslbackend.dll).
+          $ssl = "$build/vcpkg_installed/x64-windows/bin"
+          Copy-Item "$ssl/libcrypto-3-x64.dll", "$ssl/libssl-3-x64.dll" $dist
+          # The FFmpeg libraries of the multimedia backend, when windeployqt left them out.
+          Get-ChildItem "$env:QT_ROOT_DIR/bin" -Filter '*.dll' |
+            Where-Object { $_.Name -match '^(avcodec|avformat|avutil|swresample|swscale)-' } |
+            ForEach-Object { if (-not (Test-Path "$dist/$($_.Name)")) { Copy-Item $_.FullName $dist } }
+          # The C++ runtime next to the executable: the portable build needs no installer.
+          $crt = Join-Path $env:VCToolsRedistDir 'x64/Microsoft.VC143.CRT'
+          if (Test-Path $crt) { Copy-Item "$crt/*.dll" $dist }
+          foreach ($required in 'Qt6Core.dll', 'Qt6Widgets.dll', 'Qt6Multimedia.dll', 'Qt6WebSockets.dll', 'Qt6Sql.dll', 'Qt6Svg.dll', 'platforms/qwindows.dll', 'sqldrivers/qsqlite.dll', 'imageformats/qwebp.dll', 'imageformats/qsvg.dll', 'tls/qopensslbackend.dll') {
+            if (-not (Test-Path "$dist/$required")) { throw "The deployed build misses $required" }
+          }
+          Get-ChildItem -Recurse $dist | Measure-Object -Property Length -Sum | ForEach-Object { 'Deployed {0:N1} MB' -f ($_.Sum / 1MB) }
+
+      # Starts the deployed build once (the widget gallery, offscreen) to catch a
+      # missing library or plugin. Never blocks the artifacts.
+      - name: Smoke test of the deployed build
+        shell: pwsh
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $work = Join-Path $env:RUNNER_TEMP 'eleza-smoke'
+          $grab = Join-Path $env:RUNNER_TEMP 'eleza-smoke.png'
+          $process = Start-Process -FilePath 'dist/Eleza/Eleza.exe' -ArgumentList '--gallery', '--no-single-instance', "--workdir=$work", "--debug-grab=$grab" -PassThru
+          if (-not $process.WaitForExit(120000)) { $process.Kill(); throw 'Eleza.exe did not exit' }
+          if ($process.ExitCode -ne 0) { throw "Eleza.exe exited with $($process.ExitCode)" }
+          if (-not (Test-Path $grab)) { throw 'No grab was written' }
+
+      - name: Upload the portable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eleza-${{ steps.version.outputs.value }}-windows-x64-portable
+          path: dist/Eleza
+          if-no-files-found: error
+
+      - name: Build the installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) {
+            $candidate = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+            if (-not (Test-Path $candidate)) { choco install innosetup --no-progress -y }
+            $iscc = $candidate
+          }
+          & $iscc "/DAppVersion=${{ steps.version.outputs.value }}" "/DSourceDir=$PWD\dist\Eleza" "/DOutputDir=$PWD\dist\installer" packaging\windows\eleza.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup failed' }
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eleza-${{ steps.version.outputs.value }}-windows-x64-setup
+          path: dist/installer/*.exe
+          if-no-files-found: error
+
+  linux:
+    name: Linux x86_64 (Ubuntu 24.04, Qt 6 from apt)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install the build packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake ninja-build \
+            qt6-base-dev qt6-base-dev-tools qt6-svg-dev qt6-multimedia-dev qt6-websockets-dev \
+            libqt6sql6-sqlite qt6-image-formats-plugins \
+            libssl-dev libgl1-mesa-dev libxkbcommon-dev \
+            xvfb dpkg-dev
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: xvfb-run -a ctest --test-dir build --output-on-failure
+
+      - name: Smoke test (the widget gallery, offscreen)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          timeout 120 build/Eleza/Eleza --gallery --no-single-instance \
+            --workdir="$RUNNER_TEMP/eleza-smoke" --debug-grab="$RUNNER_TEMP/eleza-smoke.png"
+          test -s "$RUNNER_TEMP/eleza-smoke.png"
+
+      - name: Package (tarball and .deb)
+        id: package
+        run: |
+          version="$(sed -n 's/^CMAKE_PROJECT_VERSION:[^=]*=//p' build/CMakeCache.txt)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          mkdir -p dist
+          DESTDIR="$PWD/stage" cmake --install build --strip
+          tar -C stage -czf "dist/Eleza-$version-linux-x86_64.tar.gz" usr
+          ELEZA_BUILD_DIR="$PWD/build" cpack --config packaging/linux/cpack-deb.cmake -B build/cpack
+          cp build/cpack/*.deb dist/
+          ls -l dist
+
+      - name: Upload the Linux packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eleza-${{ steps.package.outputs.version }}-linux-x86_64
+          path: dist/*
+          if-no-files-found: error
