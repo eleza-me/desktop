@@ -57,6 +57,10 @@ QString ErrorPhrase(const QString &code) {
 		return tr::lng_intro_username_rules(tr::now);
 	} else if (code == u"conversation.limit_reached") {
 		return tr::lng_conv_youve_reached_limit_concurrent_conversations(tr::now);
+	} else if (code == u"conversation.not_open") {
+		return tr::lng_conv_conversation_no_longer_open(tr::now);
+	} else if (code == u"conversation.join_not_allowed") {
+		return tr::lng_conversation_join_not_allowed(tr::now);
 	} else if (code == u"birthday.change_limit") {
 		return tr::lng_support_error_birthday_limit(tr::now);
 	} else if (code == u"post.reactions_hidden") {

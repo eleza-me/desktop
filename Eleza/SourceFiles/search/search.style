@@ -1,0 +1,161 @@
+// «جستجو»: the search field, the browse sections and the results.
+using "ui/basic.style";
+using "ui/widgets/widgets.style";
+
+searchBg: bgCanvas;
+searchHeaderHeight: 56px;
+searchFieldPadding: margins(12px, 10px, 12px, 10px);
+searchScopeChip: PillButton(smallPillButton) {
+	activeBg: brandText;
+	activeFg: textOnBrand;
+}
+searchScopes: ChipsRow(defaultChipsRow) {
+	height: 42px;
+	padding: margins(12px, 0px, 12px, 0px);
+	chip: searchScopeChip;
+}
+searchLineFg: chromeHairline;
+searchList: ListWidget(defaultListWidget) {
+}
+searchListBottomSkip: 16px;
+searchPadding: 16px;
+
+// ---- section header
+searchHeadHeight: 48px;
+searchHeadTop: 20px;
+searchHeadFont: titleFontS;
+searchHeadFg: textPrimary;
+searchHeadLinkFont: smallSemiboldFont;
+searchHeadLinkFontOver: font(12px semibold underline);
+searchHeadLinkFg: brandText;
+
+// ---- recent
+searchRecentHeight: 44px;
+searchRecentIcon: icon {{ "clock", textTertiary, 20px }};
+searchRecentFont: font(14px);
+searchRecentFg: textPrimary;
+searchRecentSkip: 12px;
+searchRemoveIcon: icon {{ "close", textTertiary, 18px }};
+searchRemoveIconOver: icon {{ "close", textPrimary, 18px }};
+searchRemoveSize: 32px;
+searchRemoveBgOver: stateHover;
+
+// ---- trends and topics
+searchTrendHeight: 60px;
+searchTrendRankWidth: 28px;
+searchTrendRankFont: numericFontM;
+searchTrendRankFg: textTertiary;
+searchTrendSkip: 12px;
+searchTrendTitleFont: font(15px semibold);
+searchTrendTitleFg: textPrimary;
+searchTrendSubFont: smallFont;
+searchTrendSubFg: textTertiary;
+searchTrendTitleTop: 10px;
+searchTrendSubTop: 33px;
+searchTrendRisingFont: microFont;
+searchTrendRisingBg: accentLampSoft;
+searchTrendRisingFgOn: textPrimary;
+searchTrendRisingPadding: 8px;
+searchTrendRisingHeight: 20px;
+searchTrendChevron: icon {{ "chevron-right:mirror-rtl", textTertiary, 18px }};
+searchTopicHeight: 56px;
+searchTopicIcon: icon {{ "hashtag", brandText, 20px }};
+searchTopicIconBg: brandSoft;
+searchTopicIconSize: 40px;
+
+// ---- videos
+searchVideoSkip: 3px;
+searchVideoRadius: 8px;
+searchVideoBg: bgSunken;
+searchVideoPlaySize: 24px;
+searchVideoPlayShift: 6px;
+searchVideoOverFg: #ffffff24;
+searchVideoShadeFg: #0d0f0d59;
+searchVideoColumns: 3;
+
+// ---- people
+searchPersonHeight: 60px;
+searchPersonBioHeight: 78px;
+searchPersonUserpic: 40px;
+searchPersonSkip: 12px;
+searchPersonNameFont: font(15px medium);
+searchPersonNameFg: textPrimary;
+searchPersonSubFont: font(13px);
+searchPersonSubFg: textTertiary;
+searchPersonNameTop: 10px;
+searchPersonSubTop: 32px;
+searchPersonBioTop: 51px;
+searchPersonBioFg: textSecondary;
+searchVerifiedIcon: icon {{ "verified_active", brandPrimary, 16px }};
+searchLockIcon: icon {{ "lock", textTertiary, 14px }};
+searchBadgeSkip: 4px;
+
+searchFollowFont: smallSemiboldFont;
+searchFollowHeight: 30px;
+searchFollowPadding: 12px;
+searchFollowRadius: 12px;
+searchFollowTail: 4px;
+searchFollowBg: brandPrimary;
+searchFollowBgOver: brandPressed;
+searchFollowFg: textOnBrand;
+searchFollowingBorder: borderStrong;
+searchFollowingBgOver: stateHover;
+searchFollowingFg: textPrimary;
+searchRequestedBg: brandSoft;
+searchRequestedFg: brandText;
+searchFollowSkip: 8px;
+searchFollowBusyOpacity: 0.6;
+
+// ---- posts (fallback rows)
+searchPostPadding: margins(16px, 10px, 16px, 12px);
+searchPostAuthorFont: smallSemiboldFont;
+searchPostAuthorFg: textPrimary;
+searchPostTimeFont: smallFont;
+searchPostTimeFg: textTertiary;
+searchPostTextStyle: TextStyle(defaultTextStyle) {
+	lineHeight: 22px;
+}
+searchPostTextFg: textPrimary;
+searchPostTextTop: 4px;
+searchPostLines: 3;
+searchPostUserpic: 32px;
+searchPostSkip: 10px;
+
+// ---- notes, states, loader
+searchNotePadding: margins(16px, 4px, 16px, 12px);
+searchNoteStyle: TextStyle(defaultTextStyle) {
+	lineHeight: 22px;
+}
+searchNoteFg: textTertiary;
+searchStatePadding: margins(24px, 48px, 24px, 24px);
+searchStateIconSkip: 12px;
+searchStateTitleStyle: TextStyle(defaultTextStyle) {
+	font: titleFontS;
+}
+searchStateTitleFg: textPrimary;
+searchStateTextStyle: TextStyle(defaultTextStyle) {
+	lineHeight: 24px;
+}
+searchStateTextFg: textSecondary;
+searchStateTextSkip: 6px;
+searchStateButtonSkip: 18px;
+searchStateButtonFont: semiboldFont;
+searchStateButtonHeight: 36px;
+searchStateButtonPadding: 18px;
+searchStateButtonBg: brandSoft;
+searchStateButtonFg: brandText;
+searchStateMaxWidth: 320px;
+searchStateSearchIcon: icon {{ "search", textTertiary, 48px }};
+searchStateErrorIcon: icon {{ "warning", textTertiary, 48px }};
+searchStateConversationIcon: icon {{ "conversation", textTertiary, 48px }};
+searchStateDiscoverIcon: icon {{ "discover", textTertiary, 48px }};
+searchLoaderHeight: 48px;
+searchLoaderSize: 22px;
+
+searchMenuOpen: icon {{ "external", menuIconFg, 20px }};
+searchMenuProfile: icon {{ "me", menuIconFg, 20px }};
+searchMenuFollow: icon {{ "follow", menuIconFg, 20px }};
+searchMenuUnfollow: icon {{ "following", menuIconFg, 20px }};
+searchMenuHide: icon {{ "eye-off", menuIconFg, 20px }};
+searchMenuRemove: icon {{ "close", menuIconFg, 20px }};
+searchMenuConversation: icon {{ "conversation", menuIconFg, 20px }};

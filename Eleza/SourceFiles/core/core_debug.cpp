@@ -270,16 +270,21 @@ void DebugActions::mouse(
 
 void DebugActions::wheel(QPoint position, int dy) {
 	const auto global = GlobalOrigin(_window) + position;
-	const auto receiver = QApplication::widgetAt(global);
-	if (!receiver) {
-		return;
+	// A point outside of the (offscreen) screen has no widget for Qt: ask the
+	// window itself then.
+	auto under = QApplication::widgetAt(global);
+	if (!under) {
+		const auto child = _window->childAt(position);
+		under = child ? child : static_cast<QWidget*>(_window);
 	}
-	// Moving the content down by dy pixels = a negative wheel delta.
-	// Qt does not propagate synthesized wheel events to the parents the way it
-	// does with real ones: walk up until somebody takes it (a scroll area).
-	for (auto widget = receiver; widget; widget = widget->parentWidget()) {
+	// Qt does not propagate a synthesized wheel event to the parents by
+	// itself: walk up from the widget under the point until one takes it.
+	for (auto receiver = under
+		; receiver
+		; receiver = receiver->isWindow() ? nullptr : receiver->parentWidget()) {
+		// Moving the content down by dy pixels = a negative wheel delta.
 		auto event = QWheelEvent(
-			QPointF(widget->mapFromGlobal(global)),
+			QPointF(receiver->mapFromGlobal(global)),
 			QPointF(global),
 			QPoint(0, -dy),
 			QPoint(0, -dy),
@@ -288,8 +293,8 @@ void DebugActions::wheel(QPoint position, int dy) {
 			Qt::ScrollUpdate,
 			false);
 		event.ignore();
-		QCoreApplication::sendEvent(widget, &event);
-		if (event.isAccepted() || widget->isWindow()) {
+		QCoreApplication::sendEvent(receiver, &event);
+		if (event.isAccepted()) {
 			break;
 		}
 	}

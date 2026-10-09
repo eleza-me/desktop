@@ -102,6 +102,15 @@ void SessionController::setTabBadge(Tab tab, int count, bool muted) {
 	}
 }
 
+void SessionController::requestSideSubTab(Tab tab, const QString &id) {
+	_requestedSideSubTabs[int(tab)] = id;
+	Q_EMIT sideSubTabRequested(tab, id);
+}
+
+QString SessionController::takeRequestedSideSubTab(Tab tab) {
+	return std::exchange(_requestedSideSubTabs[int(tab)], QString());
+}
+
 void SessionController::showMainSection(
 		SectionFactory factory,
 		SectionShow options) {

@@ -1,0 +1,337 @@
+// The anonymous talker / listener layer: open topics, the new / join boxes, the radar.
+using "ui/basic.style";
+using "ui/widgets/widgets.style";
+using "ui/layers/layers.style";
+
+// ---- the topics list
+conversationListBg: bgCanvas;
+conversationComposePadding: margins(12px, 10px, 12px, 4px);
+conversationComposeHeight: 40px;
+conversationComposeRadius: 20px;
+conversationComposeBg: inputBgSunken;
+conversationComposeBgOver: bgSunken;
+conversationComposeFg: textTertiary;
+conversationComposeFont: font(14px);
+conversationComposeIcon: icon {{ "plus", brandPrimary, 20px }};
+conversationComposeIconLeft: 12px;
+conversationComposeIconSkip: 8px;
+// The selected chip stays visible on the dark theme too.
+conversationChip: PillButton(defaultPillButton) {
+	activeBg: brandText;
+	activeFg: textOnBrand;
+}
+conversationChips: ChipsRow(defaultChipsRow) {
+	height: 46px;
+	padding: margins(12px, 0px, 12px, 0px);
+	chip: conversationChip;
+}
+conversationListTopSkip: 2px;
+conversationListBottomSkip: 16px;
+conversationListMaxWidth: 640px;
+conversationList: ListWidget(defaultListWidget) {
+	bgOver: transparent;
+	bgActive: transparent;
+	ripple: emptyRipple;
+}
+conversationTailHeight: 48px;
+conversationTailSpinner: 22px;
+
+// ---- a topic card
+conversationCardMargin: margins(12px, 5px, 12px, 5px);
+conversationCardPadding: margins(14px, 12px, 14px, 12px);
+conversationCardRadius: 18px;
+conversationCardTail: 4px;
+conversationCardBg: bgSurface;
+conversationCardBgOver: bgRaised;
+conversationCardBorder: borderSubtle;
+conversationCardBorderOver: borderStrong;
+conversationCardAnonBg: anonSurface;
+conversationCardOwnBg: brandSoft;
+conversationCardOwnBorder: brandPrimary;
+conversationCardSkip: 8px;
+
+conversationRingSize: 20px;
+conversationRingStroke: 2.5;
+conversationRingTrack: borderStrong;
+conversationRingFg: brandPrimary;
+conversationRingFinalFg: accentLamp;
+conversationRemainingFont: smallFont;
+conversationRemainingFg: textTertiary;
+
+conversationTagFont: smallSemiboldFont;
+conversationTagHeight: 24px;
+conversationTagPadding: 10px;
+conversationTagRadius: 10px;
+conversationTagFg: textSecondary;
+conversationTagBorder: borderStrong;
+
+conversationTopicStyle: TextStyle(defaultTextStyle) {
+	font: topicFontS;
+	lineHeight: 28px;
+}
+conversationTopicFg: textPrimary;
+conversationTopicAnonFg: anonContent;
+conversationTopicLines: 3;
+
+conversationSpeakerSize: 32px;
+conversationSpeakerHeight: 36px;
+conversationSpeakerNameFont: smallSemiboldFont;
+conversationSpeakerNameFg: textPrimary;
+conversationSpeakerNameMax: 132px;
+conversationSpeakerNameMin: 48px;
+
+conversationPillFont: microFont;
+conversationPillHeight: 22px;
+conversationPillPadding: 9px;
+conversationPillRadius: 11px;
+conversationPillDot: 7px;
+conversationPillDotSkip: 6px;
+conversationPillBg: accentLampSoft;
+conversationPillFg: textPrimary;
+conversationPillDotFg: accentLamp;
+conversationPillOwnBg: brandPrimary;
+conversationPillOwnFg: textOnBrand;
+
+conversationJoinFont: smallSemiboldFont;
+conversationJoinHeight: 34px;
+conversationJoinPadding: 14px;
+conversationJoinRadius: 13px;
+conversationJoinBg: brandPrimary;
+conversationJoinBgOver: brandPressed;
+conversationJoinFg: textOnBrand;
+conversationJoinOwnBg: bgSurface;
+conversationJoinOwnBgOver: bgSunken;
+conversationJoinOwnFg: brandText;
+conversationJoinIcon: icon {{ "listener", textOnBrand, 16px }};
+conversationJoinIconSkip: 6px;
+
+conversationSkeletonLine: 12px;
+conversationSkeletonTitle: 20px;
+conversationSkeletonRadius: 6px;
+conversationSkeletonHeight: 132px;
+
+conversationEmptyIcon: icon {{ "conversation", textTertiary, 48px }};
+conversationErrorIcon: icon {{ "warning", textTertiary, 48px }};
+
+conversationMenuHide: icon {{ "eye-off", menuIconFg, 20px }};
+conversationMenuOpen: icon {{ "conversation", menuIconFg, 20px }};
+conversationMenuProfile: icon {{ "me", menuIconFg, 20px }};
+conversationMenuEnd: icon {{ "end-conversation", menuIconFg, 20px }};
+
+// ---- boxes
+conversationBoxWidth: 440px;
+conversationBoxPadding: margins(24px, 4px, 24px, 8px);
+conversationBoxSectionSkip: 18px;
+conversationBoxLabelSkip: 8px;
+conversationFormLabel: FlatLabel(defaultFlatLabel) {
+	style: semiboldTextStyle;
+	textFg: textSecondary;
+}
+conversationTopicFieldFont: font(19px bold "display");
+conversationTopicField: InputField(defaultInputField) {
+	font: conversationTopicFieldFont;
+	placeholderFont: conversationTopicFieldFont;
+	textMargins: margins(16px, 12px, 16px, 12px);
+	radius: 18px;
+	heightMin: 76px;
+	heightMax: 160px;
+}
+conversationHint: FlatLabel(defaultFlatLabel) {
+	style: smallTextStyle;
+	textFg: textTertiary;
+}
+conversationCounterFont: smallFont;
+conversationCounterFg: textTertiary;
+conversationCounterFgError: statusError;
+conversationHintSkip: 6px;
+conversationError: FlatLabel(defaultFlatLabel) {
+	style: smallTextStyle;
+	textFg: statusError;
+}
+conversationNote: FlatLabel(defaultFlatLabel) {
+	style: smallTextStyle;
+	textFg: textSecondary;
+}
+conversationBody: FlatLabel(defaultFlatLabel) {
+	textFg: textPrimary;
+}
+conversationFlowSkip: 8px;
+conversationFlowChip: PillButton(conversationChip) {
+	height: 32px;
+}
+
+conversationIdentityHeight: 56px;
+conversationIdentityPadding: 12px;
+conversationIdentitySkip: 8px;
+conversationIdentityRadius: 16px;
+conversationIdentityBg: bgSurface;
+conversationIdentityAnonBg: anonSurface;
+conversationIdentityAnonFg: anonContent;
+conversationIdentityFg: textPrimary;
+conversationIdentityBorder: borderSubtle;
+conversationIdentityBorderOver: borderStrong;
+conversationIdentitySelected: brandPrimary;
+conversationIdentityFont: smallSemiboldFont;
+conversationIdentityUserpic: 32px;
+conversationIdentityRipple: RippleAnimation(defaultRipple) {
+	color: rippleFg;
+}
+
+conversationJoinTopicStyle: TextStyle(defaultTextStyle) {
+	font: topicFontM;
+	lineHeight: 34px;
+}
+conversationJoinTopic: FlatLabel(defaultFlatLabel) {
+	style: conversationJoinTopicStyle;
+}
+conversationJoinTopHeight: 32px;
+conversationJoinRing: 22px;
+conversationJoinSpeakerSize: 40px;
+conversationJoinSpeakerSkip: 12px;
+conversationJoinSpeakerHeight: 44px;
+conversationJoinSpeakerNameFont: semiboldFont;
+conversationJoinSpeakerRoleFont: smallFont;
+conversationJoinSpeakerRoleIcon: icon {{ "speaker", textTertiary, 14px }};
+conversationJoinMinHeight: 200px;
+conversationJoinListenIcon: icon {{ "listener", textOnBrand, 18px }};
+conversationCreateIcon: icon {{ "conversation", textOnBrand, 18px }};
+conversationStateIcon: icon {{ "conversation", textTertiary, 48px }};
+conversationSpinnerSize: 28px;
+
+conversationReportField: InputField(defaultInputField) {
+	heightMin: 64px;
+	heightMax: 120px;
+}
+
+// ---- the radar (always on the night surface)
+conversationRadarBg: bgNight;
+conversationRadarFg: textOnNight;
+conversationRadarMint: brandMint;
+conversationRadarBack: IconButton(defaultIconButton) {
+	icon: icon {{ "back:mirror-ltr", textOnNight }};
+	iconOver: icon {{ "back:mirror-ltr", staticWhite }};
+	bgOver: onNightTint;
+}
+conversationRadarTitleStyle: TextStyle(defaultTextStyle) {
+	font: titleFontS;
+}
+conversationRadarBar: TopBar(defaultTopBar) {
+	bg: bgNight;
+	lineFg: transparent;
+	back: conversationRadarBack;
+	titleStyle: conversationRadarTitleStyle;
+	titleFg: textOnNight;
+	subtitleFg: brandMint;
+	subtitleFgAccent: brandMint;
+}
+conversationRadarWidth: 440px;
+conversationRadarPadding: 20px;
+conversationRadarStage: 340px;
+conversationRadarStageMin: 180px;
+conversationRadarSkip: 20px;
+conversationRadarRingFg: #eefbf22e;
+conversationRadarRingDashFg: #eefbf224;
+conversationRadarSweepFg: #7fdda559;
+conversationRadarSweepEnd: #7fdda500;
+conversationRadarGlowFg: #7fdda5b3;
+conversationRadarPupil: 76px;
+conversationRadarPupilCore: 32px;
+conversationRadarGlint: 9px;
+conversationRadarPersonSize: 32px;
+conversationRadarPersonBorder: #eefbf240;
+conversationRadarPairSize: 88px;
+conversationRadarPairSkip: 12px;
+conversationRadarPairDot: 18px;
+conversationRadarStatusTitleStyle: TextStyle(defaultTextStyle) {
+	font: titleFontM;
+}
+conversationRadarStatusTitle: FlatLabel(defaultFlatLabel) {
+	style: conversationRadarStatusTitleStyle;
+	textFg: textOnNight;
+	align: align(top);
+}
+conversationRadarMatchedTitleStyle: TextStyle(defaultTextStyle) {
+	font: displayFontM;
+}
+conversationRadarMatchedTitle: FlatLabel(defaultFlatLabel) {
+	style: conversationRadarMatchedTitleStyle;
+	textFg: textOnNight;
+	align: align(top);
+}
+conversationRadarMintLabel: FlatLabel(defaultFlatLabel) {
+	style: smallTextStyle;
+	textFg: brandMint;
+	align: align(top);
+}
+conversationRadarMintBody: FlatLabel(defaultFlatLabel) {
+	textFg: brandMint;
+	align: align(top);
+}
+conversationRadarDimFg: #eefbf2b3;
+conversationRadarDimLabel: FlatLabel(defaultFlatLabel) {
+	style: smallTextStyle;
+	textFg: conversationRadarDimFg;
+	align: align(top);
+}
+conversationRadarStatusSkip: 6px;
+conversationRadarPanelPadding: margins(16px, 14px, 16px, 14px);
+conversationRadarPanelRadius: 20px;
+conversationRadarPanelBg: onNightTint;
+conversationRadarPanelBorder: #ffffff24;
+conversationRadarCapsuleHeight: 24px;
+conversationRadarCapsulePadding: 10px;
+conversationRadarCapsuleFont: smallSemiboldFont;
+conversationRadarCapsuleBg: onNightTint;
+conversationRadarCapsuleFg: textOnNight;
+conversationRadarLampBg: #fcefd6;
+conversationRadarLampFg: #06412c;
+conversationRadarLampIcon: icon {{ "timer", #e09a2b, 14px }};
+conversationRadarCapsuleSkip: 8px;
+conversationRadarTopicStyle: TextStyle(defaultTextStyle) {
+	font: topicFontM;
+	lineHeight: 34px;
+}
+conversationRadarTopicSkip: 8px;
+conversationRadarNightRipple: RippleAnimation(defaultRipple) {
+	color: #ffffff24;
+}
+conversationRadarMintRipple: RippleAnimation(defaultRipple) {
+	color: #06412c2e;
+}
+conversationRadarNightButton: RoundButton(defaultRoundButton) {
+	textFg: textOnNight;
+	textFgOver: textOnNight;
+	textBg: onNightTint;
+	textBgOver: #ffffff29;
+	height: 46px;
+	padding: 16px;
+	radius: 23px;
+	ripple: conversationRadarNightRipple;
+}
+conversationRadarMintButton: RoundButton(conversationRadarNightButton) {
+	textFg: bgNight;
+	textFgOver: bgNight;
+	textBg: brandMint;
+	textBgOver: staticWhite;
+	ripple: conversationRadarMintRipple;
+}
+conversationRadarBigButton: RoundButton(conversationRadarMintButton) {
+	height: 52px;
+	radius: 26px;
+}
+conversationRadarEliIcon: icon {{ "eli", bgNight, 20px }};
+conversationRadarChatIcon: icon {{ "conversation", bgNight, 22px }};
+conversationRadarEnd: LinkButton(defaultLinkButton) {
+	color: #ee8a82;
+	overColor: #ee8a82;
+	font: smallSemiboldFont;
+	overFont: font(12px semibold underline);
+}
+conversationRadarButtonsSkip: 10px;
+conversationRadarEndSkip: 14px;
+conversationRadarBottomSkip: 20px;
+conversationRadarSpinner: 28px;
+conversationRadarRetry: RoundButton(conversationRadarNightButton) {
+	height: 36px;
+	radius: 18px;
+}
