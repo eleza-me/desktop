@@ -1,0 +1,649 @@
+// «الی»: the feed, post cards, post detail, compose, notifications, topic pages
+// and the «پرده» video viewer.
+using "ui/basic.style";
+using "ui/widgets/widgets.style";
+using "ui/layers/layers.style";
+
+// ---- post card
+eliCardPadding: margins(16px, 12px, 12px, 4px);
+eliCardUserpic: 40px;
+eliCardUserpicSkip: 12px;
+eliCardLineFg: borderSubtle;
+eliCardOverBg: stateHover;
+eliCardSelectedFg: brandPrimary;
+eliCardSelectedWidth: 3px;
+eliCardHighlightBg: brandSoft;
+eliCardMaxWidth: 720px;
+
+eliContextHeight: 22px;
+eliContextFont: smallFont;
+eliContextFg: textTertiary;
+eliContextIconRepost: icon {{ "repost", textTertiary, 14px }};
+eliContextIconPin: icon {{ "pin", textTertiary, 14px }};
+eliContextIconFollow: icon {{ "following", textTertiary, 14px }};
+eliContextIconSkip: 6px;
+
+eliHeaderHeight: 22px;
+eliNameFont: semiboldFont;
+eliNameFg: textPrimary;
+eliHandleFont: normalFont;
+eliMetaFg: textTertiary;
+eliHeaderSkip: 4px;
+eliVerifiedIcon: icon {{ "verified_active", brandPrimary, 16px }};
+eliMoreSize: 30px;
+eliMoreIcon: icon {{ "more", textTertiary, 20px }};
+eliMoreBgOver: stateHover;
+
+eliReplyingFont: smallFont;
+eliReplyingHeight: 20px;
+
+eliTextStyle: TextStyle(defaultTextStyle) {
+	font: font(15px);
+	lineHeight: 24px;
+}
+eliTextFg: textPrimary;
+eliTextClampLines: 8;
+eliTextClampMinHidden: 3;
+eliShowMoreFont: font(14px semibold);
+eliShowMoreHeight: 26px;
+eliShowMoreFg: brandText;
+eliDeletedFg: textTertiary;
+eliBlockSkip: 8px;
+
+// Media tiles.
+eliMediaRadius: 14px;
+eliMediaSkip: 2px;
+eliMediaMaxHeight: 420px;
+eliMediaMaxHeightDetail: 560px;
+eliMediaBg: bgSunken;
+eliMediaBorderFg: chromeHairline;
+eliMediaPlaySize: 52px;
+eliMediaPlayBg: #0d0f0d99;
+eliMediaBadgeFont: font(12px medium);
+eliMediaBadgeFg: staticWhite;
+eliMediaBadgeBg: #0d0f0d99;
+eliMediaBadgePadding: margins(7px, 2px, 7px, 3px);
+eliMediaBadgeSkip: 8px;
+eliMediaMoreFont: font(22px bold);
+eliMediaMoreBg: #0d0f0d80;
+eliVideoNoteSize: 220px;
+
+// Poll.
+eliPollOptionHeight: 40px;
+eliPollOptionSkip: 8px;
+eliPollOptionRadius: 12px;
+eliPollOptionPadding: 14px;
+eliPollBorderFg: borderStrong;
+eliPollBorderFgOver: brandPrimary;
+eliPollBarBg: stateSelected;
+eliPollBarBgMine: brandSoft;
+eliPollFont: font(14px);
+eliPollFontMine: font(14px semibold);
+eliPollFg: textPrimary;
+eliPollPercentFont: smallSemiboldFont;
+eliPollCheckIcon: icon {{ "check", brandPrimary, 16px }};
+eliPollFooterHeight: 24px;
+eliPollFooterFont: smallFont;
+eliPollFooterFg: textTertiary;
+eliPollRetractFg: brandText;
+
+// Quote.
+eliQuoteRadius: 14px;
+eliQuotePadding: margins(12px, 10px, 12px, 12px);
+eliQuoteBorderFg: borderStrong;
+eliQuoteBgOver: stateHover;
+eliQuoteUserpic: 20px;
+eliQuoteHeaderHeight: 20px;
+eliQuoteNameFont: smallSemiboldFont;
+eliQuoteMetaFont: smallFont;
+eliQuoteTextStyle: TextStyle(defaultTextStyle) {
+	font: font(14px);
+	lineHeight: 22px;
+}
+eliQuoteTextLines: 3;
+eliQuoteMediaMaxHeight: 200px;
+eliQuoteMediaSkip: 8px;
+
+// Conversation invite.
+eliInviteRadius: 16px;
+eliInvitePadding: margins(16px, 14px, 16px, 14px);
+eliInviteBg: bgNight;
+eliInviteFg: textOnNight;
+eliInviteIcon: icon {{ "conversation", textOnNight, 18px }};
+eliInvitePillFont: smallSemiboldFont;
+eliInvitePillBg: onNightTint;
+eliInvitePillHeight: 22px;
+eliInvitePillPadding: 9px;
+eliInviteLeftFont: smallFont;
+eliInviteTopHeight: 24px;
+eliInviteTopicStyle: TextStyle(defaultTextStyle) {
+	font: topicFontS;
+	lineHeight: 28px;
+	linkFg: brandMint;
+}
+eliInviteTopicLines: 4;
+eliInviteTopicSkip: 8px;
+eliInviteButtonHeight: 38px;
+eliInviteButtonSkip: 12px;
+eliInviteButtonBg: brandMint;
+eliInviteButtonBgOver: staticWhite;
+eliInviteButtonFg: #06412c;
+eliInviteButtonFont: semiboldFont;
+
+// Audio clip.
+eliAudioHeight: 68px;
+eliAudioRadius: 14px;
+eliAudioBg: bgSunken;
+eliAudioPadding: 10px;
+eliAudioCover: 48px;
+eliAudioCoverRadius: 10px;
+eliAudioCoverBg: brandSoft;
+eliAudioCoverIcon: icon {{ "music", brandText, 24px }};
+eliAudioTitleFont: mediumFont;
+eliAudioSubFont: smallFont;
+eliAudioPlaySize: 40px;
+eliAudioPlayBg: brandPrimary;
+eliAudioPlayBgOver: brandPressed;
+eliAudioPauseIcon: icon {{ "pause", textOnBrand, 20px }};
+eliAudioProgressHeight: 3px;
+eliAudioProgressFg: brandPrimary;
+
+// Thread.
+eliThreadCtaHeight: 40px;
+eliThreadCtaRadius: 12px;
+eliThreadCtaBg: brandSoft;
+eliThreadCtaBgOver: brandSoft;
+eliThreadCtaFg: brandText;
+eliThreadCtaFont: semiboldFont;
+eliThreadCtaMetaFont: smallFont;
+eliThreadCtaIcon: icon {{ "thread", brandText, 18px }};
+eliThreadCtaPadding: 12px;
+eliThreadPartSkip: 14px;
+eliThreadNumberSize: 22px;
+eliThreadNumberFont: smallSemiboldFont;
+eliThreadNumberBg: brandSoft;
+eliThreadNumberFg: brandText;
+eliThreadLineFg: borderStrong;
+eliThreadLineWidth: 2px;
+
+// The action row.
+eliActionsHeight: 36px;
+eliActionsSkip: 2px;
+eliActionSlotMin: 44px;
+eliActionSlotMax: 76px;
+eliActionCircle: 32px;
+eliActionCountSkip: 2px;
+eliActionCountFont: font(13px);
+eliActionFg: textTertiary;
+eliActionFgOver: brandPrimary;
+eliActionBgOver: rippleBrandFg;
+eliActionLikeFg: brandPrimary;
+eliActionLikeBgOver: rippleBrandFg;
+eliActionDislikeFg: textPrimary;
+eliActionDislikeBgOver: stateSelected;
+eliActionRepostFg: brandPrimary;
+eliActionBookmarkFg: brandPrimary;
+eliActionViewsMinWidth: 330px;
+eliIconReply: icon {{ "reply", textTertiary, 20px }};
+eliIconRepost: icon {{ "repost", textTertiary, 20px }};
+eliIconLike: icon {{ "like", textTertiary, 20px }};
+eliIconLikeActive: icon {{ "like_active", brandPrimary, 20px }};
+eliIconDislike: icon {{ "dislike", textTertiary, 20px }};
+eliIconDislikeActive: icon {{ "dislike_active", textPrimary, 20px }};
+eliIconBookmark: icon {{ "bookmark", textTertiary, 20px }};
+eliIconBookmarkActive: icon {{ "bookmark_active", brandPrimary, 20px }};
+eliIconShare: icon {{ "share", textTertiary, 20px }};
+eliIconViews: icon {{ "eye", textTertiary, 18px }};
+eliHeartBurstIcon: icon {{ "like_active", brandPrimary, 56px }};
+eliHeartBurstDuration: 650ms;
+
+// Replies.
+eliReplyUserpicNested: 28px;
+eliReplyIndent: 52px;
+eliReplyingToFg: textTertiary;
+eliReplyActionsHeight: 32px;
+eliReplyMoreRowHeight: 40px;
+eliReplyMoreFont: font(14px semibold);
+eliReplyMoreFg: brandText;
+
+// The detail (opened) card.
+eliDetailPadding: margins(20px, 16px, 20px, 0px);
+eliDetailUserpic: 48px;
+eliDetailNameFont: titleFontS;
+eliDetailHandleFont: normalFont;
+eliDetailTextStyle: TextStyle(defaultTextStyle) {
+	font: font(17px);
+	lineHeight: 28px;
+}
+eliDetailMetaHeight: 44px;
+eliDetailMetaFont: font(13px);
+eliDetailStatsHeight: 46px;
+eliDetailStatsSkip: 18px;
+eliDetailStatCountFont: font(14px semibold);
+eliDetailStatLabelFont: font(14px);
+eliDetailStatLabelFg: textSecondary;
+eliDetailActionsHeight: 48px;
+eliDetailFollowHeight: 32px;
+eliDetailFollowPadding: 16px;
+eliDetailFollowFont: font(13px semibold);
+eliDetailFollowBg: textPrimary;
+eliDetailFollowFg: bgCanvas;
+eliDetailFollowBorderFg: borderStrong;
+eliIconReplyL: icon {{ "reply", textTertiary, 22px }};
+eliIconRepostL: icon {{ "repost", textTertiary, 22px }};
+eliIconLikeL: icon {{ "like", textTertiary, 22px }};
+eliIconLikeActiveL: icon {{ "like_active", brandPrimary, 22px }};
+eliIconDislikeL: icon {{ "dislike", textTertiary, 22px }};
+eliIconDislikeActiveL: icon {{ "dislike_active", textPrimary, 22px }};
+eliIconBookmarkL: icon {{ "bookmark", textTertiary, 22px }};
+eliIconBookmarkActiveL: icon {{ "bookmark_active", brandPrimary, 22px }};
+eliIconShareL: icon {{ "share", textTertiary, 22px }};
+
+// ---- lists
+eliListSkeletonUserpic: 40px;
+eliListSkeletonHeight: 128px;
+eliListTailHeight: 72px;
+eliListTailFont: normalFont;
+eliListTailFg: textSecondary;
+eliListBottomSkip: 48px;
+eliListEndFg: borderStrong;
+
+// ---- menu icons
+eliMenuIconReply: icon {{ "reply", menuIconFg, 20px }};
+eliMenuIconLike: icon {{ "like", menuIconFg, 20px }};
+eliMenuIconRepost: icon {{ "repost", menuIconFg, 20px }};
+eliMenuIconQuote: icon {{ "quote", menuIconFg, 20px }};
+eliMenuIconPolicy: icon {{ "lock", menuIconFg, 20px }};
+eliMenuIconNotInterested: icon {{ "dislike", menuIconFg, 20px }};
+eliMenuIconSend: icon {{ "send:mirror-ltr", menuIconFg, 20px }};
+eliMenuIconOpen: icon {{ "external", menuIconFg, 20px }};
+eliMenuIconPeople: icon {{ "me", menuIconFg, 20px }};
+eliMenuIconEye: icon {{ "eye", menuIconFg, 20px }};
+eliMenuIconEyeOff: icon {{ "eye-off", menuIconFg, 20px }};
+eliMenuIconVolume: icon {{ "volume", menuIconFg, 20px }};
+
+// ---- home (the feed column)
+eliTopBarRefresh: IconButton(defaultIconButton) {
+	icon: icon {{ "refresh", iconButtonFg }};
+	iconOver: icon {{ "refresh", iconButtonFgOver }};
+}
+eliHomeTabs: TabBar(defaultTabBar) {
+	bg: bgCanvas;
+}
+eliBellBadgeShift: point(4px, 6px);
+eliLoadingLineHeight: 2px;
+eliLoadingLineFg: brandPrimary;
+
+eliEntryHeight: 64px;
+eliEntryFont: font(15px);
+eliEntryFg: textTertiary;
+eliEntryBgOver: stateHover;
+eliEntryIconImage: icon {{ "image", brandPrimary, 22px }};
+eliEntryIconPoll: icon {{ "poll", brandPrimary, 22px }};
+eliEntryIconSkip: 10px;
+
+eliPillHeight: 36px;
+eliPillTop: 12px;
+eliPillPadding: 14px;
+eliPillFont: font(13px semibold);
+eliPillBg: brandPrimary;
+eliPillBgOver: brandPressed;
+eliPillFg: textOnBrand;
+eliPillFace: 24px;
+eliPillFaceOverlap: 8px;
+eliPillFaceBorder: 2px;
+eliPillSkip: 8px;
+eliPillArrow: icon {{ "arrow-up", textOnBrand, 16px }};
+eliPillShadow: Shadow(defaultShadow) {
+}
+eliPillDuration: 220ms;
+
+eliEmptyIconFollow: icon {{ "follow", textTertiary, 48px }};
+eliEmptyIconThread: icon {{ "thread", textTertiary, 48px }};
+eliEmptyIconMusic: icon {{ "music", textTertiary, 48px }};
+eliEmptyIconRequest: icon {{ "request", textTertiary, 48px }};
+eliEmptyIconDiscover: icon {{ "discover", textTertiary, 48px }};
+eliEmptyIconVideo: icon {{ "video", textTertiary, 48px }};
+
+// ---- post detail
+eliRepliesHeaderHeight: 48px;
+eliRepliesHeaderFont: titleFontS;
+eliRepliesHeaderFg: textPrimary;
+eliRepliesSortFont: font(13px semibold);
+eliRepliesSortFg: brandText;
+eliRepliesSortIcon: icon {{ "chevron-down", brandText, 16px }};
+eliRepliesTailHeight: 96px;
+eliRepliesEmptyFont: normalFont;
+eliRepliesEmptyFg: textTertiary;
+
+eliDockPadding: margins(12px, 8px, 12px, 10px);
+eliDockBg: bgCanvas;
+eliDockLineFg: chromeHairline;
+eliDockFieldBg: inputBgSunken;
+eliDockFieldRadius: 20px;
+eliDockField: InputField(defaultInputField) {
+	textBg: transparent;
+	textMargins: margins(14px, 9px, 6px, 9px);
+	font: font(15px);
+	placeholderFont: font(15px);
+	border: 0.;
+	borderActive: 0.;
+	radius: 0px;
+	heightMin: 40px;
+	heightMax: 140px;
+}
+eliDockSend: IconButton(defaultIconButton) {
+	icon: icon {{ "send:mirror-ltr", brandPrimary }};
+	iconOver: icon {{ "send:mirror-ltr", brandPressed }};
+}
+eliDockSendDisabled: icon {{ "send:mirror-ltr", textTertiary }};
+eliDockExpand: IconButton(defaultIconButton) {
+	icon: icon {{ "create", iconButtonFg, 20px }};
+	iconOver: icon {{ "create", iconButtonFgOver, 20px }};
+}
+eliDockTargetHeight: 28px;
+eliDockTargetFont: smallFont;
+eliDockTargetFg: textSecondary;
+eliDockTargetClose: IconButton(smallCloseButton) {
+}
+eliDockClosedHeight: 52px;
+eliDockClosedFont: semiboldFont;
+eliDockClosedFg: textTertiary;
+
+// ---- thread reader
+eliThreadWidth: 680px;
+eliThreadPadding: margins(24px, 20px, 24px, 32px);
+eliThreadHeaderHeight: 56px;
+eliThreadNameFont: semiboldFont;
+eliThreadMetaFont: smallFont;
+eliThreadPartNumberFont: font(13px semibold);
+eliThreadPartNumberFg: brandText;
+eliThreadPartNumberHeight: 28px;
+eliThreadPartSkipLarge: 22px;
+eliThreadReaderStyle: TextStyle(defaultTextStyle) {
+	font: font(17px);
+	lineHeight: 30px;
+}
+eliThreadReaderLabel: FlatLabel(defaultFlatLabel) {
+	style: eliThreadReaderStyle;
+	textFg: textPrimary;
+}
+eliThreadProgressHeight: 3px;
+eliThreadProgressFg: brandPrimary;
+eliThreadFooterSkip: 28px;
+
+// ---- compose
+eliComposeWidth: 560px;
+eliComposeMinHeight: 220px;
+eliComposeMaxHeight: 540px;
+eliComposePadding: margins(20px, 8px, 20px, 8px);
+eliComposeUserpicTop: 4px;
+eliComposeField: InputField(defaultInputField) {
+	textBg: transparent;
+	textMargins: margins(0px, 8px, 0px, 8px);
+	font: font(17px);
+	placeholderFont: font(17px);
+	border: 0.;
+	borderActive: 0.;
+	radius: 0px;
+	heightMin: 72px;
+	heightMax: 2000px;
+}
+eliComposePartField: InputField(eliComposeField) {
+	font: font(16px);
+	placeholderFont: font(16px);
+	heightMin: 48px;
+}
+eliComposeMentionFg: brandText;
+eliComposeContextSkip: 10px;
+eliComposeNoteFont: smallFont;
+eliComposeNoteFg: textTertiary;
+eliComposeStatusFont: smallFont;
+eliComposeStatusFg: textSecondary;
+eliComposeStatusHeight: 26px;
+
+eliComposeToolbarHeight: 52px;
+eliComposeToolbarPadding: margins(12px, 0px, 20px, 0px);
+eliComposeToolImage: IconButton(defaultIconButton) {
+	icon: icon {{ "image", brandPrimary }};
+	iconOver: icon {{ "image", brandPressed }};
+}
+eliComposeToolPoll: IconButton(defaultIconButton) {
+	icon: icon {{ "poll", brandPrimary }};
+	iconOver: icon {{ "poll", brandPressed }};
+}
+eliComposeToolThread: IconButton(defaultIconButton) {
+	icon: icon {{ "thread", brandPrimary }};
+	iconOver: icon {{ "thread", brandPressed }};
+}
+eliComposeToolDisabledFg: borderStrong;
+eliComposePolicyButton: RoundButton(defaultFlatButton) {
+	height: 30px;
+	padding: 10px;
+	radius: 15px;
+	font: smallSemiboldFont;
+	iconSkip: 6px;
+}
+eliComposePolicyIconGlobe: icon {{ "globe", brandText, 16px }};
+eliComposePolicyIconLock: icon {{ "lock", brandText, 16px }};
+eliComposeSplitButton: RoundButton(smallLightButton) {
+}
+eliComposeRingSize: 26px;
+eliComposeRingThickness: 2.5;
+eliComposeRingBg: borderSubtle;
+eliComposeRingFg: brandPrimary;
+eliComposeRingFgOver: statusError;
+eliComposeRingFont: font(11px semibold);
+
+eliComposeTile: 104px;
+eliComposeTileSkip: 8px;
+eliComposeTileRadius: 12px;
+eliComposeTileBg: bgSunken;
+eliComposeTileClose: 24px;
+eliComposeTileCloseBg: #0d0f0db3;
+eliComposeTileCloseIcon: icon {{ "close", staticWhite, 14px }};
+eliComposeTileAltFont: font(10px bold);
+eliComposeTileAltBg: #0d0f0db3;
+eliComposeTileAltBgOn: brandPrimary;
+eliComposeTileVideoIcon: icon {{ "play_active", staticWhite, 22px }};
+eliComposeTileDim: #0d0f0d8c;
+eliComposeTileNameFont: font(10px medium);
+
+eliComposePollSkip: 8px;
+eliComposePollField: InputField(defaultInputField) {
+	heightMin: 40px;
+	textMargins: margins(12px, 8px, 12px, 8px);
+	font: normalFont;
+	placeholderFont: normalFont;
+}
+eliComposePollPadding: margins(52px, 4px, 0px, 8px);
+eliComposePollRemove: IconButton(smallCloseButton) {
+}
+eliComposeChip: PillButton(smallPillButton) {
+}
+eliComposePartNumberFont: font(13px semibold);
+eliComposePartNumberFg: brandText;
+eliComposePartLineFg: borderSubtle;
+
+eliComposeMentionHeight: 48px;
+eliComposeMentionUserpic: 32px;
+eliComposeMentionBgOver: stateHover;
+eliComposeMentionBg: bgSunken;
+eliComposeMentionRadius: 12px;
+
+eliPreviewRadius: 12px;
+eliPreviewPadding: margins(12px, 8px, 12px, 10px);
+eliPreviewBorderFg: borderStrong;
+
+// ---- notifications
+eliNotifPadding: margins(16px, 12px, 16px, 12px);
+eliNotifGlyphWidth: 28px;
+eliNotifGlyphSkip: 12px;
+eliNotifFace: 32px;
+eliNotifFaceSkip: 6px;
+eliNotifTextSkip: 6px;
+eliNotifTextStyle: TextStyle(defaultTextStyle) {
+	font: font(15px);
+	lineHeight: 23px;
+}
+eliNotifTextFg: textPrimary;
+eliNotifTimeFg: textTertiary;
+eliNotifSnippetStyle: TextStyle(defaultTextStyle) {
+	font: font(14px);
+	lineHeight: 21px;
+}
+eliNotifSnippetFg: textTertiary;
+eliNotifSnippetLines: 2;
+eliNotifUnreadBg: stateActive;
+eliNotifDot: 8px;
+eliNotifOverBg: stateHover;
+eliNotifButtonHeight: 30px;
+eliNotifButtonPadding: 16px;
+eliNotifButtonSkip: 8px;
+eliNotifButtonFont: font(13px semibold);
+eliNotifButtonsTop: 8px;
+eliNotifDoneFg: textTertiary;
+eliNotifMoreFacesFont: font(12px semibold);
+eliNotifIconLike: icon {{ "like_active", accentHeart, 24px }};
+eliNotifIconReply: icon {{ "reply", brandPrimary, 24px }};
+eliNotifIconMention: icon {{ "me_active", brandPrimary, 24px }};
+eliNotifIconRepost: icon {{ "repost", brandPrimary, 24px }};
+eliNotifIconQuote: icon {{ "quote", brandPrimary, 24px }};
+eliNotifIconFollow: icon {{ "follow", accentLamp, 24px }};
+eliNotifIconRequest: icon {{ "request", accentLamp, 24px }};
+eliNotifIconFollowing: icon {{ "following", accentLamp, 24px }};
+eliNotifIconPost: icon {{ "eli_active", brandPrimary, 24px }};
+eliNotifIconListener: icon {{ "listener_active", anonAccent, 24px }};
+eliNotifIconOther: icon {{ "notifications_active", textTertiary, 24px }};
+eliNotifReadAll: IconButton(defaultIconButton) {
+	icon: icon {{ "check-double", iconButtonFg }};
+	iconOver: icon {{ "check-double", iconButtonFgOver }};
+}
+eliNotifBannerHeight: 68px;
+eliNotifBannerTitleFont: semiboldFont;
+eliNotifBannerSubFont: smallFont;
+eliNotifBannerChevron: icon {{ "chevron-left:mirror-ltr", textTertiary, 18px }};
+eliNotifChips: ChipsRow(defaultChipsRow) {
+}
+eliRequestRowHeight: 64px;
+eliRequestNameFont: semiboldFont;
+eliRequestHandleFont: smallFont;
+eliRequestAboutPadding: margins(20px, 12px, 20px, 8px);
+
+// ---- topic pages, trends, sound, bookmarks
+eliTopicHeaderPadding: margins(20px, 16px, 20px, 12px);
+eliTopicTitleFont: topicFontM;
+eliTopicCountsFont: smallFont;
+eliTopicCountsFg: textSecondary;
+eliTopicButtonsTop: 14px;
+eliTopicConvIcon: icon {{ "conversation", textPrimary, 18px }};
+eliTopicTabs: TabBar(defaultTabBar) {
+}
+eliTopicConvsPadding: margins(20px, 4px, 20px, 12px);
+eliTopicConvsTitleFont: semiboldFont;
+eliTopicConvsTitleHeight: 32px;
+eliTopicConvCardWidth: 230px;
+eliTopicConvCardSkip: 10px;
+eliTopicConvCardPadding: 14px;
+eliTopicConvCardRadius: 16px;
+eliTopicConvTopicStyle: TextStyle(defaultTextStyle) {
+	font: topicFontS;
+	lineHeight: 26px;
+}
+eliTopicConvJoin: RoundButton(smallRoundButton) {
+	textFg: #06412c;
+	textFgOver: #06412c;
+	textBg: brandMint;
+	textBgOver: staticWhite;
+	ripple: defaultRipple;
+}
+
+eliTrendRowHeight: 68px;
+eliTrendPadding: margins(20px, 0px, 16px, 0px);
+eliTrendRankFont: numericFontM;
+eliTrendRankFg: textTertiary;
+eliTrendRankWidth: 40px;
+eliTrendTitleFont: titleFontS;
+eliTrendCountsFont: smallFont;
+eliTrendRisingFont: microFont;
+eliTrendRisingBg: brandSoft;
+eliTrendRisingFg: brandText;
+eliTrendChevron: icon {{ "chevron-left:mirror-ltr", textTertiary, 18px }};
+
+eliSoundHeaderPadding: margins(20px, 16px, 20px, 16px);
+eliSoundCover: 96px;
+eliSoundCoverRadius: 16px;
+eliSoundCoverIcon: icon {{ "music", brandText, 36px }};
+eliSoundTitleFont: titleFontM;
+eliSoundSubFont: smallFont;
+eliSoundGridPadding: margins(20px, 0px, 20px, 20px);
+eliSoundTileMinWidth: 150px;
+eliSoundTileSkip: 6px;
+eliSoundTileRadius: 12px;
+eliSoundOriginFont: microFont;
+eliSoundEdit: IconButton(topBarEditButton) {
+}
+eliCaptionPadding: margins(20px, 10px, 20px, 8px);
+
+// ---- viewers: «پرده» and the round video note. They lie over media, so their
+// colors do not follow the palette.
+eliPardehBg: #050806;
+eliPardehDim: #050806b8;
+eliPardehFg: #ffffffeb;
+eliPardehFgDim: #ffffffa8;
+eliPardehStagePadding: 16px;
+eliPardehStageRadius: 16px;
+eliPardehRailWidth: 64px;
+eliPardehRailSkip: 16px;
+eliPardehRailButton: 48px;
+eliPardehRailButtonSkip: 22px;
+eliPardehRailBg: #ffffff1f;
+eliPardehRailBgOver: #ffffff38;
+eliPardehRailCountFont: font(12px semibold);
+eliPardehIconLike: icon {{ "like", #ffffffeb, 26px }};
+eliPardehIconLikeActive: icon {{ "like_active", #ee8a82, 26px }};
+eliPardehIconDislike: icon {{ "dislike", #ffffffeb, 26px }};
+eliPardehIconDislikeActive: icon {{ "dislike_active", #ffffffeb, 26px }};
+eliPardehIconReply: icon {{ "reply", #ffffffeb, 26px }};
+eliPardehIconRepost: icon {{ "repost", #ffffffeb, 26px }};
+eliPardehIconRepostActive: icon {{ "repost", #7fdda5, 26px }};
+eliPardehIconShare: icon {{ "share", #ffffffeb, 26px }};
+eliPardehIconMore: icon {{ "more", #ffffffeb, 26px }};
+eliPardehIconClose: icon {{ "close", #ffffffeb, 24px }};
+eliPardehIconVolume: icon {{ "volume", #ffffffeb, 22px }};
+eliPardehIconMute: icon {{ "mute", #ffffffeb, 22px }};
+eliPardehIconUp: icon {{ "chevron-up", #ffffffeb, 26px }};
+eliPardehIconDown: icon {{ "chevron-down", #ffffffeb, 26px }};
+eliPardehIconPlay: icon {{ "play_active", #ffffffeb, 44px }};
+eliPardehIconMusic: icon {{ "music", #ffffffeb, 14px }};
+eliPardehCornerButton: 44px;
+eliPardehInfoPadding: margins(16px, 12px, 16px, 22px);
+eliPardehNameFont: semiboldFont;
+eliPardehFollowFont: font(12px semibold);
+eliPardehFollowHeight: 28px;
+eliPardehFollowPadding: 12px;
+eliPardehCaptionStyle: TextStyle(defaultTextStyle) {
+	font: font(14px);
+	lineHeight: 22px;
+	linkFg: brandMint;
+}
+eliPardehCaptionLines: 3;
+eliPardehSoundFont: smallFont;
+eliPardehSeekHeight: 3px;
+eliPardehSeekHeightOver: 6px;
+eliPardehSeekBg: #ffffff47;
+eliPardehSeekFg: #ffffffeb;
+eliPardehSeekArea: 18px;
+eliPardehHeartIcon: icon {{ "like_active", #ee8a82, 84px }};
+eliPardehErrorFont: font(15px);
+eliPardehRetryHeight: 36px;
+eliPardehRetryFont: semiboldFont;
+eliPardehCounterFont: font(12px medium);
+
+eliNoteMaxSize: 460px;
+eliNoteRingWidth: 4px;
+eliNoteRingBg: #ffffff38;
+eliNoteRingFg: #ffffffeb;
+eliNoteNameFont: semiboldFont;
+eliNoteDim: #050806a8;
+eliNoteBlur: 24;
