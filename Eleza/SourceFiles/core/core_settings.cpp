@@ -3,6 +3,7 @@
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
+#include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QSaveFile>
 
@@ -100,6 +101,14 @@ void Settings::read() {
 		1.);
 	const auto speed = root.value(QStringLiteral("voice_speed")).toDouble(1.);
 	_voicePlaybackSpeed = (speed == 1.5 || speed == 2.) ? speed : 1.;
+	_sendByCtrlEnter = root.value(
+		QStringLiteral("send_by_ctrl_enter")).toBool(false);
+	_recentEmoji.clear();
+	for (const auto &item : root.value(QStringLiteral("recent_emoji")).toArray()) {
+		if (item.isString() && !item.toString().isEmpty()) {
+			_recentEmoji.push_back(item.toString());
+		}
+	}
 }
 
 QJsonObject Settings::serialize() const {
@@ -145,6 +154,14 @@ QJsonObject Settings::serialize() const {
 	}
 	root.insert(QStringLiteral("playback_volume"), _playbackVolume);
 	root.insert(QStringLiteral("voice_speed"), _voicePlaybackSpeed);
+	if (_sendByCtrlEnter) {
+		root.insert(QStringLiteral("send_by_ctrl_enter"), true);
+	}
+	if (!_recentEmoji.isEmpty()) {
+		root.insert(
+			QStringLiteral("recent_emoji"),
+			QJsonArray::fromStringList(_recentEmoji));
+	}
 	return root;
 }
 
@@ -242,6 +259,20 @@ void Settings::setVoicePlaybackSpeed(double speed) {
 	}
 	if (_voicePlaybackSpeed != speed) {
 		_voicePlaybackSpeed = speed;
+		scheduleWrite();
+	}
+}
+
+void Settings::setSendByCtrlEnter(bool enabled) {
+	if (_sendByCtrlEnter != enabled) {
+		_sendByCtrlEnter = enabled;
+		scheduleWrite();
+	}
+}
+
+void Settings::setRecentEmoji(const QStringList &emoji) {
+	if (_recentEmoji != emoji) {
+		_recentEmoji = emoji;
 		scheduleWrite();
 	}
 }

@@ -14,6 +14,7 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QObject>
 #include <QtCore/QRect>
+#include <QtCore/QStringList>
 #include <QtCore/QTimer>
 
 namespace Core {
@@ -106,6 +107,18 @@ public:
 	}
 	void setVoicePlaybackSpeed(double speed);
 
+	// Sending a message: false = Enter sends (Shift+Enter breaks the line),
+	// true = Ctrl+Enter sends (Enter breaks the line).
+	[[nodiscard]] bool sendByCtrlEnter() const {
+		return _sendByCtrlEnter;
+	}
+	void setSendByCtrlEnter(bool enabled);
+	// Emoji picked recently in the chat composer (newest first).
+	[[nodiscard]] QStringList recentEmoji() const {
+		return _recentEmoji;
+	}
+	void setRecentEmoji(const QStringList &emoji);
+
 	// Writes pending changes right now (on quit).
 	void flush();
 
@@ -131,6 +144,8 @@ private:
 	QString _lastDialogDirectory;
 	double _playbackVolume = 1.;
 	double _voicePlaybackSpeed = 1.;
+	bool _sendByCtrlEnter = false;
+	QStringList _recentEmoji;
 
 };
 

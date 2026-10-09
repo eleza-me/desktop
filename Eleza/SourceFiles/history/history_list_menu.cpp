@@ -1,0 +1,302 @@
+// ListWidget: the message context menu (Telegram's: a strip of reactions on
+// top, then reply / edit / pin / copy / media actions / forward / select /
+// delete; with text selected inside the message — «copy selected» and
+// «quote»).
+#include "history/history_list_widget.h"
+
+#include "api/api_client_config.h"
+#include "data/data_chats.h"
+#include "data/data_outbox.h"
+#include "data/data_session.h"
+#include "history/history_downloads.h"
+#include "history/history_reactions_strip.h"
+#include "history/history_view_media.h"
+#include "lang_auto.h"
+#include "main/main_session.h"
+#include "support/links.h"
+#include "ui/ui_utility.h"
+#include "ui/widgets/popup_menu.h"
+#include "window/window_session_controller.h"
+#include "styles/style_history.h"
+
+#include <QtCore/QFileInfo>
+#include <QtGui/QClipboard>
+#include <QtGui/QGuiApplication>
+
+namespace History {
+
+void ListWidget::showContextMenu(
+		const MouseTarget &target,
+		QPoint globalPosition,
+		bool allReactions) {
+	using View::Zone;
+	if (_menu) {
+		_menu->hideMenu(true);
+	}
+	if (target.index < 0 || target.index >= int(_rows.size())) {
+		return;
+	}
+	const auto element = _rows[target.index].element.get();
+	const auto zone = target.hit.zone;
+	if (element->isService() || zone == Zone::Date || zone == Zone::None) {
+		return;
+	}
+	// A copy: the row may change while the menu is open.
+	const auto message = element->data();
+	const auto key = target.key;
+	_menu = new Ui::PopupMenu(this);
+	const auto menu = _menu.data();
+	const auto config = _session->data().clientConfig();
+
+	if (!_selected.isEmpty()) {
+		// Selection mode: the menu is about the selected messages.
+		if (!_selected.contains(key)) {
+			menu->addAction(tr::lng_select(tr::now), [=, this] {
+				toggleSelected(key);
+			}, &st::menuIconSelect);
+			menu->addSeparator();
+		}
+		menu->addAction(tr::lng_history_copy_selected(tr::now), [this] {
+			copySelection();
+		}, &st::menuIconCopy);
+		const auto selected = selectedMessages();
+		const auto forwardable = std::all_of(
+			selected.begin(),
+			selected.end(),
+			[](const Data::Message &item) { return CanForward(item); });
+		if (forwardable && !_anonymousPeer) {
+			menu->addAction(tr::lng_history_forward_selected(tr::now), [this] {
+				Q_EMIT forwardRequested(selectedMessages());
+			}, &st::menuIconForward);
+		}
+		auto remove = Ui::MenuItem();
+		remove.text = tr::lng_history_delete_selected(tr::now);
+		remove.icon = &st::menuIconDelete;
+		remove.destructive = true;
+		remove.callback = [this] {
+			Q_EMIT deleteRequested(selectedMessages());
+		};
+		menu->addItem(std::move(remove));
+		menu->addSeparator();
+		menu->addAction(tr::lng_history_clear_selection(tr::now), [this] {
+			clearSelection();
+		});
+		menu->popup(globalPosition);
+		return;
+	}
+
+	if (message.local()) {
+		// Not sent yet (or failed): only what makes sense for the queue.
+		const auto id = message.clientMessageId;
+		const auto session = QPointer<Main::Session>(_session);
+		if (message.status == Data::MessageStatus::Failed) {
+			menu->addAction(tr::lng_try_again(tr::now), [=] {
+				if (session) {
+					session->data().outbox().retry(id);
+				}
+			}, &st::menuIconRetry);
+		}
+		if (HasCopyableText(message)) {
+			const auto text = message.text;
+			menu->addAction(tr::lng_copy_text(tr::now), [=] {
+				QGuiApplication::clipboard()->setText(text);
+			}, &st::menuIconCopy);
+		}
+		auto remove = Ui::MenuItem();
+		remove.text = tr::lng_delete(tr::now);
+		remove.icon = &st::menuIconDelete;
+		remove.destructive = true;
+		remove.callback = [=] {
+			if (session) {
+				session->data().outbox().discard(id);
+			}
+		};
+		menu->addItem(std::move(remove));
+		menu->popup(globalPosition);
+		return;
+	}
+
+	// ---- reactions
+	if (_canReact) {
+		auto emoji = config ? config->reactionEmojiSet() : QStringList();
+		if (!emoji.isEmpty()) {
+			const auto strip = menu->setTopWidget(Ui::object_ptr<ReactionsStrip>(
+				menu,
+				emoji,
+				message.myReaction,
+				allReactions));
+			strip->setChosenCallback([=, this](const QString &chosen) {
+				menu->hideMenu(true);
+				const auto index = indexOfKey(key);
+				if (index >= 0) {
+					toggleReaction(_rows[index].element->data(), chosen);
+				}
+			});
+			strip->setExpandCallback([=, this] {
+				const auto again = target;
+				menu->hideMenu(true);
+				Ui::PostponeCall(this, [=, this] {
+					auto fresh = again;
+					fresh.index = indexOfKey(again.key);
+					showContextMenu(fresh, globalPosition, !allReactions);
+				});
+			});
+		}
+	}
+
+	// ---- the selected part of the text
+	const auto selectedHere = hasTextSelection() && (_textSelectionKey == key);
+	if (selectedHere) {
+		const auto selection = _textSelection;
+		const auto text = element->selectedText(selection);
+		auto copy = Ui::MenuItem();
+		copy.text = tr::lng_history_copy_selected_text(tr::now);
+		copy.icon = &st::menuIconCopy;
+		copy.shortcut = QKeySequence(QKeySequence::Copy).toString(
+			QKeySequence::NativeText);
+		copy.callback = [=] {
+			QGuiApplication::clipboard()->setText(text);
+		};
+		menu->addItem(std::move(copy));
+		// The quote must be an exact part of the message text.
+		if (_canWrite && element->text() == message.text) {
+			const auto quote = MakeQuote(
+				message.text,
+				selection,
+				config ? config->maxQuoteLength() : 0);
+			if (quote) {
+				menu->addAction(tr::lng_chat_quote(tr::now), [=, this] {
+					setTextSelection(QString(), {});
+					Q_EMIT replyRequested(message, quote);
+				}, &st::menuIconQuote);
+			}
+		}
+		menu->addSeparator();
+	}
+
+	if (_canWrite) {
+		menu->addAction(tr::lng_reply(tr::now), [=, this] {
+			Q_EMIT replyRequested(message, std::nullopt);
+		}, &st::menuIconReply);
+	}
+	const auto editWindow = config ? config->editWindow() : qint64(0);
+	if (_canWrite
+		&& CanEdit(message, QDateTime::currentMSecsSinceEpoch(), editWindow)) {
+		menu->addAction(tr::lng_edit(tr::now), [=, this] {
+			Q_EMIT editRequested(message);
+		}, &st::menuIconEdit);
+	}
+	if (!_anonymousPeer) {
+		const auto pinned = isPinned(message.seq);
+		menu->addAction(
+			pinned ? tr::lng_unpin(tr::now) : tr::lng_pin(tr::now),
+			[=, this] { requestPin(message, !pinned); },
+			&st::menuIconPin);
+	}
+	if (!selectedHere && HasCopyableText(message)) {
+		const auto text = message.text;
+		menu->addAction(tr::lng_copy_text(tr::now), [=] {
+			QGuiApplication::clipboard()->setText(text);
+		}, &st::menuIconCopy);
+	}
+	if (zone == Zone::Link) {
+		if (const auto link = element->link(target.hit.link)) {
+			auto address = Ui::Text::LinkUrl(*link);
+			if (address.isEmpty()) {
+				address = link->text;
+			}
+			menu->addAction(tr::lng_copy_link(tr::now), [=, this] {
+				QGuiApplication::clipboard()->setText(address);
+				_controller->showToast(tr::lng_link_copied(tr::now));
+			}, &st::menuIconLink);
+		}
+	} else if (zone == Zone::Preview && message.linkPreview) {
+		const auto address = message.linkPreview->url;
+		menu->addAction(tr::lng_copy_link(tr::now), [=, this] {
+			QGuiApplication::clipboard()->setText(address);
+			_controller->showToast(tr::lng_link_copied(tr::now));
+		}, &st::menuIconLink);
+	}
+
+	// ---- media and files
+	const auto hidden = message.mediaSpoiler && !_revealed.contains(key);
+	switch (message.kind) {
+	case Data::MessageKind::Photo:
+		if (!hidden) {
+			menu->addAction(tr::lng_history_copy_image(tr::now), [=, this] {
+				copyImage(message);
+			}, &st::menuIconImage);
+			menu->addAction(tr::lng_history_save_as(tr::now), [=, this] {
+				saveAs(message);
+			}, &st::menuIconSaveAs);
+		}
+		break;
+	case Data::MessageKind::Video:
+	case Data::MessageKind::Gif:
+	case Data::MessageKind::VideoNote:
+		if (!hidden) {
+			menu->addAction(tr::lng_history_save_as(tr::now), [=, this] {
+				saveAs(message);
+			}, &st::menuIconSaveAs);
+		}
+		break;
+	case Data::MessageKind::File:
+	case Data::MessageKind::Audio:
+	case Data::MessageKind::Voice: {
+		const auto saved = !_downloads->savedPath(message).isEmpty();
+		if (message.kind == Data::MessageKind::File) {
+			menu->addAction(
+				saved
+					? tr::lng_history_open_file(tr::now)
+					: tr::lng_history_download(tr::now),
+				[=, this] { openFile(message); },
+				saved ? &st::menuIconOpen : &st::menuIconDownload);
+		}
+		if (saved) {
+			menu->addAction(tr::lng_history_show_in_folder(tr::now), [=, this] {
+				showInFolder(message);
+			}, &st::menuIconFolder);
+		}
+		menu->addAction(tr::lng_history_save_as(tr::now), [=, this] {
+			saveAs(message);
+		}, &st::menuIconSaveAs);
+	} break;
+	case Data::MessageKind::Location:
+	case Data::MessageKind::LiveLocation:
+		menu->addAction(tr::lng_history_open_map(tr::now), [=, this] {
+			openLocation(message);
+		}, &st::menuIconLocation);
+		if (message.kind == Data::MessageKind::LiveLocation
+			&& message.mine
+			&& message.live
+			&& !message.live->stopped
+			&& message.live->until > QDateTime::currentSecsSinceEpoch()) {
+			menu->addAction(tr::lng_history_live_stop(tr::now), [=, this] {
+				_session->data().messages().stopLiveLocation(_chatId, message.seq);
+			}, &st::menuIconStop);
+		}
+		break;
+	default:
+		break;
+	}
+
+	if (CanForward(message) && !_anonymousPeer) {
+		menu->addAction(tr::lng_forward(tr::now), [=, this] {
+			Q_EMIT forwardRequested({ message });
+		}, &st::menuIconForward);
+	}
+	menu->addAction(tr::lng_select(tr::now), [=, this] {
+		toggleSelected(key);
+	}, &st::menuIconSelect);
+	auto remove = Ui::MenuItem();
+	remove.text = tr::lng_delete(tr::now);
+	remove.icon = &st::menuIconDelete;
+	remove.destructive = true;
+	remove.callback = [=, this] {
+		Q_EMIT deleteRequested({ message });
+	};
+	menu->addItem(std::move(remove));
+	menu->popup(globalPosition);
+}
+
+} // namespace History

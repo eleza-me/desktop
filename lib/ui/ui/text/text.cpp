@@ -673,6 +673,18 @@ int String::countMaxLineWidth(int width, int elisionLines) const {
 	return result;
 }
 
+String::LastLine String::countLastLine(int width) const {
+	auto result = LastLine();
+	if (!countLines(width)) {
+		result.rtl = style::RightToLeft();
+		return result;
+	}
+	const auto &info = _d->lines.back();
+	result.width = info.width;
+	result.rtl = _d->blocks[info.block].rtl;
+	return result;
+}
+
 bool String::hasLinks() const {
 	return !_d->links.empty();
 }
