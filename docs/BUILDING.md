@@ -1,0 +1,221 @@
+# Building Eleza Desktop
+
+C++20, Qt 6 Widgets (6.4 or newer), CMake 3.21+, Ninja, OpenSSL 3. Two host tools
+(`codegen_style`, `codegen_lang`) are built first and generate the styles and the strings;
+nothing else is downloaded during the build.
+
+| | Linux | Windows |
+| --- | --- | --- |
+| Compiler | GCC 13 (Ubuntu 24.04) | MSVC 2022 (v143), x64 |
+| Qt | the distribution's Qt 6 (6.4.2 on Ubuntu 24.04) | 6.7.3, the `msvc2019_64` kit |
+| OpenSSL | `libssl-dev` | vcpkg manifest (`vcpkg.json`) |
+| Status | built, run and tested by the authors | **built and tested only by CI** (see below) |
+
+**About the Windows build.** The Windows steps below are the ones the CI job runs
+(`.github/workflows/build.yml`: configure with the `windows-msvc-release` preset, build,
+`ctest`, `windeployqt`, the installer). The authors have not yet built or run Eleza on a
+Windows machine themselves: every command here was checked against the project's CMake files
+and presets, but expect rough edges, and treat the first green CI run as the reference.
+Please fix this file when something differs on a real machine.
+
+What `docs/DEVELOPING.md` covers and this file does not: running against the mock API, the
+debug flags, screenshots, how to add a module.
+
+## Linux
+
+### Packages (Ubuntu 24.04)
+
+```sh
+sudo apt-get install \
+  build-essential cmake ninja-build \
+  qt6-base-dev qt6-base-dev-tools qt6-svg-dev qt6-multimedia-dev qt6-websockets-dev \
+  libqt6sql6-sqlite qt6-image-formats-plugins \
+  libssl-dev libgl1-mesa-dev libxkbcommon-dev
+```
+
+* `libqt6sql6-sqlite` is the SQLite driver of Qt SQL (the local cache); it is a run-time
+  plugin, the build does not notice when it is missing.
+* `qt6-image-formats-plugins` brings the WebP decoder: the server stores stickers as WebP.
+  Without it stickers stay empty.
+* `xvfb` is only needed to run the GUI tests under a real X server; they run on the
+  `offscreen` platform by default.
+* `ccache` is optional: add `-DCMAKE_CXX_COMPILER_LAUNCHER=ccache`.
+
+Other distributions need the same Qt 6 modules: Core, Gui, Widgets, Network, Svg,
+Multimedia, WebSockets, Sql (with the SQLite driver), Test; and OpenSSL 3 with headers.
+
+### Build, test, run
+
+```sh
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build
+ctest --test-dir build --output-on-failure
+./build/Eleza/Eleza
+```
+
+or with the presets (`build/linux-debug`, `build/linux-release`):
+
+```sh
+cmake --preset linux-debug && cmake --build --preset linux-debug && ctest --preset linux-debug
+```
+
+* The executable is `build/Eleza/Eleza`. It runs from the build directory: fonts, icons and
+  strings are compiled in.
+* `ELEZA_BUILD_TESTS=OFF` skips the tests; `ELEZA_WARNINGS_AS_ERRORS=ON` turns `-Wall
+  -Wextra` warnings into errors.
+* One test, `test_rt_interop`, talks to a peer built from the web client and needs `node`
+  and a checkout of the web client next to this repository (`-DELEZA_PWA_DIR=…`); it reports
+  itself as *skipped* otherwise.
+* Without a display: `QT_QPA_PLATFORM=offscreen ./build/Eleza/Eleza --gallery
+  --debug-grab=/tmp/gallery.png` renders the widget gallery to a file and exits — a quick
+  check that the binary and its plugins work.
+
+### Install and packages
+
+```sh
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+cmake --build build
+sudo cmake --install build --strip
+```
+
+installs `bin/Eleza`, `share/applications/me.eleza.desktop.desktop` and the icons under
+`share/icons/hicolor`. For packages:
+
+```sh
+packaging/linux/build-deb.sh            # -> build/package/dist/
+```
+
+makes a Release build and writes `Eleza-<version>-linux-<arch>.tar.gz` (the installed tree,
+`usr/…`) and, when `dpkg-deb` is available, `eleza-desktop_<version>_<arch>.deb`. The `.deb`
+is described by `packaging/linux/cpack-deb.cmake`; it can also be made from any configured
+build directory:
+
+```sh
+ELEZA_BUILD_DIR=$PWD/build cpack --config packaging/linux/cpack-deb.cmake -B build/cpack
+```
+
+Its dependencies on libraries come from `dpkg-shlibdeps`; the run-time plugins (SQLite
+driver, platform plugins, image formats) are listed by hand in that file. The binaries link
+the Qt of the machine they were built on: build on the oldest distribution you want to
+support.
+
+## Windows
+
+### Tools
+
+1. **Visual Studio 2022** (Community is enough) with the workload *Desktop development with
+   C++*. It brings MSVC v143, the Windows SDK, CMake and Ninja.
+2. **Qt 6.7.3 for MSVC 64-bit** — with the online installer: *Qt 6.7.3 → MSVC 2019 64-bit*
+   plus, under *Additional Libraries*, **Qt Multimedia**, **Qt WebSockets** and **Qt Image
+   Formats**. Or from a terminal with [aqtinstall](https://github.com/miurahr/aqtinstall):
+
+   ```bat
+   pip install aqtinstall
+   aqt install-qt windows desktop 6.7.3 win64_msvc2019_64 -m qtmultimedia qtwebsockets qtimageformats -O C:\Qt
+   ```
+
+   The kit is called `msvc2019_64` up to Qt 6.7 and is the one to use with MSVC 2022 (the
+   two are binary compatible); from Qt 6.8 on it is `msvc2022_64`. Qt SVG is part of the
+   base package in Qt 6: there is no `qtsvg` module to add.
+3. **vcpkg** for OpenSSL:
+
+   ```bat
+   git clone https://github.com/microsoft/vcpkg C:\vcpkg
+   C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+   ```
+
+   Nothing has to be installed by hand: the manifest (`vcpkg.json`) is resolved while CMake
+   configures, into `build\windows-msvc-release\vcpkg_installed`. The first configure builds
+   OpenSSL and takes several minutes.
+
+### Build and test
+
+From the **x64 Native Tools Command Prompt for VS 2022** (so that `cl`, `cmake` and `ninja`
+are in `PATH`):
+
+```bat
+set VCPKG_ROOT=C:\vcpkg
+set CMAKE_PREFIX_PATH=C:\Qt\6.7.3\msvc2019_64
+set PATH=C:\Qt\6.7.3\msvc2019_64\bin;%PATH%
+
+cmake --preset windows-msvc-release
+cmake --build --preset windows-msvc-release
+ctest --preset windows-msvc-release
+```
+
+The executable is `build\windows-msvc-release\Eleza\Eleza.exe`; it starts from there as long
+as Qt's `bin` directory is in `PATH` (the OpenSSL DLLs are copied next to it by the vcpkg
+toolchain).
+
+### Deploying (a folder that runs anywhere)
+
+```bat
+mkdir dist\Eleza
+copy build\windows-msvc-release\Eleza\Eleza.exe dist\Eleza\
+windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw --no-compiler-runtime dist\Eleza\Eleza.exe
+copy build\windows-msvc-release\vcpkg_installed\x64-windows\bin\libcrypto-3-x64.dll dist\Eleza\
+copy build\windows-msvc-release\vcpkg_installed\x64-windows\bin\libssl-3-x64.dll dist\Eleza\
+copy "%VCToolsRedistDir%x64\Microsoft.VC143.CRT\*.dll" dist\Eleza\
+```
+
+`dist\Eleza` is the portable build. The installer is made from it with
+[Inno Setup](https://jrsoftware.org/isinfo.php) 6.3 or newer:
+
+```bat
+iscc /DAppVersion=0.1.0 /DSourceDir=%CD%\dist\Eleza /DOutputDir=%CD%\dist\installer packaging\windows\eleza.iss
+```
+
+It installs per user (no administrator rights), adds a Start menu entry, offers a desktop
+icon and "start when I sign in", and registers an uninstaller. User data lives in
+`%APPDATA%\eleza\Eleza` and is left alone by upgrades and by the uninstaller.
+
+### Common pitfalls
+
+* **`VCPKG_ROOT` points at the wrong vcpkg.** The developer prompt of Visual Studio 2022
+  sets `VCPKG_ROOT` to the copy bundled with Visual Studio. The preset reads
+  `%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake`: set the variable to your own checkout
+  *after* opening the prompt (the CI job does the same). Symptom: `Could NOT find OpenSSL`
+  or a vcpkg error about a missing baseline.
+* **OpenSSL.** `find_package(OpenSSL 3 REQUIRED)` must find the vcpkg one; an old OpenSSL 1.1
+  from another program in `PATH` or `OPENSSL_ROOT_DIR` breaks the configure step. At run
+  time `libcrypto-3-x64.dll` and `libssl-3-x64.dll` must sit next to `Eleza.exe`: both our
+  own crypto and Qt's OpenSSL TLS backend load them.
+* **`/utf-8`.** The sources and the generated strings contain Persian text in UTF-8.
+  `cmake/eleza_options.cmake` passes `/utf-8` to every target; a target that misses the flag
+  compiles on an English system and shows mojibake (or fails with warning C4819) on others.
+  Keep new targets inside the project's CMake tree, and save files as UTF-8 without BOM.
+* **The SQLite plugin.** The local cache uses Qt SQL with the `QSQLITE` driver, a plugin:
+  `sqldrivers\qsqlite.dll`. `windeployqt` copies it because the executable links Qt6Sql; if
+  it is missing Qt logs *QSQLITE driver not loaded* and the local cache cannot be opened.
+* **The TLS plugins.** HTTPS and the realtime connection need `tls\qopensslbackend.dll` or
+  `tls\qschannelbackend.dll`. Symptom of a missing `tls` folder: every request fails with
+  *TLS initialization failed*.
+* **The multimedia backend.** Voice messages, video and sounds use Qt Multimedia, whose
+  backend is a plugin: `multimedia\ffmpegmediaplugin.dll` (the default, needs the
+  `avcodec-*.dll`, `avformat-*.dll`, `avutil-*.dll`, `swresample-*.dll`, `swscale-*.dll`
+  files from Qt's `bin` directory next to the executable) or
+  `multimedia\windowsmediaplugin.dll`. Some `windeployqt` versions leave the FFmpeg DLLs
+  out: copy them by hand (the CI job does). `set QT_MEDIA_BACKEND=windows` switches to the
+  Media Foundation backend to tell a backend problem from an application one.
+* **Image formats.** `imageformats\qwebp.dll` (stickers), `qjpeg.dll`, `qgif.dll`,
+  `qsvg.dll` (the icons are SVG: without it the window is full of empty squares). `qwebp`
+  only exists when the *Qt Image Formats* module was installed.
+* **Running tests.** The tests are plain executables that need the Qt DLLs: keep Qt's `bin`
+  in `PATH`. GUI tests set `QT_QPA_PLATFORM=offscreen` themselves.
+* **Debug builds.** The preset is Release with the release runtime (`/MD`). For a Debug
+  build configure your own preset with `CMAKE_BUILD_TYPE=Debug` and
+  `CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDebugDLL` (see `CMakeUserPresets.json`, which is
+  ignored by git), and deploy with `windeployqt --debug`.
+
+## Continuous integration
+
+`.github/workflows/build.yml` builds both platforms on every push to `main`, on pull
+requests and on `v*` tags, runs `ctest`, starts the deployed build once (the widget gallery
+on the offscreen platform) and uploads:
+
+* `Eleza-<version>-windows-x64-portable` — the deployed folder;
+* `Eleza-<version>-windows-x64-setup` — the installer;
+* `Eleza-<version>-linux-x86_64` — the tarball and the `.deb`.
+
+The version is the one of `project(Eleza VERSION …)` in the root `CMakeLists.txt` (keep
+`vcpkg.json` in step with it).

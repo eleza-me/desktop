@@ -1,0 +1,325 @@
+// Profiles, the «من» tab, follow lists and «ویرایش نمایه».
+using "ui/basic.style";
+using "ui/widgets/widgets.style";
+using "ui/layers/layers.style";
+
+// The centred column of the main section (the web client's desktop width).
+profileColumnWidth: 720px;
+profileLoadMoreThreshold: 600px;
+profileBottomSkip: 24px;
+profileBadgeSkip: 4px;
+profileTailSpinner: 24px;
+
+// ---- the header
+profileCoverPadding: margins(20px, 20px, 20px, 14px);
+profileUserpicSize: 88px;
+profileStatsSkip: 16px;
+profileStatHeight: 52px;
+profileStatMaxWidth: 150px;
+profileStatRadius: 12px;
+profileStatValueFont: font(17px semibold);
+profileStatLabelFont: font(13px);
+profileNameSkip: 14px;
+profileNameStyle: TextStyle(defaultTextStyle) {
+	font: font(19px bold);
+}
+profileVerifiedIcon: icon {{ "verified_active", brandPrimary, 20px }};
+profileLockIcon: icon {{ "lock", textTertiary, 18px }};
+profileRowVerifiedIcon: icon {{ "verified_active", brandPrimary, 16px }};
+profileRowLockIcon: icon {{ "lock", textTertiary, 14px }};
+profileHandleSkip: 1px;
+profileHandleLink: LinkButton(defaultLinkButton) {
+	color: textSecondary;
+	overColor: textPrimary;
+	font: font(14px);
+	overFont: font(14px underline);
+}
+profileMetaSkip: 8px;
+profileMetaStyle: TextStyle(defaultTextStyle) {
+	font: font(13px);
+	lineHeight: 20px;
+}
+profileLinkSkip: 6px;
+profileLinkIcon: icon {{ "link", brandText, 16px }};
+profileWebLink: LinkButton(defaultLinkButton) {
+	font: font(14px);
+	overFont: font(14px underline);
+}
+profileBioSkip: 10px;
+profileBioStyle: TextStyle(defaultTextStyle) {
+	font: font(15px);
+	lineHeight: 24px;
+}
+profileBioLabel: FlatLabel(defaultFlatLabel) {
+	style: profileBioStyle;
+	textFg: textPrimary;
+}
+profileMutualsSkip: 12px;
+profileMutualSize: 24px;
+profileMutualOverlap: 8px;
+profileMutualsTextSkip: 8px;
+
+profileActionsTop: 16px;
+profileActionsSkip: 8px;
+// A narrower column stretches the buttons over its whole width.
+profileActionsStretchWidth: 460px;
+profileActionMinWidth: 150px;
+profileFollowMinWidth: 200px;
+profileActionButton: RoundButton(outlineRoundButton) {
+	padding: 20px;
+	minWidth: 0px;
+}
+profileMessageIcon: icon {{ "message", textPrimary, 18px }};
+profileMoreButton: IconButton(defaultIconButton) {
+	width: 36px;
+	height: 36px;
+	icon: icon {{ "more", textSecondary, 20px }};
+	iconOver: icon {{ "more", textPrimary, 20px }};
+	rippleSize: 36px;
+}
+profileFollow: RoundButton(defaultRoundButton) {
+	padding: 20px;
+	minWidth: 0px;
+}
+profileFollowing: RoundButton(outlineRoundButton) {
+	padding: 20px;
+	minWidth: 0px;
+}
+profileRequested: RoundButton(lightRoundButton) {
+	padding: 20px;
+	minWidth: 0px;
+}
+profileFollowIcon: icon {{ "follow", textOnBrand, 18px }};
+profileFollowingIcon: icon {{ "following", textPrimary, 18px }};
+profileRequestedIcon: icon {{ "request", brandText, 18px }};
+profileRequestsSkip: 6px;
+profileRequestsIcon: icon {{ "request", textSecondary }};
+profileRequestsButton: SettingsButton(defaultSettingsButton) {
+	valueFont: semiboldFont;
+	valueFg: brandText;
+}
+
+// ---- the open conversation card
+profileCardMargin: margins(20px, 2px, 20px, 14px);
+profileCardPadding: margins(16px, 14px, 16px, 16px);
+profileCardRadius: 18px;
+profileCardSkip: 10px;
+profileCardPillHeight: 24px;
+profileCardPillPadding: 10px;
+profileCardPillFont: font(12px medium);
+profileCardDot: 7px;
+profileCardTopicStyle: TextStyle(defaultTextStyle) {
+	font: topicFontS;
+	lineHeight: 30px;
+}
+profileCardRipple: RippleAnimation(defaultRipple) {
+	color: onNightTint;
+}
+profileCardJoin: RoundButton(smallRoundButton) {
+	textFg: #06412c;
+	textFgOver: #06412c;
+	textBg: brandMint;
+	textBgOver: #eefbf2;
+	height: 32px;
+	padding: 16px;
+	radius: 16px;
+}
+
+// ---- tabs and the post lists
+profileTabs: TabBar(defaultTabBar) {
+	bg: bgCanvas;
+	padding: 12px;
+}
+profileListTabs: TabBar(defaultTabBar) {
+	padding: 12px;
+}
+profileNoteHeight: 36px;
+profileNoteIcon: icon {{ "lock", textTertiary, 14px }};
+profileEmptyHeight: 260px;
+profileEmptyRepliesIcon: icon {{ "reply", textTertiary, 48px }};
+profileEmptyMediaIcon: icon {{ "image", textTertiary, 48px }};
+profileEmptyFollowIcon: icon {{ "follow", textTertiary, 48px }};
+profileEmptyRequestsIcon: icon {{ "request", textTertiary, 48px }};
+
+profilePostPadding: margins(20px, 14px, 20px, 14px);
+profilePostTextStyle: TextStyle(defaultTextStyle) {
+	font: font(15px);
+	lineHeight: 24px;
+}
+profilePostMetaFont: font(13px);
+profilePostMetaSkip: 8px;
+profilePostMetaItemSkip: 16px;
+profilePostFooterHeight: 64px;
+profilePostPinIcon: icon {{ "pin", textTertiary, 14px }};
+profilePostLikeIcon: icon {{ "like", textTertiary, 16px }};
+profilePostReplyIcon: icon {{ "reply", textTertiary, 16px }};
+profilePostImageIcon: icon {{ "image", textTertiary, 16px }};
+profilePostVideoIcon: icon {{ "video", textTertiary, 16px }};
+profilePostAudioIcon: icon {{ "music", textTertiary, 16px }};
+profilePostPollIcon: icon {{ "poll", textTertiary, 16px }};
+profilePostThreadIcon: icon {{ "thread", textTertiary, 16px }};
+
+// ---- locked / blocked states
+profileStateTop: 40px;
+profileStatePadding: 24px;
+profileStateMaxWidth: 360px;
+profileStateGlyph: 88px;
+profileStateLockIcon: icon {{ "lock", textSecondary, 38px }};
+profileStateBlockIcon: icon {{ "block", textSecondary, 38px }};
+profileStateTitleStyle: TextStyle(defaultTextStyle) {
+	font: titleFontS;
+}
+profileStateTextStyle: TextStyle(defaultTextStyle) {
+	font: font(14px);
+	lineHeight: 24px;
+}
+
+// ---- menus
+profileMenuBellIcon: icon {{ "notifications", menuIconFg, 20px }};
+profileMenuRemoveIcon: icon {{ "close-circle", menuIconFg, 20px }};
+profileMenuProfileIcon: icon {{ "me", menuIconFg, 20px }};
+profileMenuFollowIcon: icon {{ "follow", menuIconFg, 20px }};
+profileMenuUnfollowIcon: icon {{ "following", menuIconFg, 20px }};
+profileMenuOpenIcon: icon {{ "external", menuIconFg, 20px }};
+profileMenuPhotoIcon: icon {{ "image", menuIconFg, 20px }};
+
+// ---- people rows (followers, following, requests)
+profileSearchPadding: margins(16px, 8px, 16px, 8px);
+profilePersonHeight: 64px;
+profilePersonPadding: margins(20px, 0px, 20px, 0px);
+profilePersonUserpic: 44px;
+profilePersonUserpicSkip: 12px;
+profilePersonTextSkip: 12px;
+profilePersonButtonSkip: 8px;
+profilePersonNameStyle: TextStyle(defaultTextStyle) {
+	font: font(15px medium);
+}
+profilePersonNameTop: 11px;
+profilePersonStatusFont: font(13px);
+profilePersonStatusTop: 35px;
+profilePersonMore: 32px;
+profilePersonMoreIcon: icon {{ "more", textSecondary, 20px }};
+profileRowFollow: RoundButton(smallRoundButton) {
+	height: 32px;
+	padding: 16px;
+	radius: 16px;
+}
+profileRowFollowing: RoundButton(smallOutlineButton) {
+	height: 32px;
+	padding: 16px;
+	radius: 16px;
+}
+profileRowRequested: RoundButton(smallLightButton) {
+	height: 32px;
+	padding: 16px;
+	radius: 16px;
+}
+
+// ---- the side column of the «من» tab
+profileSidePadding: margins(20px, 18px, 20px, 14px);
+profileSideUserpic: 64px;
+profileSideNameStyle: TextStyle(defaultTextStyle) {
+	font: font(16px semibold);
+}
+profileSideButton: SettingsButton(defaultSettingsButton) {
+	valueFont: semiboldFont;
+	valueFg: brandText;
+}
+profileSideProfileIcon: icon {{ "me", textSecondary }};
+profileSideEditIcon: icon {{ "edit", textSecondary }};
+profileSideBookmarksIcon: icon {{ "bookmark", textSecondary }};
+profileSideShareIcon: icon {{ "share", textSecondary }};
+profileSideSettingsIcon: icon {{ "settings", textSecondary }};
+
+// ---- «ویرایش نمایه»
+profileEditWidth: 560px;
+profileEditFooter: 64px;
+profileEditPhoto: 96px;
+profileEditPhotoRing: 44px;
+profileEditPhotoShade: #0d0f0d8c;
+profileEditBadge: 30px;
+profileEditCameraIcon: icon {{ "camera", textOnBrand, 16px }};
+profileEditCameraOverIcon: icon {{ "camera", staticWhite, 28px }};
+profileEditPhotoMargin: margins(20px, 24px, 20px, 0px);
+profileEditPhotoLink: LinkButton(defaultLinkButton) {
+	font: semiboldFont;
+	overFont: font(14px semibold underline);
+}
+profileEditPhotoLinkMargin: margins(20px, 10px, 20px, 0px);
+profileEditPhotoHintMargin: margins(20px, 4px, 20px, 0px);
+profileEditCaptionStyle: TextStyle(defaultTextStyle) {
+	font: font(13px medium);
+}
+profileEditCaption: FlatLabel(defaultFlatLabel) {
+	style: profileEditCaptionStyle;
+	textFg: textSecondary;
+}
+profileEditCaptionMargin: margins(24px, 14px, 24px, 6px);
+profileEditField: InputField(defaultInputField) {
+}
+profileEditBioField: InputField(defaultInputField) {
+	heightMax: 200px;
+}
+profileEditFieldMargin: margins(20px, 0px, 20px, 0px);
+profileEditHintStyle: TextStyle(defaultTextStyle) {
+	font: font(12px);
+	lineHeight: 18px;
+}
+profileEditHint: FlatLabel(defaultFlatLabel) {
+	style: profileEditHintStyle;
+	textFg: textTertiary;
+}
+profileEditHintCentered: FlatLabel(profileEditHint) {
+	align: align(top);
+}
+profileEditHintMargin: margins(24px, 4px, 24px, 0px);
+profileEditRow: SettingsButton(defaultSettingsButton) {
+	padding: margins(24px, 0px, 24px, 0px);
+	font: font(15px);
+}
+profileEditRowMargin: margins(0px, 0px, 0px, 0px);
+
+// ---- the birthday picker
+profileBirthdayTop: 4px;
+profileBirthdayPadding: 28px;
+profileBirthdayPreviewFont: font(15px semibold);
+profileWheelRow: 38px;
+profileWheelFont: font(16px);
+profileWheelFontActive: font(17px semibold);
+profileWheelDuration: 180ms;
+
+// ---- the share box
+profileShareMargin: margins(24px, 4px, 24px, 0px);
+profileSharePadding: 20px;
+profileShareRadius: 20px;
+profileShareUserpic: 56px;
+profileShareNameStyle: TextStyle(defaultTextStyle) {
+	font: titleFontS;
+}
+profileShareHandleFont: font(13px);
+profileShareQrSize: 176px;
+profileShareHintStyle: TextStyle(defaultTextStyle) {
+	font: font(13px);
+	lineHeight: 20px;
+}
+profileShareHint: FlatLabel(defaultFlatLabel) {
+	style: profileShareHintStyle;
+	textFg: textTertiary;
+	align: align(top);
+}
+profileShareHintPadding: margins(24px, 12px, 24px, 4px);
+
+// ---- the report box
+profileReportQuestionStyle: TextStyle(defaultTextStyle) {
+	font: font(15px semibold);
+	lineHeight: 24px;
+}
+profileReportQuestion: FlatLabel(defaultFlatLabel) {
+	style: profileReportQuestionStyle;
+	textFg: textPrimary;
+}
+profileReportHint: FlatLabel(defaultFlatLabel) {
+	style: profileShareHintStyle;
+	textFg: textTertiary;
+}
+profileReportHintPadding: margins(24px, 6px, 24px, 12px);

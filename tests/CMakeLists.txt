@@ -84,6 +84,13 @@ if (TARGET ElezaCore)
 		"${_eleza_app_src}/search/search_debounce.h"
 		"${_eleza_app_src}/search/search_people.cpp")
 	target_include_directories(test_search_logic PRIVATE "${_eleza_app_src}")
+	# profile: relationship -> buttons, handle check, bio, birthday ranges, QR.
+	eleza_add_test(test_profile_logic app/test_profile_logic.cpp
+		LIBS ElezaCore ElezaLang ElezaUi ElezaBase Qt6::Gui GUI)
+	target_sources(test_profile_logic PRIVATE
+		"${_eleza_app_src}/profile/profile_logic.cpp"
+		"${_eleza_app_src}/profile/profile_qr.cpp")
+	target_include_directories(test_profile_logic PRIVATE "${_eleza_app_src}")
 endif()
 
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/core/CMakeLists.txt")
