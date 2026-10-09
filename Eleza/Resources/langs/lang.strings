@@ -1,0 +1,867 @@
+// Persian (source language) strings of Eleza Desktop.
+//
+//   "lng_key" = "value with {tag}";
+//   "lng_plural#one" / "lng_plural#other" = "{count} …";   -> tr::lng_plural(tr::now, lt_count, n)
+//
+// Use: tr::lng_key(tr::now)  /  tr::lng_key(tr::now, lt_tag, value).
+// lang_en.strings must contain exactly the same keys and tags (codegen_lang checks it).
+//
+// Strings ported from the web client keep a "// pwa:" comment with the original key
+// (the web client's keys are the Persian texts: tr('…') in pwa/src/ui/i18n.ts).
+
+
+// ---- Intro: welcome, phone, code, two-step password, profile
+// pwa: الزا
+"lng_app_name" = "الزا";
+// pwa: جایی برای گفتن؛ جایی برای شنیدن.
+"lng_intro_tagline" = "جایی برای گفتن؛ جایی برای شنیدن.";
+// pwa: شروع
+"lng_intro_start" = "شروع";
+// pwa: با ادامه، قوانین و سیاست حریم خصوصی الزا را می‌پذیری.
+"lng_intro_terms" = "با ادامه، قوانین و سیاست حریم خصوصی الزا را می‌پذیری.";
+// pwa: شمارهٔ موبایلت
+"lng_intro_phone_title" = "شمارهٔ موبایلت";
+// pwa: یک کد تأیید برایت می‌فرستیم. شماره‌ات به هیچ‌کس نشان داده نمی‌شود.
+"lng_intro_phone_about" = "یک کد تأیید برایت می‌فرستیم. شماره‌ات به هیچ‌کس نشان داده نمی‌شود.";
+// pwa: دریافت کد
+"lng_intro_get_code" = "دریافت کد";
+// pwa: کدی که فرستادیم
+"lng_intro_code_title" = "کدی که فرستادیم";
+// pwa: به {phone} فرستاده شد
+"lng_intro_code_sent_to" = "به {phone} فرستاده شد";
+// pwa: ویرایش
+"lng_edit" = "ویرایش";
+// pwa: ارسال دوباره تا {time}
+"lng_intro_resend_in" = "ارسال دوباره تا {time}";
+// pwa: ارسال دوباره
+"lng_intro_resend" = "ارسال دوباره";
+// pwa: کد تازه فرستاده شد
+"lng_intro_new_code_was_sent" = "کد تازه فرستاده شد";
+// pwa: تلاش دوباره
+"lng_try_again" = "تلاش دوباره";
+// pwa: بازگشت
+"lng_back" = "بازگشت";
+// pwa: رمز دومرحله‌ای
+"lng_intro_two_step_password" = "رمز دومرحله‌ای";
+// pwa: این حساب رمز دومرحله‌ای دارد. رمزت را وارد کن.
+"lng_intro_two_step_about" = "این حساب رمز دومرحله‌ای دارد. رمزت را وارد کن.";
+// pwa: رمز
+"lng_intro_password" = "رمز";
+// pwa: راهنما: {hint}
+"lng_intro_hint" = "راهنما: {hint}";
+// pwa: رمزت را فراموش کرده‌ای؟
+"lng_intro_forgot_password" = "رمزت را فراموش کرده‌ای؟";
+// pwa: ادامه
+"lng_continue" = "ادامه";
+// pwa: کدی به ایمیل بازیابی فرستادیم
+"lng_intro_we_e_mailed_code_recovery" = "کدی به ایمیل بازیابی فرستادیم";
+// pwa: نام
+"lng_name" = "نام";
+// pwa: شناسه
+"lng_username" = "شناسه";
+// pwa: پروفایلت
+"lng_intro_profile_title" = "پروفایلت";
+// pwa: اسمت و یک شناسه، تا دوستانت پیدایت کنند.
+"lng_intro_profile_about" = "اسمت و یک شناسه، تا دوستانت پیدایت کنند.";
+// pwa: این شناسه قبلاً گرفته شده
+"lng_intro_username_taken" = "این شناسه قبلاً گرفته شده";
+// pwa: ✓ این شناسه آزاد است
+"lng_intro_username_available" = "✓ این شناسه آزاد است";
+// pwa: فقط حروف انگلیسی کوچک، عدد، نقطه و _ (۳ تا ۲۴ حرف)
+"lng_intro_username_rules" = "فقط حروف انگلیسی کوچک، عدد، نقطه و _ (۳ تا ۲۴ حرف)";
+
+// ---- Main: tabs, settings entry, sign out
+// pwa: پیام
+"lng_tab_messages" = "پیام";
+// pwa: پیام‌ها
+"lng_messages" = "پیام‌ها";
+// pwa: گفتگو
+"lng_tab_talk" = "گفتگو";
+// pwa: الی
+"lng_tab_eli" = "الی";
+// pwa: جستجو
+"lng_tab_search" = "جستجو";
+// pwa: من
+"lng_tab_me" = "من";
+// pwa: ساختن
+"lng_create" = "ساختن";
+// pwa: تنظیمات
+"lng_settings" = "تنظیمات";
+// pwa: خروج
+"lng_sign_out" = "خروج";
+// pwa: از این حساب خارج می‌شوی؟
+"lng_sign_out_sure" = "از این حساب خارج می‌شوی؟";
+// pwa: انصراف
+"lng_cancel" = "انصراف";
+
+// ---- Chat list
+// pwa: پیام جدید
+"lng_dialogs_new_message" = "پیام جدید";
+// pwa: هنوز پیامی نداری
+"lng_dialogs_empty_title" = "هنوز پیامی نداری";
+// pwa: با دوستانت گپ بزن؛ از «الی» کسی را پیدا کن یا شماره‌اش را داشته باش.
+"lng_dialogs_empty_text" = "با دوستانت گپ بزن؛ از «الی» کسی را پیدا کن یا شماره‌اش را داشته باش.";
+// pwa: بایگانی‌شده
+"lng_dialogs_archived" = "بایگانی‌شده";
+// pwa: درخواست‌ها
+"lng_dialogs_requests" = "درخواست‌ها";
+// pwa: تو: {text}
+"lng_dialogs_you" = "تو: {text}";
+// pwa: پیش‌نویس:
+"lng_dialogs_draft" = "پیش‌نویس:";
+
+// ---- Statuses and send actions
+// pwa: دیروز
+"lng_yesterday" = "دیروز";
+// pwa: آنلاین
+"lng_status_online" = "آنلاین";
+// pwa: در حال نوشتن…
+"lng_action_typing" = "در حال نوشتن…";
+// pwa: در حال ضبط صدا…
+"lng_action_recording_voice" = "در حال ضبط صدا…";
+// pwa: در حال فرستادن عکس…
+"lng_action_sending_photo" = "در حال فرستادن عکس…";
+// pwa: در حال فرستادن ویدیو…
+"lng_action_sending_video" = "در حال فرستادن ویدیو…";
+// pwa: در حال فرستادن فایل…
+"lng_action_sending_file" = "در حال فرستادن فایل…";
+// pwa: آخرین بازدید {time}
+"lng_status_last_seen" = "آخرین بازدید {time}";
+// pwa: آخرین بازدید همین حالا
+"lng_status_last_seen_now" = "آخرین بازدید همین حالا";
+// pwa: آخرین بازدید اخیراً
+"lng_status_last_seen_recently" = "آخرین بازدید اخیراً";
+// pwa: آخرین بازدید این هفته
+"lng_status_last_seen_week" = "آخرین بازدید این هفته";
+// pwa: آخرین بازدید این ماه
+"lng_status_last_seen_month" = "آخرین بازدید این ماه";
+// pwa: مدت‌ها پیش
+"lng_status_last_seen_long_ago" = "مدت‌ها پیش";
+// pwa: ربات
+"lng_status_bot" = "ربات";
+
+// ---- Chat: messages, menus, media kinds, connection
+// pwa: پیام بنویس…
+"lng_chat_message_placeholder" = "پیام بنویس…";
+// pwa: پاسخ
+"lng_reply" = "پاسخ";
+// pwa: ویرایش پیام
+"lng_chat_edit_message" = "ویرایش پیام";
+// pwa: کپی
+"lng_copy" = "کپی";
+// pwa: هدایت
+"lng_forward" = "هدایت";
+// pwa: حذف
+"lng_delete" = "حذف";
+// pwa: سنجاق
+"lng_pin" = "سنجاق";
+// pwa: برداشتن سنجاق
+"lng_unpin" = "برداشتن سنجاق";
+// pwa: انتخاب
+"lng_select" = "انتخاب";
+// pwa: حذف پیام
+"lng_chat_delete_message" = "حذف پیام";
+// pwa: حذف برای من
+"lng_chat_delete_me" = "حذف برای من";
+// pwa: حذف برای هر دو
+"lng_chat_delete_both" = "حذف برای هر دو";
+// pwa: پیام ذخیره‌شده
+"lng_saved_message" = "پیام ذخیره‌شده";
+// pwa: پیام‌های ذخیره‌شده
+"lng_saved_messages" = "پیام‌های ذخیره‌شده";
+// pwa: ناشناس
+"lng_anonymous" = "ناشناس";
+// pwa: عکس
+"lng_media_photo" = "عکس";
+// pwa: ویدیو
+"lng_media_video" = "ویدیو";
+// pwa: ویس
+"lng_media_voice" = "ویس";
+// pwa: فایل
+"lng_media_file" = "فایل";
+// pwa: استیکر
+"lng_media_sticker" = "استیکر";
+// pwa: گیف
+"lng_media_gif" = "گیف";
+// pwa: آهنگ
+"lng_media_music" = "آهنگ";
+// pwa: موقعیت
+"lng_media_location" = "موقعیت";
+// pwa: موقعیت زنده
+"lng_media_live_location" = "موقعیت زنده";
+// pwa: پیام ویدیویی
+"lng_media_video_message" = "پیام ویدیویی";
+// pwa: پست الی
+"lng_media_eli_post" = "پست الی";
+// pwa: تماس
+"lng_media_call" = "تماس";
+// pwa: ارسال نشد
+"lng_chat_not_sent" = "ارسال نشد";
+// pwa: لمس برای تلاش دوباره
+"lng_chat_tap_retry" = "لمس برای تلاش دوباره";
+// pwa: ویرایش‌شده
+"lng_chat_edited" = "ویرایش‌شده";
+// pwa: امروز
+"lng_today" = "امروز";
+// pwa: اتصال…
+"lng_connecting" = "اتصال…";
+// pwa: در حال به‌روزرسانی…
+"lng_updating" = "در حال به‌روزرسانی…";
+// pwa: آفلاین
+"lng_offline" = "آفلاین";
+// pwa: بی‌صدا
+"lng_chat_mute" = "بی‌صدا";
+// pwa: باصدا
+"lng_chat_unmute" = "باصدا";
+// pwa: بایگانی
+"lng_chat_archive" = "بایگانی";
+// pwa: خروج از بایگانی
+"lng_chat_unarchive" = "خروج از بایگانی";
+// pwa: مسدود
+"lng_chat_block" = "مسدود";
+// pwa: حذف گفتگو
+"lng_chat_delete_chat" = "حذف گفتگو";
+// pwa: پیام‌های قدیمی‌تر…
+"lng_chat_older_messages" = "پیام‌های قدیمی‌تر…";
+
+// ---- App: updates, install
+// pwa: نسخهٔ جدید الزا آمده
+"lng_app_new_version_eleza_here" = "نسخهٔ جدید الزا آمده";
+// pwa: به‌روزرسانی
+"lng_app_update" = "به‌روزرسانی";
+// pwa: نشست تو تمام شده. دوباره وارد شو.
+"lng_app_session_has_ended_sign_again" = "نشست تو تمام شده. دوباره وارد شو.";
+// pwa: نصب الزا
+"lng_app_install_eleza" = "نصب الزا";
+// pwa: الزا را روی گوشی نصب کن تا مثل یک اپ باز شود.
+"lng_app_install_eleza_phone_opens_like" = "الزا را روی گوشی نصب کن تا مثل یک اپ باز شود.";
+// pwa: نصب
+"lng_app_install" = "نصب";
+// pwa: بعداً
+"lng_app_later" = "بعداً";
+
+// ---- Settings (first part)
+// pwa: زبان
+"lng_settings_language" = "زبان";
+// pwa: ظاهر
+"lng_settings_appearance" = "ظاهر";
+// pwa: روشن
+"lng_theme_light" = "روشن";
+// pwa: تاریک
+"lng_theme_dark" = "تاریک";
+// pwa: خودکار
+"lng_theme_automatic" = "خودکار";
+// pwa: اعلان‌ها
+"lng_settings_notifications" = "اعلان‌ها";
+// pwa: دستگاه‌ها
+"lng_settings_devices" = "دستگاه‌ها";
+// pwa: اعلان فعال شد
+"lng_settings_notifications_are" = "اعلان فعال شد";
+// pwa: مرورگر اجازهٔ اعلان نداد
+"lng_settings_browser_refused_notifications" = "مرورگر اجازهٔ اعلان نداد";
+
+// ---- Chat (second part)
+// pwa: چیزی پیدا نشد
+"lng_nothing_found" = "چیزی پیدا نشد";
+// pwa: پیوست
+"lng_chat_attach" = "پیوست";
+// pwa: عکس یا ویدیو
+"lng_chat_photo_video" = "عکس یا ویدیو";
+// pwa: آپلود ناموفق بود
+"lng_chat_upload_failed" = "آپلود ناموفق بود";
+// pwa: این فایل قابل ارسال نیست.
+"lng_chat_file_cant_be_sent" = "این فایل قابل ارسال نیست.";
+// pwa: فایل خیلی بزرگ است
+"lng_chat_file_too_large" = "فایل خیلی بزرگ است";
+// pwa: پاسخ به {name}
+"lng_chat_reply" = "پاسخ به {name}";
+// pwa: پیام‌های خوانده‌نشده
+"lng_chat_unread_messages" = "پیام‌های خوانده‌نشده";
+// pwa: نقل‌قول
+"lng_chat_quote" = "نقل‌قول";
+// pwa: کپی شد
+"lng_copied" = "کپی شد";
+// pwa: این پیام به‌عنوان اسپویلر نمایش داده می‌شود
+"lng_chat_message_shown_as_spoiler" = "این پیام به‌عنوان اسپویلر نمایش داده می‌شود";
+// pwa: لمس برای نمایش
+"lng_chat_tap_reveal" = "لمس برای نمایش";
+// pwa: نمی‌توانی به این گفتگو پیام بفرستی
+"lng_chat_cant_message_chat" = "نمی‌توانی به این گفتگو پیام بفرستی";
+// pwa: پذیرفتن
+"lng_accept" = "پذیرفتن";
+// pwa: رد کردن
+"lng_decline" = "رد کردن";
+// pwa: می‌خواهد برایت پیام بفرستد
+"lng_chat_wants_to_message" = "می‌خواهد برایت پیام بفرستد";
+// pwa: گفتگو تمام شد
+"lng_chat_conversation_has_ended" = "گفتگو تمام شد";
+// pwa: چیزی اشتباه شد
+"lng_error_generic" = "چیزی اشتباه شد";
+// pwa: اتصال اینترنت را بررسی کن
+"lng_error_connection" = "اتصال اینترنت را بررسی کن";
+// pwa: کد اشتباه است
+"lng_intro_wrong_code" = "کد اشتباه است";
+// pwa: رمز اشتباه است
+"lng_intro_wrong_password" = "رمز اشتباه است";
+// pwa: شماره معتبر نیست
+"lng_intro_invalid_phone" = "شماره معتبر نیست";
+// pwa: همین حالا
+"lng_now" = "همین حالا";
+// pwa: پرش به پایین
+"lng_chat_jump_bottom" = "پرش به پایین";
+// pwa: عضو الزا نیست
+"lng_chat_not_eleza" = "عضو الزا نیست";
+// pwa: افراد
+"lng_chat_people" = "افراد";
+// pwa: شماره یا شناسه را بنویس
+"lng_chat_type_username_number" = "شماره یا شناسه را بنویس";
+// pwa: در حال بارگذاری…
+"lng_loading" = "در حال بارگذاری…";
+// pwa: هیچ‌کس اینجا نیست
+"lng_chat_nobody_here_yet" = "هیچ‌کس اینجا نیست";
+// pwa: شنونده پیوست
+"lng_chat_listener_joined" = "شنونده پیوست";
+// pwa: پیامی سنجاق شد
+"lng_chat_message_was_pinned" = "پیامی سنجاق شد";
+// pwa: تم گفتگو عوض شد
+"lng_chat_chat_theme_changed" = "تم گفتگو عوض شد";
+// pwa: گفتگو ادامه پیدا کرد
+"lng_chat_conversation_continued" = "گفتگو ادامه پیدا کرد";
+// pwa: حساب حذف‌شده
+"lng_deleted_account" = "حساب حذف‌شده";
+// pwa: منتظر شنونده
+"lng_chat_waiting_listener" = "منتظر شنونده";
+// pwa: خوانده‌شده
+"lng_chat_mark_as_read" = "خوانده‌شده";
+// pwa: این گفتگو برای هر دو طرف پاک شود؟
+"lng_chat_delete_chat_both_sides" = "این گفتگو برای هر دو طرف پاک شود؟";
+// pwa: هدایت‌شده
+"lng_chat_forwarded" = "هدایت‌شده";
+// pwa: تماس بی‌پاسخ
+"lng_chat_missed_call" = "تماس بی‌پاسخ";
+// pwa: پخش
+"lng_chat_play" = "پخش";
+// pwa: فرستاده شد
+"lng_chat_sent" = "فرستاده شد";
+// pwa: فایل در دسترس نیست
+"lng_chat_file_isnt_available" = "فایل در دسترس نیست";
+// pwa: برای فرستادن لمس کن
+"lng_chat_tap_send" = "برای فرستادن لمس کن";
+// pwa: مرورگر ضبط صدا را پشتیبانی نمی‌کند
+"lng_chat_browser_cant_record_audio" = "مرورگر ضبط صدا را پشتیبانی نمی‌کند";
+// pwa: دسترسی به میکروفون داده نشد
+"lng_chat_microphone_access_was_denied" = "دسترسی به میکروفون داده نشد";
+// pwa: ارسال
+"lng_send" = "ارسال";
+// pwa: بستن
+"lng_close" = "بستن";
+// pwa: بیشتر
+"lng_more" = "بیشتر";
+// pwa: تو
+"lng_you" = "تو";
+
+// ---- Main column placeholders
+// pwa: یک گفتگو را انتخاب کن
+"lng_main_pick_chat" = "یک گفتگو را انتخاب کن";
+// pwa: به‌زودی در وب
+"lng_main_soon_title" = "به‌زودی در وب";
+// pwa: این بخش در نسخهٔ بعدی وب می‌آید. فعلاً از اپ استفاده کن.
+"lng_main_soon_text" = "این بخش در نسخهٔ بعدی وب می‌آید. فعلاً از اپ استفاده کن.";
+// pwa: به‌زودی
+"lng_soon" = "به‌زودی";
+// pwa: الی، گفتگو و جستجو در نسخهٔ بعدی وب می‌آیند
+"lng_main_soon_all" = "الی، گفتگو و جستجو در نسخهٔ بعدی وب می‌آیند";
+
+// ---- Profile counters
+// pwa: پست
+"lng_profile_posts" = "پست";
+// pwa: دنبال‌کننده
+"lng_profile_followers" = "دنبال‌کننده";
+// pwa: دنبال‌شده
+"lng_profile_following" = "دنبال‌شده";
+
+// ---- Intro errors
+// pwa: این دستگاه
+"lng_settings_this_device" = "این دستگاه";
+// pwa: کد منقضی شده است؛ دوباره درخواست کنید
+"lng_intro_code_has_expired_request_new" = "کد منقضی شده است؛ دوباره درخواست کنید";
+// pwa: این حساب ایمیل بازیابی ندارد
+"lng_intro_account_has_no_recovery_e" = "این حساب ایمیل بازیابی ندارد";
+// pwa: شناسه باید دست‌کم ۳ حرف انگلیسی باشد
+"lng_intro_username_needs_at_least_3" = "شناسه باید دست‌کم ۳ حرف انگلیسی باشد";
+// pwa: در حال بررسی شناسه…
+"lng_intro_checking_username" = "در حال بررسی شناسه…";
+// pwa: بررسی شناسه ممکن نشد؛ هنگام ادامه دوباره بررسی می‌شود
+"lng_intro_couldnt_check_username_checked_again" = "بررسی شناسه ممکن نشد؛ هنگام ادامه دوباره بررسی می‌شود";
+// pwa: آماده‌سازی فایل طول کشید. دوباره امتحان کن.
+"lng_intro_preparing_file_took_too_long" = "آماده‌سازی فایل طول کشید. دوباره امتحان کن.";
+// pwa: کد تأیید
+"lng_intro_verification_code" = "کد تأیید";
+
+// ---- Eli: feed, posts, compose, notifications, topics
+// pwa: برای تو
+"lng_eli_for_you" = "برای تو";
+// pwa: تازه‌سازی
+"lng_eli_refresh" = "تازه‌سازی";
+// pwa: {n} پست تازه
+"lng_eli_new_posts#one" = "{count} پست تازه";
+"lng_eli_new_posts#other" = "{count} پست تازه";
+// pwa: هنوز کسی را دنبال نمی‌کنی
+"lng_eli_dont_follow_anyone_yet" = "هنوز کسی را دنبال نمی‌کنی";
+// pwa: آدم‌هایی را پیدا کن که حرف‌هایشان برایت مهم است.
+"lng_eli_find_people_whose_words_matter" = "آدم‌هایی را پیدا کن که حرف‌هایشان برایت مهم است.";
+// pwa: پیدا کردن آدم‌ها
+"lng_eli_find_people" = "پیدا کردن آدم‌ها";
+// pwa: فعلاً چیزی برای نشان دادن نیست
+"lng_eli_nothing_show_yet" = "فعلاً چیزی برای نشان دادن نیست";
+// pwa: کمی بعد دوباره سر بزن.
+"lng_eli_check_back_little_later" = "کمی بعد دوباره سر بزن.";
+// pwa: {n} دقیقه
+"lng_minutes_short#one" = "{count} دقیقه";
+"lng_minutes_short#other" = "{count} دقیقه";
+// pwa: {n} ساعت
+"lng_hours_short#one" = "{count} ساعت";
+"lng_hours_short#other" = "{count} ساعت";
+// pwa: سنجاق‌شده
+"lng_eli_pinned" = "سنجاق‌شده";
+// pwa: {name} بازنشر کرد
+"lng_eli_user_reposted" = "{name} بازنشر کرد";
+// pwa: چون دنبالش می‌کنی
+"lng_eli_because_follow_them" = "چون دنبالش می‌کنی";
+// pwa: این پست حذف شده است
+"lng_eli_post_was_deleted" = "این پست حذف شده است";
+// pwa: این پست در دسترس نیست
+"lng_eli_post_isnt_available" = "این پست در دسترس نیست";
+// pwa: پاسخ بده
+"lng_eli_reply" = "پاسخ بده";
+// pwa: پسند
+"lng_eli_like" = "پسند";
+// pwa: نپسند
+"lng_eli_dislike" = "نپسند";
+// pwa: بازنشر
+"lng_eli_repost" = "بازنشر";
+// pwa: لغو بازنشر
+"lng_eli_repost_undo" = "لغو بازنشر";
+// pwa: ذخیره
+"lng_eli_save" = "ذخیره";
+// pwa: ذخیره‌شده
+"lng_eli_saved" = "ذخیره‌شده";
+// pwa: اشتراک
+"lng_share" = "اشتراک";
+// pwa: کپی پیوند
+"lng_copy_link" = "کپی پیوند";
+// pwa: کپی متن
+"lng_copy_text" = "کپی متن";
+// pwa: پیوند کپی شد
+"lng_link_copied" = "پیوند کپی شد";
+// pwa: متن کپی شد
+"lng_text_copied" = "متن کپی شد";
+// pwa: بازنشر شد
+"lng_eli_reposted" = "بازنشر شد";
+// pwa: بازنشر لغو شد
+"lng_eli_repost_removed" = "بازنشر لغو شد";
+// pwa: ذخیره شد
+"lng_eli_saved_toast" = "ذخیره شد";
+// pwa: از ذخیره‌ها برداشته شد
+"lng_eli_unsaved_toast" = "از ذخیره‌ها برداشته شد";
+// pwa: گزینه‌های بیشتر
+"lng_eli_more_options" = "گزینه‌های بیشتر";
+// pwa: چه کسی پاسخ بدهد
+"lng_eli_who_can_reply" = "چه کسی پاسخ بدهد";
+// pwa: سنجاق به پروفایل
+"lng_eli_pin_profile" = "سنجاق به پروفایل";
+// pwa: حذف پست
+"lng_eli_delete_post" = "حذف پست";
+// pwa: این پست حذف شود؟
+"lng_eli_delete_post_sure" = "این پست حذف شود؟";
+// pwa: پست حذف شد
+"lng_eli_post_deleted" = "پست حذف شد";
+// pwa: علاقه ندارم
+"lng_eli_not_interested" = "علاقه ندارم";
+// pwa: مسدود کردن
+"lng_block_user" = "مسدود کردن";
+// pwa: مسدود شد
+"lng_blocked_toast" = "مسدود شد";
+// pwa: گزارش پست
+"lng_eli_report_post" = "گزارش پست";
+// pwa: گزارش
+"lng_report" = "گزارش";
+// pwa: فرستادن گزارش
+"lng_report_send" = "فرستادن گزارش";
+// pwa: گزارش ثبت شد. ممنون که خبر دادی.
+"lng_report_sent" = "گزارش ثبت شد. ممنون که خبر دادی.";
+// pwa: توضیح بیشتر (اختیاری)
+"lng_report_details" = "توضیح بیشتر (اختیاری)";
+// pwa: این کاربر را هم مسدود کن
+"lng_report_also_block" = "این کاربر را هم مسدود کن";
+// pwa: خواندن رشته
+"lng_eli_read_thread" = "خواندن رشته";
+// pwa: بخش
+"lng_eli_thread_parts" = "بخش";
+// pwa: دقیقه
+"lng_minutes_unit" = "دقیقه";
+// pwa: رأی
+"lng_eli_poll_votes" = "رأی";
+// pwa: پایان یافته
+"lng_eli_poll_ended" = "پایان یافته";
+// pwa: بازپس‌گیری رأی
+"lng_eli_retract_vote" = "بازپس‌گیری رأی";
+// pwa: تمام شد
+"lng_ended" = "تمام شد";
+// pwa: پیوستن به گفتگو
+"lng_eli_join_conversation" = "پیوستن به گفتگو";
+// pwa: پیوستن
+"lng_join" = "پیوستن";
+// pwa: پیام صوتی
+"lng_eli_voice_note" = "پیام صوتی";
+// pwa: پاسخ‌ها
+"lng_eli_replies" = "پاسخ‌ها";
+// pwa: پاسخ‌ها بسته است
+"lng_eli_replies_are_closed" = "پاسخ‌ها بسته است";
+// pwa: مرتبط‌ترین
+"lng_eli_most_relevant" = "مرتبط‌ترین";
+// pwa: تازه‌ترین
+"lng_eli_newest" = "تازه‌ترین";
+// pwa: هنوز کسی پاسخ نداده. اولین نفر باش.
+"lng_eli_no_replies_yet_be_first" = "هنوز کسی پاسخ نداده. اولین نفر باش.";
+// pwa: این پست دیگر در دسترس نیست
+"lng_eli_post_no_longer_available" = "این پست دیگر در دسترس نیست";
+// pwa: دوباره
+"lng_retry" = "دوباره";
+// pwa: دنبال کردن
+"lng_follow" = "دنبال کردن";
+// pwa: دنبال می‌کنی
+"lng_following" = "دنبال می‌کنی";
+// pwa: بازدید
+"lng_eli_views" = "بازدید";
+// pwa: حذف نظر
+"lng_eli_delete_comment" = "حذف نظر";
+// pwa: این نظر حذف شده است
+"lng_eli_comment_was_deleted" = "این نظر حذف شده است";
+// pwa: رشتهٔ {name}
+"lng_eli_thread_of" = "رشتهٔ {name}";
+// pwa: الی تازه
+"lng_eli_new_post" = "الی تازه";
+// pwa: دعوت به گفتگو
+"lng_eli_invite_conversation" = "دعوت به گفتگو";
+// pwa: چه خبر؟
+"lng_eli_whats_new" = "چه خبر؟";
+// pwa: انتشار
+"lng_eli_publish" = "انتشار";
+// pwa: منتشر شد
+"lng_eli_published" = "منتشر شد";
+// pwa: پاسخت فرستاده شد
+"lng_eli_reply_was_sent" = "پاسخت فرستاده شد";
+// pwa: منتشر نشد. دوباره امتحان کن.
+"lng_eli_couldnt_post_try_again" = "منتشر نشد. دوباره امتحان کن.";
+// pwa: ویرایش شد
+"lng_eli_edited" = "ویرایش شد";
+// pwa: پیش‌نویس دور ریخته شود؟
+"lng_eli_discard_draft" = "پیش‌نویس دور ریخته شود؟";
+// pwa: دور بریز
+"lng_eli_discard" = "دور بریز";
+// pwa: نگه‌دار برای بعد
+"lng_eli_keep_later" = "نگه‌دار برای بعد";
+// pwa: افزودن گزینه
+"lng_eli_add_option" = "افزودن گزینه";
+// pwa: حذف نظرسنجی
+"lng_eli_remove_poll" = "حذف نظرسنجی";
+// pwa: افزودن بخش
+"lng_eli_add_part" = "افزودن بخش";
+// pwa: مدت
+"lng_eli_duration" = "مدت";
+// pwa: همه
+"lng_all" = "همه";
+// pwa: نام‌بردن‌ها
+"lng_eli_mentions" = "نام‌بردن‌ها";
+// pwa: درخواست‌های دنبال کردن
+"lng_eli_follow_requests" = "درخواست‌های دنبال کردن";
+// pwa: خبری نیست
+"lng_eli_nothing_new" = "خبری نیست";
+// pwa: وقتی کسی پاسخ بدهد یا به گفتگویت بپیوندد، اینجا می‌بینی.
+"lng_eli_when_someone_replies_joins_conversation" = "وقتی کسی پاسخ بدهد یا به گفتگویت بپیوندد، اینجا می‌بینی.";
+// pwa: قبول
+"lng_eli_request_accept" = "قبول";
+// pwa: رد
+"lng_eli_request_decline" = "رد";
+// pwa: درخواست تازه‌ای نداری.
+"lng_eli_no_new_requests" = "درخواست تازه‌ای نداری.";
+// pwa: در حال شکل‌گیری
+"lng_eli_trending" = "در حال شکل‌گیری";
+// pwa: رو به رشد
+"lng_eli_rising" = "رو به رشد";
+// pwa: فعلاً موضوع داغی نیست
+"lng_eli_nothing_trending_right_now" = "فعلاً موضوع داغی نیست";
+// pwa: ذخیره‌ها
+"lng_eli_bookmarks_title" = "ذخیره‌ها";
+// pwa: چیزی ذخیره نکرده‌ای
+"lng_eli_havent_saved_anything" = "چیزی ذخیره نکرده‌ای";
+// pwa: فقط خودت نشان‌شده‌هایت را می‌بینی
+"lng_eli_only_can_see_saved_posts" = "فقط خودت نشان‌شده‌هایت را می‌بینی";
+// pwa: هنوز پستی با این موضوع نیست
+"lng_eli_no_posts_topic_yet" = "هنوز پستی با این موضوع نیست";
+// pwa: گفتگوهای باز
+"lng_eli_open_conversations" = "گفتگوهای باز";
+// pwa: باز کردن گفتگو دربارهٔ این
+"lng_eli_start_conversation_about" = "باز کردن گفتگو دربارهٔ این";
+// pwa: علاقه‌ای ندارم
+"lng_eli_topic_not_interested" = "علاقه‌ای ندارم";
+// pwa: صدای اصلی
+"lng_eli_original_sound" = "صدای اصلی";
+// pwa: هنوز ویدیویی با این صدا ساخته نشده
+"lng_eli_no_videos_with_sound_yet" = "هنوز ویدیویی با این صدا ساخته نشده";
+// pwa: ویدیو بارگذاری نشد. اتصال اینترنت را بررسی کن.
+"lng_eli_video_couldnt_load_check_connection" = "ویدیو بارگذاری نشد. اتصال اینترنت را بررسی کن.";
+// pwa: نظرها
+"lng_eli_comments" = "نظرها";
+// pwa: نظرت را بنویس…
+"lng_eli_write_comment" = "نظرت را بنویس…";
+// pwa: صدا
+"lng_eli_sound" = "صدا";
+
+// ---- Talk: open conversations, anonymous layer
+// pwa: موضوع‌ها
+"lng_conv_topics" = "موضوع‌ها";
+// pwa: فعلاً گفتگوی بازی نیست
+"lng_conv_no_open_conversations_yet" = "فعلاً گفتگوی بازی نیست";
+// pwa: اولین نفر باش که حرفی را باز می‌کند.
+"lng_conv_be_first_open_one" = "اولین نفر باش که حرفی را باز می‌کند.";
+// pwa: باز کردن گفتگو
+"lng_conv_start_conversation" = "باز کردن گفتگو";
+// pwa: {n} ساعت مانده
+"lng_conv_hours_left#one" = "{count} ساعت مانده";
+"lng_conv_hours_left#other" = "{count} ساعت مانده";
+// pwa: {n} دقیقه مانده
+"lng_conv_minutes_left#one" = "{count} دقیقه مانده";
+"lng_conv_minutes_left#other" = "{count} دقیقه مانده";
+// pwa: {n} روز مانده
+"lng_conv_days_left#one" = "{count} روز مانده";
+"lng_conv_days_left#other" = "{count} روز مانده";
+// pwa: {t} مانده
+"lng_conv_time_left" = "{time} مانده";
+// pwa: دیگر نشان نده
+"lng_conv_dont_show_again" = "دیگر نشان نده";
+// pwa: این موضوع دیگر نشان داده نمی‌شود
+"lng_conv_topic_wont_be_shown_again" = "این موضوع دیگر نشان داده نمی‌شود";
+// pwa: گفتگوی تازه
+"lng_conv_new_conversation" = "گفتگوی تازه";
+// pwa: امروز از چه می‌خواهی حرف بزنی؟
+"lng_conv_what_do_want_talk_about" = "امروز از چه می‌خواهی حرف بزنی؟";
+// pwa: یک جمله کافی است. کسی که می‌شنود فقط همین را می‌بیند.
+"lng_conv_one_sentence_enough_listener_only" = "یک جمله کافی است. کسی که می‌شنود فقط همین را می‌بیند.";
+// pwa: دسته
+"lng_conv_category" = "دسته";
+// pwa: با چه نامی؟
+"lng_conv_as_whom" = "با چه نامی؟";
+// pwa: با نام {name}
+"lng_conv_as_name" = "با نام {name}";
+// pwa: با نام خودم
+"lng_conv_as_myself" = "با نام خودم";
+// pwa: تا کی باز باشد؟
+"lng_conv_open_how_long" = "تا کی باز باشد؟";
+// pwa: در گفتگوی ناشناس نامت دیده نمی‌شود و بعد از پایان، همه‌چیز پاک می‌شود.
+"lng_conv_anonymous_conversation_name_stays_hidden" = "در گفتگوی ناشناس نامت دیده نمی‌شود و بعد از پایان، همه‌چیز پاک می‌شود.";
+// pwa: باز نشد. دوباره امتحان کن.
+"lng_conv_couldnt_open_try_again" = "باز نشد. دوباره امتحان کن.";
+// pwa: به سقف گفت‌وگوهای هم‌زمان رسیده‌اید
+"lng_conv_youve_reached_limit_concurrent_conversations" = "به سقف گفت‌وگوهای هم‌زمان رسیده‌اید";
+// pwa: شنیدن
+"lng_conv_listen" = "شنیدن";
+// pwa: گوینده
+"lng_conv_speaker" = "گوینده";
+// pwa: این گفتگو دیگر باز نیست
+"lng_conv_conversation_no_longer_open" = "این گفتگو دیگر باز نیست";
+// pwa: شاید تمام شده یا شنونده‌اش را پیدا کرده.
+"lng_conv_may_have_ended_found_its" = "شاید تمام شده یا شنونده‌اش را پیدا کرده.";
+// pwa: فقط یک نفر می‌تواند بشنود. تا پایان زمان، گفتگو بین شما دو نفر می‌ماند.
+"lng_conv_only_one_person_can_listen" = "فقط یک نفر می‌تواند بشنود. تا پایان زمان، گفتگو بین شما دو نفر می‌ماند.";
+// pwa: دیگران تو را این‌طور می‌بینند
+"lng_conv_others_see_like" = "دیگران تو را این‌طور می‌بینند";
+// pwa: پیوستن ممکن نشد
+"lng_conv_couldnt_join" = "پیوستن ممکن نشد";
+// pwa: به گفتگو پیوستی؛ به‌زودی در فهرست چت‌ها نمایش داده می‌شود.
+"lng_conv_joined_will_appear_chats_shortly" = "به گفتگو پیوستی؛ به‌زودی در فهرست چت‌ها نمایش داده می‌شود.";
+// pwa: گفتگوی تو باز شد
+"lng_conv_conversation_open" = "گفتگوی تو باز شد";
+// pwa: دنبال شنونده می‌گردیم…
+"lng_conv_looking_listener" = "دنبال شنونده می‌گردیم…";
+// pwa: هر وقت کسی بپیوندد، همین‌جا خبرت می‌کنیم.
+"lng_conv_well_tell_right_here_when" = "هر وقت کسی بپیوندد، همین‌جا خبرت می‌کنیم.";
+// pwa: رفتن به چت‌ها
+"lng_conv_go_chats" = "رفتن به چت‌ها";
+// pwa: دعوت در الی
+"lng_conv_invite_eli" = "دعوت در الی";
+// pwa: بستن گفتگو
+"lng_conv_close_conversation" = "بستن گفتگو";
+// pwa: گفتگو را ببندی؟
+"lng_conv_close_sure" = "گفتگو را ببندی؟";
+// pwa: موضوع از فهرست برداشته می‌شود و کسی نمی‌تواند بپیوندد.
+"lng_conv_topic_removed_from_list_nobody" = "موضوع از فهرست برداشته می‌شود و کسی نمی‌تواند بپیوندد.";
+// pwa: {name} پیوست!
+"lng_conv_joined" = "{name} پیوست!";
+// pwa: رفتن به چت
+"lng_conv_go_chat" = "رفتن به چت";
+// pwa: پایان گفتگو
+"lng_conv_end_conversation" = "پایان گفتگو";
+// pwa: ادامه در پیام‌ها
+"lng_conv_continue_messages" = "ادامه در پیام‌ها";
+// pwa: درخواست ادامه فرستاده شد
+"lng_conv_continue_request_sent" = "درخواست ادامه فرستاده شد";
+// pwa: تا {n} روز قابل خواندن
+"lng_conv_readable_days#one" = "تا {count} روز قابل خواندن";
+"lng_conv_readable_days#other" = "تا {count} روز قابل خواندن";
+
+// ---- Search and discovery
+// pwa: جستجوی آدم‌ها، موضوع‌ها، پست‌ها
+"lng_search_search_people_topics_posts" = "جستجوی آدم‌ها، موضوع‌ها، پست‌ها";
+// pwa: آدم‌ها
+"lng_search_people" = "آدم‌ها";
+// pwa: پست‌ها
+"lng_search_posts" = "پست‌ها";
+// pwa: گفتگوها
+"lng_search_conversations" = "گفتگوها";
+// pwa: هشتگ‌های داغ
+"lng_search_hot_hashtags" = "هشتگ‌های داغ";
+// pwa: ویدیوهای تازه
+"lng_search_new_videos" = "ویدیوهای تازه";
+// pwa: آدم‌هایی که شاید بشناسی
+"lng_search_people_may_know" = "آدم‌هایی که شاید بشناسی";
+// pwa: هنوز موضوعی در حال شکل‌گیری نیست.
+"lng_search_nothing_trending_yet" = "هنوز موضوعی در حال شکل‌گیری نیست.";
+// pwa: بارگذاری نشد
+"lng_error_load" = "بارگذاری نشد";
+// pwa: جست‌وجو انجام نشد
+"lng_search_search_failed" = "جست‌وجو انجام نشد";
+// pwa: اولین نفر باش
+"lng_search_be_first" = "اولین نفر باش";
+// pwa: درخواست فرستاده شد
+"lng_follow_requested" = "درخواست فرستاده شد";
+// pwa: تو هم دنبال کن
+"lng_follow_back" = "تو هم دنبال کن";
+// pwa: دنبال نکردن
+"lng_unfollow" = "دنبال نکردن";
+// pwa: بی‌خیال
+"lng_never_mind" = "بی‌خیال";
+// pwa: پیشنهاد برای تو
+"lng_search_suggested" = "پیشنهاد برای تو";
+
+// ---- Profile
+// pwa: ویرایش نمایه
+"lng_profile_edit_profile" = "ویرایش نمایه";
+// pwa: اشتراک‌گذاری نمایه
+"lng_profile_share_profile" = "اشتراک‌گذاری نمایه";
+// pwa: رسانه
+"lng_profile_media" = "رسانه";
+// pwa: هنوز پستی نیست
+"lng_profile_no_posts_yet" = "هنوز پستی نیست";
+// pwa: هنوز پاسخی نیست
+"lng_profile_no_replies_yet" = "هنوز پاسخی نیست";
+// pwa: هنوز رسانه‌ای نیست
+"lng_profile_no_media_yet" = "هنوز رسانه‌ای نیست";
+// pwa: این حساب خصوصی است
+"lng_profile_account_private" = "این حساب خصوصی است";
+// pwa: نمایه باز نشد
+"lng_profile_couldnt_open_profile" = "نمایه باز نشد";
+// pwa: رفع مسدودی
+"lng_unblock" = "رفع مسدودی";
+// pwa: بی‌صدا کردن
+"lng_profile_mute" = "بی‌صدا کردن";
+// pwa: لغو بی‌صدا
+"lng_profile_unmute" = "لغو بی‌صدا";
+// pwa: گزارش حساب
+"lng_profile_report_account" = "گزارش حساب";
+// pwa: نمایه به‌روز شد
+"lng_profile_profile_updated" = "نمایه به‌روز شد";
+// pwa: ذخیره نشد
+"lng_profile_couldnt_save" = "ذخیره نشد";
+// pwa: پیوند
+"lng_profile_link" = "پیوند";
+// pwa: دربارهٔ من
+"lng_profile_about_me" = "دربارهٔ من";
+// pwa: تاریخ تولد
+"lng_profile_birthday" = "تاریخ تولد";
+// pwa: تغییر عکس
+"lng_profile_change_photo" = "تغییر عکس";
+// pwa: هنوز کسی دنبالت نمی‌کند
+"lng_profile_nobody_follows_yet" = "هنوز کسی دنبالت نمی‌کند";
+// pwa: کسی پیدا نشد
+"lng_profile_nobody_found" = "کسی پیدا نشد";
+// pwa: این فهرست نمایش داده نمی‌شود
+"lng_profile_list_not_shown" = "این فهرست نمایش داده نمی‌شود";
+// pwa: کسی نپسند نزده
+"lng_profile_no_dislikes_yet" = "کسی نپسند نزده";
+// pwa: هنوز کسی نپسندیده
+"lng_profile_no_likes_yet" = "هنوز کسی نپسندیده";
+// pwa: نپسندها
+"lng_profile_dislikes" = "نپسندها";
+// pwa: پسندها
+"lng_profile_likes" = "پسندها";
+// pwa: هنوز کسی نیست
+"lng_profile_nobody_yet" = "هنوز کسی نیست";
+
+// ---- Settings
+// pwa: حساب کاربری
+"lng_settings_account" = "حساب کاربری";
+// pwa: حریم خصوصی
+"lng_settings_privacy" = "حریم خصوصی";
+// pwa: پیام‌ها و گفتگو
+"lng_settings_messages_conversations" = "پیام‌ها و گفتگو";
+// pwa: بی‌صدا و مسدود
+"lng_settings_muted_blocked" = "بی‌صدا و مسدود";
+// pwa: منطقهٔ الی
+"lng_settings_eli_region" = "منطقهٔ الی";
+// pwa: دربارهٔ الزا
+"lng_settings_about_eleza" = "دربارهٔ الزا";
+// pwa: حساب خصوصی
+"lng_settings_private_account" = "حساب خصوصی";
+// pwa: حساب عمومی
+"lng_settings_public_account" = "حساب عمومی";
+// pwa: خاموش
+"lng_off" = "خاموش";
+// pwa: ذخیره نشد؛ دوباره امتحان کن.
+"lng_settings_couldnt_save_try_again" = "ذخیره نشد؛ دوباره امتحان کن.";
+// pwa: اتصال را بررسی کن و دوباره امتحان کن.
+"lng_settings_check_connection_try_again" = "اتصال را بررسی کن و دوباره امتحان کن.";
+// pwa: واژه‌های بی‌صدا
+"lng_settings_muted_words" = "واژه‌های بی‌صدا";
+// pwa: مسدودها
+"lng_settings_blocked" = "مسدودها";
+// pwa: بی‌صداها
+"lng_settings_muted" = "بی‌صداها";
+// pwa: موضوع‌های پنهان
+"lng_settings_hidden_topics" = "موضوع‌های پنهان";
+// pwa: فهرست خالی است
+"lng_settings_list_empty" = "فهرست خالی است";
+// pwa: خروجی داده‌ها
+"lng_settings_data_export" = "خروجی داده‌ها";
+// pwa: حذف حساب
+"lng_settings_delete_account" = "حذف حساب";
+// pwa: از حساب خارج شوی؟
+"lng_settings_sign_out_sure" = "از حساب خارج شوی؟";
+// pwa: برای ورود دوباره، کدی به شماره‌ات پیامک می‌شود.
+"lng_settings_sign_out_about" = "برای ورود دوباره، کدی به شماره‌ات پیامک می‌شود.";
+
+// ---- Desktop additions
+"lng_ok" = "باشه";
+"lng_show" = "نمایش";
+"lng_hide" = "پنهان";
+"lng_menu_undo" = "واگرد";
+"lng_menu_redo" = "ازنو";
+"lng_menu_cut" = "برش";
+"lng_menu_paste" = "چسباندن";
+"lng_menu_select_all" = "انتخاب همه";
+"lng_menu_open_link" = "باز کردن پیوند";
+"lng_tray_open" = "باز کردن الزا";
+"lng_tray_quit" = "خروج از الزا";
+"lng_main_pick_post" = "یک پست را باز کن";
+"lng_main_pick_search" = "چیزی را جستجو کن";
+"lng_main_your_profile" = "نمایه‌ات";
+"lng_main_section_soon" = "این بخش به‌زودی به نسخهٔ دسکتاپ اضافه می‌شود.";
+"lng_count_thousand" = "هزار";
+"lng_count_million" = "میلیون";
+"lng_settings_close_to_tray" = "با بستن پنجره در سینی سیستم بماند";
+"lng_settings_theme_system" = "مطابق سیستم";
+"lng_language_fa" = "فارسی";
+"lng_language_en" = "English";
+"lng_unread_messages#one" = "{count} پیام خوانده‌نشده";
+"lng_unread_messages#other" = "{count} پیام خوانده‌نشده";

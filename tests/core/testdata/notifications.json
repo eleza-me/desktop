@@ -1,0 +1,71 @@
+{
+ "notifications": [
+  {
+   "id": "n1",
+   "kind": "like",
+   "actors": [
+    "u_sara",
+    "u_ali"
+   ],
+   "actor_count": 2,
+   "refs": {
+    "post": "p6"
+   },
+   "tab": "all",
+   "updated_at": 1791575661925,
+   "read": false
+  },
+  {
+   "id": "n2",
+   "kind": "reply",
+   "actors": [
+    "u_ali"
+   ],
+   "actor_count": 1,
+   "refs": {
+    "post": "p6",
+    "reply": "r3"
+   },
+   "tab": "all",
+   "updated_at": 1791572661925,
+   "read": false
+  },
+  {
+   "id": "n3",
+   "kind": "follow",
+   "actors": [
+    "u_sara"
+   ],
+   "actor_count": 1,
+   "tab": "all",
+   "updated_at": 1791489861925,
+   "read": true
+  },
+  {
+   "id": "n4",
+   "kind": "mention",
+   "actors": [
+    "u_sara"
+   ],
+   "actor_count": 1,
+   "refs": {
+    "post": "p1"
+   },
+   "tab": "mentions",
+   "updated_at": 1791403461925,
+   "read": true
+  },
+  {
+   "id": "n5",
+   "kind": "conversation_joined",
+   "actors": [],
+   "actor_count": 1,
+   "refs": {
+    "chat": "c4"
+   },
+   "tab": "all",
+   "updated_at": 1791317061925,
+   "read": true
+  }
+ ]
+}

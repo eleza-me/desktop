@@ -1,0 +1,67 @@
+{
+ "replies": [
+  {
+   "id": "r1",
+   "author": "u_ali",
+   "type": "text",
+   "created_at": 1791575061925,
+   "reply_policy": "everyone",
+   "can_reply": true,
+   "can_repost": true,
+   "counts": {
+    "likes": 4,
+    "dislikes": 0,
+    "replies": 0,
+    "reposts": 0,
+    "quotes": 0,
+    "views": 0
+   },
+   "my": {},
+   "text": "حتماً! هفتهٔ بعد؟",
+   "reply_to": "p1",
+   "thread_root": "p1"
+  },
+  {
+   "id": "r2",
+   "author": "u_sara",
+   "type": "text",
+   "created_at": 1791575361925,
+   "reply_policy": "everyone",
+   "can_reply": true,
+   "can_repost": true,
+   "counts": {
+    "likes": 1,
+    "dislikes": 0,
+    "replies": 0,
+    "reposts": 0,
+    "quotes": 0,
+    "views": 0
+   },
+   "my": {},
+   "text": "آره، جمعه خوبه",
+   "reply_to": "r1",
+   "thread_root": "p1"
+  },
+  {
+   "id": "r3",
+   "author": "u_me",
+   "type": "text",
+   "created_at": 1791575661925,
+   "reply_policy": "everyone",
+   "can_reply": true,
+   "can_repost": true,
+   "counts": {
+    "likes": 2,
+    "dislikes": 0,
+    "replies": 0,
+    "reposts": 0,
+    "quotes": 0,
+    "views": 0
+   },
+   "my": {},
+   "text": "منم هستم 🙋‍♂️",
+   "reply_to": "p1",
+   "thread_root": "p1"
+  }
+ ]
+}

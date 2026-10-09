@@ -1,0 +1,202 @@
+#include "core/core_settings.h"
+
+#include <QtCore/QDir>
+#include <QtCore/QFile>
+#include <QtCore/QFileInfo>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QSaveFile>
+
+namespace Core {
+namespace {
+
+constexpr auto kSaveDelay = 600;
+
+[[nodiscard]] QString ThemeToString(style::ThemeMode mode) {
+	switch (mode) {
+	case style::ThemeMode::Light: return QStringLiteral("light");
+	case style::ThemeMode::Dark: return QStringLiteral("dark");
+	case style::ThemeMode::System: break;
+	}
+	return QStringLiteral("system");
+}
+
+[[nodiscard]] style::ThemeMode ThemeFromString(const QString &value) {
+	if (value == QStringLiteral("light")) {
+		return style::ThemeMode::Light;
+	} else if (value == QStringLiteral("dark")) {
+		return style::ThemeMode::Dark;
+	}
+	return style::ThemeMode::System;
+}
+
+} // namespace
+
+Settings::Settings(const QString &path, QObject *parent)
+: QObject(parent)
+, _path(path) {
+	_saveTimer.setSingleShot(true);
+	_saveTimer.setInterval(kSaveDelay);
+	QObject::connect(&_saveTimer, &QTimer::timeout, this, [this] { flush(); });
+	read();
+}
+
+Settings::~Settings() {
+	flush();
+}
+
+void Settings::read() {
+	if (_path.isEmpty()) {
+		return;
+	}
+	auto file = QFile(_path);
+	if (!file.open(QIODevice::ReadOnly)) {
+		return;
+	}
+	const auto document = QJsonDocument::fromJson(file.readAll());
+	if (!document.isObject()) {
+		return;
+	}
+	const auto root = document.object();
+	_language = Lang::FromId(
+		root.value(QStringLiteral("language")).toString(),
+		Lang::Language::Persian);
+	_themeMode = ThemeFromString(
+		root.value(QStringLiteral("theme")).toString());
+	const auto window = root.value(QStringLiteral("window")).toObject();
+	if (!window.isEmpty()) {
+		_windowGeometry.rect = QRect(
+			window.value(QStringLiteral("x")).toInt(),
+			window.value(QStringLiteral("y")).toInt(),
+			window.value(QStringLiteral("w")).toInt(),
+			window.value(QStringLiteral("h")).toInt());
+		_windowGeometry.maximized = window.value(
+			QStringLiteral("maximized")).toBool();
+	}
+	_sideColumnWidth = root.value(QStringLiteral("side_column_width")).toInt();
+	_closeToTray = root.value(QStringLiteral("close_to_tray")).toBool(true);
+	_lastTab = root.value(QStringLiteral("last_tab")).toString();
+	const auto notify = root.value(QStringLiteral("notifications")).toObject();
+	_notifications.desktopEnabled = notify.value(
+		QStringLiteral("desktop")).toBool(true);
+	_notifications.soundEnabled = notify.value(
+		QStringLiteral("sound")).toBool(true);
+	_notifications.showPreview = notify.value(
+		QStringLiteral("preview")).toBool(true);
+	_notifications.showSender = notify.value(
+		QStringLiteral("sender")).toBool(true);
+	_notifications.countUnreadMuted = notify.value(
+		QStringLiteral("count_muted")).toBool(false);
+	_notifications.flashTaskbar = notify.value(
+		QStringLiteral("flash")).toBool(true);
+}
+
+QJsonObject Settings::serialize() const {
+	auto window = QJsonObject();
+	if (!_windowGeometry.rect.isNull()) {
+		window.insert(QStringLiteral("x"), _windowGeometry.rect.x());
+		window.insert(QStringLiteral("y"), _windowGeometry.rect.y());
+		window.insert(QStringLiteral("w"), _windowGeometry.rect.width());
+		window.insert(QStringLiteral("h"), _windowGeometry.rect.height());
+		window.insert(QStringLiteral("maximized"), _windowGeometry.maximized);
+	}
+	auto notify = QJsonObject();
+	notify.insert(QStringLiteral("desktop"), _notifications.desktopEnabled);
+	notify.insert(QStringLiteral("sound"), _notifications.soundEnabled);
+	notify.insert(QStringLiteral("preview"), _notifications.showPreview);
+	notify.insert(QStringLiteral("sender"), _notifications.showSender);
+	notify.insert(
+		QStringLiteral("count_muted"),
+		_notifications.countUnreadMuted);
+	notify.insert(QStringLiteral("flash"), _notifications.flashTaskbar);
+
+	auto root = QJsonObject();
+	root.insert(QStringLiteral("language"), Lang::Id(_language));
+	root.insert(QStringLiteral("theme"), ThemeToString(_themeMode));
+	if (!window.isEmpty()) {
+		root.insert(QStringLiteral("window"), window);
+	}
+	if (_sideColumnWidth > 0) {
+		root.insert(QStringLiteral("side_column_width"), _sideColumnWidth);
+	}
+	root.insert(QStringLiteral("close_to_tray"), _closeToTray);
+	if (!_lastTab.isEmpty()) {
+		root.insert(QStringLiteral("last_tab"), _lastTab);
+	}
+	root.insert(QStringLiteral("notifications"), notify);
+	return root;
+}
+
+void Settings::scheduleWrite() {
+	_dirty = true;
+	if (!_path.isEmpty()) {
+		_saveTimer.start();
+	}
+	emit changed();
+}
+
+void Settings::flush() {
+	_saveTimer.stop();
+	if (!_dirty || _path.isEmpty()) {
+		return;
+	}
+	_dirty = false;
+	QDir().mkpath(QFileInfo(_path).absolutePath());
+	auto file = QSaveFile(_path);
+	if (!file.open(QIODevice::WriteOnly)) {
+		return;
+	}
+	file.write(QJsonDocument(serialize()).toJson(QJsonDocument::Indented));
+	file.commit();
+}
+
+void Settings::setLanguage(Lang::Language language) {
+	if (_language != language) {
+		_language = language;
+		scheduleWrite();
+	}
+}
+
+void Settings::setThemeMode(style::ThemeMode mode) {
+	if (_themeMode != mode) {
+		_themeMode = mode;
+		scheduleWrite();
+	}
+}
+
+void Settings::setWindowGeometry(const WindowGeometry &geometry) {
+	if (_windowGeometry.rect != geometry.rect
+		|| _windowGeometry.maximized != geometry.maximized) {
+		_windowGeometry = geometry;
+		scheduleWrite();
+	}
+}
+
+void Settings::setSideColumnWidth(int width) {
+	if (_sideColumnWidth != width) {
+		_sideColumnWidth = width;
+		scheduleWrite();
+	}
+}
+
+void Settings::setCloseToTray(bool enabled) {
+	if (_closeToTray != enabled) {
+		_closeToTray = enabled;
+		scheduleWrite();
+	}
+}
+
+void Settings::setNotifications(const NotificationSettings &settings) {
+	if (!(_notifications == settings)) {
+		_notifications = settings;
+		scheduleWrite();
+	}
+}
+
+void Settings::setLastTab(const QString &tab) {
+	if (_lastTab != tab) {
+		_lastTab = tab;
+		scheduleWrite();
+	}
+}
+
+} // namespace Core

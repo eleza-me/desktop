@@ -1,0 +1,424 @@
+#include "window/window_main_window.h"
+
+#include "core/core_application.h"
+#include "lang/lang_format.h"
+#include "lang_auto.h"
+#include "ui/layers/box_content.h"
+#include "ui/painter.h"
+#include "ui/toast/toast.h"
+#include "ui/ui_utility.h"
+#include "window/window_main_layout.h"
+#include "window/window_session_controller.h"
+#include "styles/style_window.h"
+
+#include <QtGui/QCloseEvent>
+#include <QtGui/QGuiApplication>
+#include <QtGui/QKeyEvent>
+#include <QtGui/QScreen>
+#include <QtGui/QShortcut>
+#include <QtGui/QWindow>
+#include <QtWidgets/QApplication>
+#include <QtWidgets/QMenu>
+#include <QtWidgets/QSystemTrayIcon>
+
+namespace Window {
+namespace {
+
+constexpr auto kGeometrySaveDelay = 500;
+
+[[nodiscard]] QIcon BaseIcon() {
+	auto result = QIcon();
+	for (const auto size : { 16, 24, 32, 48, 64, 256 }) {
+		result.addFile(
+			QStringLiteral(":/gui/art/icon%1.png").arg(size),
+			QSize(size, size));
+	}
+	return result;
+}
+
+} // namespace
+
+MainWindow::MainWindow()
+: RpWidget(nullptr)
+, _body(new Ui::RpWidget(this))
+, _layers(new Ui::LayerStackWidget(_body))
+, _baseIcon(BaseIcon()) {
+	setAttribute(Qt::WA_OpaquePaintEvent);
+	setMinimumSize(st::windowMinWidth, st::windowMinHeight);
+	resize(st::windowDefaultWidth, st::windowDefaultHeight);
+	setWindowIcon(_baseIcon);
+	refreshTitle();
+
+	_geometryTimer.setSingleShot(true);
+	_geometryTimer.setInterval(kGeometrySaveDelay);
+	QObject::connect(&_geometryTimer, &QTimer::timeout, this, [this] {
+		saveGeometryNow();
+	});
+
+	QObject::connect(_body, &Ui::RpWidget::paintRequest, _body, [this] {
+		auto p = QPainter(_body);
+		p.fillRect(_body->rect(), st::bgCanvas);
+	});
+
+	setupShortcuts();
+	if (!Core::App().commandLine().ephemeral()) {
+		setupTray();
+	}
+	QObject::connect(
+		&Core::App(),
+		&Core::Application::routeRequested,
+		this,
+		[this](const QString &route) {
+			if (_controller) {
+				_controller->openRoute(route);
+			}
+		});
+}
+
+MainWindow::~MainWindow() {
+	saveGeometryNow();
+	// Sections refer to the controller: destroy them first.
+	_content.destroy();
+	_controller = nullptr;
+}
+
+void MainWindow::setContent(Ui::object_ptr<Ui::RpWidget> content) {
+	_layers->hideLayers(anim::type::instant);
+	if (const auto was = _content.release()) {
+		was->hide();
+		was->deleteLater();
+	}
+	_content = std::move(content);
+	if (_content) {
+		_content->setParent(_body);
+		_content->setGeometry(_body->rect());
+		_content->show();
+		_content->lower();
+		_content->setFocus();
+	}
+	_layers->raise();
+}
+
+void MainWindow::showSession(Main::Session *session) {
+	_layers->hideLayers(anim::type::instant);
+	_content.destroy();
+	_controller = std::make_unique<SessionController>(this, session);
+	const auto layout = new MainLayout(_body, _controller.get());
+	setContent(Ui::Owned<Ui::RpWidget>(layout));
+	layout->setInnerFocus();
+}
+
+void MainWindow::destroySession() {
+	if (_controller) {
+		_layers->hideLayers(anim::type::instant);
+		_content.destroy();
+		_controller = nullptr;
+	}
+}
+
+void MainWindow::show(
+		Ui::object_ptr<Ui::BoxContent> box,
+		Ui::LayerOption option) {
+	_layers->showBox(std::move(box), option);
+}
+
+void MainWindow::showSheet(
+		Ui::object_ptr<Ui::BoxContent> content,
+		Ui::LayerOption option) {
+	_layers->showSheet(std::move(content), option);
+}
+
+void MainWindow::showToast(const QString &text) {
+	Ui::Toast::Show(_body, text);
+}
+
+void MainWindow::refreshTitle() {
+	const auto name = tr::lng_app_name(tr::now);
+	setWindowTitle((_unreadCount > 0)
+		? (QStringLiteral("(%1) ").arg(Lang::Num(_unreadCount)) + name)
+		: name);
+	refreshTrayMenu();
+}
+
+void MainWindow::setUnreadCount(int count, bool muted) {
+	count = std::max(count, 0);
+	if (_unreadCount == count && _unreadMuted == muted) {
+		return;
+	}
+	_unreadCount = count;
+	_unreadMuted = muted;
+	refreshTitle();
+	refreshIcons();
+}
+
+QIcon MainWindow::iconWithBadge() const {
+	if (_unreadCount <= 0) {
+		return _baseIcon;
+	}
+	auto result = QIcon();
+	const auto text = (_unreadCount > 99)
+		? QStringLiteral("99+")
+		: QString::number(_unreadCount);
+	for (const auto size : { 16, 24, 32, 48, 64 }) {
+		auto pixmap = _baseIcon.pixmap(QSize(size, size));
+		pixmap.setDevicePixelRatio(1.);
+		auto p = QPainter(&pixmap);
+		p.setRenderHint(QPainter::Antialiasing);
+		p.setRenderHint(QPainter::TextAntialiasing);
+		// A badge on the bottom right quarter; small sizes get just a dot.
+		const auto diameter = (size <= 24) ? (size * 0.5) : (size * 0.56);
+		const auto badge = QRectF(
+			pixmap.width() - diameter,
+			pixmap.height() - diameter,
+			diameter,
+			diameter);
+		p.setPen(Qt::NoPen);
+		p.setBrush(_unreadMuted ? QColor(0x85, 0x89, 0x7F) : QColor(0xD6, 0x4F, 0x45));
+		p.drawEllipse(badge);
+		if (size > 24) {
+			auto font = QFont(style::TextFontFamily());
+			font.setPixelSize(int(diameter * (text.size() > 2 ? 0.42 : 0.6)));
+			font.setWeight(QFont::Bold);
+			p.setFont(font);
+			p.setPen(Qt::white);
+			p.drawText(badge, Qt::AlignCenter, text);
+		}
+		p.end();
+		result.addPixmap(pixmap);
+	}
+	return result;
+}
+
+void MainWindow::refreshIcons() {
+	const auto icon = iconWithBadge();
+	setWindowIcon(icon);
+	if (_tray) {
+		_tray->setIcon(icon);
+		_tray->setToolTip((_unreadCount > 0)
+			? tr::lng_unread_messages(tr::now, lt_count, _unreadCount)
+			: tr::lng_app_name(tr::now));
+	}
+}
+
+void MainWindow::setupShortcuts() {
+	const auto add = [this](const QKeySequence &keys, std::function<void()> callback) {
+		const auto shortcut = new QShortcut(keys, this);
+		shortcut->setContext(Qt::WindowShortcut);
+		QObject::connect(shortcut, &QShortcut::activated, this, std::move(callback));
+	};
+	const auto tab = [this](Tab value) {
+		return [this, value] {
+			if (_controller && !_layers->hasLayers()) {
+				_controller->showTab(value);
+			}
+		};
+	};
+	add(QKeySequence(Qt::CTRL | Qt::Key_1), tab(Tab::Eli));
+	add(QKeySequence(Qt::CTRL | Qt::Key_2), tab(Tab::Chats));
+	add(QKeySequence(Qt::CTRL | Qt::Key_3), tab(Tab::Search));
+	add(QKeySequence(Qt::CTRL | Qt::Key_4), tab(Tab::Me));
+	add(QKeySequence(Qt::CTRL | Qt::Key_Comma), tab(Tab::Settings));
+	add(QKeySequence(Qt::CTRL | Qt::Key_Q), [] { Core::App().quit(); });
+	add(QKeySequence(Qt::CTRL | Qt::Key_W), [this] { close(); });
+	add(QKeySequence(Qt::ALT | Qt::Key_Left), [this] { handleBack(); });
+	add(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_D), [] {
+		Core::App().toggleTheme();
+	});
+}
+
+void MainWindow::setupTray() {
+	if (!QSystemTrayIcon::isSystemTrayAvailable()) {
+		return;
+	}
+	_tray = new QSystemTrayIcon(_baseIcon, this);
+	_trayMenu = std::make_unique<QMenu>();
+	_tray->setContextMenu(_trayMenu.get());
+	refreshTrayMenu();
+	QObject::connect(
+		_tray,
+		&QSystemTrayIcon::activated,
+		this,
+		[this](QSystemTrayIcon::ActivationReason reason) {
+			if (reason == QSystemTrayIcon::Context) {
+				return;
+			} else if (isVisible() && isActiveWindow()) {
+				hide();
+			} else {
+				activateAndShow();
+			}
+		});
+	_tray->setToolTip(tr::lng_app_name(tr::now));
+	_tray->show();
+}
+
+void MainWindow::refreshTrayMenu() {
+	if (!_trayMenu) {
+		return;
+	}
+	_trayMenu->clear();
+	_trayMenu->setLayoutDirection(Ui::LayoutDirection());
+	_trayMenu->addAction(tr::lng_tray_open(tr::now), this, [this] {
+		activateAndShow();
+	});
+	_trayMenu->addSeparator();
+	_trayMenu->addAction(tr::lng_tray_quit(tr::now), this, [] {
+		Core::App().quit();
+	});
+}
+
+void MainWindow::showFirstTime() {
+	if (!_debugSize) {
+		restoreGeometry();
+	}
+	const auto geometry = Core::App().settings().windowGeometry();
+	if (!_debugSize && geometry.maximized) {
+		showMaximized();
+	} else {
+		QWidget::show();
+	}
+}
+
+void MainWindow::activateAndShow() {
+	if (isMinimized()) {
+		setWindowState(windowState() & ~Qt::WindowMinimized);
+	}
+	QWidget::show();
+	raise();
+	activateWindow();
+	if (const auto handle = windowHandle()) {
+		handle->requestActivate();
+	}
+}
+
+void MainWindow::restoreGeometry() {
+	const auto saved = Core::App().settings().windowGeometry();
+	auto geometry = saved.rect;
+	const auto screens = QGuiApplication::screens();
+	auto screen = static_cast<QScreen*>(nullptr);
+	if (!geometry.isNull()) {
+		for (const auto candidate : screens) {
+			if (candidate->availableGeometry().intersects(geometry)) {
+				screen = candidate;
+				break;
+			}
+		}
+	}
+	if (!screen) {
+		screen = QGuiApplication::primaryScreen();
+		geometry = QRect();
+	}
+	if (!screen) {
+		return;
+	}
+	const auto available = screen->availableGeometry();
+	if (geometry.isNull()) {
+		const auto size = QSize(
+			std::min(int(st::windowDefaultWidth), available.width()),
+			std::min(int(st::windowDefaultHeight), available.height()));
+		geometry = QRect(
+			available.x() + (available.width() - size.width()) / 2,
+			available.y() + (available.height() - size.height()) / 2,
+			size.width(),
+			size.height());
+	} else {
+		geometry.setWidth(std::clamp(
+			geometry.width(),
+			int(st::windowMinWidth),
+			std::max(available.width(), int(st::windowMinWidth))));
+		geometry.setHeight(std::clamp(
+			geometry.height(),
+			int(st::windowMinHeight),
+			std::max(available.height(), int(st::windowMinHeight))));
+	}
+	setGeometry(geometry);
+	_positioned = true;
+}
+
+void MainWindow::scheduleGeometrySave() {
+	if (_positioned && !_debugSize && isVisible()) {
+		_geometryTimer.start();
+	}
+}
+
+void MainWindow::saveGeometryNow() {
+	_geometryTimer.stop();
+	if (!_positioned || _debugSize || !Core::Application::Exists()) {
+		return;
+	}
+	auto geometry = Core::App().settings().windowGeometry();
+	geometry.maximized = isMaximized();
+	if (!isMaximized() && !isMinimized() && !isFullScreen()) {
+		geometry.rect = this->geometry();
+	}
+	Core::App().settings().setWindowGeometry(geometry);
+}
+
+void MainWindow::setFixedDebugSize(QSize size) {
+	_debugSize = true;
+	setMinimumSize(1, 1);
+	resize(size);
+}
+
+QImage MainWindow::grabForDebug() {
+	Ui::SendPendingMoveResizeEvents(this);
+	return Ui::GrabWidgetToImage(this, QRect(), st::bgCanvas->c);
+}
+
+void MainWindow::handleBack() {
+	if (_layers->hasLayers()) {
+		_layers->hideTopLayer();
+	} else if (_controller) {
+		_controller->showBack();
+	}
+}
+
+void MainWindow::resizeEvent(QResizeEvent *e) {
+	Q_UNUSED(e);
+	_body->setGeometry(rect());
+	if (_content) {
+		_content->setGeometry(_body->rect());
+	}
+	scheduleGeometrySave();
+}
+
+void MainWindow::moveEvent(QMoveEvent *e) {
+	Q_UNUSED(e);
+	scheduleGeometrySave();
+}
+
+void MainWindow::closeEvent(QCloseEvent *e) {
+	saveGeometryNow();
+	if (_tray && Core::App().settings().closeToTray()) {
+		// Stay alive in the tray.
+		e->ignore();
+		hide();
+		return;
+	}
+	e->accept();
+	Core::App().quit();
+}
+
+void MainWindow::changeEvent(QEvent *e) {
+	if (e->type() == QEvent::WindowStateChange) {
+		scheduleGeometrySave();
+	}
+	RpWidget::changeEvent(e);
+}
+
+void MainWindow::keyPressEvent(QKeyEvent *e) {
+	if (e->key() == Qt::Key_Escape || e->key() == Qt::Key_Back) {
+		handleBack();
+	} else {
+		RpWidget::keyPressEvent(e);
+	}
+}
+
+void MainWindow::mousePressEvent(QMouseEvent *e) {
+	if (e->button() == Qt::BackButton) {
+		handleBack();
+	} else {
+		RpWidget::mousePressEvent(e);
+	}
+}
+
+} // namespace Window

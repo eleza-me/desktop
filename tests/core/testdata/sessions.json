@@ -1,0 +1,17 @@
+{
+ "sessions": [
+  {
+   "session_id": "s1",
+   "device_name": "Chrome · Windows",
+   "platform": "web",
+   "app_version": "0.1.0",
+   "current": true
+  },
+  {
+   "session_id": "s2",
+   "device_name": "iPhone 15",
+   "platform": "ios",
+   "app_version": "1.0"
+  }
+ ]
+}

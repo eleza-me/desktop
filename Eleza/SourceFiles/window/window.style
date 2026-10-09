@@ -1,0 +1,60 @@
+// The main window and the session layout: nav rail | side column | main column.
+using "ui/basic.style";
+using "ui/widgets/widgets.style";
+
+windowMinWidth: 400px;
+windowMinHeight: 520px;
+windowDefaultWidth: 1120px;
+windowDefaultHeight: 740px;
+
+// Below this width the layout collapses to a single column.
+layoutSingleColumnWidth: 900px;
+sideColumnWidthMin: 320px;
+sideColumnWidthMax: 440px;
+sideColumnWidthDefault: 360px;
+mainColumnWidthMin: 420px;
+// Content of the main column (chat timeline, post) never spans wider than this.
+mainColumnContentWidth: 920px;
+columnResizerWidth: 8px;
+
+// ---- nav rail
+navRailWidth: 72px;
+navRailItemHeight: 62px;
+navRailItemSkip: 2px;
+navRailPadding: margins(0px, 10px, 0px, 10px);
+navRailPillSize: size(48px, 32px);
+navRailPillTop: 6px;
+navRailLabelTop: 41px;
+navRailLabelFont: font(11px medium);
+navRailLabelFontActive: font(11px semibold);
+navRailFg: textSecondary;
+navRailFgOver: textPrimary;
+navRailFgActive: textPrimary;
+navRailBadgeShift: point(6px, 2px);
+
+navRailIconEli: icon {{ "eli", navRailFg }};
+navRailIconEliActive: icon {{ "eli_active", navRailFgActive }};
+navRailIconChats: icon {{ "conversation", navRailFg }};
+navRailIconChatsActive: icon {{ "conversation_active", navRailFgActive }};
+navRailIconSearch: icon {{ "search", navRailFg }};
+navRailIconSearchActive: icon {{ "search", brandPrimary }};
+navRailIconMe: icon {{ "me", navRailFg }};
+navRailIconMeActive: icon {{ "me_active", navRailFgActive }};
+navRailIconSettings: icon {{ "settings", navRailFg }};
+navRailIconSettingsActive: icon {{ "settings", brandPrimary }};
+
+navRailRipple: RippleAnimation(defaultRipple) {
+	color: rippleFg;
+}
+
+// ---- columns
+columnLineFg: borderSubtle;
+mainColumnEmptyBg: chatWallpaper;
+mainColumnPlainBg: bgCanvas;
+sectionSlideDuration: 260ms;
+
+placeholderIconEli: icon {{ "eli", textTertiary, 48px }};
+placeholderIconChats: icon {{ "conversation", textTertiary, 48px }};
+placeholderIconSearch: icon {{ "search", textTertiary, 48px }};
+placeholderIconMe: icon {{ "me", textTertiary, 48px }};
+placeholderIconSettings: icon {{ "settings", textTertiary, 48px }};

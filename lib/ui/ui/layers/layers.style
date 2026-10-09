@@ -1,0 +1,59 @@
+// Modal layers: boxes and side sheets.
+using "ui/basic.style";
+using "ui/widgets/widgets.style";
+
+layerShowDuration: 200ms;
+layerHideDuration: 140ms;
+
+boxWidth: 380px;
+boxWideWidth: 480px;
+boxMinWidth: 260px;
+boxOuterMargin: 24px;         // minimal distance to the window edges
+boxMinContentHeight: 80px;
+boxRadius: 18px;
+boxBg: bgRaised;
+
+boxTopSkip: 8px;              // above the content when there is no title
+boxBottomSkip: 8px;           // under the content when there are no buttons
+boxTitleHeight: 58px;
+boxTitlePadding: margins(24px, 20px, 24px, 0px);
+boxTitleStyle: TextStyle(defaultTextStyle) {
+	font: titleFontM;
+}
+boxTitleFg: textPrimary;
+
+boxButtonsPadding: margins(16px, 12px, 16px, 16px);
+boxButtonsSkip: 8px;
+// Secondary (text) button of a box; the main action uses st::defaultRoundButton.
+defaultBoxButton: RoundButton(defaultFlatButton) {
+	height: 36px;
+	padding: 16px;
+	radius: 18px;
+}
+dangerBoxButton: RoundButton(defaultBoxButton) {
+	textFg: statusError;
+	textFgOver: statusError;
+	textBgOver: statusErrorSoft;
+	ripple: dangerRipple;
+}
+
+boxScroll: ScrollArea(defaultScrollArea) {
+	deltaX: 4px;
+}
+
+boxRowPadding: margins(24px, 0px, 24px, 12px);
+boxRowPaddingNoTitle: margins(24px, 16px, 24px, 12px);
+boxCheckboxPadding: margins(16px, 0px, 16px, 8px);
+boxLabelStyle: TextStyle(defaultTextStyle) {
+	font: font(15px);
+	lineHeight: 24px;
+}
+boxLabel: FlatLabel(defaultFlatLabel) {
+	style: boxLabelStyle;
+	textFg: textSecondary;
+}
+
+sheetWidth: 420px;
+sheetTitleHeight: 56px;
+sheetCloseButton: IconButton(topBarCloseButton) {
+}

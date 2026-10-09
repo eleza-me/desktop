@@ -1,0 +1,34 @@
+{
+ "users": [
+  {
+   "id": "u_sara",
+   "handle": "sara",
+   "display_name": "سارا احمدی",
+   "verified": true,
+   "follow_state": "none",
+   "follows_you": true
+  },
+  {
+   "id": "u_ali",
+   "handle": "ali.r",
+   "display_name": "علی رضایی",
+   "follow_state": "none",
+   "follows_you": false
+  },
+  {
+   "id": "u_nika",
+   "handle": "nika",
+   "display_name": "نیکا موسوی",
+   "follow_state": "none",
+   "follows_you": false
+  },
+  {
+   "id": "u_reza",
+   "handle": "reza.k",
+   "display_name": "رضا کریمی",
+   "verified": true,
+   "follow_state": "following",
+   "follows_you": false
+  }
+ ]
+}

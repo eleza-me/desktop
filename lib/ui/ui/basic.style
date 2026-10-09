@@ -1,0 +1,135 @@
+// Foundations shared by every other .style file: type scale, spacing, radii, motion and
+// the small structs used across widgets. Values mirror the design tokens
+// (codegen/scripts/design/tokens.json) at the web density of the reference client.
+
+// ---- type scale (Vazirmatn; "display" = Markazi Text)
+normalFont: font(14px);                  // Body/M
+mediumFont: font(14px medium);           // Body/M Strong
+semiboldFont: font(14px semibold);       // Label/M
+boldFont: font(14px bold);
+bodyFontL: font(16px);                   // Body/L
+bodyFontXL: font(17px);                  // Body/XL
+smallFont: font(12px);                   // Caption
+smallMediumFont: font(12px medium);
+smallSemiboldFont: font(12px semibold);  // Label/S
+microFont: font(11px medium);            // Micro
+titleFontS: font(16px semibold);         // Title/S
+titleFontM: font(19px bold);             // Title/M
+titleFontL: font(22px bold);             // Title/L
+numericFontL: font(26px bold);           // Numeric/L
+numericFontM: font(20px semibold);       // Numeric/M
+monoFont: font(13px monospace);
+displayFontXL: font(64px bold "display"); // Display/XL
+displayFontL: font(40px bold "display");  // Display/L
+displayFontM: font(32px bold "display");  // Display/M
+wordmarkFont: font(30px bold "display");  // Brand/Wordmark
+topicFontL: font(26px bold "display");    // Topic/L
+topicFontM: font(24px bold "display");    // Topic/M
+topicFontS: font(19px bold "display");    // Topic/S
+editorialFontTitle: font(24px medium "display"); // Editorial/Title
+editorialFontQuote: font(22px medium "display"); // Editorial/Quote
+
+// ---- spacing and radii
+spaceNone: 0px;
+space2xs: 2px;
+spaceXs: 4px;
+spaceSm: 8px;
+spaceMd: 12px;
+spaceLg: 16px;
+spaceXl: 20px;
+space2xl: 24px;
+space3xl: 32px;
+space4xl: 40px;
+space5xl: 48px;
+space6xl: 64px;
+radiusXs: 4px;
+radiusSm: 8px;
+radiusMd: 12px;
+radiusLg: 18px;
+radiusXl: 26px;
+lineWidth: 1px;
+
+// ---- motion
+motionFast: 150ms;
+motion: 260ms;
+motionSlow: 380ms;
+
+// ---- shared structs
+RippleAnimation {
+	color: color;
+	showDuration: duration;
+	hideDuration: duration;
+}
+
+Shadow {
+	color: color;
+	blur: pixels;      // blur radius
+	offset: point;     // usually point(0px, 4px)
+	extend: margins;   // how far the shadow paints outside of the body
+}
+
+TextStyle {
+	font: font;
+	lineHeight: pixels;     // 0 = the font's own line height
+	linkFg: color;
+	linkUnderline: bool;    // underline links always (they are underlined on hover anyway)
+	monoFg: color;
+	selectBg: color;
+	spoilerFg: color;
+}
+
+defaultRipple: RippleAnimation {
+	color: rippleFg;
+	showDuration: 420ms;
+	hideDuration: 220ms;
+}
+brandRipple: RippleAnimation(defaultRipple) {
+	color: rippleBrandFg;
+}
+onBrandRipple: RippleAnimation(defaultRipple) {
+	color: rippleOnBrandFg;
+}
+dangerRipple: RippleAnimation(defaultRipple) {
+	color: rippleDangerFg;
+}
+emptyRipple: RippleAnimation(defaultRipple) {
+	color: transparent;
+}
+
+// Elevation/2: menus, dropdowns, toasts.
+defaultShadow: Shadow {
+	color: shadowFg;
+	blur: 14px;
+	offset: point(0px, 4px);
+	extend: margins(18px, 14px, 18px, 22px);
+}
+// Elevation/3: modal boxes.
+boxShadow: Shadow {
+	color: shadowFg;
+	blur: 28px;
+	offset: point(0px, 10px);
+	extend: margins(36px, 26px, 36px, 46px);
+}
+// Elevation/1: raised chips, floating buttons.
+smallShadow: Shadow {
+	color: shadowFg;
+	blur: 5px;
+	offset: point(0px, 1px);
+	extend: margins(6px, 5px, 6px, 7px);
+}
+
+defaultTextStyle: TextStyle {
+	font: normalFont;
+	lineHeight: 0px;
+	linkFg: brandText;
+	linkUnderline: false;
+	monoFg: brandText;
+	selectBg: selectionBg;
+	spoilerFg: spoilerFg;
+}
+semiboldTextStyle: TextStyle(defaultTextStyle) {
+	font: semiboldFont;
+}
+smallTextStyle: TextStyle(defaultTextStyle) {
+	font: smallFont;
+}

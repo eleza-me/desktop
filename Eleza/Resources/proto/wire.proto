@@ -1,0 +1,197 @@
+// Realtime v2 wire protocol (phase 3, design/phase3-persistent-connection.md).
+//
+// Transport-independent framing: a frame is one Noise transport message
+// (Noise_NK_25519_ChaChaPoly_SHA256 after the handshake) whose plaintext is a
+// serialized Envelope, padded (see Padding). Frames travel as binary
+// WebSocket messages (wss://api/v2/ws, through Cloudflare) or as records of
+// the direct obfuscated TCP transport (cmd/rt-relay); neither carrier is
+// visible to this file.
+//
+// Handshake (one round trip, the client's first request rides on message 1):
+//
+//	client → [key_id:1][noise msg1: e, es, payload = Envelope{req: auth}]
+//	server → [noise msg2: e, ee, payload = Envelope{batch: [res(auth), hello]}]
+//	           — or, before any handshake, a clear-text Close (0xFF-prefixed
+//	             serialized Close) with code 4006 when key_id is not accepted.
+//
+// Bodies of Request/Response/Update/Signal are protobuf messages of
+// views.proto; "method" and "kind"/"t" select the type.
+syntax = "proto3";
+
+package eleza.realtime.v2;
+
+import "eleza/realtime/v2/views.proto";
+
+option go_package = "github.com/haznetiv/eleza-backend/gen/go/eleza/realtime/v2;realtimev2";
+option java_package = "me.eleza.rt.v2";
+option java_multiple_files = true;
+option swift_prefix = "Rt";
+
+message Envelope {
+  oneof body {
+    Hello    hello  = 1;  // server → client, once per connection (after auth)
+    Request  req    = 2;  // client → server
+    Response res    = 3;  // server → client
+    UpdateFrame update = 4; // server → client, pts-logged (also the resume replay)
+    Signal   signal = 5;  // either direction, ephemeral
+    Ack      ack    = 6;  // client → server
+    Ping     ping   = 7;  // either direction
+    Pong     pong   = 8;
+    Close    close  = 9;  // server → client, before closing
+    Batch    batch  = 10; // several envelopes in one frame
+  }
+}
+
+message Batch { repeated Envelope items = 1; }
+
+// Hello follows a successful auth. pts is the server's current pts for the
+// user; when the client sent its pts in auth and the server could replay the
+// gap, resumed=true and the Update frames follow, then Signal{t:"resumed"}.
+// When the gap is older than the update log, Signal{t:"resync"} follows and
+// the client must do sync.state once.
+message Hello {
+  uint32 v = 1;                  // protocol version, 2
+  string conn = 2;               // connection id (diagnostics)
+  uint32 ping_interval_s = 3;
+  uint32 reconnect_spread_s = 4;
+  int64  pts = 5;
+  bool   resumed = 6;
+  int64  server_time_ms = 7;     // for clock skew display
+}
+
+// Request/Response: method names and bodies are in internal/realtime/rtspec
+// (one message pair per method in views.proto). Up to 64 requests may be in
+// flight per connection; responses may arrive out of order.
+message Request {
+  uint32 id = 1;          // client-chosen, unique while in flight
+  string method = 2;      // "chat.send", "chat.history", …
+  bytes  body = 3;        // <Method>Request
+  string idempotency_key = 4; // forwarded as Idempotency-Key when set
+  string request_id = 5;      // forwarded as X-Request-Id (diagnostics)
+}
+
+message Response {
+  uint32 id = 1;
+  bool   ok = 2;
+  bytes  body = 3;        // <Method>Response when ok
+  Error  error = 4;       // when !ok
+}
+
+message Error {
+  string code = 1;        // problem code of the HTTP API ("chat.not_found")
+  string title = 2;       // localized, as the HTTP API returns it
+  bool   retryable = 3;
+  uint32 retry_after_s = 4;
+  uint32 http_status = 5;
+}
+
+// UpdateFrame is a pts-logged change. A live frame carries kind, section and
+// the typed payload data (one UpdateData field set by kind). A frame of the
+// resume replay is a difference item: chat, seq, message, chat_info, removed
+// as GET /v1/sync/difference returns them (data when the kind has a stored
+// view: draft, notif). Clients apply both shapes: for message-shaped kinds
+// use data.message when set, else message.
+message UpdateFrame {
+  int64  pts = 1 [json_name = "pts"];
+  string kind = 2 [json_name = "kind"];
+  string section = 3 [json_name = "section"];
+  UpdateData data = 4 [json_name = "data"];
+  string chat = 5 [json_name = "chat"];
+  int64  seq = 6 [json_name = "seq"];
+  MessageView message = 7 [json_name = "message"];
+  ChatView chat_info = 8 [json_name = "chat_info"];
+  bool   removed = 9 [json_name = "removed"];
+}
+
+// Signal is an ephemeral frame. t selects the body type:
+//   typing          TypingSignal      (both directions)
+//   presence        PresenceSignal    (server → client)
+//   presence_sub    PresenceSub       (client → server; Response carries PresenceSubResult)
+//   presence_unsub  PresenceSub
+//   profile_sub     ProfileSub        (client → server)
+//   profile         ProfileSignal     (server → client; card changed: refetch via users.cards)
+//   live_location   LiveLocationSignal(both directions)
+//   topics_sub      TopicsSub         (client → server)
+//   topics          TopicsSignal      (server → client)
+//   feed_sub        FeedSub           (client → server)
+//   feed_new        FeedNewSignal     (server → client)
+//   state           StateSignal       (client → server: background/foreground)
+//   call.*          CallSignal        (server → client; JSON of the voice service)
+//   resumed, resync (server → client; no body)
+//   presence_reset  (server → client; re-subscribe presence)
+message Signal {
+  string t = 1;
+  bytes  body = 2;
+  uint32 id = 3;          // set on client-originated signals that expect a Response
+}
+
+message TypingSignal {
+  string cap = 1;         // client → server: capability of the chat (chat.capability)
+  string chat = 2;        // server → client: chat id
+  string kind = 3;        // typing | recording_voice | … | cancel
+  uint32 ttl_s = 4;       // server → client
+}
+
+message PresenceSub { repeated string users = 1; }
+message PresenceSubResult { repeated PresenceOut presence = 1; uint32 ttl_s = 2; }
+message PresenceSignal {
+  string user = 1;
+  string status = 2;      // online | offline | recently | … (as PresenceOut.status)
+  int64  last_seen_at = 3;
+  bool   reset = 4;       // visibility changed: re-subscribe
+}
+
+message ProfileSub { repeated string users = 1; }
+message ProfileSignal { string user = 1; int64 v = 2; }
+
+message LiveLocationSignal {
+  string chat = 1;
+  int64  seq = 2;
+  Location location = 3;
+  int64  until = 4;       // unix seconds (server → client)
+  string sender = 5;      // server → client
+  int64  at = 6;          // unix ms (server → client)
+}
+
+message TopicsSub { string category = 1; string province = 2; }
+// TopicsSignal: the open-topics list changed (a conversation opened, was
+// joined, ended or had its ring updated). It is a hint, coalesced server-side
+// (at most one per connection per realtime.topics_hint_interval): the client
+// re-reads conv.open once when the topics tab is visible, instead of polling.
+message TopicsSignal { bool changed = 1; string category = 2; }
+
+message FeedSub { int64 since = 1; }
+message FeedNewSignal { uint32 count = 1; int64 since = 2; }
+
+message StateSignal { bool background = 1; }
+
+message CallSignal { bytes json = 1; }
+
+message Ack { int64 pts = 1; }
+message Ping { uint32 nonce = 1; }
+message Pong { uint32 nonce = 1; }
+
+// Close precedes a server-initiated close. Codes keep the v1 meaning:
+// 4000 resync, 4001 revoked, 4002 reauth, 4003 too many connections,
+// 4004 auth failed, 4005 go away (reconnect elsewhere), 4006 key rotation.
+message Close {
+  uint32 code = 1;
+  string reason = 2;
+  uint32 retry_after_s = 3;
+}
+
+// Auth is the body of the first Request (method "auth"); its Response body is
+// AuthResult. With an access token expired within realtime.resume_grace the
+// Response is an Error "auth.proof_required" whose body is a Challenge; the
+// client answers with method "proof" and a Proof body.
+message Auth {
+  string token = 1;       // access token
+  bool   background = 2;
+  int64  pts = 3;         // last applied pts; 0 = none (fresh install)
+  string device = 4;      // device id (diagnostics)
+  string app = 5;         // "android/1.2.3"
+  string lang = 6;        // Accept-Language for bridged calls ("fa", "en")
+}
+message AuthResult { int64 expires_at = 1; }
+message Challenge { bytes nonce = 1; }
+message Proof { bytes sig = 1; }

@@ -1,0 +1,68 @@
+{
+ "chat": {
+  "chat": "c2",
+  "kind": "direct",
+  "state": "active",
+  "participants": [
+   {
+    "ref": "u_me",
+    "user_id": "u_me",
+    "me": true
+   },
+   {
+    "ref": "u_ali",
+    "user_id": "u_ali"
+   }
+  ],
+  "last_seq": 4,
+  "peer_read_seq": 0,
+  "last_read_seq": 10,
+  "can_send": true
+ },
+ "messages": [
+  {
+   "chat": "c2",
+   "seq": 4,
+   "id": "m_c2_4",
+   "sender": "u_me",
+   "kind": "file",
+   "created_at": 1791576287234,
+   "text": "note.txt",
+   "client_message_id": "1d4c6cc1-3bb9-4e4e-92cd-8fb7a2e987f2",
+   "attachment": "media_new"
+  },
+  {
+   "chat": "c2",
+   "seq": 3,
+   "id": "m_c2_3",
+   "sender": "u_me",
+   "kind": "text",
+   "created_at": 1791489861925,
+   "text": "ممنون، نگاه می‌کنم 🙏"
+  },
+  {
+   "chat": "c2",
+   "seq": 2,
+   "id": "m_c2_2",
+   "sender": "u_ali",
+   "kind": "file",
+   "created_at": 1791481221925,
+   "attachment": "media2",
+   "text": "eleza-plan.pdf",
+   "media": {
+    "size": 1240000,
+    "mime": "application/pdf"
+   }
+  },
+  {
+   "chat": "c2",
+   "seq": 1,
+   "id": "m_c2_1",
+   "sender": "u_ali",
+   "kind": "text",
+   "created_at": 1791472581925,
+   "text": "فایل پروژه رو فرستادم، ببین اوکیه؟"
+  }
+ ],
+ "has_more_before": false
+}

@@ -1,0 +1,210 @@
+// Message timelines. One Data::History per chat: the window of messages the
+// chat screen shows (oldest first), local pending messages at its end, and
+// the chat's header as last seen.
+//
+//   const auto &history = messages.history(chatId);     // never null; empty until loaded
+//   messages.loadCached(chatId, this, [=](int count) { ... });   // instant, from the database
+//   messages.loadLatest(chatId, this, [=] { ... });               // then the server
+//   messages.loadOlder(chatId, this, [=](int added) { ... });     // scrolling up
+//   connect(&messages, &Data::Messages::historyChanged, this, [=](const QString &chat) { ... });
+//
+// Windows: normally the window ends at the newest message and live updates
+// extend it. `loadAround(seq)` (jump to a reply / pinned message) replaces it
+// with a window around that message (`hasMoreAfter` becomes true);
+// `loadNewer` walks forward and `loadLatest` returns to the end.
+//
+// Sending lives in Data::Outbox; this store applies what the server reports.
+#pragma once
+
+#include "api/api_error.h"
+#include "base/weak_guard.h"
+#include "data/data_types.h"
+
+#include <map>
+
+namespace Data {
+
+class Session;
+
+struct History {
+	QString chat;
+	// Oldest first. Server messages (seq > 0) by seq, then local pending ones.
+	QVector<Message> items;
+	bool loaded = false;        // the newest page came from the server in this run
+	bool hasMoreBefore = true;
+	bool hasMoreAfter = false;  // the window does not reach the newest message
+	std::optional<ChatInfo> info;
+	QVector<PinnedMessage> pins; // after loadPins()
+	bool pinsLoaded = false;
+
+	[[nodiscard]] qint64 firstSeq() const;
+	[[nodiscard]] qint64 lastSeq() const;
+	[[nodiscard]] int indexOfKey(const QString &key) const;
+	[[nodiscard]] int indexOfSeq(qint64 seq) const;
+	[[nodiscard]] const Message *find(qint64 seq) const;
+};
+
+struct CallbackAnswer {
+	bool answered = false;
+	QString text;
+	bool alert = false;
+	QString url;
+};
+
+struct LiveShare {
+	qint64 seq = 0;
+	QString sender;
+	qint64 until = 0;  // unix seconds
+	std::optional<Location> location;
+	qint64 at = 0;     // ms
+};
+
+class Messages final : public QObject {
+	Q_OBJECT
+
+public:
+	explicit Messages(Session *session);
+
+	static constexpr auto kPageSize = 50;
+	static constexpr auto kCachedPageSize = 60;
+
+	// The chat's timeline (created empty on first use). The reference stays
+	// valid until the chat is removed.
+	[[nodiscard]] const History &history(const QString &chat);
+	[[nodiscard]] const Message *find(const QString &chat, qint64 seq) const;
+
+	// ---- loading
+	// The newest messages the database remembers.
+	void loadCached(const QString &chat, base::Guard guard, Fn<void(int)> done);
+	// The newest page from the server (also returns a detached window to the end).
+	void loadLatest(
+		const QString &chat,
+		base::Guard guard = base::Guard(),
+		Fn<void()> done = nullptr,
+		Fn<void(const Api::Error &)> fail = nullptr);
+	// The page before the window: the database first, then the server.
+	void loadOlder(
+		const QString &chat,
+		base::Guard guard,
+		Fn<void(int)> done,
+		Fn<void(const Api::Error &)> fail = nullptr);
+	// The page after a detached window.
+	void loadNewer(
+		const QString &chat,
+		base::Guard guard,
+		Fn<void(int)> done,
+		Fn<void(const Api::Error &)> fail = nullptr);
+	// Replaces the window with one around `seq`.
+	void loadAround(
+		const QString &chat,
+		qint64 seq,
+		base::Guard guard,
+		Fn<void()> done,
+		Fn<void(const Api::Error &)> fail = nullptr);
+	// One message that may be outside the window (a reply's target). It is
+	// merged into the window only when it belongs inside it.
+	void fetchOne(
+		const QString &chat,
+		qint64 seq,
+		base::Guard guard,
+		Fn<void(const std::optional<Message> &)> done);
+
+	// ---- actions (optimistic; failures go to Data::Session::actionFailed)
+	// I read the chat up to `seq`.
+	void markRead(const QString &chat, qint64 seq);
+	// Sets my reaction; an empty emoji removes it.
+	void react(const QString &chat, qint64 seq, const QString &emoji);
+	void edit(
+		const QString &chat,
+		qint64 seq,
+		const QString &text,
+		const QVector<Entity> &entities = {},
+		base::Guard guard = base::Guard(),
+		Fn<void()> done = nullptr,
+		Fn<void(const Api::Error &)> fail = nullptr);
+	void deleteMessage(const QString &chat, qint64 seq, bool forEveryone);
+	// scope: "both" or "me".
+	void pin(const QString &chat, qint64 seq, const QString &scope = QStringLiteral("both"));
+	void unpin(const QString &chat, qint64 seq, const QString &scope = QStringLiteral("both"));
+	void loadPins(
+		const QString &chat,
+		base::Guard guard = base::Guard(),
+		Fn<void(const QVector<PinnedMessage> &)> done = nullptr);
+	// I played a voice / video note.
+	void markPlayed(const QString &chat, qint64 seq);
+	// A bot's inline button was pressed.
+	void pressButton(
+		const QString &chat,
+		qint64 seq,
+		int row,
+		int column,
+		base::Guard guard,
+		Fn<void(const CallbackAnswer &)> done,
+		Fn<void(const Api::Error &)> fail = nullptr);
+	void updateLiveLocation(const QString &chat, qint64 seq, const Location &location);
+	void stopLiveLocation(const QString &chat, qint64 seq);
+	void loadLiveLocations(
+		const QString &chat,
+		base::Guard guard,
+		Fn<void(const QVector<LiveShare> &)> done);
+
+	// ---- used by the other stores (Sync, Outbox, Chats)
+	// Merges server messages (any order); a server copy replaces the local
+	// pending message with the same client message id.
+	void merge(const QString &chat, QVector<Message> incoming, bool persist = true);
+	void addLocal(const Message &message);
+	void patchMessage(const QString &chat, const QString &key, const Fn<void(Message &)> &change);
+	void removeMessage(const QString &chat, const QString &key);
+	// Drops messages with seq < beforeSeq (all server messages when nullopt).
+	void clear(const QString &chat, std::optional<qint64> beforeSeq = std::nullopt);
+	// The peer read up to `seq`: my messages up to it become Read.
+	void markPeerRead(const QString &chat, qint64 seq);
+	void setInfo(const ChatInfo &info);
+	void applyPin(const QString &chat, qint64 seq, bool pinned);
+	void forget(const QString &chat);
+	// After a `too_long` difference: every timeline must be re-read.
+	void markAllStale();
+	// Refetches one message of the window (a reaction changed).
+	void refresh(const QString &chat, qint64 seq);
+
+Q_SIGNALS:
+	// The chat's items / flags changed.
+	void historyChanged(const QString &chat);
+	void pinsChanged(const QString &chat);
+
+private:
+	struct PageOptions {
+		qint64 before = 0;
+		qint64 after = 0;
+		qint64 around = 0;
+		int limit = kPageSize;
+		bool mergeIntoWindow = true;
+	};
+	struct Page {
+		QVector<Message> messages; // oldest first
+		ChatInfo info;
+		bool hasMoreBefore = true;
+		bool hasMoreAfter = false;
+	};
+
+	[[nodiscard]] History &historyRef(const QString &chat);
+	[[nodiscard]] History *existing(const QString &chat);
+	void loadPage(
+		const QString &chat,
+		PageOptions options,
+		Fn<void(const Page &)> done,
+		Fn<void(const Api::Error &)> fail);
+	void persist(const QString &chat, const QVector<Message> &messages);
+	void simple(
+		const QString &method,
+		const QJsonObject &body,
+		const QString &action,
+		const QString &chat,
+		Fn<void()> onFail = nullptr);
+
+	Session *_session = nullptr;
+	std::map<QString, History> _histories; // node-based: references stay valid
+
+};
+
+} // namespace Data

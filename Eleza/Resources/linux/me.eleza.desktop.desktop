@@ -1,0 +1,19 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Eleza
+Name[fa]=الزا
+GenericName=Messenger
+GenericName[fa]=پیام‌رسان
+Comment=A place to speak; a place to listen.
+Comment[fa]=جایی برای گفتن؛ جایی برای شنیدن.
+Exec=Eleza %u
+TryExec=Eleza
+Icon=me.eleza.desktop
+Terminal=false
+StartupNotify=true
+StartupWMClass=Eleza
+Categories=Network;InstantMessaging;Chat;Qt;
+Keywords=eleza;messenger;chat;
+MimeType=x-scheme-handler/eleza;
+SingleMainWindow=true

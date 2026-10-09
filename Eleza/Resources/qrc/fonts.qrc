@@ -1,0 +1,10 @@
+<RCC>
+	<qresource prefix="/fonts">
+		<file alias="Vazirmatn-Regular.ttf">../fonts/Vazirmatn-Regular.ttf</file>
+		<file alias="Vazirmatn-Medium.ttf">../fonts/Vazirmatn-Medium.ttf</file>
+		<file alias="Vazirmatn-SemiBold.ttf">../fonts/Vazirmatn-SemiBold.ttf</file>
+		<file alias="Vazirmatn-Bold.ttf">../fonts/Vazirmatn-Bold.ttf</file>
+		<file alias="MarkaziText-Medium.ttf">../fonts/MarkaziText-Medium.ttf</file>
+		<file alias="MarkaziText-Bold.ttf">../fonts/MarkaziText-Bold.ttf</file>
+	</qresource>
+</RCC>
