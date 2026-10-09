@@ -1,0 +1,90 @@
+# Eleza Desktop — architecture
+
+Native desktop client for Eleza (Windows + Linux). Same recipe as Telegram Desktop, written from
+scratch (no third-party client code): **C++20, Qt 6 Widgets (no QML, no web view), CMake**, a
+custom-painted UI library, and a small style language (`.style` files) compiled to C++ at build time.
+
+The reference client for behaviour and wire shapes is the web app (`eleza-me/pwa`, TypeScript); the
+server contract is `eleza-backend`. Where docs and code disagree, the code wins.
+
+## Layout
+
+```
+CMakeLists.txt  CMakePresets.json  vcpkg.json
+cmake/                    helper modules (codegen rules, options)
+codegen/
+  style/                  host tool: *.style + colors.palette  ->  styles/style_*.h/.cpp, palette
+  lang/                   host tool: lang.strings              ->  lang_auto.h/.cpp
+  scripts/                dev-time generators (python): rt schema from views.proto, icons from icons.json
+lib/
+  base/                   no-GUI helpers (bytes, weak guards, timers, random, platform file helpers)
+  crl/                    (none — Qt event loop only)
+  ui/                     lib "ElezaUi": style runtime, animations, widgets, layers, text, icons, RTL
+Eleza/
+  Resources/              fonts, icons (svg), styles/*.style, colors.palette, langs/lang.strings, qrc
+  SourceFiles/
+    core/                 Application, Launcher, Settings, command line, single instance
+    main/                 Main::Account (device + tokens) and Main::Session (signed-in services)
+    api/                  HTTP client (request builder), errors, auth (OTP / two-step), client-config
+    rt/                   realtime v2: noise, frames, dynamic protobuf codec + generated schema, client
+    crypto/               OpenSSL wrappers: x25519, chacha20-poly1305, sha256/hmac/hkdf, device key
+    storage/              per-account SQLite cache + key/value, secure blob for tokens / device key
+    data/                 typed models + stores: chats, messages, users, sync (pts), outbox, media,
+                          upload, feed, graph, conversations, notifications, stickers
+    lang/                 lang runtime (fa / en), number + date formatting (Persian digits, Jalali)
+    window/               MainWindow, SessionController (navigation), layout (nav rail | side | main)
+    intro/                phone -> code -> password / recovery -> profile
+    dialogs/              chat list
+    history/              chat screen: list view, bubbles, composer, menus
+    conversation/         anonymous talker/listener layer: topics, new/join sheets, radar
+    eli/                  feed, post cards, post detail, compose, notifications, topic pages, viewer
+    search/               browse + search
+    profile/              profiles, follow lists, edit profile
+    settings/             settings sections
+    boxes/                modal boxes shared by sections
+    media/                audio/voice player, video player widget, image viewer
+tests/                    unit tests (noise vectors, proto codec, frames, style codegen)
+```
+
+Targets: `ElezaBase`, `ElezaUi` (static libs), `codegen_style`, `codegen_lang` (host tools),
+`ElezaCore` (static: everything under SourceFiles without widgets: crypto, api, rt, storage, data,
+main, lang), `Eleza` (the executable: core/, window/ and all feature folders), `eleza_tests`.
+
+## Conventions (Telegram Desktop style)
+
+* Namespaces follow folders: `Ui::`, `style::` / `st::`, `Api::`, `Rt::`, `Data::`, `Main::`,
+  `Window::`, `Intro::`, `Dialogs::`, `History::`, `Eli::`, `Conversation::`, `Settings::`…
+* File names `snake_case.h/.cpp`; classes `PascalCase`; methods `camelCase`; members `_camelCase`.
+* **Tabs** for indentation, `#pragma once`, no exceptions for control flow, no RTTI tricks.
+* No `QString::fromUtf8("literal")` noise in UI code: user-visible strings come from `tr::lng_*(tr::now)`.
+* No Qt stylesheets (QSS), no `.ui` files, no QML. Every widget paints itself from `st::` values.
+* Sizes in `.style` are logical pixels (`px`), scaled by the device pixel ratio by Qt.
+* Layout is **RTL-first** (Persian). Widgets position children through `Ui::` helpers
+  (`moveToLeft/moveToRight` with an outer width, `style::RightToLeft()`), never hard-coded sides.
+* Async: no blocking calls on the main thread. Network = `QNetworkAccessManager` / `QWebSocket`.
+  Requests use the builder: `api.request(Api::Post, "/v1/…").body(json).done(fn).fail(fn).send()`;
+  callbacks are dropped automatically when the owning `QObject` guard dies.
+* Data objects are plain structs parsed once from JSON (`Data::Message::FromJson`), owned by the
+  session stores; views observe stores through Qt signals and never keep wire JSON around.
+* Rule from the realtime contract: **no polling**. A screen reads the local store first, fetches at
+  most once what it does not hold, and then lives on `pts` updates / signals.
+* The repository contains no references to third-party assistant tooling; authorship is `eleza`.
+
+## Threads
+
+Everything runs on the main (GUI) thread except: SQLite writes (one worker thread behind
+`Storage::Database`), image decoding / scaling (`QThreadPool`), file hashing for uploads.
+
+## Identity and platform string
+
+Device key: Ed25519 or P-256 generated on first run, private key stored through
+`Storage::SecureBlob` (DPAPI on Windows, 0600 file on Linux). Platform string sent to the API is
+`desktop` (`X-Eleza-Client: desktop/<version> (<os>)`).
+
+## Debug / test hooks
+
+* `--api=<url>` or env `ELEZA_API` — API base (default `https://api.eleza.me`).
+* `--workdir=<dir>` — data directory (default: platform app-data).
+* `--debug-grab=<png>` `--debug-grab-delay=<ms>` — save a grab of the main window and exit
+  (works with `-platform offscreen`), used by the screenshot smoke tests.
+* `--debug-route=<route>` — open a section after start (e.g. `chat/<id>`, `eli`, `settings`).

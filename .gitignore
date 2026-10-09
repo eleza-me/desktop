@@ -1,0 +1,9 @@
+/build*/
+/out/
+/.vs/
+/.vscode/
+/.idea/
+CMakeUserPresets.json
+*.user
+__pycache__/
+/vcpkg_installed/
