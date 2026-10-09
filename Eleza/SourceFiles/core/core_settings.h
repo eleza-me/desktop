@@ -14,6 +14,7 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QObject>
 #include <QtCore/QRect>
+#include <QtCore/QStringList>
 #include <QtCore/QTimer>
 
 namespace Core {
@@ -119,6 +120,12 @@ public:
 	}
 	void setMediaCacheLimit(qint64 bytes);
 
+	// Emoji picked recently in the chat composer (newest first).
+	[[nodiscard]] QStringList recentEmoji() const {
+		return _recentEmoji;
+	}
+	void setRecentEmoji(const QStringList &emoji);
+
 	// Writes pending changes right now (on quit).
 	void flush();
 
@@ -146,6 +153,7 @@ private:
 	double _voicePlaybackSpeed = 1.;
 	bool _sendByCtrlEnter = false;
 	qint64 _mediaCacheLimit = 0;
+	QStringList _recentEmoji;
 
 };
 

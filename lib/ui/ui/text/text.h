@@ -97,6 +97,13 @@ public:
 	[[nodiscard]] int countLines(int width) const;
 	// Width of the widest line after wrapping at `width` (to shrink a bubble).
 	[[nodiscard]] int countMaxLineWidth(int width, int elisionLines = 0) const;
+	// The last line after wrapping at `width`: its natural width and the
+	// direction of its paragraph (to put a timestamp at the end of it).
+	struct LastLine {
+		int width = 0;
+		bool rtl = false;
+	};
+	[[nodiscard]] LastLine countLastLine(int width) const;
 
 	[[nodiscard]] bool hasLinks() const;
 	[[nodiscard]] int linksCount() const;

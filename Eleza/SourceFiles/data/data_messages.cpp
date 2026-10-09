@@ -723,6 +723,50 @@ void Messages::edit(
 		.send();
 }
 
+void Messages::editWithPreview(
+		const QString &chat,
+		qint64 seq,
+		const QString &text,
+		const QVector<Entity> &entities,
+		const QString &linkPreview,
+		base::Guard guard,
+		Fn<void()> done,
+		Fn<void(const Api::Error &)> fail) {
+	auto body = QJsonObject{
+		{ u"chat"_s, chat },
+		{ u"seq"_s, double(seq) },
+		{ u"text"_s, text },
+	};
+	Json::Put(body, "entities"_L1, Json::Array(entities));
+	Json::Put(body, "link_preview"_L1, linkPreview);
+	_session->transport().rpc(u"chat.edit"_s)
+		.body(body)
+		.guard(this)
+		.done([=, this] {
+			// The `edited` update brings the server's copy; show ours meanwhile.
+			patchMessage(chat, Message::KeyForSeq(seq), [&](Message &message) {
+				message.text = text;
+				message.entities = entities;
+				message.edited = true;
+				if (linkPreview.isEmpty()
+					|| (message.linkPreview && message.linkPreview->url != linkPreview)) {
+					message.linkPreview = std::nullopt;
+				}
+			});
+			if (done && guard.alive()) {
+				done();
+			}
+		})
+		.fail([=, this](const Api::Error &error) {
+			if (fail && guard.alive()) {
+				fail(error);
+			} else {
+				_session->reportFailure(u"message.edit"_s, chat, error);
+			}
+		})
+		.send();
+}
+
 void Messages::deleteMessage(const QString &chat, qint64 seq, bool forEveryone) {
 	removeMessage(chat, Message::KeyForSeq(seq));
 	// The row's preview follows when the newest message went away.

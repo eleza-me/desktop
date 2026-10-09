@@ -122,6 +122,17 @@ public:
 		base::Guard guard = base::Guard(),
 		Fn<void()> done = nullptr,
 		Fn<void(const Api::Error &)> fail = nullptr);
+	// The same, also telling which link keeps its preview card: the url that
+	// `POST /v1/link-preview` returned, or "" for a message without a card.
+	void editWithPreview(
+		const QString &chat,
+		qint64 seq,
+		const QString &text,
+		const QVector<Entity> &entities,
+		const QString &linkPreview,
+		base::Guard guard = base::Guard(),
+		Fn<void()> done = nullptr,
+		Fn<void(const Api::Error &)> fail = nullptr);
 	void deleteMessage(const QString &chat, qint64 seq, bool forEveryone);
 	// scope: "both" or "me".
 	void pin(const QString &chat, qint64 seq, const QString &scope = QStringLiteral("both"));

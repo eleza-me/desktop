@@ -47,6 +47,13 @@ if (TARGET ElezaCore)
 	target_sources(test_settings_logic PRIVATE
 		"${_eleza_app_src}/settings/settings_logic.cpp")
 	target_include_directories(test_settings_logic PRIVATE "${_eleza_app_src}")
+	# The chat screen's widget-free rules (history/history_*logic.cpp).
+	eleza_add_test(test_history_logic app/test_history_logic.cpp LIBS ElezaCore ElezaUi)
+	target_sources(test_history_logic PRIVATE "${_eleza_app_src}/history/history_logic.cpp")
+	target_include_directories(test_history_logic PRIVATE "${_eleza_app_src}")
+	eleza_add_test(test_history_compose app/test_history_compose.cpp LIBS ElezaCore ElezaUi)
+	target_sources(test_history_compose PRIVATE "${_eleza_app_src}/history/history_compose_logic.cpp")
+	target_include_directories(test_history_compose PRIVATE "${_eleza_app_src}")
 endif()
 
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/core/CMakeLists.txt")

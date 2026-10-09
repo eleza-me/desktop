@@ -56,6 +56,16 @@ public:
 		_destroyOnHide = destroy;
 	}
 
+	// A widget shown as its own rounded panel above the list (a strip of quick
+	// reactions over a message menu). It gets its natural width; the menu's
+	// corner stays at the popup point.
+	template <typename Widget>
+	Widget *setTopWidget(object_ptr<Widget> widget) {
+		const auto result = widget.data();
+		doSetTopWidget(Owned<RpWidget>(widget.release()));
+		return result;
+	}
+
 	// Shows with the top leading corner at the point.
 	void popup(const QPoint &globalPosition);
 	// Shows under `anchor`. `align`: al_right = trailing edges aligned (default),
@@ -79,6 +89,9 @@ protected:
 
 private:
 	void prepareGeometry();
+	void doSetTopWidget(object_ptr<RpWidget> widget);
+	[[nodiscard]] QRect topRect() const;
+	[[nodiscard]] QRect menuRect() const;
 	void showAt(QPoint topStart, bool startIsRight, QRect avoid = QRect());
 	void openSubmenu(int index, bool byKeyboard);
 	void closeSubmenu();
@@ -87,6 +100,7 @@ private:
 
 	const style::PopupMenu &_st;
 	Menu *_menu = nullptr;
+	QPointer<RpWidget> _top;
 	PopupMenu *_parentMenu = nullptr;
 	QPointer<PopupMenu> _submenu;
 	int _submenuIndex = -1;

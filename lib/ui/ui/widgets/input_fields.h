@@ -28,6 +28,7 @@
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QTextEdit>
 
+#include <functional>
 #include <optional>
 
 namespace Ui {
@@ -96,6 +97,11 @@ public:
 	[[nodiscard]] const style::InputField &st() const {
 		return _st;
 	}
+	// Called with the context menu right before it is shown: add own items
+	// (formatting) after the standard ones.
+	void setContextMenuHook(std::function<void(PopupMenu *menu)> hook) {
+		_contextMenuHook = std::move(hook);
+	}
 
 Q_SIGNALS:
 	void changed();
@@ -140,6 +146,7 @@ private:
 	bool _correcting = false;
 	QString _lastText;
 	QPointer<PopupMenu> _contextMenu;
+	std::function<void(PopupMenu *menu)> _contextMenuHook;
 
 	Animations::Simple _focusAnimation;
 	Animations::Simple _errorAnimation;

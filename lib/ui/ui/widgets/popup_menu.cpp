@@ -18,6 +18,7 @@ namespace {
 
 constexpr auto kSubmenuDelay = 220;
 constexpr auto kScreenPadding = 4;
+constexpr auto kTopWidgetSkip = 6;
 
 void PaintPanel(
 		QPainter &p,
@@ -116,13 +117,49 @@ QRect PopupMenu::bodyRect() const {
 	return rect().marginsRemoved(_st.shadow.extend);
 }
 
+QRect PopupMenu::topRect() const {
+	return _top ? _top->geometry() : QRect();
+}
+
+QRect PopupMenu::menuRect() const {
+	return _menu->geometry();
+}
+
+void PopupMenu::doSetTopWidget(object_ptr<RpWidget> widget) {
+	if (_top) {
+		delete _top.data();
+	}
+	_top = widget.release();
+	if (_top) {
+		_top->setParent(this);
+		_top->show();
+	}
+}
+
 void PopupMenu::prepareGeometry() {
 	const auto &extend = _st.shadow.extend;
 	_menu->resizeToWidth(_menu->naturalWidth());
+	auto bodyWidth = _menu->width();
+	auto topHeight = 0;
+	if (_top) {
+		const auto natural = _top->naturalWidth();
+		_top->resizeToWidth((natural > 0) ? natural : _menu->width());
+		bodyWidth = std::max(bodyWidth, _top->width());
+		topHeight = _top->height() + kTopWidgetSkip;
+	}
 	resize(
-		extend.left() + _menu->width() + extend.right(),
-		extend.top() + _menu->height() + extend.bottom());
-	_menu->move(extend.left(), extend.top());
+		extend.left() + bodyWidth + extend.right(),
+		extend.top() + topHeight + _menu->height() + extend.bottom());
+	// Both panels hug the side the menu opens from.
+	const auto rtl = style::RightToLeft();
+	if (_top) {
+		_top->move(
+			extend.left() + (rtl ? (bodyWidth - _top->width()) : 0),
+			extend.top());
+	}
+	_menu->move(
+		extend.left() + (rtl ? (bodyWidth - _menu->width()) : 0),
+		extend.top() + topHeight);
 }
 
 void PopupMenu::showAt(QPoint topStart, bool startIsRight, QRect avoid) {
@@ -139,10 +176,18 @@ void PopupMenu::showAt(QPoint topStart, bool startIsRight, QRect avoid) {
 		kScreenPadding,
 		kScreenPadding,
 		kScreenPadding));
-	const auto bodyWidth = _menu->width();
-	const auto bodyHeight = _menu->height();
+	const auto body = bodyRect();
+	const auto bodyWidth = body.width();
+	const auto bodyHeight = body.height();
 	auto left = startIsRight ? (topStart.x() - bodyWidth) : topStart.x();
 	auto top = topStart.y();
+	if (_top) {
+		// The strip goes above the point when there is room for it.
+		const auto shifted = top - (_menu->y() - extend.top());
+		if (shifted >= screen.top()) {
+			top = shifted;
+		}
+	}
 	// Flip to the other side instead of leaving the screen.
 	if (left < screen.left()) {
 		const auto flipped = avoid.isNull() ? topStart.x() : avoid.right() + 1;
@@ -301,7 +346,14 @@ void PopupMenu::paintEvent(QPaintEvent *e) {
 	p.setCompositionMode(QPainter::CompositionMode_Source);
 	p.fillRect(rect(), Qt::transparent);
 	p.setCompositionMode(QPainter::CompositionMode_SourceOver);
-	PaintPanel(p, bodyRect(), _st);
+	if (_top) {
+		auto strip = _st;
+		strip.radius = std::min(topRect().height() / 2, 2 * _st.radius);
+		PaintPanel(p, topRect(), strip);
+		PaintPanel(p, menuRect(), _st);
+	} else {
+		PaintPanel(p, bodyRect(), _st);
+	}
 }
 
 void PopupMenu::keyPressEvent(QKeyEvent *e) {
@@ -339,7 +391,10 @@ void PopupMenu::keyPressEvent(QKeyEvent *e) {
 
 void PopupMenu::mousePressEvent(QMouseEvent *e) {
 	// A press on the shadow area (inside the window, outside the body).
-	if (!bodyRect().contains(e->pos())) {
+	const auto inside = _top
+		? (topRect().contains(e->pos()) || menuRect().contains(e->pos()))
+		: bodyRect().contains(e->pos());
+	if (!inside) {
 		if (_parentMenu) {
 			// Let the parent handle it as its own press.
 			const auto global = e->globalPosition().toPoint();

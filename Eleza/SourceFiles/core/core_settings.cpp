@@ -3,6 +3,7 @@
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
+#include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QSaveFile>
 
@@ -105,6 +106,12 @@ void Settings::read() {
 	_mediaCacheLimit = std::max(
 		qint64(root.value(QStringLiteral("media_cache_limit")).toDouble(0.)),
 		qint64(0));
+	_recentEmoji.clear();
+	for (const auto &item : root.value(QStringLiteral("recent_emoji")).toArray()) {
+		if (item.isString() && !item.toString().isEmpty()) {
+			_recentEmoji.push_back(item.toString());
+		}
+	}
 }
 
 QJsonObject Settings::serialize() const {
@@ -155,6 +162,11 @@ QJsonObject Settings::serialize() const {
 		root.insert(
 			QStringLiteral("media_cache_limit"),
 			double(_mediaCacheLimit));
+	}
+	if (!_recentEmoji.isEmpty()) {
+		root.insert(
+			QStringLiteral("recent_emoji"),
+			QJsonArray::fromStringList(_recentEmoji));
 	}
 	return root;
 }
@@ -268,6 +280,13 @@ void Settings::setMediaCacheLimit(qint64 bytes) {
 	bytes = std::max(bytes, qint64(0));
 	if (_mediaCacheLimit != bytes) {
 		_mediaCacheLimit = bytes;
+		scheduleWrite();
+	}
+}
+
+void Settings::setRecentEmoji(const QStringList &emoji) {
+	if (_recentEmoji != emoji) {
+		_recentEmoji = emoji;
 		scheduleWrite();
 	}
 }

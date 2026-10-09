@@ -585,6 +585,9 @@ void InputField::innerContextMenu(const QPoint &globalPosition) {
 		[=] { inner->selectAll(); },
 		!_lastText.isEmpty(),
 		QKeySequence::SelectAll);
+	if (_contextMenuHook) {
+		_contextMenuHook(menu);
+	}
 	menu->popup(globalPosition);
 }
 
