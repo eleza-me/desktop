@@ -2,6 +2,7 @@
 
 #include "data/data_json.h"
 
+#include <QtCore/QDateTime>
 #include <QtCore/QUrl>
 
 namespace Data {
@@ -267,6 +268,20 @@ DeviceSession DeviceSession::FromJson(const QJsonObject &json) {
 	result.city = String(json, "city"_L1);
 	result.current = Bool(json, "current"_L1);
 	result.lastActiveAt = Int64(json, "last_active_at"_L1);
+	if (result.lastActiveAt <= 0) {
+		// The server names it `last_seen_at` and sends an RFC 3339 string.
+		const auto seen = json.value("last_seen_at"_L1);
+		if (seen.isString()) {
+			const auto time = QDateTime::fromString(
+				seen.toString(),
+				Qt::ISODateWithMs);
+			if (time.isValid()) {
+				result.lastActiveAt = time.toMSecsSinceEpoch();
+			}
+		} else if (seen.isDouble()) {
+			result.lastActiveAt = qint64(seen.toDouble());
+		}
+	}
 	return result;
 }
 

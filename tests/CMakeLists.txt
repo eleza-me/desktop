@@ -36,6 +36,17 @@ if (TARGET ElezaCore)
 	eleza_add_test(test_error_text app/test_error_text.cpp LIBS ElezaCore ElezaLang)
 	target_sources(test_error_text PRIVATE "${_eleza_app_src}/support/error_text.cpp")
 	target_include_directories(test_error_text PRIVATE "${_eleza_app_src}")
+
+	eleza_add_test(test_dialogs_logic app/test_dialogs_logic.cpp LIBS ElezaCore ElezaLang)
+	target_sources(test_dialogs_logic PRIVATE
+		"${_eleza_app_src}/dialogs/dialogs_logic.cpp"
+		"${_eleza_app_src}/support/chat_text.cpp")
+	target_include_directories(test_dialogs_logic PRIVATE "${_eleza_app_src}")
+
+	eleza_add_test(test_settings_logic app/test_settings_logic.cpp LIBS ElezaCore ElezaLang)
+	target_sources(test_settings_logic PRIVATE
+		"${_eleza_app_src}/settings/settings_logic.cpp")
+	target_include_directories(test_settings_logic PRIVATE "${_eleza_app_src}")
 endif()
 
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/core/CMakeLists.txt")

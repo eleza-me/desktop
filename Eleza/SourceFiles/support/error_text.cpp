@@ -21,6 +21,34 @@ QString ErrorPhrase(const QString &code) {
 		return tr::lng_intro_wrong_password(tr::now);
 	} else if (code == u"two_step.no_recovery_email") {
 		return tr::lng_intro_account_has_no_recovery_e(tr::now);
+	} else if (code == u"two_step.code_expired") {
+		return tr::lng_intro_code_has_expired_request_new(tr::now);
+	} else if (code == u"two_step.password_weak") {
+		return tr::lng_settings_error_password_weak(tr::now);
+	} else if (code == u"two_step.hint_invalid") {
+		return tr::lng_settings_error_hint_invalid(tr::now);
+	} else if (code == u"two_step.email_invalid") {
+		return tr::lng_settings_error_email_invalid(tr::now);
+	} else if (code == u"two_step.already_enabled") {
+		return tr::lng_settings_error_already_enabled(tr::now);
+	} else if (code == u"two_step.not_enabled") {
+		return tr::lng_settings_error_not_enabled(tr::now);
+	} else if (code == u"two_step.no_pending") {
+		return tr::lng_settings_error_no_pending(tr::now);
+	} else if (code == u"two_step.email_unavailable") {
+		return tr::lng_settings_error_email_unavailable(tr::now);
+	} else if (code == u"account.sensitive_cooldown") {
+		return tr::lng_settings_error_sensitive_cooldown(tr::now);
+	} else if (code == u"export.email_required") {
+		return tr::lng_settings_export_email_required(tr::now);
+	} else if (code == u"export.too_soon") {
+		return tr::lng_settings_error_export_too_soon(tr::now);
+	} else if (code == u"export.not_ready") {
+		return tr::lng_settings_error_export_not_ready(tr::now);
+	} else if (code == u"export.gone") {
+		return tr::lng_settings_error_export_gone(tr::now);
+	} else if (code == u"otp.locked") {
+		return tr::lng_settings_error_too_many_attempts(tr::now);
 	} else if (code == u"phone.invalid" || code == u"otp.phone_invalid") {
 		return tr::lng_intro_invalid_phone(tr::now);
 	} else if (code == u"handle.taken") {
