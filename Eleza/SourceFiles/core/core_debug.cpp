@@ -292,7 +292,9 @@ void DebugActions::mouse(
 		QPoint position,
 		Qt::MouseButton button,
 		bool down) {
-	const auto global = GlobalOrigin(_window) + position;
+	// Positions are those of the window body: a script means the same
+	// place with and without the custom title bar (the bar is above zero).
+	const auto global = GlobalOrigin(_window->bodyWidget()) + position;
 	// A popup under the point gets the event, otherwise the main window (Qt
 	// itself redirects to an active popup that wants outside clicks).
 	auto target = static_cast<QWidget*>(_window);
@@ -321,12 +323,13 @@ void DebugActions::mouse(
 }
 
 void DebugActions::wheel(QPoint position, int dy) {
-	const auto global = GlobalOrigin(_window) + position;
+	const auto global = GlobalOrigin(_window->bodyWidget()) + position;
 	// A point outside of the (offscreen) screen has no widget for Qt: ask the
 	// window itself then.
 	auto under = QApplication::widgetAt(global);
 	if (!under) {
-		const auto child = _window->childAt(position);
+		const auto child = _window->childAt(
+			_window->bodyWidget()->pos() + position);
 		under = child ? child : static_cast<QWidget*>(_window);
 	}
 	// Qt does not propagate a synthesized wheel event to the parents by

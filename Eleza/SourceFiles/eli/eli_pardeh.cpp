@@ -1271,6 +1271,7 @@ void OpenPardeh(
 		controller,
 		postId,
 		authorId);
+	controller->window()->registerDarkOverlay(overlay);
 	overlay->show();
 	overlay->raise();
 	overlay->setFocus();

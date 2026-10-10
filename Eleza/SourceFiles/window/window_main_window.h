@@ -6,6 +6,12 @@
 //  * setUnreadCount() paints a badge on the taskbar / tray icon.
 //  * bodyWidget() hosts the content (intro, session layout or gallery); layers()
 //    is the modal layer stack over it; toasts are shown over it.
+//  * With the custom title bar (window_title_bar.h, window_title_frame.h) the
+//    bar lies above the body and is not a part of it: everything that covers
+//    "the window" covers the body, the bar stays reachable. The minimum size,
+//    the saved geometry and the default size are those of the whole window;
+//    --debug-size is the size of the body, so grabs made with and without the
+//    bar show the same content.
 //
 // Feature code reaches it through Window::SessionController::window().
 #pragma once
@@ -13,10 +19,13 @@
 #include "ui/layers/layer_widget.h"
 #include "ui/rp_widget.h"
 
+#include <QtCore/QPointer>
 #include <QtCore/QTimer>
 #include <QtGui/QIcon>
 
 #include <memory>
+#include <optional>
+#include <vector>
 
 class QMenu;
 class QSystemTrayIcon;
@@ -33,6 +42,8 @@ namespace Window {
 
 class MainLayout;
 class SessionController;
+class TitleBar;
+class TitleFrame;
 enum class Command;
 
 class MainWindow final : public Ui::RpWidget {
@@ -85,10 +96,17 @@ public:
 		return _upgrade != nullptr;
 	}
 
+	// A dark overlay over the whole body (a media viewer): the custom title
+	// bar is dark while the widget is shown.
+	void registerDarkOverlay(QWidget *overlay);
+
 #ifdef ELEZA_DEBUG_TOOLS
 	// Screenshot helpers (--debug-size / --debug-grab).
 	void setFixedDebugSize(QSize size);
 	[[nodiscard]] QImage grabForDebug();
+	// "inactive,maximized,dark,hover-close,press-max": what the custom title
+	// bar shows in a grab (--debug-title-bar=…, the route debug/title/…).
+	void setDebugTitleState(const QString &states);
 #endif // ELEZA_DEBUG_TOOLS
 
 Q_SIGNALS:
@@ -104,8 +122,21 @@ protected:
 	void changeEvent(QEvent *e) override;
 	void keyPressEvent(QKeyEvent *e) override;
 	void mousePressEvent(QMouseEvent *e) override;
+	bool event(QEvent *e) override;
+	bool eventFilter(QObject *object, QEvent *event) override;
+	bool nativeEvent(
+		const QByteArray &eventType,
+		void *message,
+		qintptr *result) override;
 
 private:
+	void setupTitleBar();
+	void updateTitleState();
+	void updateTitleJoin();
+	void updateTitleDark();
+	void updateMinimumSize();
+	void updateBodyGeometry();
+	[[nodiscard]] int titleHeight() const;
 	void setupShortcuts();
 	void setupTray();
 	void refreshTrayMenu();
@@ -130,6 +161,17 @@ private:
 	bool _unreadMuted = false;
 	bool _debugSize = false;
 	bool _positioned = false;
+
+	TitleBar *_title = nullptr;
+	std::unique_ptr<TitleFrame> _titleFrame;
+	QPointer<QWidget> _titleJoin;
+	std::vector<QPointer<QWidget>> _darkOverlays;
+	bool _titleLost = false;
+#ifdef ELEZA_DEBUG_TOOLS
+	std::optional<bool> _debugTitleActive;
+	std::optional<bool> _debugTitleMaximized;
+	bool _debugTitleDark = false;
+#endif // ELEZA_DEBUG_TOOLS
 
 };
 

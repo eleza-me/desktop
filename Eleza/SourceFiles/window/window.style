@@ -74,3 +74,32 @@ upgradeTextStyle: TextStyle(defaultTextStyle) {
 }
 upgradeButtonSkip: 28px;
 upgradeQuitSkip: 14px;
+
+// ---- the custom title bar (window_title_bar.h)
+titleBarHeight: 30px;
+titleButtonWidth: 46px;
+titleButtonGlyphSize: 10px;
+// In device pixels: the diagonals of the close glyph.
+titleCloseGlyphStroke: 1.1;
+// Linux: the invisible resize border of the frameless window.
+titleResizeBorder: 5px;
+titleBarBg: navRailBg;
+titleBarLineFg: columnLineFg;
+titleBarLineWidth: 1px;
+titleBarFg: textSecondary;
+titleBarFont: font(12px medium);
+titleBarTextPadding: 12px;
+titleBarInactiveOpacity: 0.5;
+titleButtonFg: textPrimary;
+titleButtonBgOver: statePressed;
+titleButtonBgDown: rippleFg;
+titleCloseBgOver: #d64f45;
+titleCloseBgDown: #bf4037;
+titleCloseFg: #ffffff;
+// The border the system draws around the window where it can be colored.
+titleWindowBorderFg: borderStrong;
+// While a dark media overlay covers the body.
+titleBarBgDark: #050806;
+titleBarFgDark: #fafaf3b3;
+titleButtonFgDark: #fafaf3;
+titleButtonBgOverDark: #ffffff1f;

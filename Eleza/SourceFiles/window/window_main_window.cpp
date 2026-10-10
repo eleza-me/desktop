@@ -12,6 +12,8 @@
 #include "window/window_shortcuts.h"
 #include "window/window_upgrade_blocker.h"
 #include "window/window_session_controller.h"
+#include "window/window_title_bar.h"
+#include "window/window_title_frame.h"
 #include "styles/style_window.h"
 
 #include <QtGui/QCloseEvent>
@@ -83,10 +85,24 @@ MainWindow::MainWindow()
 	if (!Core::App().commandLine().ephemeral()) {
 		setupTray();
 	}
+	setupTitleBar();
 }
 
 MainWindow::~MainWindow() {
 	saveGeometryNow();
+	// Overlays die with the body, after everything here: they must not call
+	// back by then.
+	for (const auto &overlay : _darkOverlays) {
+		if (overlay) {
+			overlay->removeEventFilter(this);
+			QObject::disconnect(overlay, nullptr, this, nullptr);
+		}
+	}
+	_darkOverlays.clear();
+	if (_titleJoin) {
+		_titleJoin->removeEventFilter(this);
+	}
+	_titleFrame = nullptr;
 	// Sections refer to the controller: destroy them first.
 	_content.destroy();
 	_controller = nullptr;
@@ -110,6 +126,7 @@ void MainWindow::setContent(Ui::object_ptr<Ui::RpWidget> content) {
 	if (_upgrade) {
 		_upgrade->raise();
 	}
+	updateTitleJoin();
 }
 
 void MainWindow::showUpgradeRequired(const QString &updateUrl) {
@@ -122,6 +139,7 @@ void MainWindow::showUpgradeRequired(const QString &updateUrl) {
 	_upgrade->show();
 	_upgrade->raise();
 	_upgrade->setFocus();
+	updateTitleJoin();
 }
 
 void MainWindow::showSession(Main::Session *session) {
@@ -131,6 +149,12 @@ void MainWindow::showSession(Main::Session *session) {
 	const auto layout = new MainLayout(_body, _controller.get());
 	setContent(Ui::Owned<Ui::RpWidget>(layout));
 	layout->setInnerFocus();
+	if (_title) {
+		// The rail is of the bar's surface: they join without a line.
+		_titleJoin = layout->navRail();
+		_titleJoin->installEventFilter(this);
+		updateTitleJoin();
+	}
 }
 
 void MainWindow::destroySession() {
@@ -162,6 +186,9 @@ void MainWindow::refreshTitle() {
 	setWindowTitle((_unreadCount > 0)
 		? (QStringLiteral("(%1) ").arg(Lang::Num(_unreadCount)) + name)
 		: name);
+	if (_title) {
+		_title->setTitle(windowTitle());
+	}
 	refreshTrayMenu();
 }
 
@@ -430,7 +457,8 @@ void MainWindow::saveGeometryNow() {
 void MainWindow::setFixedDebugSize(QSize size) {
 	_debugSize = true;
 	setMinimumSize(1, 1);
-	resize(size);
+	// The size of the body: the same content with and without the bar.
+	resize(size.width(), size.height() + titleHeight());
 }
 
 QImage MainWindow::grabForDebug() {
@@ -451,18 +479,13 @@ void MainWindow::handleBack() {
 
 void MainWindow::resizeEvent(QResizeEvent *e) {
 	Q_UNUSED(e);
-	_body->setGeometry(rect());
-	if (_content) {
-		_content->setGeometry(_body->rect());
-	}
-	if (_upgrade) {
-		_upgrade->setGeometry(_body->rect());
-	}
+	updateBodyGeometry();
 	scheduleGeometrySave();
 }
 
 void MainWindow::showEvent(QShowEvent *e) {
 	RpWidget::showEvent(e);
+	updateTitleState();
 	emit activeChanged();
 }
 
@@ -491,8 +514,10 @@ void MainWindow::closeEvent(QCloseEvent *e) {
 void MainWindow::changeEvent(QEvent *e) {
 	if (e->type() == QEvent::WindowStateChange) {
 		scheduleGeometrySave();
+		updateTitleState();
 		emit activeChanged();
 	} else if (e->type() == QEvent::ActivationChange) {
+		updateTitleState();
 		emit activeChanged();
 	}
 	RpWidget::changeEvent(e);
@@ -512,6 +537,230 @@ void MainWindow::mousePressEvent(QMouseEvent *e) {
 	} else {
 		RpWidget::mousePressEvent(e);
 	}
+}
+
+// ---- the custom title bar
+
+void MainWindow::setupTitleBar() {
+	if (!UseCustomTitleBar()) {
+		return;
+	}
+	_title = new TitleBar(this);
+	_titleFrame = CreateTitleFrame(this, _title, [this] {
+		// The platform frame gave the window back to the system.
+		_titleLost = true;
+		updateTitleState();
+	});
+#ifdef ELEZA_DEBUG_TOOLS
+	// A grab of the bar is possible without a window system behind it.
+	const auto keep = Core::App().commandLine().debugTitleBar;
+#else // ELEZA_DEBUG_TOOLS
+	constexpr auto keep = false;
+#endif // ELEZA_DEBUG_TOOLS
+	if (!_titleFrame && !keep) {
+		delete std::exchange(_title, nullptr);
+		return;
+	}
+	_title->setTitle(windowTitle());
+	QObject::connect(_title, &TitleBar::minimizeRequested, this, [this] {
+		showMinimized();
+	});
+	QObject::connect(_title, &TitleBar::maximizeToggleRequested, this, [this] {
+		if (isMaximized()) {
+			showNormal();
+		} else {
+			showMaximized();
+		}
+	});
+	// The same way out as the close button of the system: closeEvent().
+	QObject::connect(_title, &TitleBar::closeRequested, this, [this] {
+		close();
+	});
+	style::OnPaletteChanged(this, [this] {
+		if (_titleFrame) {
+			_titleFrame->paletteChanged();
+		}
+	});
+	updateMinimumSize();
+	updateTitleState();
+	updateBodyGeometry();
+#ifdef ELEZA_DEBUG_TOOLS
+	setDebugTitleState(Core::App().commandLine().debugTitleState);
+#endif // ELEZA_DEBUG_TOOLS
+}
+
+int MainWindow::titleHeight() const {
+	return (_title && !_title->isHidden()) ? int(st::titleBarHeight) : 0;
+}
+
+void MainWindow::updateMinimumSize() {
+	if (!_debugSize) {
+		setMinimumSize(
+			st::windowMinWidth,
+			st::windowMinHeight + titleHeight());
+	}
+}
+
+void MainWindow::updateBodyGeometry() {
+	const auto top = titleHeight();
+	if (top > 0) {
+		_title->setGeometry(0, 0, width(), top);
+		_title->raise();
+	}
+	_body->setGeometry(0, top, width(), height() - top);
+	if (_content) {
+		_content->setGeometry(_body->rect());
+	}
+	if (_upgrade) {
+		_upgrade->setGeometry(_body->rect());
+	}
+	if (_titleFrame) {
+		_titleFrame->windowChanged();
+	}
+}
+
+void MainWindow::updateTitleState() {
+	if (!_title) {
+		return;
+	}
+	const auto shown = !_titleLost && !isFullScreen();
+	if (_title->isHidden() == shown) {
+		_title->setVisible(shown);
+		updateMinimumSize();
+		updateBodyGeometry();
+	} else if (_titleFrame) {
+		_titleFrame->windowChanged();
+	}
+	// Screenshot runs have no window manager to activate the window.
+	auto active = isActiveWindow() || Core::App().commandLine().ephemeral();
+	auto maximized = isMaximized();
+#ifdef ELEZA_DEBUG_TOOLS
+	active = _debugTitleActive.value_or(active);
+	maximized = _debugTitleMaximized.value_or(maximized);
+#endif // ELEZA_DEBUG_TOOLS
+	_title->setActive(active);
+	_title->setMaximized(maximized);
+}
+
+void MainWindow::updateTitleJoin() {
+	if (!_title) {
+		return;
+	}
+	const auto rail = _titleJoin.data();
+	_title->setJoinedWidth((rail && !_upgrade && rail->isVisibleTo(_body))
+		? rail->width()
+		: 0);
+}
+
+void MainWindow::registerDarkOverlay(QWidget *overlay) {
+	if (!_title || !overlay) {
+		return;
+	}
+	_darkOverlays.push_back(overlay);
+	overlay->installEventFilter(this);
+	QObject::connect(overlay, &QObject::destroyed, this, [this] {
+		updateTitleDark();
+	});
+	updateTitleDark();
+}
+
+void MainWindow::updateTitleDark() {
+	if (!_title) {
+		return;
+	}
+	auto dark = false;
+	for (auto i = _darkOverlays.begin(); i != _darkOverlays.end();) {
+		if (!*i) {
+			i = _darkOverlays.erase(i);
+		} else {
+			dark = dark || !(*i)->isHidden();
+			++i;
+		}
+	}
+#ifdef ELEZA_DEBUG_TOOLS
+	dark = dark || _debugTitleDark;
+#endif // ELEZA_DEBUG_TOOLS
+	_title->setDarkOverlay(dark);
+	if (_titleFrame) {
+		_titleFrame->paletteChanged();
+	}
+}
+
+#ifdef ELEZA_DEBUG_TOOLS
+void MainWindow::setDebugTitleState(const QString &states) {
+	if (!_title) {
+		return;
+	}
+	using Button = TitleBar::Button;
+	const auto button = [](const QString &name) {
+		return (name == QStringLiteral("min"))
+			? Button::Minimize
+			: (name == QStringLiteral("max"))
+			? Button::Maximize
+			: (name == QStringLiteral("close"))
+			? Button::Close
+			: Button::None;
+	};
+	_debugTitleActive = std::nullopt;
+	_debugTitleMaximized = std::nullopt;
+	_debugTitleDark = false;
+	auto over = Button::None;
+	auto down = Button::None;
+	const auto hover = QStringLiteral("hover-");
+	const auto press = QStringLiteral("press-");
+	for (const auto &state : states.split(QLatin1Char(','), Qt::SkipEmptyParts)) {
+		if (state == QStringLiteral("inactive")) {
+			_debugTitleActive = false;
+		} else if (state == QStringLiteral("active")) {
+			_debugTitleActive = true;
+		} else if (state == QStringLiteral("maximized")) {
+			_debugTitleMaximized = true;
+		} else if (state == QStringLiteral("dark")) {
+			_debugTitleDark = true;
+		} else if (state.startsWith(hover)) {
+			over = button(state.mid(hover.size()));
+		} else if (state.startsWith(press)) {
+			over = down = button(state.mid(press.size()));
+		}
+	}
+	updateTitleState();
+	updateTitleDark();
+	_title->setNativeOver(over, false);
+	_title->setNativePressed(down);
+}
+#endif // ELEZA_DEBUG_TOOLS
+
+bool MainWindow::event(QEvent *e) {
+	if (e->type() == QEvent::WinIdChange && _titleFrame) {
+		_titleFrame->nativeWindowChanged();
+	}
+	return RpWidget::event(e);
+}
+
+bool MainWindow::eventFilter(QObject *object, QEvent *event) {
+	switch (event->type()) {
+	case QEvent::Show:
+	case QEvent::Hide:
+	case QEvent::Resize:
+		if (object == _titleJoin.data()) {
+			updateTitleJoin();
+		} else if (event->type() != QEvent::Resize) {
+			updateTitleDark();
+		}
+		break;
+	default: break;
+	}
+	return RpWidget::eventFilter(object, event);
+}
+
+bool MainWindow::nativeEvent(
+		const QByteArray &eventType,
+		void *message,
+		qintptr *result) {
+	if (_titleFrame && _titleFrame->nativeEvent(message, result)) {
+		return true;
+	}
+	return RpWidget::nativeEvent(eventType, message, result);
 }
 
 } // namespace Window

@@ -41,6 +41,8 @@ public:
 	[[nodiscard]] bool singleColumn() const {
 		return _singleColumn;
 	}
+	// The rail at the leading side (hidden while a section covers it).
+	[[nodiscard]] QWidget *navRail() const;
 
 	[[nodiscard]] LayoutState saveState() const;
 	void restoreState(const LayoutState &state);

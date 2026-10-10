@@ -28,6 +28,7 @@ constexpr auto kHelpText =
 	"  --lang=fa|en           interface language for this run\n"
 	"  --theme=light|dark     palette for this run\n"
 	"  --no-single-instance   allow a second process on the same data directory\n"
+	"  --system-title-bar     keep the title bar of the system for this run\n"
 	"  --version              print the version and exit\n"
 	"  --help                 print this text and exit\n"
 #ifdef ELEZA_DEBUG_TOOLS
@@ -85,6 +86,8 @@ CommandLine ParseCommandLine(const QStringList &arguments) {
 			}
 		} else if (argument == QStringLiteral("--no-single-instance")) {
 			result.noSingleInstance = true;
+		} else if (argument == QStringLiteral("--system-title-bar")) {
+			result.systemTitleBar = true;
 		} else if (argument == QStringLiteral("--version")) {
 			result.showVersion = true;
 		} else if (argument == QStringLiteral("--help")) {
@@ -120,6 +123,11 @@ CommandLine ParseCommandLine(const QStringList &arguments) {
 			}
 		} else if (TakeValue(argument, "--debug-actions", value)) {
 			result.debugActions = value;
+		} else if (argument == QStringLiteral("--debug-title-bar")) {
+			result.debugTitleBar = true;
+		} else if (TakeValue(argument, "--debug-title-bar", value)) {
+			result.debugTitleBar = true;
+			result.debugTitleState = value;
 #else // ELEZA_DEBUG_TOOLS
 		} else if (argument.startsWith(QStringLiteral("--debug-"))
 			|| argument.startsWith(QStringLiteral("--gallery"))) {

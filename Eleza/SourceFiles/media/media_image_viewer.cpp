@@ -75,6 +75,7 @@ ImageViewer *ShowImageViewer(
 		window->bodyWidget(),
 		std::move(items),
 		index);
+	window->registerDarkOverlay(viewer);
 	viewer->show();
 	viewer->raise();
 	viewer->setFocus();

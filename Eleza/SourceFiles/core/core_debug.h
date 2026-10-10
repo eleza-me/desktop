@@ -1,7 +1,8 @@
 // Scripted input for automated screenshots and headless interaction tests
 // (--debug-actions). The script is a list of steps separated by ";":
 //
-//   click:x,y          left click at a point of the main window (logical pixels)
+//   click:x,y          left click at a point of the window body (logical pixels;
+//                      the custom title bar, when shown, lies above y = 0)
 //   rclick:x,y         right click (context menus)
 //   dclick:x,y         double click
 //   move:x,y           move the mouse (hover states, tooltips)

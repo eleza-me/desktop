@@ -49,6 +49,11 @@ target_sources(test_links PRIVATE
 	"${_eleza_app_src}/support/links_parse.cpp"
 	"${_eleza_app_src}/window/window_routes.cpp")
 target_include_directories(test_links PRIVATE "${_eleza_app_src}")
+# The arithmetic of the custom window frame (hit-test, client rectangle, units).
+eleza_add_test(test_title_hit_test app/test_title_hit_test.cpp)
+target_sources(test_title_hit_test PRIVATE
+	"${_eleza_app_src}/window/window_title_hit_test.cpp")
+target_include_directories(test_title_hit_test PRIVATE "${_eleza_app_src}")
 eleza_add_test(test_eli_logic app/test_eli_logic.cpp)
 target_sources(test_eli_logic PRIVATE "${_eleza_app_src}/eli/eli_logic.cpp")
 target_include_directories(test_eli_logic PRIVATE "${_eleza_app_src}")

@@ -1613,3 +1613,11 @@
 "lng_profile_province_29" = "همدان";
 "lng_profile_province_30" = "یزد";
 "lng_profile_province_31" = "البرز";
+
+// ---- title bar ----
+"lng_title_minimize" = "کوچک کردن";
+"lng_title_maximize" = "بزرگ کردن";
+"lng_title_restore" = "بازگردانی";
+"lng_title_close" = "بستن";
+"lng_title_use_system" = "استفاده از نوار عنوان سیستم";
+"lng_title_use_system_about" = "پس از اجرای دوبارهٔ برنامه اعمال می‌شود.";
