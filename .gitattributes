@@ -15,3 +15,5 @@
 *.bin binary
 # Kept as shipped by the font's authors.
 Eleza/Resources/fonts/*.txt -text
+# Third-party sources stay byte for byte what their release archive has.
+third_party/miniz/** -text

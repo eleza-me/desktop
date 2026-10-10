@@ -4,6 +4,8 @@
 #include "api/api_client_config.h"
 #include "base/platform_file.h"
 #include "core/core_modules.h"
+#include "data/data_outbox.h"
+#include "data/data_session.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
 #include "main/main_account.h"
@@ -14,7 +16,12 @@
 #include "ui/style/style_core.h"
 #include "ui/ui_phrases.h"
 #include "ui/ui_utility.h"
+#include "ui/layers/generic_box.h"
+#include "ui/toast/toast.h"
 #include "ui/widgets/tooltip.h"
+#include "updater/updater_checker.h"
+#include "updater/updater_install.h"
+#include "updater/updater_keys.h"
 #include "window/window_main_window.h"
 #include "window/window_registry.h"
 #include "window/window_routes.h"
@@ -22,6 +29,9 @@
 
 #include <QtCore/QDir>
 #include <QtCore/QTemporaryDir>
+#include <QtCore/QThreadPool>
+#include <QtCore/QUrl>
+#include <QtGui/QDesktopServices>
 #include <QtWidgets/QApplication>
 
 #ifdef ELEZA_DEBUG_TOOLS
@@ -83,6 +93,7 @@ Application::~Application() {
 #endif // ELEZA_DEBUG_TOOLS
 	// The window's sections use the session: they go first.
 	_window = nullptr;
+	_updater = nullptr;
 	_account = nullptr;
 	_settings = nullptr;
 	InstanceValue = nullptr;
@@ -142,6 +153,7 @@ void Application::start() {
 #endif // ELEZA_DEBUG_TOOLS
 	if (!gallery) {
 		createAccount();
+		createUpdater();
 	}
 	_window = std::make_unique<Window::MainWindow>();
 #ifdef ELEZA_DEBUG_TOOLS
@@ -175,7 +187,9 @@ void Application::start() {
 #endif // ELEZA_DEBUG_TOOLS
 	}
 	checkUpgradeRequired();
+	updaterStateChanged();
 	_window->showFirstTime();
+	showInstallResult();
 
 #ifdef ELEZA_DEBUG_TOOLS
 	if (!_debugLoginRunning) {
@@ -214,6 +228,253 @@ void Application::createAccount() {
 				_window->showUpgradeRequired(_account->clientConfig().updateUrl());
 			}
 		});
+}
+
+void Application::createUpdater() {
+	const auto &arguments = _launcher->commandLine();
+	_installTarget = std::make_unique<Updater::InstallTarget>(
+		Updater::DetectInstall());
+
+	auto config = Updater::Config();
+	config.currentVersion = QStringLiteral(ELEZA_VERSION_STRING);
+	config.updatesDir = QDir(workDir()).filePath(QStringLiteral("updates"));
+	config.platform = Updater::PlatformKey();
+	for (const auto source : Updater::kManifestSources) {
+		config.sources.push_back(QString::fromLatin1(source));
+	}
+	config.publicKeys = Updater::BakedPublicKeys();
+	config.selfUpdate = _installTarget->selfUpdate;
+	config.executable = _installTarget->executable;
+	config.autoDownload = [this] { return _settings->autoUpdate(); };
+#ifdef ELEZA_DEBUG_TOOLS
+	// A test release on a local server, signed with a test key.
+	if (!arguments.updateUrls.isEmpty()) {
+		config.sources = arguments.updateUrls;
+		config.allowInsecureLoopback = true;
+	}
+	if (!arguments.updateKeys.isEmpty()) {
+		config.publicKeys.clear();
+		for (const auto &text : arguments.updateKeys) {
+			if (const auto key = Updater::DecodePublicKey(text)) {
+				config.publicKeys.push_back(*key);
+			} else {
+				qWarning("--update-key: not an Ed25519 public key in base64.");
+			}
+		}
+	}
+	if (arguments.updateNow) {
+		config.firstCheckDelayMs = 0;
+	}
+	if (!arguments.updateState.isEmpty()) {
+		// The pages as a copy that updates itself shows them; "announced"
+		// is the one that does not.
+		config.selfUpdate = (arguments.updateState != QStringLiteral("announced"));
+		if (config.platform.isEmpty()) {
+			config.platform = QStringLiteral("linux-x86_64");
+		}
+	}
+#endif // ELEZA_DEBUG_TOOLS
+	const auto updatesDir = config.updatesDir;
+	_updater = std::make_unique<Updater::Checker>(std::move(config));
+	QObject::connect(
+		_updater.get(),
+		&Updater::Checker::stateChanged,
+		this,
+		[this] { updaterStateChanged(); });
+
+#ifdef ELEZA_DEBUG_TOOLS
+	if (!arguments.updateState.isEmpty()) {
+		applyDebugUpdateState(arguments.updateState);
+		return;
+	}
+#endif // ELEZA_DEBUG_TOOLS
+	if (arguments.ephemeral()) {
+		// A screenshot run neither checks nor installs anything.
+		return;
+	}
+	if (const auto result = Updater::TakeInstallResult(updatesDir)) {
+		_updater->installFinished(result->version, result->installed);
+		// A backup that could not be deleted while its files were in use.
+		QThreadPool::globalInstance()->start([target = *_installTarget] {
+			Updater::RemoveInstallLeftovers(target);
+		});
+		if (result->installed) {
+			_installedVersion = result->version;
+		} else {
+			_installFailedVersion = result->version;
+			// The reason names files of the install directory.
+#ifdef ELEZA_DEBUG_TOOLS
+			qWarning(
+				"Updater: installing %s failed: %s",
+				qPrintable(result->version),
+				qPrintable(result->error));
+#else // ELEZA_DEBUG_TOOLS
+			qWarning("Updater: the install step failed.");
+#endif // !ELEZA_DEBUG_TOOLS
+		}
+	}
+	_updater->start();
+}
+
+void Application::showInstallResult() {
+	if (!_window) {
+		return;
+	}
+	if (const auto version = std::exchange(_installedVersion, QString());
+		!version.isEmpty()) {
+		auto toast = Ui::Toast::Config();
+		toast.text = tr::lng_update_done_toast(
+			tr::now,
+			lt_version,
+			Lang::Num(version));
+		toast.icon = &st::toastIconCheck;
+		toast.duration = 6000;
+		// A click on it opens the page with what is new.
+		toast.clicked = [this] {
+			openRoute(Window::Routes::Settings(QStringLiteral("update")));
+		};
+		Ui::Toast::Show(_window->bodyWidget(), std::move(toast));
+	} else if (const auto failed = std::exchange(
+			_installFailedVersion,
+			QString()); !failed.isEmpty()) {
+		auto toast = Ui::Toast::Config();
+		toast.text = tr::lng_update_failed_toast(
+			tr::now,
+			lt_version,
+			Lang::Num(failed));
+		toast.icon = &st::toastIconWarning;
+		toast.duration = 7000;
+		Ui::Toast::Show(_window->bodyWidget(), std::move(toast));
+	}
+}
+
+void Application::updaterStateChanged() {
+	if (!_updater || !_window) {
+		return;
+	}
+	// The manifest says that this version is not supported any more: the
+	// same blocking screen the server's own signal brings, with the update
+	// under way.
+	const auto state = _updater->state();
+	const auto known = (state == Updater::State::Available)
+		|| (state == Updater::State::Downloading)
+		|| (state == Updater::State::Preparing)
+		|| (state == Updater::State::Ready)
+		|| (state == Updater::State::Failed);
+	if (known && _updater->info().mandatory) {
+		_window->showUpgradeRequired(_account
+			? _account->clientConfig().updateUrl()
+			: QString());
+	}
+	// The answer to «بررسی به‌روزرسانی» where no settings page shows it.
+	if (_announceUpdateCheck) {
+		auto text = QString();
+		switch (state) {
+		case Updater::State::UpToDate:
+			text = tr::lng_update_up_to_date(tr::now);
+			break;
+		case Updater::State::Available:
+			text = tr::lng_update_new_available(tr::now);
+			break;
+		case Updater::State::Failed:
+			text = tr::lng_update_failed_network(tr::now);
+			break;
+		case Updater::State::Ready:
+			text = tr::lng_update_ready(
+				tr::now,
+				lt_version,
+				Lang::Num(_updater->info().version));
+			break;
+		default: break;
+		}
+		if (!text.isEmpty()) {
+			_announceUpdateCheck = false;
+			_window->showToast(text);
+		}
+	}
+#ifdef ELEZA_DEBUG_TOOLS
+	// --update-now: the whole way without a click (the end-to-end test).
+	if (state == Updater::State::Ready
+		&& _launcher->commandLine().updateNow
+		&& !_launcher->commandLine().ephemeral()) {
+		QTimer::singleShot(0, this, [this] { restartToUpdateNow(); });
+	}
+#endif // ELEZA_DEBUG_TOOLS
+}
+
+void Application::checkForUpdates() {
+	if (!_updater) {
+		return;
+	}
+	if (_window) {
+		_window->activateAndShow();
+	}
+	const auto controller = _window ? _window->sessionController() : nullptr;
+	if (controller && !_window->upgradeRequired()) {
+		controller->openRoute(
+			Window::Routes::Settings(QStringLiteral("update")));
+	} else {
+		_announceUpdateCheck = true;
+	}
+	_updater->checkNow();
+}
+
+void Application::openDownloadPage() {
+	auto url = QUrl(_account
+		? _account->clientConfig().updateUrl()
+		: QString());
+	// Only a web page may come from the configuration.
+	if (!url.isValid() || url.scheme() != QStringLiteral("https")) {
+		url = QUrl(QString::fromLatin1(Updater::kDownloadPage));
+	}
+	QDesktopServices::openUrl(url);
+}
+
+void Application::restartToUpdate() {
+	if (!_updater
+		|| !_window
+		|| _updater->state() != Updater::State::Ready) {
+		return;
+	}
+	// Messages that are still being sent or uploaded would wait for the next
+	// start: that is the user's call.
+	const auto session = this->session();
+	const auto pending = session
+		? session->data().outbox().pendingCount()
+		: 0;
+	if (pending <= 0) {
+		restartToUpdateNow();
+		return;
+	}
+	auto args = Ui::ConfirmBoxArgs();
+	args.title = tr::lng_update_button(tr::now);
+	args.text = tr::lng_update_restart_pending(tr::now, lt_count, pending);
+	args.confirmText = tr::lng_update_restart_confirm(tr::now);
+	args.confirmed = [this](std::function<void()> close) {
+		close();
+		restartToUpdateNow();
+	};
+	_window->show(Ui::MakeConfirmBox(std::move(args)));
+}
+
+void Application::restartToUpdateNow() {
+	if (!_updater
+		|| !_installTarget
+		|| _updater->state() != Updater::State::Ready) {
+		return;
+	}
+	auto request = Updater::InstallRequest();
+	request.version = _updater->info().version;
+	request.stagedDir = _updater->readyDir();
+	request.updatesDir = QDir(workDir()).filePath(QStringLiteral("updates"));
+	request.arguments = QCoreApplication::arguments().mid(1);
+	if (!Updater::PrepareInstall(*_installTarget, request)) {
+		_window->showToast(tr::lng_update_failed_start(tr::now));
+		return;
+	}
+	// main() swaps the files and starts the new version once everything of
+	// this one is closed.
+	quit();
 }
 
 void Application::checkUpgradeRequired() {
@@ -508,6 +769,57 @@ void Application::quit() {
 
 // ---- debug hooks
 #ifdef ELEZA_DEBUG_TOOLS
+
+void Application::applyDebugUpdateState(const QString &name) {
+	using State = Updater::State;
+	using Failure = Updater::Failure;
+	auto info = Updater::Info();
+	info.version = QStringLiteral("0.2.0");
+	info.size = qint64(36812544);
+	info.notesFa = QStringLiteral(
+		"• الزا حالا خودش به‌روز می‌شود: نسخهٔ تازه در پس‌زمینه دریافت و با یک کلیک نصب می‌شود.\n"
+		"• نوار عنوان تازه، هماهنگ با پوستهٔ روشن و تیره.\n"
+		"• رفع چند اشکال در ارسال پیام صوتی.");
+	info.notesEn = QStringLiteral(
+		"• Eleza now updates itself: a new version is downloaded in the background and installed with one click.\n"
+		"• A new title bar that follows the light and the dark theme.\n"
+		"• Fixes for sending voice messages.");
+	auto state = State::Idle;
+	auto failure = Failure::None;
+	auto received = qint64(0);
+	if (name == QStringLiteral("checking")) {
+		state = State::Checking;
+	} else if (name == QStringLiteral("uptodate")) {
+		state = State::UpToDate;
+		info = Updater::Info();
+	} else if (name == QStringLiteral("available")
+		|| name == QStringLiteral("announced")) {
+		state = State::Available;
+	} else if (name == QStringLiteral("downloading")) {
+		state = State::Downloading;
+		received = info.size * 42 / 100;
+	} else if (name == QStringLiteral("preparing")) {
+		state = State::Preparing;
+		received = info.size;
+	} else if (name == QStringLiteral("ready")) {
+		state = State::Ready;
+	} else if (name == QStringLiteral("failed")) {
+		state = State::Failed;
+		failure = Failure::Network;
+		info = Updater::Info();
+	} else if (name == QStringLiteral("failed-install")) {
+		state = State::Failed;
+		failure = Failure::Install;
+	} else if (name == QStringLiteral("required")) {
+		state = State::Downloading;
+		received = info.size * 42 / 100;
+		info.mandatory = true;
+	} else if (name == QStringLiteral("required-ready")) {
+		state = State::Ready;
+		info.mandatory = true;
+	}
+	_updater->debugSetState(state, failure, info, received);
+}
 
 void Application::startDebugLogin() {
 	const auto &arguments = _launcher->commandLine();

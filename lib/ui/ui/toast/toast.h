@@ -10,6 +10,8 @@
 #include "ui/rp_widget.h"
 #include "styles/style_widgets.h"
 
+#include <functional>
+
 namespace Ui::Toast {
 
 struct Config {
@@ -18,6 +20,8 @@ struct Config {
 	const style::icon *icon = nullptr;
 	// Extra space kept under the toast (a bottom bar).
 	int bottomSkip = 0;
+	// Makes the toast a button: a click runs this and hides it.
+	std::function<void()> clicked = nullptr;
 };
 
 void Show(QWidget *parent, const QString &text);

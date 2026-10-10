@@ -1,0 +1,12 @@
+{
+	"channel": "stable",
+	"min_supported": "0.1.0",
+	"mirrors": [
+		"https://eleza.me/desktop/updates/{file}",
+		"https://github.com/eleza-me/desktop/releases/download/v{version}/{file}"
+	],
+	"platforms": {
+		"windows-x64": "Eleza-{version}-windows-x64.zip",
+		"linux-x86_64": "Eleza-{version}-linux-x86_64.zip"
+	}
+}

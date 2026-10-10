@@ -11,7 +11,9 @@
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/tooltip.h"
 #include "window/window_main_window.h"
+#include "window/window_update.h"
 #include "styles/style_intro.h"
+#include "styles/style_window_update.h"
 
 #include <QtCore/QDateTime>
 #include <QtCore/QTimer>
@@ -155,6 +157,7 @@ Widget::Widget(QWidget *parent, Window::MainWindow *window)
 		updateCorner();
 		update();
 	});
+	_updatePill = Window::CreateUpdatePill(this, [this] { updateCorner(); });
 
 	auto initial = StepType::Welcome;
 	if (auto saved = std::exchange(SavedForRebuild, std::nullopt)) {
@@ -318,6 +321,13 @@ void Widget::updateCorner() {
 		padding + _theme->width() + st::introCornerSkip,
 		padding,
 		width());
+	if (_updatePill) {
+		_updatePill->moveToLeft(
+			st::updatePillMargin,
+			height() - st::updatePillMargin - _updatePill->height(),
+			width());
+		_updatePill->raise();
+	}
 	_theme->setIconOverride(
 		style::IsDark() ? &st::introThemeSunIcon : nullptr,
 		style::IsDark() ? &st::introThemeSunIconOver : nullptr);

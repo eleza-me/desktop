@@ -49,6 +49,11 @@ target_sources(test_links PRIVATE
 	"${_eleza_app_src}/support/links_parse.cpp"
 	"${_eleza_app_src}/window/window_routes.cpp")
 target_include_directories(test_links PRIVATE "${_eleza_app_src}")
+# The arithmetic of the custom window frame (hit-test, client rectangle, units).
+eleza_add_test(test_title_hit_test app/test_title_hit_test.cpp)
+target_sources(test_title_hit_test PRIVATE
+	"${_eleza_app_src}/window/window_title_hit_test.cpp")
+target_include_directories(test_title_hit_test PRIVATE "${_eleza_app_src}")
 eleza_add_test(test_eli_logic app/test_eli_logic.cpp)
 target_sources(test_eli_logic PRIVATE "${_eleza_app_src}/eli/eli_logic.cpp")
 target_include_directories(test_eli_logic PRIVATE "${_eleza_app_src}")
@@ -108,6 +113,42 @@ if (TARGET ElezaCore)
 		"${_eleza_app_src}/profile/profile_logic.cpp"
 		"${_eleza_app_src}/profile/profile_qr.cpp")
 	target_include_directories(test_profile_logic PRIVATE "${_eleza_app_src}")
+endif()
+
+# ---- in-app updates
+# The install step (lib/install, no Qt): the swap, its rollback and recovery.
+eleza_add_test(test_install_swap app/test_install_swap.cpp LIBS ElezaInstall)
+set_tests_properties(test_install_swap PROPERTIES TIMEOUT 300)
+
+# The real Updater.exe on a small fake install directory (Windows only): it
+# waits for "the app", swaps the files and starts the new one again.
+if (WIN32 AND TARGET Updater)
+	foreach(_probe old new)
+		add_executable(updater_probe_${_probe} WIN32 tools/updater_probe.cpp)
+		set_target_properties(updater_probe_${_probe} PROPERTIES
+			AUTOMOC OFF
+			CXX_STANDARD 20
+			CXX_STANDARD_REQUIRED ON
+			MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+		target_compile_definitions(updater_probe_${_probe} PRIVATE
+			UNICODE
+			_UNICODE
+			PROBE_NAME="${_probe}")
+		target_link_libraries(updater_probe_${_probe} PRIVATE shell32)
+		if (MINGW)
+			target_link_options(updater_probe_${_probe} PRIVATE -municode -static)
+		endif()
+	endforeach()
+	find_package(Python3 COMPONENTS Interpreter QUIET)
+	if (Python3_Interpreter_FOUND)
+		add_test(NAME test_updater_smoke COMMAND
+			"${Python3_EXECUTABLE}"
+			"${CMAKE_CURRENT_SOURCE_DIR}/tools/updater-smoke.py"
+			--updater "$<TARGET_FILE:Updater>"
+			--probe-old "$<TARGET_FILE:updater_probe_old>"
+			--probe-new "$<TARGET_FILE:updater_probe_new>")
+		set_tests_properties(test_updater_smoke PROPERTIES TIMEOUT 300)
+	endif()
 endif()
 
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/core/CMakeLists.txt")

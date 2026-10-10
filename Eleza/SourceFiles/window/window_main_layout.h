@@ -19,6 +19,8 @@ namespace Window {
 
 class NavRail;
 class SectionWidget;
+class UpdateBanner;
+class UpdateRailButton;
 
 class MainLayout final : public Ui::RpWidget {
 public:
@@ -41,6 +43,8 @@ public:
 	[[nodiscard]] bool singleColumn() const {
 		return _singleColumn;
 	}
+	// The rail at the leading side (hidden while a section covers it).
+	[[nodiscard]] QWidget *navRail() const;
 
 	[[nodiscard]] LayoutState saveState() const;
 	void restoreState(const LayoutState &state);
@@ -73,6 +77,8 @@ private:
 	void updateVisibility();
 	void updateBackButtons();
 	[[nodiscard]] int sideWidthFor(int layoutWidth) const;
+	// The height the update banner takes at the top (single column only).
+	[[nodiscard]] int bannerHeight() const;
 	[[nodiscard]] QRect transitionArea() const; // physical
 	void runTransition(
 		const QRect &area,
@@ -84,6 +90,10 @@ private:
 
 	SessionController *_controller = nullptr;
 	NavRail *_rail = nullptr;
+	// «به‌روزرسانی الزا»: on the rail above the settings, or as a banner
+	// over the single column (window_update.h).
+	UpdateRailButton *_updateButton = nullptr;
+	UpdateBanner *_updateBanner = nullptr;
 	Resizer *_resizer = nullptr;
 	EmptyMain *_empty = nullptr;
 	Transition *_transition = nullptr;

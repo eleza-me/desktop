@@ -3,17 +3,23 @@
 # the unit tests and uploads the packages. No secrets are used. Both jobs build
 # Release: ELEZA_DEBUG_TOOLS is off, the packages have no debug / test hooks.
 #
-#   Windows: Eleza-<version>-windows-x64-portable (unpack and run Eleza.exe)
+#   Windows: Eleza-<version>-windows-x64-portable (Eleza-<version>-windows-x64.zip:
+#                                                  unpack and run Eleza.exe)
 #            Eleza-<version>-windows-x64-setup    (the Inno Setup installer)
-#   Linux:   Eleza-<version>-linux-x86_64         (usr/… tarball and a .deb)
+#   Linux:   Eleza-<version>-linux-x86_64         (Eleza-<version>-linux-x86_64.zip,
+#                                                  the portable build, and a .deb)
+#
+# The two zip archives are at once the downloads and the packages the app
+# updates itself from (packaging/make-package.py). A `v*` tag is built through
+# release.yml, which calls this workflow and then signs and publishes.
 name: build
 
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 concurrency:
   group: build-${{ github.ref }}
@@ -119,6 +125,9 @@ jobs:
           $dist = 'dist/Eleza'
           New-Item -ItemType Directory -Force $dist | Out-Null
           Copy-Item "$build/Eleza/Eleza.exe" $dist
+          # The updater (no Qt, static runtime): the app copies it out of the
+          # install directory and starts it to swap the files of an update.
+          Copy-Item "$build/Eleza/Updater.exe" $dist
           windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw --no-compiler-runtime "$dist/Eleza.exe"
           if ($LASTEXITCODE -ne 0) { throw 'windeployqt failed' }
           # OpenSSL 3: our own crypto and Qt's TLS backend (tls/qopensslbackend.dll).
@@ -131,7 +140,7 @@ jobs:
           # The C++ runtime next to the executable: the portable build needs no installer.
           $crt = Join-Path $env:VCToolsRedistDir 'x64/Microsoft.VC143.CRT'
           if (Test-Path $crt) { Copy-Item "$crt/*.dll" $dist }
-          foreach ($required in 'Qt6Core.dll', 'Qt6Widgets.dll', 'Qt6Multimedia.dll', 'Qt6WebSockets.dll', 'Qt6Sql.dll', 'Qt6Svg.dll', 'platforms/qwindows.dll', 'sqldrivers/qsqlite.dll', 'imageformats/qwebp.dll', 'imageformats/qsvg.dll', 'tls/qopensslbackend.dll') {
+          foreach ($required in 'Updater.exe', 'Qt6Core.dll', 'Qt6Widgets.dll', 'Qt6Multimedia.dll', 'Qt6WebSockets.dll', 'Qt6Sql.dll', 'Qt6Svg.dll', 'platforms/qwindows.dll', 'sqldrivers/qsqlite.dll', 'imageformats/qwebp.dll', 'imageformats/qsvg.dll', 'tls/qopensslbackend.dll') {
             if (-not (Test-Path "$dist/$required")) { throw "The deployed build misses $required" }
           }
           Get-ChildItem -Recurse $dist | Measure-Object -Property Length -Sum | ForEach-Object { 'Deployed {0:N1} MB' -f ($_.Sum / 1MB) }
@@ -148,11 +157,30 @@ jobs:
           if (-not $process.WaitForExit(60000)) { $process.Kill(); throw 'Eleza.exe did not exit' }
           if ($process.ExitCode -ne 0) { throw "Eleza.exe exited with $($process.ExitCode)" }
 
+      # The updater must not need any DLL that lies next to it (it replaces
+      # them): nothing but system libraries among its imports.
+      - name: Check the updater's imports
+        shell: pwsh
+        run: |
+          $imports = dumpbin /dependents dist/Eleza/Updater.exe | Select-String -Pattern '^\s+(\S+\.dll)\s*$' | ForEach-Object { $_.Matches[0].Groups[1].Value.ToLower() }
+          $imports
+          $foreign = $imports | Where-Object { $_ -match '^(vcruntime|msvcp|ucrtbase|qt6|libcrypto|libssl)' -or $_ -match '^api-ms-win-crt' }
+          if ($foreign) { throw "Updater.exe must be linked statically; it imports: $foreign" }
+
+      # Writes eleza-files.list into the folder (so the installer ships it
+      # too) and packs the folder: the portable download and the update
+      # package are this one archive.
+      - name: Pack the portable build
+        shell: pwsh
+        run: |
+          python packaging/make-package.py dist/Eleza "dist/Eleza-${{ steps.version.outputs.value }}-windows-x64.zip"
+          if ($LASTEXITCODE -ne 0) { throw 'make-package.py failed' }
+
       - name: Upload the portable build
         uses: actions/upload-artifact@v4
         with:
           name: Eleza-${{ steps.version.outputs.value }}-windows-x64-portable
-          path: dist/Eleza
+          path: dist/Eleza-${{ steps.version.outputs.value }}-windows-x64.zip
           if-no-files-found: error
 
       - name: Build the installer (Inno Setup)
@@ -213,20 +241,24 @@ jobs:
         run: |
           grep -q '^ELEZA_DEBUG_TOOLS:BOOL=OFF$' build/CMakeCache.txt
           build/Eleza/Eleza --version
+          # What the binary says is the version of the project, nothing else.
+          version="$(sed -n 's/^CMAKE_PROJECT_VERSION:[^=]*=//p' build/CMakeCache.txt)"
+          test "$(build/Eleza/Eleza --version)" = "Eleza Desktop $version"
           test "$(strings build/Eleza/Eleza | grep -c 'debug-login')" = 0
           code=0
           timeout 10 build/Eleza/Eleza --no-single-instance \
             --workdir="$RUNNER_TEMP/eleza-smoke" || code=$?
           test "$code" = 124
 
-      - name: Package (tarball and .deb)
+      # The portable build (the binary in a directory of its own, updates
+      # itself) and the .deb (installed under /usr, updated by apt).
+      - name: Package (portable zip and .deb)
         id: package
         run: |
           version="$(sed -n 's/^CMAKE_PROJECT_VERSION:[^=]*=//p' build/CMakeCache.txt)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           mkdir -p dist
-          DESTDIR="$PWD/stage" cmake --install build --strip
-          tar -C stage -czf "dist/Eleza-$version-linux-x86_64.tar.gz" usr
+          packaging/linux/make-portable.sh build stage-portable "dist/Eleza-$version-linux-x86_64.zip"
           ELEZA_BUILD_DIR="$PWD/build" cpack --config packaging/linux/cpack-deb.cmake -B build/cpack
           cp build/cpack/*.deb dist/
           ls -l dist

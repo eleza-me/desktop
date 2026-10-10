@@ -23,6 +23,7 @@
 #include "ui/widgets/labels.h"
 #include "ui/ui_utility.h"
 #include "window/window_session_controller.h"
+#include "window/window_title_frame.h"
 #include "styles/style_layers.h"
 #include "styles/style_settings.h"
 
@@ -490,6 +491,22 @@ private:
 		});
 	}
 
+	// The window frame is built when the window is created: the choice
+	// takes effect with the next start.
+	void addTitleBarOption() {
+		if (!Window::CustomTitleBarSupported()) {
+			return;
+		}
+		AddToggle(
+			content(),
+			tr::lng_title_use_system(tr::now),
+			Core::App().settings().systemTitleBar(),
+			[](bool checked) {
+				Core::App().settings().setSystemTitleBar(checked);
+			});
+		AddFootnote(content(), tr::lng_title_use_system_about(tr::now));
+	}
+
 	void build() {
 		AddSubsectionTitle(content(), tr::lng_settings_theme(tr::now));
 		addRadios<style::ThemeMode>(
@@ -503,6 +520,7 @@ private:
 			},
 			Core::App().settings().themeMode(),
 			[](style::ThemeMode mode) { Core::App().setThemeMode(mode); });
+		addTitleBarOption();
 
 		AddDivider(content());
 		AddSubsectionTitle(content(), tr::lng_settings_language(tr::now));
@@ -657,6 +675,7 @@ Window::SectionFactory PageFactory(Section section) {
 	case Section::Appearance: return Make<AppearancePage>();
 	case Section::Devices: return DevicesPageFactory();
 	case Section::Storage: return StoragePageFactory();
+	case Section::Update: return UpdatePageFactory();
 	case Section::About: return Make<AboutPage>();
 	}
 	return nullptr;

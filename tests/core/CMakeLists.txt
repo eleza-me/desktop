@@ -60,6 +60,13 @@ eleza_core_test(test_models)
 eleza_core_test(test_outbox test_fakes.h test_harness.h)
 eleza_core_test(test_sync test_fakes.h test_harness.h)
 eleza_core_test(test_media test_fakes.h test_harness.h)
+# In-app updates (only with the whole project: the library is not a part of
+# the standalone core build).
+if (TARGET ElezaUpdater)
+	eleza_core_test(test_updater test_fakes.h)
+	target_link_libraries(test_updater PRIVATE ElezaUpdater ElezaInstall ElezaMiniz)
+	set_tests_properties(test_updater PROPERTIES TIMEOUT 300)
+endif()
 
 # Command line harness against a real or mock API (see tests/core/README in the report):
 #   eleza_cli --api=http://127.0.0.1:8000 --workdir=/tmp/x login <phone> <code>

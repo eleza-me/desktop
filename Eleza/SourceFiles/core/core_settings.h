@@ -17,6 +17,8 @@
 #include <QtCore/QStringList>
 #include <QtCore/QTimer>
 
+#include <optional>
+
 namespace Core {
 
 struct NotificationSettings {
@@ -114,6 +116,12 @@ public:
 	}
 	void setSendByCtrlEnter(bool enabled);
 
+	// The window keeps the title bar of the system instead of the app's own
+	// (window/window_title_frame.h). Until the user chooses: ours on Windows,
+	// the system's elsewhere. Read when the window is created.
+	[[nodiscard]] bool systemTitleBar() const;
+	void setSystemTitleBar(bool enabled);
+
 	// The user's limit for the media cache on disk in bytes (0 = the default).
 	[[nodiscard]] qint64 mediaCacheLimit() const {
 		return _mediaCacheLimit;
@@ -125,6 +133,13 @@ public:
 		return _recentEmoji;
 	}
 	void setRecentEmoji(const QStringList &emoji);
+
+	// «به‌روزرسانی خودکار»: a new version is downloaded in the background
+	// as soon as it is found (off: it is only announced).
+	[[nodiscard]] bool autoUpdate() const {
+		return _autoUpdate;
+	}
+	void setAutoUpdate(bool enabled);
 
 	// Writes pending changes right now (on quit).
 	void flush();
@@ -152,8 +167,10 @@ private:
 	double _playbackVolume = 1.;
 	double _voicePlaybackSpeed = 1.;
 	bool _sendByCtrlEnter = false;
+	std::optional<bool> _systemTitleBar;
 	qint64 _mediaCacheLimit = 0;
 	QStringList _recentEmoji;
+	bool _autoUpdate = true;
 
 };
 

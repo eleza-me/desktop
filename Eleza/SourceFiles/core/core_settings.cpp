@@ -105,9 +105,14 @@ void Settings::read() {
 	_voicePlaybackSpeed = (speed == 1.5 || speed == 2.) ? speed : 1.;
 	_sendByCtrlEnter = root.value(
 		QStringLiteral("send_by_ctrl_enter")).toBool(false);
+	const auto systemTitleBar = root.value(QStringLiteral("system_title_bar"));
+	_systemTitleBar = systemTitleBar.isBool()
+		? std::make_optional(systemTitleBar.toBool())
+		: std::nullopt;
 	_mediaCacheLimit = std::max(
 		qint64(root.value(QStringLiteral("media_cache_limit")).toDouble(0.)),
 		qint64(0));
+	_autoUpdate = root.value(QStringLiteral("auto_update")).toBool(true);
 	_recentEmoji.clear();
 	for (const auto &item : root.value(QStringLiteral("recent_emoji")).toArray()) {
 		if (item.isString() && !item.toString().isEmpty()) {
@@ -160,11 +165,15 @@ QJsonObject Settings::serialize() const {
 	root.insert(QStringLiteral("playback_volume"), _playbackVolume);
 	root.insert(QStringLiteral("voice_speed"), _voicePlaybackSpeed);
 	root.insert(QStringLiteral("send_by_ctrl_enter"), _sendByCtrlEnter);
+	if (_systemTitleBar) {
+		root.insert(QStringLiteral("system_title_bar"), *_systemTitleBar);
+	}
 	if (_mediaCacheLimit > 0) {
 		root.insert(
 			QStringLiteral("media_cache_limit"),
 			double(_mediaCacheLimit));
 	}
+	root.insert(QStringLiteral("auto_update"), _autoUpdate);
 	if (!_recentEmoji.isEmpty()) {
 		root.insert(
 			QStringLiteral("recent_emoji"),
@@ -279,10 +288,33 @@ void Settings::setSendByCtrlEnter(bool enabled) {
 	}
 }
 
+bool Settings::systemTitleBar() const {
+#ifdef Q_OS_WIN
+	constexpr auto byDefault = false;
+#else // Q_OS_WIN
+	constexpr auto byDefault = true;
+#endif // Q_OS_WIN
+	return _systemTitleBar.value_or(byDefault);
+}
+
+void Settings::setSystemTitleBar(bool enabled) {
+	if (systemTitleBar() != enabled) {
+		_systemTitleBar = enabled;
+		scheduleWrite();
+	}
+}
+
 void Settings::setMediaCacheLimit(qint64 bytes) {
 	bytes = std::max(bytes, qint64(0));
 	if (_mediaCacheLimit != bytes) {
 		_mediaCacheLimit = bytes;
+		scheduleWrite();
+	}
+}
+
+void Settings::setAutoUpdate(bool enabled) {
+	if (_autoUpdate != enabled) {
+		_autoUpdate = enabled;
 		scheduleWrite();
 	}
 }

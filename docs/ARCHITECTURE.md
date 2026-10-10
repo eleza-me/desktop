@@ -16,8 +16,12 @@ codegen/
   style/                  host tool: *.style + colors.palette  ->  styles/style_*.h/.cpp, palette
   lang/                   host tool: lang.strings              ->  lang_auto.h/.cpp
   scripts/                dev-time generators (python): rt schema from views.proto, icons from icons.json
+third_party/
+  miniz/                  zip reading for the update packages (MIT), built from source
 lib/
   base/                   no-GUI helpers (bytes, weak guards, timers, random, platform file helpers)
+  install/                plain C++, no Qt: replacing an installed copy's files with a new
+                          version (journal, rollback, recovery) and the Windows Updater.exe
   crl/                    (none — Qt event loop only)
   ui/                     lib "ElezaUi": style runtime, animations, widgets, layers, text, icons, RTL
 Eleza/
@@ -32,6 +36,8 @@ Eleza/
     data/                 typed models + stores: chats, messages, users, sync (pts), outbox, media,
                           upload, feed, graph, conversations, notifications, stickers
     lang/                 lang runtime (fa / en), number + date formatting (Persian digits, Jalali)
+    updater/              in-app updates without widgets: signed manifest, package unpacker,
+                          the checker (check -> download -> verify -> unpack), install glue
     window/               MainWindow, SessionController (navigation), layout (nav rail | side | main)
     intro/                phone -> code -> password / recovery -> profile
     dialogs/              chat list
@@ -50,7 +56,19 @@ tests/                    unit tests (noise vectors, proto codec, frames, style 
 
 Targets: `ElezaBase`, `ElezaUi` (static libs), `codegen_style`, `codegen_lang` (host tools),
 `ElezaCore` (static: everything under SourceFiles without widgets: crypto, api, rt, storage, data,
-main, lang), `Eleza` (the executable: core/, window/ and all feature folders), `eleza_tests`.
+main, lang), `ElezaUpdater` (static: SourceFiles/updater), `ElezaInstall` (static, no Qt: lib/install),
+`ElezaMiniz`, `Eleza` (the executable: core/, window/ and all feature folders), `Updater` (Windows
+only: Updater.exe, no Qt, static runtime), the tests.
+
+## Updates
+
+The app updates itself on Windows and Linux; `docs/RELEASING.md` describes the whole chain (the
+signed `update.json`, the sources, the release workflow, the signing key). In the code:
+`Updater::Checker` (`Core::App().updater()`) owns the state machine and the downloads,
+`Updater::Unpack` reads the package as hostile input, `Install::Apply` (lib/install) swaps the files
+— called by the exiting app on Linux and by `Updater.exe` on Windows — and the window shows it
+through `window/window_update.*`, the settings page `settings/settings_update.cpp` and the
+"update required" screen.
 
 ## Conventions
 

@@ -68,19 +68,24 @@ In every build:
 | `--workdir=<dir>` | data directory; screenshot runs without it use a temporary one |
 | `--lang=fa\|en`, `--theme=light\|dark` | for this run only |
 | `--no-single-instance` | allow a second process on the same workdir |
+| `--system-title-bar` / env `ELEZA_SYSTEM_TITLE_BAR=1` | the window keeps the title bar of the system for this run, whatever the preference says ("The window frame" in section 3) |
 | `--version`, `--help` | print and exit (no display needed) |
 
 Only with `ELEZA_DEBUG_TOOLS`:
 
 | Flag | Meaning |
 | --- | --- |
-| `--debug-size=<W>x<H>`, `--debug-scale=<f>` | window size, device pixel ratio |
+| `--debug-size=<W>x<H>`, `--debug-scale=<f>` | size of the window **body**, device pixel ratio. With the custom title bar the window (and the grab) is taller by the bar (30 px), so the content of a grab is the same with and without it |
+| `--debug-title-bar[=<states>]` | the custom title bar also where this run would not have it (Linux with the default preference, the offscreen platform). States for a grab, separated by commas: `inactive`, `maximized`, `dark`, `hover-min\|max\|close`, `press-min\|max\|close` |
 | `--debug-login=<phone>:<code>[:<password>]` | signs in through the API at startup when nobody is signed in (no intro UI); exits with code 2 if it fails in a grab run |
 | `--debug-route=<route>` | opened once the session layout is shown (section 5; `debug/…` and `intro/…` below) |
 | `--debug-actions=<script>` | scripted input, played after the route was opened |
 | `--debug-grab=<png>` | save a grab and exit |
 | `--debug-grab-delay=<ms>` | wait this long after the route was opened and the actions finished (default 600) |
 | `--gallery[=<page>]` | the UI gallery instead of the app |
+| `--update-url=<url>`, `--update-key=<base64>` | a test update manifest (http on the loopback interface is accepted) and the public key it is signed with, instead of the built-in ones (`docs/RELEASING.md`, "Testing an update locally") |
+| `--update-now` | check at once and install as soon as the update is ready |
+| `--update-state=<state>` | the update UI in a state, for screenshots: `checking`, `uptodate`, `available`, `announced`, `downloading`, `preparing`, `ready`, `failed`, `failed-install`, `required`, `required-ready` |
 | env `ELEZA_DEBUG_FONTS` | logs the font families that were picked |
 
 A run with `--debug-grab` or `--debug-actions` is *ephemeral*: preferences are not saved, no
@@ -92,7 +97,8 @@ marks its messages read as it would on a desktop).
 ### `--debug-actions`
 
 Steps separated by `;` (write `\;` for a literal semicolon). Coordinates are logical pixels
-of the main window.
+of the window body: a script means the same places with and without the custom title bar,
+which lies above `y = 0` (`move:1257,-15` hovers the close button of a 1280 px wide window).
 
 ```
 click:x,y    rclick:x,y    dclick:x,y    move:x,y
@@ -127,6 +133,7 @@ to answer every "open" dialog at once and `ELEZA_DEBUG_SAVE=/path/out.bin` for "
 | --- | --- |
 | `intro/welcome\|phone\|country\|code\|password\|recovery\|profile` | an intro step with sample data (signed out) |
 | `debug/main[/<n>]` | n placeholder sections pushed in the main column |
+| `debug/title[/<states>]` | what the custom title bar shows, the states of `--debug-title-bar` (`debug/title/inactive,hover-close`); without states: back to normal |
 | `debug/notification`, `debug/notifications` | one / three sample notification toasts |
 | `debug/viewer[?file=<path>][&video=<path>]` | the image viewer with generated pictures (and your file / video) |
 | `debug/crop`, `debug/about`, `debug/peers`, `debug/peers-multi` | the shared boxes |
@@ -176,6 +183,41 @@ Core::Launcher -> Core::Application                     core/
   `Data::Notifications::unreadChanged`.
 * `controller->requestLogout()` is the sign-out flow (confirmation box, then
   `account.logout()`).
+* `Core::App().updater()` — `Updater::Checker` (state, `info()`, `checkNow()`,
+  `download()`; signals `stateChanged`, `progressChanged`); `Core::App().restartToUpdate()`
+  is «به‌روزرسانی الزا». It exists signed out as well and never uses the account.
+
+### The window frame
+
+The app draws its own title bar (`Window::TitleBar`, `window/window_title_bar.h`): a 30 px
+strip of the nav rail's surface with the title and the minimize / maximize / close buttons.
+The buttons are at the physical top right in both interface directions; the title follows
+the direction.
+
+* **When.** On Windows by default; on Linux the system frame is the default and the custom
+  one is a choice. The preference is `Core::Settings::systemTitleBar()` (تنظیمات → ظاهر و
+  زبان → «استفاده از نوار عنوان سیستم»), read once when the window is created — a change
+  applies with the next start. `--system-title-bar` and `ELEZA_SYSTEM_TITLE_BAR=1` force
+  the system frame for a run (the way back if the custom one misbehaves on some machine).
+  `Window::UseCustomTitleBar()` is the one place that decides.
+* **The body.** `MainWindow::bodyWidget()` is the area below the bar. Everything that
+  covers "the window" — the layer stack and its dimming, toasts, the intro, the image
+  viewer, the video pager, the "update required" screen — is a child of the body and never
+  covers the bar: the window can always be moved, minimized and closed. Position things
+  against `bodyWidget()`, never against the `MainWindow` itself.
+* **Dark overlays.** A dark overlay over the whole body calls
+  `window->registerDarkOverlay(widget)`: the bar is dark while that widget is shown.
+* **Platform halves** (`window/window_title_frame.h`). Windows
+  (`window_title_win.cpp`): the window keeps its native styles — shadow, snapping, the
+  animations and the taskbar behave as for any window — the non-client area is removed in
+  `WM_NCCALCSIZE` and `WM_NCHITTEST` is answered from the bar's geometry. Linux
+  (`window_title_frame.cpp`): a frameless window with an invisible resize border; the bar
+  starts a system move.
+* **The arithmetic** (hit-test zones, the client rectangle of a maximized window, logical
+  and physical pixels) is in `window/window_title_hit_test.h`, free of Qt and of the
+  platform, and unit-tested: `tests/app/test_title_hit_test.cpp`. Change the layout of the
+  bar there, not in the widget.
+* Sizes and colors: the `title…` values at the end of `window/window.style`.
 
 ## 4. Adding a module
 
@@ -427,7 +469,8 @@ Preferences that exist already in `Core::Settings` (`Core::App().settings()`):
 `notifications()` (`desktopEnabled`, `soundEnabled`, `showPreview` = «نمایش متن پیام»,
 `showSender`, `onlyWhenInactive`, `flashTaskbar`, `countUnreadMuted`), `closeToTray`,
 `themeMode`, `language`, `sideColumnWidth`, `lastTab`, `playbackVolume`,
-`voicePlaybackSpeed`. Change them through the setters (they save themselves); language and
+`voicePlaybackSpeed`, `systemTitleBar` (applies with the next start). Change them through the setters (they save themselves); language and
+`voicePlaybackSpeed`, `autoUpdate`. Change them through the setters (they save themselves); language and
 theme through `Core::App().setLanguage / setThemeMode`.
 
 ## 7. The core API

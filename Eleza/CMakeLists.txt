@@ -7,6 +7,8 @@
 include("${CMAKE_CURRENT_LIST_DIR}/lang.cmake")
 # The non-GUI core (crypto, api, rt, storage, data, main): the ElezaCore library.
 include("${CMAKE_CURRENT_LIST_DIR}/core.cmake")
+# In-app updates without the widgets: the ElezaUpdater library.
+include("${CMAKE_CURRENT_LIST_DIR}/updater.cmake")
 
 find_package(Qt6 6.4 REQUIRED COMPONENTS Multimedia)
 
@@ -40,6 +42,10 @@ foreach(module ${eleza_gui_modules})
 	list(APPEND eleza_sources ${module_sources})
 	list(APPEND eleza_styles ${module_styles})
 endforeach()
+if (NOT WIN32)
+	# Sources named *_win.cpp are for Windows only (window/window_title_win.cpp).
+	list(FILTER eleza_sources EXCLUDE REGEX "_win\\.(cpp|h)$")
+endif()
 file(GLOB eleza_resource_styles CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/Resources/styles/*.style")
 list(APPEND eleza_styles ${eleza_resource_styles})
@@ -51,6 +57,7 @@ target_link_libraries(Eleza PRIVATE
 	ElezaUi
 	ElezaLang
 	ElezaCore
+	ElezaUpdater
 	Qt6::Core
 	Qt6::Gui
 	Qt6::Widgets
@@ -87,6 +94,8 @@ if (WIN32)
 	set_target_properties(Eleza PROPERTIES
 		VS_DPI_AWARE "PerMonitor"
 		OUTPUT_NAME "Eleza")
+	# The custom window frame (window/window_title_win.cpp).
+	target_link_libraries(Eleza PRIVATE dwmapi user32 shell32)
 else()
 	set_target_properties(Eleza PROPERTIES OUTPUT_NAME "Eleza")
 endif()

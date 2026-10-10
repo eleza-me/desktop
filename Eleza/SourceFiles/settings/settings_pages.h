@@ -16,6 +16,8 @@ namespace Settings {
 [[nodiscard]] Window::SectionFactory FiltersPageFactory();
 // settings_storage.cpp
 [[nodiscard]] Window::SectionFactory StoragePageFactory();
+// settings_update.cpp
+[[nodiscard]] Window::SectionFactory UpdatePageFactory();
 
 // «خروجی داده‌ها»: the state of the latest export, a new request (confirmed by
 // an SMS code; needs the recovery e-mail of two-step verification) and the
