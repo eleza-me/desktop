@@ -331,7 +331,7 @@ shows the update UI in that state (screenshots; nothing is downloaded).
 ## 7. Checklist for the first release with updates
 
 - [ ] The private key behind
-      `1vxoEOaHgMooKRlqvM3Nd5ZyGG+QaTjZAj5FTXQ0WIc=` is in the secret
+      `zBxbxS+zjNXeLugZPtboVLpysdO3HzFgaieVFubhkrI=` is in the secret
       `ELEZA_UPDATE_SIGNING_KEY` and backed up in two other places.
 - [ ] Tags `v*` and the *release* workflow can be pushed / run only by the
       people who may release.

@@ -7,7 +7,7 @@
 ; first: it writes eleza-files.list, without which the installed copy would not
 ; update itself.
 ;
-;   iscc /DAppVersion=0.1.0 /DSourceDir=C:\src\eleza\dist\Eleza /DOutputDir=C:\src\eleza\dist\installer packaging\windows\eleza.iss
+;   iscc /DAppVersion=0.2.0 /DSourceDir=C:\src\eleza\dist\Eleza /DOutputDir=C:\src\eleza\dist\installer packaging\windows\eleza.iss
 ;
 ; Installs for the current user, into %LOCALAPPDATA%\Programs\Eleza, without
 ; administrator rights: the app updates itself there (docs/RELEASING.md) and
@@ -17,7 +17,7 @@
 ; never touched, neither by an upgrade nor by the uninstaller.
 
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "0.2.0"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\..\dist\Eleza"

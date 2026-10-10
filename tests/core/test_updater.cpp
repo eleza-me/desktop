@@ -365,7 +365,7 @@ void TestUpdater::bakedKeys() {
 	}
 	QCOMPARE(
 		keys[0].toBase64(),
-		QByteArray("1vxoEOaHgMooKRlqvM3Nd5ZyGG+QaTjZAj5FTXQ0WIc="));
+		QByteArray("zBxbxS+zjNXeLugZPtboVLpysdO3HzFgaieVFubhkrI="));
 	QVERIFY(!DecodePublicKey(u"not base64!"_s));
 	QVERIFY(!DecodePublicKey(u"AAAA"_s));
 	// The shipped sources are https and nothing else.
