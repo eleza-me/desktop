@@ -35,6 +35,7 @@ public:
 
 	void setInnerFocus() override;
 	void showFinished() override;
+	bool handleCommand(Window::Command command) override;
 
 	// «N پست تازه» as if the server told (debug route, tests).
 	void showNewPosts(int count);

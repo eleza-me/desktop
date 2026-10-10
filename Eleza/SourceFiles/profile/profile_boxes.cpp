@@ -1,5 +1,6 @@
 #include "profile/profile_boxes.h"
 
+#include "boxes/report_box.h"
 #include "data/data_feed.h"
 #include "data/data_graph.h"
 #include "data/data_session.h"
@@ -33,7 +34,6 @@ namespace Profile {
 namespace {
 
 constexpr auto kWheelRows = 5;
-constexpr auto kReportNoteLimit = 500;
 // The code is always dark on white: scanners need the contrast in both themes.
 constexpr auto kQrDark = QColor(0x16, 0x1A, 0x17);
 
@@ -168,104 +168,6 @@ private:
 
 };
 
-void BuildReportBox(
-		Ui::GenericBox *box,
-		Window::SessionController *controller,
-		const Data::User &user,
-		const QStringList &reasons,
-		Fn<void()> blocked) {
-	box->setTitle(tr::lng_report(tr::now));
-	box->addRow(Ui::object_ptr<Ui::FlatLabel>(
-		box,
-		tr::lng_profile_report_question(tr::now),
-		st::profileReportQuestion));
-	const auto group = std::make_shared<Ui::RadiobuttonGroup>();
-	for (auto i = 0; i != reasons.size(); ++i) {
-		box->addRow(
-			Ui::object_ptr<Ui::Radiobutton>(
-				box,
-				group,
-				i,
-				ReportReasonTitle(reasons[i])),
-			st::boxCheckboxPadding);
-	}
-	box->addRow(
-		Ui::object_ptr<Ui::FlatLabel>(
-			box,
-			tr::lng_profile_report_anonymous(tr::now),
-			st::profileReportHint),
-		st::profileReportHintPadding);
-	const auto note = box->addRow(Ui::object_ptr<Ui::InputField>(
-		box,
-		st::defaultInputField,
-		Ui::InputField::Mode::MultiLine,
-		tr::lng_report_details(tr::now)));
-	note->setMaxLength(kReportNoteLimit);
-	note->setSubmitSettings(Ui::InputField::SubmitSettings::CtrlEnter);
-	const auto block = box->addRow(
-		Ui::object_ptr<Ui::Checkbox>(
-			box,
-			tr::lng_report_also_block(tr::now),
-			false),
-		st::boxCheckboxPadding);
-
-	const auto sending = std::make_shared<bool>(false);
-	const auto weak = QPointer<Ui::GenericBox>(box);
-	const auto send = std::make_shared<Fn<void()>>();
-	const auto submit = box->addButton(
-		tr::lng_report_send(tr::now),
-		[=] { (*send)(); },
-		st::defaultRoundButton);
-	submit->setDisabled(true);
-	group->setChangedCallback([=](int) { submit->setDisabled(false); });
-	*send = [=] {
-		if (*sending || !group->hasValue()) {
-			return;
-		}
-		*sending = true;
-		submit->setLoading(true);
-		const auto alsoBlock = block->checked();
-		auto &data = controller->session().data();
-		data.feed().sendReport(
-			u"account"_s,
-			user.id,
-			reasons.value(group->value()),
-			note->text().trimmed(),
-			controller,
-			[=] {
-				if (alsoBlock) {
-					controller->session().data().graph().block(
-						user.id,
-						controller,
-						[=](const Data::GraphState &) {
-							if (blocked) {
-								blocked();
-							}
-						},
-						[=](const Api::Error &error) {
-							Support::ShowError(controller, error);
-						});
-				}
-				controller->showToast(tr::lng_report_sent(tr::now));
-				if (weak) {
-					weak->closeBox();
-				}
-			},
-			[=](const Api::Error &error) {
-				*sending = false;
-				if (weak) {
-					submit->setLoading(false);
-				}
-				Support::ShowError(
-					controller,
-					error,
-					tr::lng_profile_report_failed(tr::now));
-			});
-	};
-	QObject::connect(note, &Ui::InputField::submitted, box, [=] { (*send)(); });
-	box->addButton(tr::lng_cancel(tr::now), [=] { box->closeBox(); });
-}
-
 } // namespace
 
 void ShowShareBox(
@@ -305,28 +207,13 @@ void ShowReportBox(
 		Window::SessionController *controller,
 		const Data::User &user,
 		Fn<void()> blocked) {
-	static const auto kFallback = QStringList{
-		u"spam"_s,
-		u"harassment"_s,
-		u"hate"_s,
-		u"violence"_s,
-		u"sexual"_s,
-		u"self_harm"_s,
-		u"misinformation"_s,
-		u"impersonation"_s,
-		u"other"_s,
-	};
-	const auto show = [=](const QStringList &reasons) {
-		controller->show(Ui::Box([=](Ui::GenericBox *box) {
-			BuildReportBox(box, controller, user, reasons, blocked);
-		}));
-	};
-	controller->session().data().feed().reportReasons(
-		controller,
-		[=](const Data::ReportReasons &all) {
-			show(all.account.isEmpty() ? kFallback : all.account);
-		},
-		[=](const Api::Error &) { show(kFallback); });
+	// The form is shared with the feed and the conversation topics.
+	auto args = Boxes::ReportArgs();
+	args.kind = u"account"_s;
+	args.id = user.id;
+	args.offerBlockUserId = user.id;
+	args.blocked = std::move(blocked);
+	Boxes::ShowReportBox(controller, std::move(args));
 }
 
 Wheel::Wheel(QWidget *parent) : RpWidget(parent) {

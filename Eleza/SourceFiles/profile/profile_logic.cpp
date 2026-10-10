@@ -440,29 +440,6 @@ QString RemainingText(qint64 expiresAtSeconds, qint64 nowMs) {
 	return tr::lng_conv_minutes_left(tr::now, lt_count, double(minutes));
 }
 
-QString ReportReasonTitle(const QString &slug) {
-	if (slug == u"spam") {
-		return tr::lng_profile_report_reason_spam(tr::now);
-	} else if (slug == u"harassment") {
-		return tr::lng_profile_report_reason_harassment(tr::now);
-	} else if (slug == u"hate") {
-		return tr::lng_profile_report_reason_hate(tr::now);
-	} else if (slug == u"violence") {
-		return tr::lng_profile_report_reason_violence(tr::now);
-	} else if (slug == u"sexual") {
-		return tr::lng_profile_report_reason_sexual(tr::now);
-	} else if (slug == u"self_harm") {
-		return tr::lng_profile_report_reason_self_harm(tr::now);
-	} else if (slug == u"misinformation") {
-		return tr::lng_profile_report_reason_misinformation(tr::now);
-	} else if (slug == u"impersonation") {
-		return tr::lng_profile_report_reason_impersonation(tr::now);
-	} else if (slug == u"other") {
-		return tr::lng_profile_report_reason_other(tr::now);
-	}
-	return slug;
-}
-
 bool IsJalali(const QString &calendar) {
 	return calendar != kGregorian;
 }

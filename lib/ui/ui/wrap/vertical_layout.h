@@ -21,6 +21,7 @@ namespace Ui {
 class VerticalLayout : public RpWidget {
 public:
 	explicit VerticalLayout(QWidget *parent = nullptr);
+	~VerticalLayout();
 
 	// `align` set: the row keeps its natural width and is placed at the leading
 	// side (al_left), centered (al_top / al_center) or trailing (al_right).

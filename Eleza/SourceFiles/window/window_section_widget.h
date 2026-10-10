@@ -36,6 +36,7 @@ class TopBar;
 namespace Window {
 
 class SessionController;
+enum class Command;
 
 class SectionWidget : public Ui::RpWidget {
 	Q_OBJECT
@@ -51,6 +52,12 @@ public:
 	// key of the current one does not push a duplicate. Empty = always push.
 	[[nodiscard]] virtual QString sectionKey() const {
 		return QString();
+	}
+	// The route that opens this section again after the window content was
+	// rebuilt (the language changed). The key is a route for most sections;
+	// empty = the section is not restored.
+	[[nodiscard]] virtual QString restoreRoute() const {
+		return sectionKey();
 	}
 	// The section became visible (the slide animation finished).
 	virtual void showFinished() {
@@ -71,6 +78,17 @@ public:
 	virtual void setBackButtonShown(bool shown);
 	[[nodiscard]] bool backButtonShown() const {
 		return _backButtonShown;
+	}
+	// A window shortcut (window_shortcuts.h) offered to the visible sections:
+	// Find, Refresh… Return true if the section did it.
+	[[nodiscard]] virtual bool handleCommand(Command command) {
+		Q_UNUSED(command);
+		return false;
+	}
+	// The height of the controls at the bottom of the section (a composer, a
+	// selection bar): toasts are lifted above them.
+	[[nodiscard]] virtual int toastBottomSkip() const {
+		return 0;
 	}
 	// Background painted by the default paintEvent.
 	void setBackground(style::color color);

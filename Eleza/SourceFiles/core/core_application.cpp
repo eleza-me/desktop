@@ -15,6 +15,7 @@
 #include "ui/style/style_core.h"
 #include "ui/ui_phrases.h"
 #include "ui/ui_utility.h"
+#include "ui/widgets/tooltip.h"
 #include "window/window_main_window.h"
 #include "window/window_registry.h"
 #include "window/window_session_controller.h"
@@ -104,6 +105,9 @@ void Application::start() {
 	if (arguments.ephemeral()) {
 		// Screenshots must not depend on the timing of animations.
 		Ui::SetAnimationsDisabled(true);
+		// Nor on where the pointer of the platform happens to rest: hover
+		// tooltips appear only after a scripted "move:".
+		Ui::SetHoverTooltipsSuppressed(true);
 	}
 
 	RegisterModules();
@@ -207,6 +211,9 @@ void Application::sessionEnded(Main::SessionEndReason reason) {
 		return;
 	}
 	setIntroNeedsProfile(false);
+	// Whoever signs in next starts in the default tab, not where the last
+	// account was left (its settings page).
+	_settings->setLastTab(QString());
 	// Also when the intro was on screen (the profile step): start it over.
 	showIntro();
 	switch (reason) {
@@ -316,7 +323,18 @@ void Application::rebuildContent() {
 	switch (_content) {
 	case Content::Gallery: showGallery(_galleryPage); break;
 	case Content::Intro: showIntro(); break;
-	case Content::Session: showSession(); break;
+	case Content::Session: {
+		// Back to where the user was: the tab and what every tab had open.
+		const auto was = _window->sessionController();
+		const auto state = was
+			? std::make_optional(was->saveState())
+			: std::nullopt;
+		showSession();
+		const auto now = _window->sessionController();
+		if (state && now) {
+			now->restoreState(*state);
+		}
+	} break;
 	case Content::None: break;
 	}
 }

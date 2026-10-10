@@ -108,6 +108,12 @@ void Feed::merge(const QVector<Post> &posts) {
 	}
 }
 
+void Feed::noteReplyAdded(const QString &id) {
+	patch(id, [](Post &post) {
+		++post.counts.replies;
+	});
+}
+
 QStringList Feed::mergeJson(const QJsonValue &list) {
 	auto ids = QStringList();
 	const auto now = base::unixtime::nowMs();

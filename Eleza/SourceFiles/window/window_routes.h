@@ -6,6 +6,7 @@
 //   u/<handle>                 a profile by handle
 //   eli                        the feed tab
 //   eli/post/<postId>          a post with its replies
+//   eli/share/<slug>           a post by its share link (https://eleza.me/s/<slug>)
 //   eli/topic/<slug>           a topic (#tag) page
 //   eli/notifications          the notifications list
 //   search[?q=text]            the search tab
@@ -38,6 +39,7 @@ enum class RouteType {
 	Handle, // id = handle (without "@")
 	Eli,
 	Post, // id = post id
+	SharedPost, // id = the slug of a share link
 	Topic, // id = slug
 	EliNotifications,
 	Search, // query "q"
@@ -71,9 +73,9 @@ struct Route {
 // Accepts the canonical form with or without a leading "/".
 [[nodiscard]] Route ParseRoute(const QString &route);
 
-// A link to the web app (https://eleza.me/chats/c1, /u/sara, /eli/post/p1,
-// /eli/topic/x…) as a route; nullopt for a path the desktop
-// app has no screen for (the caller opens the browser then).
+// A link to the web app (https://eleza.me/chats/c1, /u/sara, /@sara,
+// /eli/post/p1, /p/p1, /s/<share slug>, /eli/topic/x…) as a route; nullopt for
+// a path the desktop app has no screen for (the caller opens the browser then).
 [[nodiscard]] std::optional<Route> RouteFromWebPath(
 	const QString &path,
 	const QString &query = QString());
@@ -86,6 +88,7 @@ namespace Routes {
 [[nodiscard]] QString Handle(const QString &handle);
 [[nodiscard]] QString Eli();
 [[nodiscard]] QString Post(const QString &postId);
+[[nodiscard]] QString SharedPost(const QString &slug);
 [[nodiscard]] QString Topic(const QString &slug);
 [[nodiscard]] QString EliNotifications();
 [[nodiscard]] QString Search(const QString &query = QString());

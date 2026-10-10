@@ -2,6 +2,7 @@
 
 #include "data/data_session.h"
 #include "data/data_users.h"
+#include "lang/lang_format.h"
 #include "lang_auto.h"
 #include "main/main_session.h"
 
@@ -22,7 +23,7 @@ QString ChatTitle(Main::Session *session, const Data::Chat &chat) {
 		} else if (!user.displayName.isEmpty()) {
 			return user.displayName;
 		} else if (!user.handle.isEmpty()) {
-			return QLatin1Char('@') + user.handle;
+			return Lang::Handle(user.handle);
 		}
 	}
 	return chat.anonymous ? tr::lng_anonymous(tr::now) : QString();

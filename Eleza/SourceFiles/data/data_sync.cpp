@@ -74,6 +74,14 @@ void Sync::start(base::Guard guard, Fn<void()> ready) {
 			&Sync::handle,
 			Qt::UniqueConnection);
 		scheduleFallback();
+		if (!_pts && !_session->transport().connected()) {
+			// The connection is not up (yet, or at all): without a pts the
+			// first fallback tick would only learn where the log is, and
+			// everything that happened between the first inbox and that tick
+			// would be lost. Read the state at once; a Hello that comes
+			// first wins, one that comes later reads the difference from it.
+			catchUp();
+		}
 		if (ready && guard.alive()) {
 			ready();
 		}

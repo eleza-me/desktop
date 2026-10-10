@@ -1,5 +1,6 @@
 #include "conversation/conversation_boxes.h"
 
+#include "boxes/report_box.h"
 #include "conversation/conversation_card.h"
 #include "conversation/conversation_controls.h"
 #include "conversation/conversation_radar.h"
@@ -15,6 +16,7 @@
 #include "lang/lang_format.h"
 #include "lang_auto.h"
 #include "main/main_session.h"
+#include "support/chat_text.h"
 #include "support/error_text.h"
 #include "support/media_image.h"
 #include "ui/effects/radial_animation.h"
@@ -42,30 +44,6 @@ constexpr auto kFindChatTimeout = 7000;
 // (once) sooner.
 constexpr auto kFindChatOfflineTimeout = 2400;
 constexpr auto kInviteMaxChars = 500;
-constexpr auto kReportNoteMaxChars = 500;
-
-[[nodiscard]] QString ReasonLabel(const QString &slug) {
-	if (slug == u"spam") {
-		return tr::lng_conversation_report_spam(tr::now);
-	} else if (slug == u"harassment") {
-		return tr::lng_conversation_report_harassment(tr::now);
-	} else if (slug == u"hate") {
-		return tr::lng_conversation_report_hate(tr::now);
-	} else if (slug == u"violence") {
-		return tr::lng_conversation_report_violence(tr::now);
-	} else if (slug == u"sexual") {
-		return tr::lng_conversation_report_sexual(tr::now);
-	} else if (slug == u"self_harm") {
-		return tr::lng_conversation_report_self_harm(tr::now);
-	} else if (slug == u"misinformation") {
-		return tr::lng_conversation_report_misinformation(tr::now);
-	} else if (slug == u"impersonation") {
-		return tr::lng_conversation_report_impersonation(tr::now);
-	} else if (slug == u"other") {
-		return tr::lng_conversation_report_other(tr::now);
-	}
-	return slug;
-}
 
 [[nodiscard]] Ui::MenuItem DestructiveItem(
 		const QString &text,
@@ -648,7 +626,7 @@ void JoinBox::loaded(const Data::Conversation &conversation) {
 				RadarFactory(id, conversation),
 				{ .tab = Window::Tab::Chats });
 		} else {
-			controller->showTab(Window::Tab::Chats);
+			controller->activateTab(Window::Tab::Chats);
 			OpenChatOf(controller, id);
 		}
 		return;
@@ -808,7 +786,7 @@ void JoinBox::join() {
 		Q_EMIT Events()->topicHidden(id);
 		// The box dies here: only locals below.
 		closeBox();
-		controller->showTab(Window::Tab::Chats);
+		controller->activateTab(Window::Tab::Chats);
 		OpenChatOf(controller, id);
 	}, [=, this](const Api::Error &error) {
 		_joining = false;
@@ -854,105 +832,16 @@ void DismissTopic(Window::SessionController *controller, const QString &id) {
 }
 
 void ShowReportBox(Window::SessionController *controller, const QString &id) {
-	controller->show(Ui::Box([=](Ui::GenericBox *box) {
-		box->setTitle(tr::lng_report(tr::now));
-		box->setWidth(st::conversationBoxWidth);
-		box->addRow(Ui::object_ptr<Ui::FlatLabel>(
-			box,
-			tr::lng_conversation_report_question(tr::now),
-			st::conversationFormLabel));
-		const auto reasons = box->addRow(
-			Ui::object_ptr<Ui::VerticalLayout>(box),
-			st::boxCheckboxPadding);
-		const auto loading = reasons->add(
-			Ui::object_ptr<Ui::FlatLabel>(
-				reasons,
-				tr::lng_loading(tr::now),
-				st::conversationHint),
-			style::margins(8, 8, 8, 8));
-		box->addRow(Ui::object_ptr<Ui::FlatLabel>(
-			box,
-			tr::lng_conversation_report_anonymous(tr::now),
-			st::conversationHint));
-		const auto note = box->addRow(Ui::object_ptr<Ui::InputField>(
-			box,
-			st::conversationReportField,
-			Ui::InputField::Mode::MultiLine,
-			tr::lng_report_details(tr::now)));
-		note->setMaxLength(kReportNoteMaxChars);
-		note->setSubmitSettings(Ui::InputField::SubmitSettings::CtrlEnter);
-
-		struct State {
-			std::shared_ptr<Ui::RadiobuttonGroup> group;
-			QStringList slugs;
-			bool sending = false;
-		};
-		const auto state = std::make_shared<State>();
-		state->group = std::make_shared<Ui::RadiobuttonGroup>();
-		const auto fill = [=](QStringList slugs) {
-			if (slugs.isEmpty()) {
-				slugs = QStringList{
-					u"spam"_s,
-					u"harassment"_s,
-					u"other"_s,
-				};
-			}
-			state->slugs = slugs;
-			reasons->removeChild(loading);
-			for (auto i = 0; i != int(slugs.size()); ++i) {
-				reasons->add(Ui::object_ptr<Ui::Radiobutton>(
-					reasons,
-					state->group,
-					i,
-					ReasonLabel(slugs[i])));
-			}
-		};
-		auto &feed = controller->session().data().feed();
-		feed.reportReasons(box, [=](const Data::ReportReasons &list) {
-			fill(list.conversation);
-		}, [=](const Api::Error &) {
-			fill(QStringList());
-		});
-
-		const auto send = std::make_shared<Ui::RoundButton*>(nullptr);
-		const auto submit = [=] {
-			if (state->sending
-				|| !state->group->hasValue()
-				|| state->group->value() < 0
-				|| state->group->value() >= state->slugs.size()) {
-				return;
-			}
-			state->sending = true;
-			(*send)->setLoading(true);
-			controller->session().data().feed().sendReport(
-				u"conversation"_s,
-				id,
-				state->slugs[state->group->value()],
-				note->text().trimmed(),
-				box,
-				[=] {
-					// A reported topic is not shown to me again.
-					controller->session().data().conversations().dismiss(id);
-					Q_EMIT Events()->topicHidden(id);
-					controller->showToast(tr::lng_report_sent(tr::now));
-					box->closeBox();
-				},
-				[=](const Api::Error &error) {
-					state->sending = false;
-					(*send)->setLoading(false);
-					Support::ShowError(
-						controller,
-						error,
-						tr::lng_conversation_report_failed(tr::now));
-				});
-		};
-		*send = box->addButton(
-			tr::lng_report_send(tr::now),
-			submit,
-			st::defaultRoundButton);
-		box->addButton(tr::lng_cancel(tr::now), [=] { box->closeBox(); });
-		QObject::connect(note, &Ui::InputField::submitted, box, submit);
-	}));
+	// The form is shared with the feed and the profile.
+	auto args = Boxes::ReportArgs();
+	args.kind = u"conversation"_s;
+	args.id = id;
+	args.sent = [=] {
+		// A reported topic is not shown to me again.
+		controller->session().data().conversations().dismiss(id);
+		Q_EMIT Events()->topicHidden(id);
+	};
+	Boxes::ShowReportBox(controller, std::move(args));
 }
 
 void ShowInviteBox(Window::SessionController *controller, const QString &id) {
@@ -1075,6 +964,64 @@ void ShowTopicMenu(
 	menu->popup(globalPosition);
 }
 
+void FillChatMenu(
+		Ui::PopupMenu *menu,
+		Window::SessionController *controller,
+		const QString &chatId) {
+	const auto session = &controller->session();
+	const auto chat = session->data().chats().chat(chatId);
+	if (!chat || !chat->isConversation || !chat->conversation) {
+		return;
+	}
+	const auto &conversation = *chat->conversation;
+	const auto id = conversation.id;
+	const auto &state = conversation.state;
+	const auto running = (state == u"open") || (state == u"active");
+	const auto over = (state == u"ended")
+		|| (state == u"expired")
+		|| (state == u"closed")
+		|| (state == u"purged");
+	if (running) {
+		menu->addItem(DestructiveItem(tr::lng_conv_end_conversation(tr::now), [=] {
+			auto args = Ui::ConfirmBoxArgs();
+			args.title = tr::lng_conv_end_conversation(tr::now);
+			args.text = tr::lng_history_end_sure(tr::now);
+			args.confirmText = tr::lng_conv_end_conversation(tr::now);
+			args.destructive = true;
+			args.confirmed = [=](std::function<void()> close) {
+				session->data().conversations().end(id, controller, [=] {
+					Q_EMIT Events()->topicHidden(id);
+					controller->showToast(
+						tr::lng_chat_conversation_has_ended(tr::now));
+				}, [=](const Api::Error &error) {
+					Support::ShowError(controller, error);
+				});
+				close();
+			};
+			controller->show(Ui::MakeConfirmBox(std::move(args)));
+		}, &st::conversationMenuEnd));
+	}
+	if ((chat->anonymous || conversation.listener) && !over) {
+		const auto name = Support::ChatTitle(session, *chat);
+		menu->addItem(DestructiveItem(tr::lng_block_user(tr::now), [=] {
+			auto args = Ui::ConfirmBoxArgs();
+			args.title = tr::lng_block_user(tr::now);
+			args.text = tr::lng_history_block_sure(tr::now, lt_name, name);
+			args.confirmText = tr::lng_chat_block(tr::now);
+			args.destructive = true;
+			args.confirmed = [=](std::function<void()> close) {
+				session->data().conversations().block(id, controller, [=] {
+					controller->showToast(tr::lng_blocked_toast(tr::now));
+				}, [=](const Api::Error &error) {
+					Support::ShowError(controller, error);
+				});
+				close();
+			};
+			controller->show(Ui::MakeConfirmBox(std::move(args)));
+		}, &st::menuIconBlock));
+	}
+}
+
 void OpenChatOf(
 		Window::SessionController *controller,
 		const QString &conversationId) {
@@ -1125,7 +1072,7 @@ void OpenConversation(
 				RadarFactory(id, conversation),
 				{ .tab = Window::Tab::Chats });
 		} else if (speaker || conversation.myRole == u"listener") {
-			controller->showTab(Window::Tab::Chats);
+			controller->activateTab(Window::Tab::Chats);
 			OpenChatOf(controller, id);
 		} else {
 			ShowJoinBox(controller, id);

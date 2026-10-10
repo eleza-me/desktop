@@ -1,6 +1,7 @@
 #include "core/core_debug.h"
 
 #include "ui/ui_utility.h"
+#include "ui/widgets/tooltip.h"
 #include "window/window_main_window.h"
 
 #include <QtCore/QTimer>
@@ -161,6 +162,16 @@ int DebugActions::perform(const QString &step) {
 		if (!GrabWindowWithPopups(_window).save(path)) {
 			qWarning("debug-actions: could not save '%s'.", qPrintable(path));
 		}
+	} else if (name == QStringLiteral("resize")) {
+		// "resize:520x800": the window changes its size as if the user
+		// dragged its border (wide <-> single column).
+		const auto size = value.trimmed().toLower().split(QLatin1Char('x'));
+		const auto width = (size.size() == 2) ? size[0].toInt() : 0;
+		const auto height = (size.size() == 2) ? size[1].toInt() : 0;
+		if (width <= 0 || height <= 0) {
+			return bad();
+		}
+		_window->setFixedDebugSize(QSize(width, height));
 	} else if (name == QStringLiteral("type")) {
 		type(value);
 	} else if (name == QStringLiteral("key")) {
@@ -196,6 +207,8 @@ int DebugActions::perform(const QString &step) {
 		if (!ParsePoint(parts, 0, point)) {
 			return bad();
 		}
+		// A deliberate hover: its tooltip belongs in the grab.
+		Ui::SetHoverTooltipsSuppressed(false);
 		mouse(QEvent::MouseMove, point, Qt::NoButton, _leftDown);
 	} else if (name == QStringLiteral("press")) {
 		if (!ParsePoint(parts, 0, point)) {

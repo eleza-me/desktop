@@ -13,7 +13,9 @@
 //           previews, reactions, a forwarded post, stickers, voice, music, files,
 //           locations, calls, system messages, mixed RTL / LTR text, emoji-only, pins
 //   c1..c4  the web mock's chats (c3 = a bot with an inline keyboard, c4 = an
-//           anonymous conversation waiting for a listener)
+//           anonymous conversation waiting for a listener). In c3 the bot answers
+//           "/menu" with a reply keyboard, "/once" with a one-time one and «بستن»
+//           by removing it
 //   req     an incoming message request
 //   ro      a finished conversation that can be continued in direct messages
 //   gone    a chat with a deleted account
@@ -434,6 +436,23 @@ function sendMessage(chatId, b) {
 			c.peer_read_seq = Math.max(c.peer_read_seq || 0, m.seq);
 			push('read', chatId, { seq: m.seq });
 		}, 1200);
+		if (chatId === 'c3' && (b.kind || 'text') === 'text') {
+			// The bot's reply keyboard: "/menu" shows it, «بستن» removes it, a
+			// one-time one comes with "/once".
+			const text = (b.text || '').trim();
+			const rows = [[{ text: 'پک تازه' }, { text: 'پک‌های من' }], [{ text: 'راهنما' }, { text: 'بستن' }]];
+			const answer = (text === '/menu')
+				? { text: 'یکی را انتخاب کن:', reply_markup: { keyboard: rows, resize: true, placeholder: 'یک گزینه را انتخاب کن…' } }
+				: (text === '/once')
+				? { text: 'بله یا نه؟', reply_markup: { keyboard: [[{ text: 'بله' }, { text: 'نه' }]], resize: true, one_time: true } }
+				: (text === 'بستن')
+				? { text: 'صفحه‌کلید بسته شد.', reply_markup: { remove_keyboard: true } }
+				: { text: `«${text}» انتخاب شد` };
+			setTimeout(() => {
+				const reply = add(chatId, peer, 'text', answer, Date.now());
+				push('message', chatId, { seq: reply.seq, message: reply });
+			}, 600);
+		}
 		if (chatId === 'rich' || chatId === 'c1') {
 			setTimeout(() => {
 				const reply = add(chatId, peer, 'text', { text: 'باشه 👍' }, Date.now());

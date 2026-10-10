@@ -293,18 +293,22 @@ void Register() {
 		if (route.id.isEmpty()) {
 			return false;
 		}
+		// What the tab has open stays (activateTab, not a "click on the rail").
+		controller->activateTab(Window::Tab::Chats);
 		const auto current = CurrentChat(controller);
-		if (current
-			&& current->chatId() == route.id
-			&& controller->currentTab() == Window::Tab::Chats) {
+		if (current && current->chatId() == route.id) {
 			// Already on screen: only the message (and waiting forwards).
 			current->showMessage(route.seq());
 			current->setInnerFocus();
 			return true;
 		}
+		// A chat never piles up on another chat (every click in the list
+		// would leave one more alive under it, and Esc would walk back
+		// through all of them): it takes its place. Over anything else - a
+		// profile opened from a chat - it is pushed, so "back" returns there.
 		controller->showMainSection(
 			Factory(route.id, route.seq()),
-			{ .tab = Window::Tab::Chats });
+			{ .stack = (current == nullptr), .tab = Window::Tab::Chats });
 		return true;
 	});
 	// Developer routes: the stress test and states that need a real drag or

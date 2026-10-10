@@ -33,6 +33,7 @@ namespace Window {
 
 class MainLayout;
 class SessionController;
+enum class Command;
 
 class MainWindow final : public Ui::RpWidget {
 	Q_OBJECT
@@ -111,6 +112,7 @@ private:
 	void saveGeometryNow();
 	void restoreGeometry();
 	void handleBack();
+	void runCommand(Command command);
 	[[nodiscard]] QIcon iconWithBadge() const;
 
 	Ui::RpWidget *_body = nullptr;

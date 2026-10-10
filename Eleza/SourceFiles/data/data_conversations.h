@@ -104,6 +104,7 @@ private:
 	};
 
 	void call(const QString &method, const QJsonObject &body, base::Guard guard, Fn<void(const QJsonObject &)> done, FailCallback fail);
+	void markEndedLocally(const QString &id, const QString &reason);
 	void checkFinders();
 	void finishFinder(int index, const QString &chat);
 

@@ -68,11 +68,8 @@ QString FollowText(FollowState state) {
 }
 
 QString HandleText(const QString &handle) {
-	if (handle.isEmpty()) {
-		return QString();
-	}
-	// U+2066 LRI … U+2069 PDI: the "@" stays in front of the name in RTL.
-	return QChar(0x2066) + (QLatin1Char('@') + handle) + QChar(0x2069);
+	// Isolated: the "@" stays in front of the name in RTL.
+	return Lang::Handle(handle);
 }
 
 QString SuggestionReason(const Data::Profile &profile) {

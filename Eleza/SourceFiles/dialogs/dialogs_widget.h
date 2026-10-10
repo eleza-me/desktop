@@ -13,8 +13,6 @@
 
 #include <vector>
 
-class QShortcut;
-
 namespace Support {
 class ConnectionState;
 } // namespace Support
@@ -42,10 +40,13 @@ public:
 	void showFolder(Folder folder);
 	[[nodiscard]] Folder folder() const;
 	void focusSearch();
+	// Ctrl+Tab and friends: the chat after / before the open one.
+	void jumpToChat(int direction);
 
 	QString sectionKey() const override;
 	void setInnerFocus() override;
 	bool onBackRequest() override;
+	bool handleCommand(Window::Command command) override;
 
 protected:
 	void resizeEvent(QResizeEvent *e) override;
@@ -63,7 +64,6 @@ private:
 	void refreshTabTitles();
 	void showSubTab(int index, bool remember);
 	[[nodiscard]] bool chatsTabShown() const;
-	void setupShortcuts();
 	void updateControlsGeometry();
 	void refreshTopBar();
 	void refreshTitle();
@@ -71,7 +71,6 @@ private:
 	void refreshActiveChat();
 	void queryChanged(const QString &text);
 	void openChat(const QString &id);
-	void jumpToChat(int direction);
 	bool handleKey(QKeyEvent *e);
 	void searchCancelled();
 
@@ -88,7 +87,6 @@ private:
 	std::vector<SubTab> _subTabs;
 	int _subTab = 0;
 	QRect _paneRect;
-	std::vector<QPointer<QShortcut>> _shortcuts;
 
 };
 

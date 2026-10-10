@@ -55,7 +55,10 @@ signed in (`--debug-login` is skipped then). Delete the directory to start clean
 | `--no-single-instance` | allow a second process on the same workdir |
 
 A run with `--debug-grab` or `--debug-actions` is *ephemeral*: preferences are not saved, no
-tray icon, no sounds, animations jump to their end, the process exits when done.
+tray icon, no sounds, animations jump to their end, the process exits when done. Hover
+tooltips stay hidden until the script hovers on purpose (`move:x,y`), so the resting pointer
+of a headless platform never puts one into a grab; the window counts as active (an open chat
+marks its messages read as it would on a desktop).
 
 ### `--debug-actions`
 
@@ -70,6 +73,7 @@ type:متن               types into the focused widget
 key:Return             Return, Esc, Tab, Backspace, Up, Down, Ctrl+A, Ctrl+V, Ctrl+1 …
 paste:text             puts the text on the clipboard and presses Ctrl+V
 route:chat/c1          opens a route
+resize:520x800         resizes the window (wide <-> single column)
 wait:300               milliseconds
 grab:/tmp/a.png        saves a grab now and continues
 ```
@@ -183,6 +187,7 @@ tr::lng_settings(tr::now)
 tr::lng_intro_code_sent_to(tr::now, lt_phone, text)       // {phone}
 tr::lng_eli_new_posts(tr::now, lt_count, 5)               // "#one" / "#other" + localized digits
 Lang::Num(42), Lang::Clock(time), Lang::ListTime(dateTime), Lang::Duration(seconds), Lang::Bytes(n)
+Lang::Handle(handle), Lang::Phone(e164), Lang::Ltr(text), Lang::Isolated(name)   // section 10
 ```
 
 No user-visible literal in code, ever — including "…" suffixes and separators that differ
@@ -207,6 +212,67 @@ controller->openRoute(Window::Routes::Chat(chatId));
 A section whose `sectionKey()` equals the current one's is not pushed twice. Call
 `setTopBar(bar)` and the back button / Esc work by themselves.
 
+`showTab(tab)` behaves like a click on the rail: on the current tab it returns to the tab's
+list. Use `activateTab(tab)` when the tab only has to be current and what it shows must stay
+(a shortcut that focuses the chat search while a chat is open).
+
+What a section can tell the window (all optional, `window/window_section_widget.h`):
+
+| Override | For |
+| --- | --- |
+| `onBackRequest()` | Esc / back closes something inside the section first |
+| `handleCommand(Window::Command)` | the window shortcuts `Find`, `Refresh`… (section 5a) |
+| `toastBottomSkip()` | the height of a composer / bottom bar: toasts are lifted above it |
+| `restoreRoute()` | the route that reopens the section after the language was switched (the window content is rebuilt, then every tab's stack is reopened from these; the default is `sectionKey()`, return an empty string to opt out) |
+
+### 5a. Keyboard shortcuts
+
+One table for the whole window: `window/window_shortcuts.h`. A module **never** creates a
+window-wide `QShortcut` (two shortcuts on one sequence are ambiguous in Qt and neither
+fires); keys that only mean something inside one widget stay in its `keyPressEvent`.
+
+| Keys | Command | Who handles it |
+| --- | --- | --- |
+| `Ctrl+1` … `Ctrl+5` | the tabs: الی, گفتگو, جستجو, من, تنظیمات | window |
+| `Ctrl+,` | settings | window |
+| `Ctrl+N` | new message | dialogs (window-wide handler) |
+| `Ctrl+K` | search the chats (from any tab; an open chat stays) | dialogs |
+| `Ctrl+F` | search in what is on screen | the focused section, then the other visible one: the chat, the chat list, the search tab |
+| `F5`, `Ctrl+R` | refresh the visible list | the feed, the chat list |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab`, `Ctrl+PgDown` / `Ctrl+PgUp`, `Alt+Down` / `Alt+Up` | next / previous chat | dialogs |
+| `Esc`, `Alt+Left`, mouse "back" | back: closes a box, then asks the section (`onBackRequest`), then pops it | window |
+| `Ctrl+W` | closes the top box, else the current section, else the window | window |
+| `Ctrl+Shift+D` | light / dark | window |
+| `Ctrl+Q` | quit | window |
+
+A command the window does not do itself goes to `handleCommand()` of the section that has
+the keyboard focus, then of the other visible one, then to the handlers registered with
+`Window::RegisterCommandHandler(command, [](Window::SessionController *controller) { …; return true; })`.
+While a box is shown only back / close / theme / quit work.
+
+**Esc is handled once.** A field (`InputField`, `MaskedInputField`, `CodeInput`) gives the
+key to whoever listens to its `cancelled()` signal and then the key stops there; with no
+listener it travels on to the parents and ends in the window's "back". `SearchField` clears
+its text on the first Esc and only then reports `cancelled()` (or passes the key on). So:
+either connect `cancelled()` and do everything Esc means there, or do not connect it and
+handle the key in `keyPressEvent` / `onBackRequest()` — never both.
+
+### 5b. Hooks between modules
+
+`window/window_embeds.h` holds the small registries modules use to plug into each other
+without including each other's headers:
+
+* **Embedded lists** — `Window::RegisterEmbed("eli.posts", factory)` /
+  `Window::CreateEmbed(…)`: the feed's post list inside a profile or the search results.
+* **Side sub-tabs** — `Window::RegisterSideSubTab(Window::Tab::Chats, { .id = "topics", … })`;
+  `controller->requestSideSubTab(tab, id)` selects one (the route `conversation/topics` does
+  it; `conversation/topics?new=<text>` also opens «گفتگوی تازه» prefilled).
+* **Chat menu fillers** — `Window::RegisterChatMenuFiller(fn)`; the chat list's row menu and
+  the chat's «…» menu call `Window::FillChatMenu(menu, controller, chatId)` so the owner of a
+  kind of chat adds its actions in both («پایان گفتگو», «مسدود کردن» of a conversation).
+* **Reports** — one form for posts, replies, accounts and conversation topics:
+  `Boxes::ShowReportBox(controller, args)` (`boxes/report_box.h`).
+
 ### Routes
 
 One string per place (`window/window_routes.h`). Never build them by hand: use
@@ -220,6 +286,7 @@ One string per place (`window/window_routes.h`). Never build them by hand: use
 | `u/<handle>` | `Routes::Handle(handle)` | current | profile |
 | `eli` | `Routes::Eli()` | Eli | eli |
 | `eli/post/<postId>` | `Routes::Post(id)` | Eli | eli |
+| `eli/share/<slug>` | `Routes::SharedPost(slug)` | Eli | eli (resolves the share link, then opens the post) |
 | `eli/topic/<slug>` | `Routes::Topic(slug)` | Eli | eli |
 | `eli/notifications` | `Routes::EliNotifications()` | Eli | eli |
 | `search[?q=text]` | `Routes::Search(query)` | Search | search |
@@ -245,7 +312,8 @@ you can call `openRoute()` for another module's screen today. Raw handlers
 first and are for `debug/…` routes.
 
 Links: `Support::OpenLink(controller, url)` (`support/links.h`) turns
-`https://eleza.me/u/sara`, `eleza://chat/c1`, `@sara`, `#tag` into routes, asks before
+`https://eleza.me/u/sara`, `https://eleza.me/@sara`, `https://eleza.me/p/<post>`,
+`https://eleza.me/s/<share slug>`, `eleza://chat/c1`, `@sara`, `#tag` into routes, asks before
 opening a foreign site in the browser, and refuses anything that is not http(s) / mailto /
 tel. For rich text: `label->setLinkHandler(Support::LinkHandler(controller))`, or
 `Support::ActivateTextLink(controller, text.link(index))` in custom painted text.
@@ -278,7 +346,8 @@ All in `lib/ui/ui/**`; every header starts with an example. The gallery (`--gall
   `Ui::Box([=](Ui::GenericBox *box) { … })` built in place,
   `Ui::MakeConfirmBox({ .text = …, .confirmText = …, .confirmed = [=](auto close) { … close(); }, .destructive = true })`,
   `controller->showSheet(…)` for the side sheet.
-* **Toasts**: `controller->showToast(text)`.
+* **Toasts**: `controller->showToast(text)` (lifted above the visible section's bottom
+  controls, see `SectionWidget::toastBottomSkip()`).
 * **Top bar**: `Ui::TopBar` (`setTitle`, `setSubtitle(text, accent)`, `addAction(st)`,
   `setLeadingWidget`).
 
@@ -299,6 +368,7 @@ All in `lib/ui/ui/**`; every header starts with an example. The gallery (`--gall
 | A searchable list of people / chats | `Boxes::PeerListBox` with your `Boxes::PeerListController`; ready-made `Boxes::ChooseChatsBox(&session, args, done)` |
 | A round photo crop | `Boxes::PickAndCropPhoto(parent, show, done)`, `Boxes::SaveCroppedPhoto(image, guard, done)` |
 | Country list, about | `Boxes::CountrySelectBox`, `Boxes::AboutBox` |
+| «گزارش» (post / reply / account / conversation) | `Boxes::ShowReportBox(controller, args)` |
 | Full-window photo / video viewer | `Media::ShowImageViewer(controller->window(), items, index)` |
 | Voice / music playback | `Media::Player().toggle(track, &session)`; signals `stateChanged`, `positionChanged`; `cycleSpeed()` |
 | Inline video | `Media::VideoPlayerWidget` (`setSource(localPath)`, `setPoster`, `play`) |
@@ -426,6 +496,7 @@ void Graph::updateProfile(const ProfilePatch &patch, base::Guard guard, Fn<void(
 void Graph::loadSettings(bool force, base::Guard guard, Fn<void(const QJsonObject &)> done, FailCallback fail = nullptr);
 QJsonValue Graph::settingValue(const QString &dotted) const;  void Graph::setSetting(const QString &dotted, const QJsonValue &value);
 void Graph::sessions(guard, done, fail);  revokeSession(id, …);  revokeOtherSessions(…);
+void Graph::latestExport(guard, done, fail);  requestExportCode(deviceId, guard, done, fail);  requestExport(challengeId, code, deviceId, guard, done, fail);
 signals: settingsChanged(), relationshipChanged(userId, state)
 
 // ---- conversations (data/data_conversations.h)
@@ -434,7 +505,7 @@ void Conversations::loadOpen(const QString &category, const QString &cursor, bas
 void Conversations::watchOpen(const QString &category);  unwatchOpen();
 void Conversations::create(const NewConversation &request, base::Guard guard, Fn<void(const Conversation &)> done, FailCallback fail = nullptr);
 void Conversations::join(const QString &id, bool masked, base::Guard guard, Fn<void(const Conversation &)> done, FailCallback fail = nullptr);
-void Conversations::end(id, …);  requestContinue(id, guard, done, fail);  block(id, …);
+void Conversations::end(id, …);  requestContinue(id, guard, done, fail);  block(id, …);   // end / block mark the chat row ended at once
 void Conversations::findChat(const QString &conversationId, base::Guard guard, Fn<void(const QString &)> done, int timeoutMs = 6000);
 signals: stateChanged(chat, state, event), openListChanged(category)
 
@@ -484,8 +555,13 @@ stores already decode images, hash uploads and write the database off the GUI th
   never branch on `style::RightToLeft()` for ordinary layout.
 * What is always left-to-right: phone numbers, codes, handles, URLs, timelines of media
   players, zoom sliders. Force it (`setForcedDirection(Qt::LeftToRight)`) and isolate such
-  text inside a sentence with U+2066 … U+2069 (write `QChar(0x2066)`, never a raw control
-  character in the source).
+  text with the helpers of `lang/lang_format.h` — do not concatenate `'@'` or a `+…` number
+  into a label by hand:
+  `Lang::Handle(handle)` -> `@sara`, `Lang::Phone(e164)` -> `+98 912 123 4567` (grouped,
+  digits of the interface language), `Lang::Ltr(text)` for addresses / e-mails / codes
+  (U+2066 … U+2069), `Lang::Isolated(name)` for a name inside a sentence (U+2068 … U+2069:
+  it keeps its own direction and does not reorder its neighbours — isolate the *name*, not
+  the phrase around it). Never a raw control character in the source.
 * Message / post text aligns by its own direction (`PaintContext::autoDirection = true`);
   labels follow the interface.
 * Digits follow the interface language: `Lang::Num()`. Inputs store Latin digits and accept

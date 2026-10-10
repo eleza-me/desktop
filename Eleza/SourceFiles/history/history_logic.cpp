@@ -334,10 +334,12 @@ Ui::Text::Entities ConvertEntities(
 }
 
 Ui::Text::TextWithEntities TextForMessage(const Data::Message &message) {
-	return Ui::Text::ParseEntities(
+	// For showing: links are isolated (Ui::Text::IsolateLinks), so quoting and
+	// copying go through Ui::Text::SourceSelection / StripIsolates.
+	return Ui::Text::IsolateLinks(Ui::Text::ParseEntities(
 		message.text,
 		Ui::Text::ParseAll,
-		ConvertEntities(message.text, message.entities));
+		ConvertEntities(message.text, message.entities)));
 }
 
 bool IsEmojiCodepoint(char32_t code) {
@@ -767,6 +769,42 @@ bool CanForward(const Data::Message &message) {
 	default:
 		return true;
 	}
+}
+
+namespace {
+
+[[nodiscard]] const Data::Message *ReplyKeyboardMessage(
+		const QVector<Data::Message> &items) {
+	for (auto i = items.crbegin(); i != items.crend(); ++i) {
+		if (i->mine || i->seq <= 0 || i->deleted || !i->replyMarkup) {
+			continue;
+		}
+		const auto &markup = *i->replyMarkup;
+		if (markup.removeKeyboard || !markup.keyboard.isEmpty()) {
+			return &*i;
+		}
+	}
+	return nullptr;
+}
+
+} // namespace
+
+std::optional<Data::ReplyMarkup> CurrentReplyKeyboard(
+		const QVector<Data::Message> &items,
+		qint64 after) {
+	const auto message = ReplyKeyboardMessage(items);
+	if (!message
+		|| message->seq <= after
+		|| message->replyMarkup->removeKeyboard
+		|| message->replyMarkup->keyboard.isEmpty()) {
+		return std::nullopt;
+	}
+	return message->replyMarkup;
+}
+
+qint64 ReplyKeyboardSeq(const QVector<Data::Message> &items) {
+	const auto message = ReplyKeyboardMessage(items);
+	return message ? message->seq : 0;
 }
 
 bool ConversationEnded(const QString &state) {

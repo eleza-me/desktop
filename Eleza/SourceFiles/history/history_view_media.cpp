@@ -1324,13 +1324,19 @@ public:
 			_author = !author.displayName.isEmpty()
 				? author.displayName
 				: !author.handle.isEmpty()
-				? (u'@' + author.handle)
+				? Lang::Handle(author.handle)
 				: QString();
 			_verified = author.verified;
 			const auto text = post->text.trimmed();
 			if (_textSource != text) {
 				_textSource = text;
-				_text.setText(st::historyPostTextStyle, text);
+				// Plain (the card opens the post), but "@sara" and "#tag"
+				// keep their direction inside the Persian text.
+				_text.setText(
+					st::historyPostTextStyle,
+					Ui::Text::IsolateLinks(Ui::Text::ParseEntities(
+						text,
+						Ui::Text::ParseAll)).text);
 			}
 			height += st::historyPostAuthorFont->height;
 			_textHeight = _text.isEmpty()

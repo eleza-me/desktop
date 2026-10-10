@@ -51,6 +51,10 @@ public:
 	[[nodiscard]] int unreadChats() const {
 		return _unreadChats;
 	}
+	// Muted chats with unread messages (not part of unreadChats()).
+	[[nodiscard]] int unreadMutedChats() const {
+		return _unreadMutedChats;
+	}
 	[[nodiscard]] int unreadRequests() const;
 
 	// ---- loading
@@ -192,6 +196,7 @@ private:
 	std::optional<Api::Error> _inboxError;
 	QVector<std::pair<base::Guard, std::pair<Fn<void()>, Fn<void(const Api::Error &)>>>> _inboxWaiters;
 	int _unreadChats = 0;
+	int _unreadMutedChats = 0;
 	bool _inboxLoading = false;
 	bool _inboxLoaded = false;
 

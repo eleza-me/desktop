@@ -88,4 +88,20 @@ struct JalaliDate {
 // Direction by the first strong character (the interface direction if there is none).
 [[nodiscard]] bool IsRtlText(const QString &text);
 
+// ---- direction isolates
+// Tokens that always read left to right (phone numbers, @handles, addresses,
+// codes, coordinates) inside a line of either direction: wrapped in
+// U+2066 … U+2069, so a leading "+" / "@" stays in front. Empty stays empty.
+[[nodiscard]] QString Ltr(const QString &text);
+// A name or a phrase of unknown direction inside a sentence (U+2068 … U+2069):
+// it keeps its own direction and does not reorder its neighbours.
+[[nodiscard]] QString Isolated(const QString &text);
+// "@sara", left-to-right isolated ("" for an empty handle; a leading "@" is not doubled).
+[[nodiscard]] QString Handle(const QString &handle);
+// "+98 912 123 4567": grouped, digits of the interface language, left-to-right
+// isolated. Accepts E.164 with or without the plus; other text is only isolated.
+[[nodiscard]] QString Phone(const QString &phone);
+// The same without the isolate characters (for the clipboard and for tests).
+[[nodiscard]] QString PhoneGroups(const QString &phone);
+
 } // namespace Lang

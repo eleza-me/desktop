@@ -14,6 +14,7 @@
 #include "ui/effects/shadow.h"
 #include "ui/image/userpic.h"
 #include "ui/painter.h"
+#include "ui/text/text_entity.h"
 #include "ui/ui_utility.h"
 #include "ui/widgets/misc_widgets.h"
 #include "ui/widgets/popup_menu.h"
@@ -408,6 +409,15 @@ void InnerWidget::prepare(Row &row) {
 	row.title = Support::ChatTitle(&session, chat);
 	const auto activity = session.data().chats().activity(chat.id);
 	row.preview = PreviewFor(chat, activity ? activity->kind : QString());
+	if (!row.preview.text.isEmpty()) {
+		// For painting: "@sara" / "#tag" keep their direction inside the
+		// line, and the line reads in the direction of its own text (a
+		// Persian message in the English interface and the reverse).
+		row.preview.text = Lang::Isolated(Ui::Text::IsolateLinks(
+			Ui::Text::ParseEntities(
+				row.preview.text,
+				Ui::Text::ParseAll)).text);
+	}
 	const auto time = SortTime(chat);
 	row.date = (time > 0)
 		? Lang::ListTime(QDateTime::fromMSecsSinceEpoch(time))

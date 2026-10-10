@@ -9,6 +9,14 @@ namespace Ui {
 VerticalLayout::VerticalLayout(QWidget *parent) : RpWidget(parent) {
 }
 
+VerticalLayout::~VerticalLayout() {
+	// The rows are children: ~QWidget destroys them after `_rows` is gone,
+	// and their `destroyed` would still reach the handler that edits it.
+	for (const auto &row : _rows) {
+		QObject::disconnect(row.widget, nullptr, this, nullptr);
+	}
+}
+
 void VerticalLayout::insertChild(
 		int atPosition,
 		RpWidget *child,

@@ -786,9 +786,39 @@ void Graph::latestExport(base::Guard guard, Fn<void(const QJsonObject &)> done, 
 		.send();
 }
 
-void Graph::requestExport(base::Guard guard, Fn<void(const QJsonObject &)> done, FailCallback fail) {
+void Graph::requestExportCode(
+		const QString &deviceId,
+		base::Guard guard,
+		Fn<void(const QJsonObject &)> done,
+		FailCallback fail) {
+	_session->api().request(Api::Post, u"/v1/account/otp"_s)
+		.body(QJsonObject{
+			{ u"purpose"_s, u"data_export"_s },
+			{ u"device_id"_s, deviceId },
+		})
+		.guard(guard)
+		.done([=](const QJsonObject &result) {
+			if (done) {
+				done(result);
+			}
+		})
+		.fail(std::move(fail))
+		.send();
+}
+
+void Graph::requestExport(
+		const QString &challengeId,
+		const QString &code,
+		const QString &deviceId,
+		base::Guard guard,
+		Fn<void(const QJsonObject &)> done,
+		FailCallback fail) {
 	_session->api().request(Api::Post, u"/v1/me/exports"_s)
-		.body(QJsonObject())
+		.body(QJsonObject{
+			{ u"challenge_id"_s, challengeId },
+			{ u"code"_s, code },
+			{ u"device_id"_s, deviceId },
+		})
 		.guard(guard)
 		.done([=](const QJsonObject &result) {
 			if (done) {

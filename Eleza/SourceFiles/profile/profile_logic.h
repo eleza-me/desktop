@@ -209,8 +209,6 @@ private:
 [[nodiscard]] QString ProvinceTitle(const QString &code);
 // «۲۳ ساعت مانده» / «۴۵ دقیقه مانده» / «تمام شد».
 [[nodiscard]] QString RemainingText(qint64 expiresAtSeconds, qint64 nowMs);
-// «هرزنامه» for "spam"; the slug itself when unknown.
-[[nodiscard]] QString ReportReasonTitle(const QString &slug);
 
 // ---- birthday
 

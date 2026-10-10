@@ -69,6 +69,7 @@ Tab RouteTab(const Route &route, Tab current) {
 	case RouteType::Conversation: return Tab::Chats;
 	case RouteType::Eli:
 	case RouteType::Post:
+	case RouteType::SharedPost:
 	case RouteType::Topic:
 	case RouteType::EliNotifications: return Tab::Eli;
 	case RouteType::Search: return Tab::Search;

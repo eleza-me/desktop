@@ -2115,7 +2115,12 @@ void ComposeBox::createPost() {
 			_keepDraft = false;
 			clearDraft();
 			if (reply) {
-				BumpReplies(controller, created);
+				// Not every answer repeats what the post replies to.
+				auto copy = created;
+				if (copy.replyTo.isEmpty()) {
+					copy.replyTo = _args.postId;
+				}
+				BumpReplies(controller, copy);
 			}
 			controller->showToast(reply
 				? tr::lng_eli_reply_was_sent(tr::now)

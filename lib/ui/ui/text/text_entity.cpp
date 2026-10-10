@@ -194,4 +194,126 @@ QString LinkUrl(const Link &link) {
 	}
 }
 
+TextWithEntities IsolateLinks(TextWithEntities text) {
+	// The links in order, without the ones that overlap an earlier one.
+	auto links = Entities();
+	auto sorted = text.entities;
+	std::stable_sort(sorted.begin(), sorted.end(), [](
+			const Entity &a,
+			const Entity &b) {
+		return a.offset < b.offset;
+	});
+	const auto size = int(text.text.size());
+	auto till = 0;
+	for (const auto &entity : sorted) {
+		if (IsLinkType(entity.type)
+			&& entity.length > 0
+			&& entity.offset >= till
+			&& entity.offset + entity.length <= size) {
+			links.push_back(entity);
+			till = entity.offset + entity.length;
+		}
+	}
+	if (links.isEmpty()) {
+		return text;
+	}
+	// One character goes in before each link and one after it. A range
+	// starts after the marks that are at or before its first character and
+	// ends before the ones that are at or after its end.
+	const auto shiftStart = [&](int position) {
+		auto result = 0;
+		for (const auto &link : links) {
+			result += (link.offset <= position) ? 1 : 0;
+			result += (link.offset + link.length <= position) ? 1 : 0;
+		}
+		return result;
+	};
+	const auto shiftEnd = [&](int position) {
+		auto result = 0;
+		for (const auto &link : links) {
+			result += (link.offset < position) ? 1 : 0;
+			result += (link.offset + link.length < position) ? 1 : 0;
+		}
+		return result;
+	};
+	auto result = TextWithEntities();
+	result.text.reserve(size + 2 * links.size());
+	auto from = 0;
+	for (const auto &link : links) {
+		// Addresses and handles read left to right; a tag or a named link
+		// reads in the direction of its own first letter.
+		const auto own = (link.type == EntityType::Hashtag)
+			|| (link.type == EntityType::CustomUrl)
+			|| (link.type == EntityType::MentionName);
+		result.text += QStringView(text.text).mid(from, link.offset - from);
+		result.text += QChar(own ? 0x2068 : 0x2066);
+		result.text += QStringView(text.text).mid(link.offset, link.length);
+		result.text += QChar(0x2069);
+		from = link.offset + link.length;
+	}
+	result.text += QStringView(text.text).mid(from);
+	result.entities.reserve(text.entities.size());
+	for (auto entity : text.entities) {
+		const auto begin = std::clamp(entity.offset, 0, size);
+		const auto end = std::clamp(entity.offset + entity.length, begin, size);
+		entity.offset = begin + shiftStart(begin);
+		entity.length = std::max((end + shiftEnd(end)) - entity.offset, 0);
+		result.entities.push_back(entity);
+	}
+	return result;
+}
+
+bool IsIsolateChar(QChar ch) {
+	return (ch.unicode() >= 0x2066) && (ch.unicode() <= 0x2069);
+}
+
+QString StripIsolates(const QString &text) {
+	auto result = QString();
+	result.reserve(text.size());
+	for (const auto ch : text) {
+		if (!IsIsolateChar(ch)) {
+			result.push_back(ch);
+		}
+	}
+	return result;
+}
+
+Selection SourceSelection(const QString &isolated, Selection selection) {
+	const auto size = int(isolated.size());
+	const auto from = std::clamp(selection.from, 0, size);
+	const auto to = std::clamp(selection.to, from, size);
+	auto before = 0;
+	auto inside = 0;
+	for (auto i = 0; i != to; ++i) {
+		if (IsIsolateChar(isolated[i])) {
+			++((i < from) ? before : inside);
+		}
+	}
+	return { from - before, to - before - inside };
+}
+
+Selection IsolatedSelection(const QString &isolated, Selection source) {
+	if (source.empty()) {
+		return source;
+	}
+	// The place of the source character number `index` in the shown text.
+	const auto size = int(isolated.size());
+	auto result = Selection{ size, size };
+	auto index = 0;
+	for (auto i = 0; i != size; ++i) {
+		if (IsIsolateChar(isolated[i])) {
+			continue;
+		}
+		if (index == source.from) {
+			result.from = i;
+		}
+		if (index == source.to - 1) {
+			result.to = i + 1;
+			break;
+		}
+		++index;
+	}
+	return result;
+}
+
 } // namespace Ui::Text

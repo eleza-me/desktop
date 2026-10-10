@@ -8,6 +8,7 @@
 #include "data/data_session.h"
 #include "data/data_transport.h"
 #include "data/data_users.h"
+#include "lang/lang_format.h"
 #include "lang_auto.h"
 #include "main/main_session.h"
 #include "support/error_text.h"
@@ -68,7 +69,7 @@ constexpr auto kPeople = std::array<FloatingPerson, 6>{ {
 // A name inside a sentence of the other direction: isolated, so it neither
 // reorders the words around it nor decides the direction of the line.
 [[nodiscard]] QString Isolated(const QString &name) {
-	return QChar(0x2068) + name + QChar(0x2069);
+	return Lang::Isolated(name);
 }
 
 class Content final : public Ui::RpWidget {

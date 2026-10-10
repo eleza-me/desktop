@@ -965,6 +965,7 @@ void PostSection::sendReply() {
 	body.replyTo = _replyTarget;
 	body.replyPolicy = u"everyone"_s;
 	const auto controller = this->controller();
+	const auto target = _replyTarget;
 	controller->session().data().feed().createPost(
 		body,
 		QUuid::createUuid().toString(QUuid::WithoutBraces),
@@ -974,7 +975,12 @@ void PostSection::sendReply() {
 			_dock->setSending(false);
 			_dock->clear();
 			setReplyTarget(_rootId);
-			BumpReplies(controller, created);
+			// Not every answer repeats what the post replies to.
+			auto reply = created;
+			if (reply.replyTo.isEmpty()) {
+				reply.replyTo = target;
+			}
+			BumpReplies(controller, reply);
 			controller->showToast(tr::lng_eli_reply_was_sent(tr::now));
 		},
 		[=, this](const Api::Error &error) {
@@ -1010,6 +1016,10 @@ void PostSection::resizeEvent(QResizeEvent *e) {
 	updateLayout();
 }
 
+int PostSection::toastBottomSkip() const {
+	return (_dock && !_dock->isHidden()) ? _dock->height() : 0;
+}
+
 void PostSection::keyPressEvent(QKeyEvent *e) {
 	if (_replies && _replies->handleKey(e)) {
 		return;
@@ -1024,25 +1034,13 @@ void BumpReplies(Window::SessionController *controller, const Data::Post &create
 		return;
 	}
 	auto &feed = controller->session().data().feed();
-	auto changed = QVector<Data::Post>();
-	const auto bump = [&](const QString &id) {
-		for (const auto &post : changed) {
-			if (post.id == id) {
-				return;
-			}
-		}
-		if (const auto found = feed.post(id)) {
-			auto copy = *found;
-			++copy.counts.replies;
-			changed.push_back(copy);
-		}
-	};
-	bump(created.replyTo);
-	if (!created.threadRoot.isEmpty() && created.threadRoot != created.id) {
-		bump(created.threadRoot);
-	}
-	if (!changed.isEmpty()) {
-		feed.merge(changed);
+	// A local change: a plain merge would lose the count while another
+	// optimistic change of the same post (a like) is still held.
+	feed.noteReplyAdded(created.replyTo);
+	if (!created.threadRoot.isEmpty()
+		&& created.threadRoot != created.id
+		&& created.threadRoot != created.replyTo) {
+		feed.noteReplyAdded(created.threadRoot);
 	}
 }
 

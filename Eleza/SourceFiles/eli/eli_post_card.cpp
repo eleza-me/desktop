@@ -116,37 +116,19 @@ void PaintPlayGlyph(QPainter &p, const QRect &circle, const QColor &color) {
 }
 
 Ui::Text::TextWithEntities PostText(const QString &text, bool links) {
-	auto parsed = Ui::Text::ParseEntities(text, links ? Ui::Text::ParseAll : 0u);
-	if (parsed.entities.isEmpty()) {
-		return parsed;
-	}
 	// Mentions, links and tags keep their own direction inside a paragraph
 	// of the other one ("@sara" must not turn into "sara@" in Persian text).
-	auto result = Ui::Text::TextWithEntities();
-	auto from = 0;
-	for (auto entity : parsed.entities) {
-		if (!Ui::Text::IsLinkType(entity.type) || entity.offset < from) {
-			continue;
-		}
-		result.text += QStringView(parsed.text).mid(from, entity.offset - from);
-		const auto hashtag = (entity.type == Ui::Text::EntityType::Hashtag);
-		result.text += QChar(hashtag ? 0x2068 : 0x2066);
-		const auto length = entity.length;
-		from = entity.offset + length;
-		entity.offset = int(result.text.size());
-		result.text += QStringView(parsed.text).mid(from - length, length);
-		result.text += QChar(0x2069);
-		result.entities.push_back(entity);
+	auto result = Ui::Text::IsolateLinks(
+		Ui::Text::ParseEntities(text, Ui::Text::ParseAll));
+	if (!links) {
+		// Plain (a snippet, a quoted post), but still with the marks.
+		result.entities.clear();
 	}
-	result.text += QStringView(parsed.text).mid(from);
 	return result;
 }
 
 QString IsolatedHandle(const QString &handle) {
-	if (handle.isEmpty()) {
-		return QString();
-	}
-	return QChar(0x2066) + (u"@"_s + handle) + QChar(0x2069);
+	return Lang::Handle(handle);
 }
 
 QString AuthorName(Main::Session &session, const QString &userId) {

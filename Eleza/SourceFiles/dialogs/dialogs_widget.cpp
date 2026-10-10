@@ -22,10 +22,10 @@
 #include "ui/ui_utility.h"
 #include "window/window_routes.h"
 #include "window/window_session_controller.h"
+#include "window/window_shortcuts.h"
 #include "styles/style_dialogs.h"
 
 #include <QtGui/QKeyEvent>
-#include <QtGui/QShortcut>
 #include <QtWidgets/QTextEdit>
 
 namespace Dialogs {
@@ -140,9 +140,9 @@ Widget::Widget(QWidget *parent, Window::SessionController *controller)
 			_inner->chooseSelected();
 		}
 	});
-	connect(_search, &Ui::SearchField::cancelled, this, [this] {
-		searchCancelled();
-	});
+	// Esc in the field is not handled through SearchField::cancelled: the
+	// key travels on to this widget (keyPressEvent) and would be handled a
+	// second time by the window («clear the search» and «close the chat»).
 	_search->field()->rawTextEdit()->installEventFilter(this);
 
 	_banner->hide();
@@ -170,17 +170,12 @@ Widget::Widget(QWidget *parent, Window::SessionController *controller)
 		[this] { refreshActiveChat(); });
 
 	setupSubTabs();
-	setupShortcuts();
 	refreshTopBar();
 	refreshState();
 	refreshActiveChat();
 }
 
-Widget::~Widget() {
-	for (const auto &shortcut : _shortcuts) {
-		delete shortcut.data();
-	}
-}
+Widget::~Widget() = default;
 
 QString Widget::sectionKey() const {
 	return Window::Routes::Chats();
@@ -223,6 +218,34 @@ void Widget::setupSubTabs() {
 			showSubTab(i, false);
 			break;
 		}
+	}
+	// Another module asks for one of the sub-tabs («موضوع‌ها» for the route
+	// "conversation/topics"), possibly before this column existed.
+	const auto request = [this](const QString &id) {
+		for (auto i = 0, count = int(_subTabs.size()); i != count; ++i) {
+			if (_subTabs[i].descriptor.id == id) {
+				if (_inner->folder() != Folder::Main) {
+					showFolder(Folder::Main);
+				}
+				_tabs->setActive(i, anim::type::instant);
+				showSubTab(i, true);
+				return;
+			}
+		}
+	};
+	connect(
+		controller(),
+		&Window::SessionController::sideSubTabRequested,
+		this,
+		[=, this](Window::Tab tab, const QString &) {
+			if (tab == Window::Tab::Chats) {
+				request(controller()->takeRequestedSideSubTab(tab));
+			}
+		});
+	const auto pending = controller()->takeRequestedSideSubTab(
+		Window::Tab::Chats);
+	if (!pending.isEmpty()) {
+		request(pending);
 	}
 }
 
@@ -277,63 +300,21 @@ void Widget::showSubTab(int index, bool remember) {
 	refreshState();
 }
 
-void Widget::setupShortcuts() {
-	const auto body = controller()->bodyWidget();
-	const auto add = [&](
-			const QKeySequence &sequence,
-			QWidget *parent,
-			Qt::ShortcutContext context,
-			std::function<void()> callback) {
-		const auto shortcut = new QShortcut(sequence, parent);
-		shortcut->setContext(context);
-		shortcut->setAutoRepeat(false);
-		connect(shortcut, &QShortcut::activated, this, std::move(callback));
-		_shortcuts.push_back(shortcut);
-	};
-	const auto inChats = [this] {
-		return controller()->currentTab() == Window::Tab::Chats;
-	};
-	// Ctrl+K from anywhere in the window, Ctrl+F while the list has the focus
-	// (inside a chat Ctrl+F belongs to the chat).
-	add(QKeySequence(Qt::CTRL | Qt::Key_K), body, Qt::WindowShortcut, [this] {
-		controller()->showTab(Window::Tab::Chats);
+bool Widget::handleCommand(Window::Command command) {
+	// (The window-wide ones - Ctrl+K, next / previous chat, new message -
+	// are registered in dialogs_module.cpp: they work from every tab.)
+	switch (command) {
+	case Window::Command::Find:
 		focusSearch();
-	});
-	add(
-		QKeySequence(Qt::CTRL | Qt::Key_F),
-		this,
-		Qt::WidgetWithChildrenShortcut,
-		[this] { focusSearch(); });
-	const auto jump = [=, this](int direction) {
-		return [=, this] {
-			if (inChats()) {
-				jumpToChat(direction);
-			}
-		};
-	};
-	add(QKeySequence(Qt::CTRL | Qt::Key_Tab), body, Qt::WindowShortcut, jump(1));
-	add(
-		QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Tab),
-		body,
-		Qt::WindowShortcut,
-		jump(-1));
-	add(
-		QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Backtab),
-		body,
-		Qt::WindowShortcut,
-		jump(-1));
-	add(
-		QKeySequence(Qt::CTRL | Qt::Key_PageDown),
-		body,
-		Qt::WindowShortcut,
-		jump(1));
-	add(
-		QKeySequence(Qt::CTRL | Qt::Key_PageUp),
-		body,
-		Qt::WindowShortcut,
-		jump(-1));
-	add(QKeySequence(Qt::ALT | Qt::Key_Down), body, Qt::WindowShortcut, jump(1));
-	add(QKeySequence(Qt::ALT | Qt::Key_Up), body, Qt::WindowShortcut, jump(-1));
+		return true;
+	case Window::Command::Refresh:
+		if (chatsTabShown()) {
+			controller()->session().data().chats().loadInbox(this);
+			return true;
+		}
+		return false;
+	default: return false;
+	}
 }
 
 void Widget::focusSearch() {
@@ -658,6 +639,11 @@ bool Widget::handleKey(QKeyEvent *e) {
 }
 
 void Widget::keyPressEvent(QKeyEvent *e) {
+	if (e->key() == Qt::Key_Escape && e->modifiers() == Qt::NoModifier) {
+		// One step back per press: the search, the folder, then the chat.
+		searchCancelled();
+		return;
+	}
 	if (handleKey(e)) {
 		return;
 	}

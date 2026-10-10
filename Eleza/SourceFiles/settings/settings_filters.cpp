@@ -45,7 +45,7 @@ public:
 		: user.displayName)
 	, _handle(user.handle.isEmpty()
 		? QString()
-		: (QLatin1Char('@') + user.handle))
+		: Lang::Handle(user.handle))
 	, _userpic(new Support::UserpicButton(
 		this,
 		session,

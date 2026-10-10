@@ -42,6 +42,9 @@ public:
 		return _singleColumn;
 	}
 
+	[[nodiscard]] LayoutState saveState() const;
+	void restoreState(const LayoutState &state);
+
 	void setInnerFocus();
 
 protected:
@@ -87,6 +90,7 @@ private:
 	std::array<TabState, kTabsCount> _tabs;
 	Tab _tab = Tab::Chats;
 	bool _singleColumn = false;
+	bool _restoring = false;
 	int _sideWidth = 0;
 	QRect _sideRect; // logical (leading-side) coordinates
 	QRect _mainRect;

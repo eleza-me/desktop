@@ -3,6 +3,7 @@
 #include "eli/eli_actions.h"
 
 #include "boxes/peer_list_box.h"
+#include "boxes/report_box.h"
 #include "data/data_feed.h"
 #include "data/data_graph.h"
 #include "data/data_session.h"
@@ -21,8 +22,6 @@
 
 namespace Eli {
 namespace {
-
-constexpr auto kReportNoteLength = 500;
 
 class ReactorsController final : public Boxes::PeerListController {
 public:
@@ -150,133 +149,6 @@ private:
 
 };
 
-[[nodiscard]] QString ReasonLabel(const QString &slug) {
-	if (slug == u"spam") {
-		return tr::lng_eli_reason_spam(tr::now);
-	} else if (slug == u"harassment") {
-		return tr::lng_eli_reason_harassment(tr::now);
-	} else if (slug == u"hate") {
-		return tr::lng_eli_reason_hate(tr::now);
-	} else if (slug == u"violence") {
-		return tr::lng_eli_reason_violence(tr::now);
-	} else if (slug == u"sexual") {
-		return tr::lng_eli_reason_sexual(tr::now);
-	} else if (slug == u"self_harm") {
-		return tr::lng_eli_reason_self_harm(tr::now);
-	} else if (slug == u"misinformation") {
-		return tr::lng_eli_reason_misinformation(tr::now);
-	} else if (slug == u"impersonation") {
-		return tr::lng_eli_reason_impersonation(tr::now);
-	} else if (slug == u"other") {
-		return tr::lng_eli_reason_other(tr::now);
-	}
-	// A reason this build has no wording for: its slug, readable.
-	auto readable = slug;
-	readable.replace(QChar('_'), QChar(' '));
-	return readable;
-}
-
-[[nodiscard]] QStringList DefaultReasons() {
-	return {
-		u"spam"_s,
-		u"harassment"_s,
-		u"hate"_s,
-		u"violence"_s,
-		u"sexual"_s,
-		u"self_harm"_s,
-		u"misinformation"_s,
-		u"impersonation"_s,
-		u"other"_s,
-	};
-}
-
-[[nodiscard]] QString Question(const QString &kind) {
-	if (kind == u"reply") {
-		return tr::lng_eli_report_q_reply(tr::now);
-	} else if (kind == u"account") {
-		return tr::lng_eli_report_q_account(tr::now);
-	} else if (kind == u"conversation") {
-		return tr::lng_eli_report_q_conversation(tr::now);
-	}
-	return tr::lng_eli_report_q_post(tr::now);
-}
-
-void ShowReportBox(
-		Window::SessionController *controller,
-		const ReportTarget &target,
-		const QStringList &reasons) {
-	controller->show(Ui::Box([=](Ui::GenericBox *box) {
-		box->setTitle(tr::lng_report(tr::now));
-		box->addRow(
-			Ui::object_ptr<Ui::FlatLabel>(box, Question(target.kind), st::boxLabel),
-			st::boxRowPadding);
-		const auto group = std::make_shared<Ui::RadiobuttonGroup>();
-		for (auto i = 0; i != int(reasons.size()); ++i) {
-			box->addRow(
-				Ui::object_ptr<Ui::Radiobutton>(box, group, i, ReasonLabel(reasons[i])),
-				st::boxCheckboxPadding);
-		}
-		box->addRow(
-			Ui::object_ptr<Ui::FlatLabel>(
-				box,
-				tr::lng_eli_report_anonymous(tr::now),
-				st::captionLabel),
-			st::boxRowPadding);
-		const auto note = box->addRow(Ui::object_ptr<Ui::InputField>(
-			box,
-			st::defaultInputField,
-			Ui::InputField::Mode::MultiLine,
-			tr::lng_report_details(tr::now)));
-		note->setMaxLength(kReportNoteLength);
-		note->setSubmitSettings(Ui::InputField::SubmitSettings::CtrlEnter);
-		const auto offerBlock = !target.offerBlockUserId.isEmpty()
-			&& (target.kind != u"conversation")
-			&& (target.offerBlockUserId != controller->session().userId());
-		const auto block = offerBlock
-			? box->addRow(
-				Ui::object_ptr<Ui::Checkbox>(box, tr::lng_report_also_block(tr::now)),
-				st::boxCheckboxPadding)
-			: nullptr;
-		const auto sending = std::make_shared<bool>(false);
-		const auto submit = box->addButton(tr::lng_report_send(tr::now), nullptr, st::defaultRoundButton);
-		submit->setDisabled(true);
-		group->setChangedCallback([=](int) {
-			submit->setDisabled(false);
-		});
-		const auto send = [=] {
-			if (!group->hasValue() || *sending) {
-				return;
-			}
-			*sending = true;
-			submit->setLoading(true);
-			const auto reason = reasons.value(group->value());
-			const auto alsoBlock = block && block->checked();
-			auto &data = controller->session().data();
-			data.feed().sendReport(
-				target.kind,
-				target.id,
-				reason,
-				note->text().trimmed(),
-				base::Guard(box),
-				[=] {
-					if (alsoBlock) {
-						controller->session().data().graph().block(target.offerBlockUserId);
-					}
-					controller->showToast(tr::lng_report_sent(tr::now));
-					box->closeBox();
-				},
-				[=](const Api::Error &error) {
-					*sending = false;
-					submit->setLoading(false);
-					Support::ShowError(controller, error, tr::lng_eli_report_failed(tr::now));
-				});
-		};
-		submit->setClickedCallback(send);
-		QObject::connect(note, &Ui::InputField::submitted, box, send);
-		box->addButton(tr::lng_cancel(tr::now), [=] { box->closeBox(); });
-	}));
-}
-
 } // namespace
 
 void OpenReactors(
@@ -289,22 +161,12 @@ void OpenReactors(
 }
 
 void OpenReport(Window::SessionController *controller, ReportTarget target) {
-	controller->session().data().feed().reportReasons(
-		base::Guard(controller),
-		[=](const Data::ReportReasons &all) {
-			const auto &list = (target.kind == u"reply")
-				? all.reply
-				: (target.kind == u"account")
-				? all.account
-				: (target.kind == u"conversation")
-				? all.conversation
-				: all.post;
-			ShowReportBox(controller, target, list.isEmpty() ? DefaultReasons() : list);
-		},
-		[=](const Api::Error &) {
-			// The form still works with the reasons every server knows.
-			ShowReportBox(controller, target, DefaultReasons());
-		});
+	// The form is shared with the profile and the conversation topics.
+	auto args = Boxes::ReportArgs();
+	args.kind = target.kind;
+	args.id = target.id;
+	args.offerBlockUserId = target.offerBlockUserId;
+	Boxes::ShowReportBox(controller, std::move(args));
 }
 
 } // namespace Eli

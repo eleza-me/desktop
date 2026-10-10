@@ -13,6 +13,7 @@
 #include "support/error_text.h"
 #include "ui/layers/generic_box.h"
 #include "ui/widgets/popup_menu.h"
+#include "window/window_embeds.h"
 #include "window/window_routes.h"
 #include "window/window_section_widget.h"
 #include "window/window_session_controller.h"
@@ -165,6 +166,8 @@ void FillChatMenu(
 		}, &st::menuIconBlock);
 	}
 	menu->addSeparator();
+	// What the owner of this kind of chat adds («پایان گفتگو»…).
+	Window::FillChatMenu(menu, controller, id);
 	const auto copy = chat;
 	menu->addItem(DangerItem(tr::lng_chat_delete_chat(tr::now), [=] {
 		ShowDeleteChatBox(controller, copy);

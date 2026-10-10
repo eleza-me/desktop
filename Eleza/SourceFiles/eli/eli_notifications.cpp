@@ -91,6 +91,10 @@ enum class NotifHit {
 			? tr::lng_eli_notif_someone(tr::now)
 			: user.displayName;
 	}
+	// Only the name is isolated: it keeps its own direction, while «و N نفر
+	// دیگر» / "and N others" reads with the sentence (isolating the whole
+	// phrase put "and 1 other" before a Persian name in English).
+	name = Lang::Isolated(name);
 	const auto total = std::max(entry.actorCount, int(entry.actors.size()));
 	const auto others = std::max(total - 1, 0);
 	return (others > 0)
@@ -328,7 +332,7 @@ private:
 		auto &session = _controller->session();
 		// The sentence reads in the interface's direction whatever script the
 		// name is in; the name keeps its own.
-		const auto who = QChar(0x2068) + WhoText(session, row.entry) + QChar(0x2069);
+		const auto who = WhoText(session, row.entry);
 		const auto line = LineText(row.entry, who, row.accepted);
 		const auto time = tr::lng_eli_meta_separator(tr::now) + Lang::RelativeTime(
 			QDateTime::fromMSecsSinceEpoch(row.entry.updatedAt));

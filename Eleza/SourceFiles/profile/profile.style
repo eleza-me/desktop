@@ -308,18 +308,3 @@ profileShareHint: FlatLabel(defaultFlatLabel) {
 	align: align(top);
 }
 profileShareHintPadding: margins(24px, 12px, 24px, 4px);
-
-// ---- the report box
-profileReportQuestionStyle: TextStyle(defaultTextStyle) {
-	font: font(15px semibold);
-	lineHeight: 24px;
-}
-profileReportQuestion: FlatLabel(defaultFlatLabel) {
-	style: profileReportQuestionStyle;
-	textFg: textPrimary;
-}
-profileReportHint: FlatLabel(defaultFlatLabel) {
-	style: profileShareHintStyle;
-	textFg: textTertiary;
-}
-profileReportHintPadding: margins(24px, 6px, 24px, 12px);

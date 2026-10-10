@@ -21,6 +21,32 @@ private Q_SLOTS:
 		SetCurrent(Language::Persian);
 	}
 
+	void isolates() {
+		const auto lri = QChar(0x2066);
+		const auto fsi = QChar(0x2068);
+		const auto pdi = QChar(0x2069);
+		QCOMPARE(Ltr(QStringLiteral("a@b.c")), lri + QStringLiteral("a@b.c") + pdi);
+		QVERIFY(Ltr(QString()).isEmpty());
+		QCOMPARE(Isolated(QStringLiteral("Sara")), fsi + QStringLiteral("Sara") + pdi);
+		QCOMPARE(Handle(QStringLiteral("sara")), lri + QStringLiteral("@sara") + pdi);
+		QCOMPARE(Handle(QStringLiteral("@sara")), lri + QStringLiteral("@sara") + pdi);
+		QVERIFY(Handle(QString()).isEmpty());
+
+		QCOMPARE(PhoneGroups(QStringLiteral("+989121234567")), U("+۹۸ ۹۱۲ ۱۲۳ ۴۵۶۷"));
+		QCOMPARE(PhoneGroups(QStringLiteral("989121234567")), U("+۹۸ ۹۱۲ ۱۲۳ ۴۵۶۷"));
+		QCOMPARE(
+			Phone(QStringLiteral("+989121234567")),
+			lri + U("+۹۸ ۹۱۲ ۱۲۳ ۴۵۶۷") + pdi);
+		SetCurrent(Language::English);
+		QCOMPARE(PhoneGroups(QStringLiteral("+989121234567")), QStringLiteral("+98 912 123 4567"));
+		QCOMPARE(PhoneGroups(QStringLiteral("+14155550123")), QStringLiteral("+1 415 555 0123"));
+		QCOMPARE(PhoneGroups(QStringLiteral("+442079460958")), QStringLiteral("+44 207 946 0958"));
+		// Not a number: untouched.
+		QCOMPARE(PhoneGroups(QStringLiteral("+98 *** 4567")), QStringLiteral("+98 *** 4567"));
+		QCOMPARE(PhoneGroups(QStringLiteral("123")), QStringLiteral("123"));
+		QVERIFY(Phone(QString()).isEmpty());
+	}
+
 	void strings() {
 		QCOMPARE(tr::lng_app_name(tr::now), U("الزا"));
 		QCOMPARE(

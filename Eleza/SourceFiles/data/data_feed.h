@@ -66,6 +66,9 @@ public:
 	[[nodiscard]] const Post *post(const QString &id) const;
 	// Server copies in (also used by search results and profiles).
 	void merge(const QVector<Post> &posts);
+	// A reply was published under `id` from here: its counter moves at once
+	// (a local change, kept over the server copies that are still on the way).
+	void noteReplyAdded(const QString &id);
 	// Parses a list of posts, stores them and returns their ids in order.
 	QStringList mergeJson(const QJsonValue &list);
 

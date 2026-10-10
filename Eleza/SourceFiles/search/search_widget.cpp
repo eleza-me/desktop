@@ -25,6 +25,7 @@
 #include "window/window_embeds.h"
 #include "window/window_routes.h"
 #include "window/window_session_controller.h"
+#include "window/window_shortcuts.h"
 #include "styles/style_conversation.h"
 #include "styles/style_search.h"
 
@@ -33,7 +34,6 @@
 #include <QtGui/QClipboard>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QKeyEvent>
-#include <QtGui/QShortcut>
 #include <QtWidgets/QTextEdit>
 
 namespace Search {
@@ -225,29 +225,11 @@ Widget::Widget(QWidget *parent, Window::SessionController *controller)
 		_debounce.flush();
 		rememberQuery();
 	});
-	QObject::connect(_field, &Ui::SearchField::cancelled, this, [this] {
-		if (!onBackRequest()) {
-			this->controller()->showBack();
-		}
-	});
 	QObject::connect(&_debounce, &Debouncer::fired, this, [this](
 			const QString &query) {
 		queryFired(query);
 	});
 	_field->field()->rawTextEdit()->installEventFilter(this);
-	const auto focus = new QShortcut(
-		QKeySequence::Find,
-		this,
-		nullptr,
-		nullptr,
-		Qt::WindowShortcut);
-	const auto focusField = [this] {
-		_field->setFocusFast();
-		_field->field()->selectAll();
-	};
-	QObject::connect(focus, &QShortcut::activated, this, focusField);
-	QObject::connect(focus, &QShortcut::activatedAmbiguously, this, focusField);
-
 	// ---- the list
 	QObject::connect(_scroll, &Ui::ScrollArea::nearBottom, this, [this] {
 		loadMoreResults();
@@ -366,6 +348,28 @@ Data::Session &Widget::data() const {
 
 QString Widget::sectionKey() const {
 	return Window::Routes::Search();
+}
+
+void Widget::keyPressEvent(QKeyEvent *e) {
+	if (e->key() == Qt::Key_Escape && e->modifiers() == Qt::NoModifier) {
+		// Esc from the field arrives here too (not through its `cancelled`
+		// signal, or the window would go back a second time): the query
+		// first, then what is open in the main column.
+		if (!onBackRequest()) {
+			controller()->showBack();
+		}
+		return;
+	}
+	SectionWidget::keyPressEvent(e);
+}
+
+bool Widget::handleCommand(Window::Command command) {
+	if (command == Window::Command::Find) {
+		_field->setFocusFast();
+		_field->field()->selectAll();
+		return true;
+	}
+	return false;
 }
 
 void Widget::setInnerFocus() {

@@ -35,10 +35,6 @@ namespace {
 
 using Controller = Window::SessionController;
 
-[[nodiscard]] QString Isolated(const QString &text) {
-	return QChar(0x2066) + text + QChar(0x2069);
-}
-
 [[nodiscard]] QString DateTimeText(qint64 ms) {
 	const auto time = QDateTime::fromMSecsSinceEpoch(ms);
 	return Lang::SolarDate(time.date())
@@ -53,15 +49,11 @@ void RequestExportCode(
 	QObject *guard,
 	std::function<void(const QJsonObject &)> done,
 	std::function<void(const Api::Error &)> fail) {
-	controller->session().api().request(Api::Post, u"/v1/account/otp"_s)
-		.body(QJsonObject{
-			{ u"purpose"_s, u"data_export"_s },
-			{ u"device_id"_s, controller->session().account().deviceId() },
-		})
-		.guard(guard)
-		.done(std::move(done))
-		.fail(std::move(fail))
-		.send();
+	controller->session().data().graph().requestExportCode(
+		controller->session().account().deviceId(),
+		guard,
+		std::move(done),
+		std::move(fail));
 }
 
 void ShowEmailRequiredBox(Controller *controller) {
@@ -100,23 +92,19 @@ void StartExportRequest(Controller *controller) {
 				const QString &code,
 				std::function<void()> done,
 				std::function<void(const QString &)> fail) {
-			controller->session().api().request(
-				Api::Post,
-				u"/v1/me/exports"_s
-			).body(QJsonObject{
-				{ u"challenge_id"_s, *challenge },
-				{ u"code"_s, code },
-				{
-					u"device_id"_s,
-					controller->session().account().deviceId(),
+			controller->session().data().graph().requestExport(
+				*challenge,
+				code,
+				controller->session().account().deviceId(),
+				controller,
+				[=](const QJsonObject &) {
+					done();
+					controller->showToast(
+						tr::lng_settings_export_requested(tr::now));
 				},
-			}).guard(controller).done([=](const QJsonObject &) {
-				done();
-				controller->showToast(
-					tr::lng_settings_export_requested(tr::now));
-			}).fail([=](const Api::Error &error) {
-				fail(Support::ErrorText(error));
-			}).send();
+				[=](const Api::Error &error) {
+					fail(Support::ErrorText(error));
+				});
 		};
 		args.resend = [=](
 				std::function<void(int)> done,
@@ -258,7 +246,7 @@ private:
 		session.data().graph().accountPhone(this, [=](const QString &value) {
 			phone->setValueText(value.isEmpty()
 				? QString(QChar(0x2014))
-				: Isolated(Lang::Num(value)));
+				: Lang::Phone(value));
 		});
 
 		const auto handle = AddLinkButton(
@@ -271,7 +259,7 @@ private:
 			const auto value = users->me().handle;
 			handle->setValueText(value.isEmpty()
 				? QString(QChar(0x2014))
-				: Isolated(QLatin1Char('@') + value));
+				: Lang::Handle(value));
 		};
 		refreshHandle();
 		connect(users, &Data::Users::meChanged, handle, refreshHandle);

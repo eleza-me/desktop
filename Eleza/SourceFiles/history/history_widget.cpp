@@ -1,6 +1,7 @@
 #include "history/history_widget.h"
 
 #include "api/api_client_config.h"
+#include "core/core_application.h"
 #include "data/data_chats.h"
 #include "data/data_conversations.h"
 #include "data/data_graph.h"
@@ -29,7 +30,9 @@
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/tooltip.h"
+#include "window/window_embeds.h"
 #include "window/window_session_controller.h"
+#include "window/window_shortcuts.h"
 #include "styles/palette.h"
 #include "styles/style_history.h"
 
@@ -664,10 +667,11 @@ void Widget::refreshDownButton() {
 
 void Widget::refreshActive() {
 	const auto top = window();
+	// Scripted runs have no window manager to activate the window.
 	const auto active = _shown
 		&& isVisible()
 		&& top
-		&& top->isActiveWindow()
+		&& (top->isActiveWindow() || Core::App().commandLine().ephemeral())
 		&& (controller()->mainSection() == this);
 	_list->setActive(active);
 	auto &chats = _session->data().chats();
@@ -831,23 +835,9 @@ void Widget::showMoreMenu() {
 	}
 	menu->addSeparator();
 	if (chat->isConversation) {
-		const auto state = chat->conversation ? chat->conversation->state : chat->state;
-		if (chat->conversation && !ConversationEnded(state)) {
-			auto item = Ui::MenuItem();
-			item.text = tr::lng_conv_end_conversation(tr::now);
-			item.icon = &st::menuIconEndConversation;
-			item.destructive = true;
-			item.callback = [this] { confirmEndConversation(); };
-			menu->addItem(std::move(item));
-		}
-		if (chat->conversation && chat->conversation->listener) {
-			auto item = Ui::MenuItem();
-			item.text = tr::lng_block_user(tr::now);
-			item.icon = &st::menuIconBlock;
-			item.destructive = true;
-			item.callback = [this] { confirmBlock(); };
-			menu->addItem(std::move(item));
-		}
+		// The conversation module owns these («پایان گفتگو», «مسدود کردن»);
+		// the chat list's row menu gets the same ones.
+		Window::FillChatMenu(menu, window, chatId);
 	} else if (!chat->saved && !chat->peerDeleted && !chat->peerUserId.isEmpty()) {
 		if (_blockedByYou) {
 			const auto peer = chat->peerUserId;
@@ -930,29 +920,6 @@ void Widget::confirmBlock() {
 				}
 			}, fail);
 		}
-		close();
-	};
-	controller()->show(Ui::MakeConfirmBox(std::move(args)));
-}
-
-void Widget::confirmEndConversation() {
-	const auto chat = _session->data().chats().chat(_chatId);
-	if (!chat || !chat->conversation) {
-		return;
-	}
-	const auto session = _session;
-	const auto window = controller();
-	const auto id = chat->conversation->id;
-	auto args = Ui::ConfirmBoxArgs();
-	args.title = tr::lng_conv_end_conversation(tr::now);
-	args.text = tr::lng_history_end_sure(tr::now);
-	args.confirmText = tr::lng_conv_end_conversation(tr::now);
-	args.destructive = true;
-	args.confirmed = [=](std::function<void()> close) {
-		session->data().conversations().end(id, window, nullptr, [=](
-				const Api::Error &error) {
-			Support::ShowError(window, error);
-		});
 		close();
 	};
 	controller()->show(Ui::MakeConfirmBox(std::move(args)));
@@ -1106,6 +1073,27 @@ void Widget::debugShowDropArea() {
 void Widget::resizeEvent(QResizeEvent *e) {
 	Q_UNUSED(e);
 	updateLayout();
+}
+
+bool Widget::handleCommand(Window::Command command) {
+	if (command == Window::Command::Find) {
+		showSearch();
+		return true;
+	}
+	return false;
+}
+
+int Widget::toastBottomSkip() const {
+	// The toast is centred in the window, the bottom controls span this
+	// column only; lifting it is right for both the wide and the narrow layout.
+	if (isHidden()) {
+		return 0;
+	} else if (!_compose->isHidden()) {
+		return _compose->height();
+	} else if (!_notice->isHidden()) {
+		return _notice->height();
+	}
+	return 0;
 }
 
 void Widget::updateLayout() {

@@ -42,7 +42,7 @@ const auto kPrivacyUrl = QStringLiteral("https://eleza.me/privacy");
 
 // A phone number / e-mail inside a sentence of the other direction.
 [[nodiscard]] QString Isolated(const QString &text) {
-	return QChar(0x2066) + text + QChar(0x2069);
+	return Lang::Ltr(text);
 }
 
 [[nodiscard]] const Lang::Country *DefaultCountry() {
@@ -816,7 +816,7 @@ public:
 			tr::lng_intro_code_sent_to(
 				tr::now,
 				lt_phone,
-				Isolated(Lang::Num(state().phone))),
+				Lang::Phone(state().phone)),
 			st::introAbout));
 		const auto edit = layout->add(
 			Ui::object_ptr<Ui::LinkButton>(

@@ -43,7 +43,7 @@ struct Challenge {
 
 // A masked address is always left-to-right inside a Persian sentence.
 [[nodiscard]] QString Isolated(const QString &text) {
-	return QChar(0x2066) + text + QChar(0x2069);
+	return Lang::Ltr(text);
 }
 
 [[nodiscard]] Ui::FlatLabel *AddError(Ui::GenericBox *box) {

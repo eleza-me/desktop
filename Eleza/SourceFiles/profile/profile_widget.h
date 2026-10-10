@@ -64,6 +64,7 @@ public:
 	~Widget();
 
 	QString sectionKey() const override;
+	QString restoreRoute() const override;
 	void showFinished() override;
 	// Switches the post list (the side column's «ذخیره‌ها» link).
 	void showTab(PostsTab tab);

@@ -17,7 +17,31 @@ namespace {
 	return result;
 }
 
+[[nodiscard]] QVector<ChatMenuFiller> &MenuFillers() {
+	static auto result = QVector<ChatMenuFiller>();
+	return result;
+}
+
 } // namespace
+
+void RegisterChatMenuFiller(ChatMenuFiller filler) {
+	if (filler) {
+		MenuFillers().push_back(std::move(filler));
+	}
+}
+
+bool HasChatMenuFillers() {
+	return !MenuFillers().isEmpty();
+}
+
+void FillChatMenu(
+		Ui::PopupMenu *menu,
+		SessionController *controller,
+		const QString &chatId) {
+	for (const auto &filler : MenuFillers()) {
+		filler(menu, controller, chatId);
+	}
+}
 
 void RegisterEmbed(const QString &id, EmbedFactory factory) {
 	Embeds().insert(id, std::move(factory));

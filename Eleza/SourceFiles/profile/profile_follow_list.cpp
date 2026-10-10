@@ -157,7 +157,7 @@ void FollowListSection::refreshTitles() {
 	_bar->setTitle(!_profile.displayName.isEmpty()
 		? _profile.displayName
 		: !_profile.handle.isEmpty()
-		? (QLatin1Char('@') + _profile.handle)
+		? Lang::Handle(_profile.handle)
 		: (_kind == FollowKind::Followers)
 		? tr::lng_profile_followers_title(tr::now)
 		: tr::lng_profile_following_title(tr::now));

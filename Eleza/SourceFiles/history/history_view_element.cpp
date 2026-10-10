@@ -201,7 +201,8 @@ QString Element::selectedText(Ui::Text::Selection selection) const {
 	const auto &full = text();
 	const auto from = std::clamp(selection.from, 0, int(full.size()));
 	const auto till = std::clamp(selection.to, from, int(full.size()));
-	return full.mid(from, till - from);
+	// Without the direction marks that were added for showing.
+	return Ui::Text::StripIsolates(full.mid(from, till - from));
 }
 
 Ui::Text::Selection Element::adjustSelection(
@@ -310,7 +311,7 @@ void Element::ensureLoaded() {
 	}
 	if (_data.viaBot) {
 		const auto name = !_data.viaBot->handle.isEmpty()
-			? (u'@' + _data.viaBot->handle)
+			? Lang::Handle(_data.viaBot->handle)
 			: _data.viaBot->name;
 		if (!name.isEmpty()) {
 			_viaText = tr::lng_history_via_bot(tr::now, lt_bot, name);
@@ -1112,7 +1113,11 @@ void Element::paint(Painter &p, const PaintContext &context) {
 		if (context.highlight > 0. && !context.highlightRange.empty()) {
 			// The quoted part flashes, not the whole row.
 			if (geometry.selection.empty()) {
-				geometry.selection = context.highlightRange;
+				// The range is in the message text; the shown one has
+				// direction marks around its links.
+				geometry.selection = Ui::Text::IsolatedSelection(
+					_text.toString(),
+					context.highlightRange);
 			}
 		}
 		p.setPen(bubbleless()

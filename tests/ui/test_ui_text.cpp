@@ -25,6 +25,51 @@ private Q_SLOTS:
 		style::SetRightToLeft(false);
 	}
 
+	void isolatedLinks() {
+		using namespace Ui::Text;
+		const auto lri = QChar(0x2066);
+		const auto fsi = QChar(0x2068);
+		const auto pdi = QChar(0x2069);
+		const auto source = QStringLiteral("see @sara and #tag now");
+		auto parsed = ParseEntities(source, ParseAll);
+		// A formatting range over the mention and a bit around it.
+		parsed.entities.push_back({ EntityType::Bold, 2, 9, QString() });
+		const auto shown = IsolateLinks(parsed);
+		QCOMPARE(
+			shown.text,
+			QStringLiteral("see ") + lri + QStringLiteral("@sara") + pdi
+				+ QStringLiteral(" and ") + fsi + QStringLiteral("#tag") + pdi
+				+ QStringLiteral(" now"));
+		QCOMPARE(StripIsolates(shown.text), source);
+		auto links = 0;
+		for (const auto &entity : shown.entities) {
+			const auto part = shown.text.mid(entity.offset, entity.length);
+			if (entity.type == EntityType::Mention) {
+				QCOMPARE(part, QStringLiteral("@sara"));
+				++links;
+			} else if (entity.type == EntityType::Hashtag) {
+				QCOMPARE(part, QStringLiteral("#tag"));
+				++links;
+			} else if (entity.type == EntityType::Bold) {
+				// "e @sara an" with the marks of the mention inside.
+				QCOMPARE(StripIsolates(part), source.mid(2, 9));
+			}
+		}
+		QCOMPARE(links, 2);
+
+		// Selections map both ways ("sara" is 5..9 in the source).
+		const auto inShown = IsolatedSelection(shown.text, { 5, 9 });
+		QCOMPARE(shown.text.mid(inShown.from, inShown.to - inShown.from), QStringLiteral("sara"));
+		QCOMPARE(SourceSelection(shown.text, inShown), (Selection{ 5, 9 }));
+		const auto whole = SourceSelection(shown.text, { 0, int(shown.text.size()) });
+		QCOMPARE(whole, (Selection{ 0, int(source.size()) }));
+		QCOMPARE(IsolatedSelection(shown.text, { 0, int(source.size()) }).to, int(shown.text.size()));
+
+		// Nothing to isolate: untouched.
+		const auto plain = ParseEntities(QStringLiteral("plain text"), ParseAll);
+		QCOMPARE(IsolateLinks(plain).text, QStringLiteral("plain text"));
+	}
+
 	void normalizeSurrogates() {
 		// "a😀b": the emoji takes two UTF-16 units (offsets 1 and 2).
 		const auto text = U("a😀b");

@@ -161,7 +161,8 @@ void Conversations::join(
 }
 
 void Conversations::end(const QString &id, base::Guard guard, Fn<void()> done, FailCallback fail) {
-	call(u"conv.end"_s, QJsonObject{ { u"conversation"_s, id } }, guard, [=](const QJsonObject &) {
+	call(u"conv.end"_s, QJsonObject{ { u"conversation"_s, id } }, guard, [=, this](const QJsonObject &) {
+		markEndedLocally(id, u"manual"_s);
 		if (done) {
 			done();
 		}
@@ -179,11 +180,31 @@ void Conversations::requestContinue(
 }
 
 void Conversations::block(const QString &id, base::Guard guard, Fn<void()> done, FailCallback fail) {
-	call(u"conv.block"_s, QJsonObject{ { u"conversation"_s, id } }, guard, [=](const QJsonObject &) {
+	call(u"conv.block"_s, QJsonObject{ { u"conversation"_s, id } }, guard, [=, this](const QJsonObject &) {
+		markEndedLocally(id, u"blocked"_s);
 		if (done) {
 			done();
 		}
 	}, fail);
+}
+
+// The server's lifecycle event follows through sync; the row (and an open chat
+// screen) must not wait for it, the same as in the web client.
+void Conversations::markEndedLocally(const QString &id, const QString &reason) {
+	const auto chat = _session->chats().chatOfConversation(id);
+	if (chat.isEmpty()) {
+		return;
+	}
+	const auto ended = u"ended"_s;
+	_session->chats().patch(chat, [&](Chat &row) {
+		if (row.conversation) {
+			row.conversation->state = ended;
+			row.conversation->endReason = reason;
+			row.info.conversation = row.conversation;
+		}
+		row.canSend = false;
+	});
+	Q_EMIT stateChanged(chat, ended, ended);
 }
 
 // ---- the chat of a conversation

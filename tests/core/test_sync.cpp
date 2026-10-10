@@ -124,11 +124,14 @@ private Q_SLOTS:
 	void transientFrames();
 	void ptsSurvivesRestart();
 	void fallbackOnlyWhileDisconnected();
+	void offlineStartReadsStateAtOnce();
 
 };
 
 void TestSync::firstHelloAdoptsServerPts() {
 	auto harness = Harness();
+	// The socket is up before the session is ready: nothing is asked.
+	harness.transport.setOnline(true);
 	QVERIFY(harness.start());
 	QVERIFY(!harness.sync().pts());
 	QVERIFY(harness.transport.ptsProvider);
@@ -259,12 +262,14 @@ void TestSync::tooLongStartsOver() {
 		return Reply::Ok(QJsonObject{ { u"pts"_s, u"520"_s } });
 	});
 	const auto inboxLoads = harness.transport.count(u"chat.inbox"_s);
+	// (One state read happened at the start, before the connection was up.)
+	const auto stateReads = harness.transport.count(u"sync.state"_s);
 	QVERIFY(harness.messages().history(u"c1"_s).loaded);
 	harness.transport.emitFrame(Signal(Type::Resync));
 	QVERIFY(Test::WaitFor([&] { return !harness.sync().updating(); }));
 	Test::Settle();
 	QCOMPARE(harness.sync().pts().value_or(-1), 520);
-	QCOMPARE(harness.transport.count(u"sync.state"_s), 1);
+	QCOMPARE(harness.transport.count(u"sync.state"_s), stateReads + 1);
 	QCOMPARE(DifferenceFrom(harness), (QStringList{ u"100"_s, u"520"_s }));
 	// Everything cached is read again: the inbox now, timelines when opened.
 	QVERIFY(harness.transport.count(u"chat.inbox"_s) > inboxLoads);
@@ -603,6 +608,49 @@ void TestSync::fallbackOnlyWhileDisconnected() {
 	harness.transport.emitFrame(Hello(100));
 	QTest::qWait(5600);
 	QCOMPARE(harness.transport.count(u"sync.difference"_s), 2);
+}
+
+void TestSync::offlineStartReadsStateAtOnce() {
+	// The socket never connects (the HTTP fallback): the client must know its
+	// pts as soon as the session is ready, not at the first fallback tick,
+	// or what happens in between is never read.
+	auto harness = Harness();
+	harness.on(u"sync.state"_s, [](const Call &) {
+		return Reply::Ok(QJsonObject{ { u"pts"_s, u"300"_s } });
+	});
+	harness.on(u"sync.difference"_s, [](const Call &call) {
+		return (call.body.value("pts"_L1).toString() == u"300")
+			? Reply::Ok(Difference(301, QJsonArray{
+				Item(301, MessageJson(u"c1"_s, 11, u"u_sara"_s, u"early"_s)),
+			}))
+			: Reply::Ok(Difference(301, QJsonArray()));
+	});
+	QVERIFY(harness.start());
+	QVERIFY(Test::WaitFor([&] { return harness.sync().pts().has_value(); }, 1500));
+	QCOMPARE(harness.sync().pts().value_or(-1), 300);
+	QCOMPARE(harness.transport.count(u"sync.state"_s), 1);
+	QCOMPARE(harness.transport.count(u"sync.difference"_s), 0);
+	QVERIFY(!harness.sync().updating());
+	QCOMPARE(harness.transport.ptsProvider(), 300);
+
+	// An update that happened right after the start is read from that point
+	// by the very first difference.
+	auto loaded = false;
+	harness.messages().loadLatest(u"c1"_s, base::Guard(), [&] { loaded = true; });
+	QVERIFY(Test::WaitFor([&] { return loaded; }));
+	harness.sync().catchUp();
+	QVERIFY(Test::WaitFor([&] { return harness.sync().pts().value_or(-1) == 301; }));
+	QCOMPARE(DifferenceFrom(harness), (QStringList{ u"300"_s }));
+	const auto message = harness.messages().find(u"c1"_s, 11);
+	QVERIFY(message != nullptr);
+	QCOMPARE(message->text, u"early"_s);
+
+	// The connection comes up later, ahead of us: the difference fills in.
+	harness.transport.setOnline(true);
+	harness.transport.emitFrame(Hello(305));
+	QVERIFY(Test::WaitFor([&] { return harness.transport.count(u"sync.difference"_s) == 2; }));
+	QCOMPARE(DifferenceFrom(harness).back(), u"301"_s);
+	QCOMPARE(harness.transport.count(u"sync.state"_s), 1);
 }
 
 QTEST_GUILESS_MAIN(TestSync)

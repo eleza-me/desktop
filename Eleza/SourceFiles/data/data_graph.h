@@ -106,7 +106,11 @@ public:
 	void accountPhone(base::Guard guard, Fn<void(const QString &)> done);
 	// The latest data export ({} when there is none).
 	void latestExport(base::Guard guard, Fn<void(const QJsonObject &)> done, FailCallback fail = nullptr);
-	void requestExport(base::Guard guard, Fn<void(const QJsonObject &)> done, FailCallback fail = nullptr);
+	// A new export is confirmed by a code sent to the account's e-mail:
+	// requestExportCode -> { challenge_id, code_length, resend_after } (or
+	// the error export.email_required), then requestExport with the code.
+	void requestExportCode(const QString &deviceId, base::Guard guard, Fn<void(const QJsonObject &)> done, FailCallback fail = nullptr);
+	void requestExport(const QString &challengeId, const QString &code, const QString &deviceId, base::Guard guard, Fn<void(const QJsonObject &)> done, FailCallback fail = nullptr);
 
 Q_SIGNALS:
 	void settingsChanged();

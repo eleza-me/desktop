@@ -9,6 +9,7 @@
 #include "data/data_outbox.h"
 #include "data/data_session.h"
 #include "data/data_stickers.h"
+#include "history/history_bot_keyboard.h"
 #include "history/history_boxes.h"
 #include "history/history_logic.h"
 #include "history/history_tabbed_panel.h"
@@ -122,6 +123,7 @@ ComposeControls::ComposeControls(
 , _previewClose(Ui::CreateChild<Ui::IconButton>(this, st::historyComposeBarClose))
 , _recordCancel(Ui::CreateChild<Ui::IconButton>(this, st::historyRecordCancel))
 , _panel(Ui::CreateChild<TabbedPanel>(panelParent, _session))
+, _keyboard(Ui::CreateChild<BotKeyboard>(this))
 , _previewTimer([this] { checkPreview(); })
 , _draftTimer([this] {
 	if (_draft) {
@@ -140,6 +142,27 @@ ComposeControls::ComposeControls(
 	setupButtons();
 	setupDraft();
 	takePendingForward();
+	_keyboard->hide();
+	_keyboard->setPressedCallback([this](const QString &text) {
+		// Like typing the text and pressing send; a draft stays in the field.
+		if (_keyboardOneTime) {
+			_keyboardUsedSeq = ReplyKeyboardSeq(
+				_session->data().messages().history(_chatId).items);
+		}
+		_session->data().outbox().sendText(_chatId, text);
+		refreshBotKeyboard();
+		Q_EMIT sent();
+	});
+	connect(
+		&_session->data().messages(),
+		&Data::Messages::historyChanged,
+		this,
+		[this](const QString &chat) {
+			if (chat == _chatId) {
+				refreshBotKeyboard();
+			}
+		});
+	refreshBotKeyboard();
 	updateControls();
 }
 
@@ -1078,6 +1101,39 @@ void ComposeControls::showToast(const QString &text) {
 	_controller->showToast(std::move(config));
 }
 
+// ---- the bot's reply keyboard
+
+void ComposeControls::refreshBotKeyboard() {
+	const auto chat = _session->data().chats().chat(_chatId);
+	auto markup = std::optional<Data::ReplyMarkup>();
+	if (chat && chat->isBot) {
+		markup = CurrentReplyKeyboard(
+			_session->data().messages().history(_chatId).items,
+			_keyboardUsedSeq);
+	}
+	const auto was = keyboardHeight();
+	_keyboardOneTime = markup && markup->oneTime;
+	_keyboard->setRows(markup ? markup->keyboard : QVector<QStringList>());
+	_field->setPlaceholder((markup && !markup->placeholder.isEmpty())
+		? markup->placeholder
+		: tr::lng_chat_message_placeholder(tr::now));
+	const auto shown = !_keyboard->empty()
+		&& !recording()
+		&& (_mode != Mode::Edit);
+	if (_keyboard->isHidden() == shown || was != keyboardHeight()) {
+		_keyboard->setVisible(shown);
+		if (width() > 0) {
+			resizeToWidth(width());
+		}
+	}
+}
+
+int ComposeControls::keyboardHeight() const {
+	return (_keyboard->empty() || recording() || _mode == Mode::Edit)
+		? 0
+		: _keyboard->height();
+}
+
 // ---- layout and painting
 
 void ComposeControls::updateControls() {
@@ -1097,6 +1153,13 @@ void ComposeControls::updateControls() {
 	_send->setDisabled(_editSaving);
 	_barClose->setVisible(_mode != Mode::None && !rec);
 	_previewClose->setVisible(previewHeight() > 0);
+	const auto keyboard = !_keyboard->empty() && !rec && !edit;
+	if (_keyboard->isHidden() == keyboard) {
+		_keyboard->setVisible(keyboard);
+		if (width() > 0) {
+			resizeToWidth(width());
+		}
+	}
 	updateFieldGeometry();
 	update();
 }
@@ -1131,12 +1194,16 @@ int ComposeControls::resizeGetHeight(int newWidth) {
 	const auto row = recording()
 		? int(st::historyComposeField.heightMin)
 		: _field->height();
+	if (!_keyboard->empty()) {
+		_keyboard->resizeToWidth(inner);
+	}
 	const auto result = st::lineWidth
 		+ barHeight()
 		+ previewHeight()
 		+ padding.top()
 		+ row
-		+ padding.bottom();
+		+ padding.bottom()
+		+ keyboardHeight();
 	// Children of a section that is still sliding in get no resize event:
 	// place them for the size that is about to be set.
 	layoutControls(newWidth, result);
@@ -1166,8 +1233,12 @@ void ComposeControls::layoutControls(int width, int height) {
 	const auto side = (width - inner) / 2;
 	const auto barsBottom = st::lineWidth + barHeight() + previewHeight();
 	const auto rowTop = barsBottom + padding.top();
-	const auto rowHeight = height - rowTop - padding.bottom();
+	const auto keyboard = keyboardHeight();
+	const auto rowHeight = height - rowTop - padding.bottom() - keyboard;
 	const auto buttonTop = rowTop + rowHeight - _send->height();
+	if (keyboard > 0) {
+		_keyboard->move(side, height - keyboard);
+	}
 	const auto edit = (_mode == Mode::Edit);
 
 	auto left = side + padding.left();
@@ -1241,7 +1312,7 @@ void ComposeControls::paintEvent(QPaintEvent *e) {
 			content.x(),
 			top + padding.top(),
 			content.width(),
-			height() - top - padding.top() - padding.bottom()));
+			height() - top - padding.top() - padding.bottom() - keyboardHeight()));
 	}
 }
 

@@ -88,6 +88,14 @@ private Q_SLOTS:
 		QCOMPARE(RouteFromWebPath("/chats/archived")->type, RouteType::Chats);
 		QCOMPARE(RouteFromWebPath("/u/Sara")->toString(), QStringLiteral("u/sara"));
 		QCOMPARE(RouteFromWebPath("/u/sara/followers")->toString(), QStringLiteral("u/sara"));
+		QCOMPARE(RouteFromWebPath("/@Sara")->toString(), QStringLiteral("u/sara"));
+		QCOMPARE(RouteFromWebPath("/@ali.r/")->toString(), QStringLiteral("u/ali.r"));
+		QVERIFY(!RouteFromWebPath("/@").has_value());
+		QCOMPARE(RouteFromWebPath("/p/p1")->toString(), QStringLiteral("eli/post/p1"));
+		QCOMPARE(RouteFromWebPath("/s/abcp1")->toString(), QStringLiteral("eli/share/abcp1"));
+		QCOMPARE(ParseRoute("eli/share/abcp1").type, RouteType::SharedPost);
+		QCOMPARE(Routes::SharedPost("x1"), QStringLiteral("eli/share/x1"));
+		QVERIFY(!ParseRoute("eli/share").valid());
 		QCOMPARE(RouteFromWebPath("/eli/post/p1")->toString(), QStringLiteral("eli/post/p1"));
 		QCOMPARE(RouteFromWebPath("/eli/thread/p1")->toString(), QStringLiteral("eli/post/p1"));
 		QCOMPARE(
@@ -98,7 +106,8 @@ private Q_SLOTS:
 		QCOMPARE(RouteFromWebPath("/")->type, RouteType::Eli);
 		// Pages without a screen in the desktop app.
 		QVERIFY(!RouteFromWebPath("/terms").has_value());
-		QVERIFY(!RouteFromWebPath("/s/abc").has_value());
+		QVERIFY(!RouteFromWebPath("/s").has_value());
+		QVERIFY(!RouteFromWebPath("/p").has_value());
 		QVERIFY(!RouteFromWebPath("/eli/sound/x").has_value());
 	}
 };

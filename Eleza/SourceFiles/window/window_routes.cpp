@@ -46,6 +46,7 @@ namespace {
 	case RouteType::Handle: return QStringLiteral("u/") + id;
 	case RouteType::Eli: return QStringLiteral("eli");
 	case RouteType::Post: return QStringLiteral("eli/post/") + id;
+	case RouteType::SharedPost: return QStringLiteral("eli/share/") + id;
 	case RouteType::Topic: return QStringLiteral("eli/topic/") + id;
 	case RouteType::EliNotifications:
 		return QStringLiteral("eli/notifications");
@@ -119,6 +120,8 @@ Route ParseRoute(const QString &route) {
 			result = Make(RouteType::EliNotifications);
 		} else if (count == 3 && parts[1] == QStringLiteral("post")) {
 			result = Make(RouteType::Post, parts[2]);
+		} else if (count == 3 && parts[1] == QStringLiteral("share")) {
+			result = Make(RouteType::SharedPost, parts[2]);
 		} else if (count == 3 && parts[1] == QStringLiteral("topic")) {
 			auto slug = parts[2];
 			if (slug.startsWith(QLatin1Char('#'))) {
@@ -141,6 +144,7 @@ Route ParseRoute(const QString &route) {
 		|| (result.type == RouteType::User)
 		|| (result.type == RouteType::Handle)
 		|| (result.type == RouteType::Post)
+		|| (result.type == RouteType::SharedPost)
 		|| (result.type == RouteType::Topic)
 		|| (result.type == RouteType::Conversation);
 	if (needsId && result.id.isEmpty()) {
@@ -185,6 +189,14 @@ std::optional<Route> RouteFromWebPath(
 	} else if (parts[0] == QStringLiteral("u") && count >= 2) {
 		// "/u/<handle>/followers" opens the profile.
 		result = ParseRoute(QStringLiteral("u/") + Encode(parts[1]));
+	} else if (parts[0].startsWith(QLatin1Char('@')) && count == 1) {
+		// The public address of a profile: "/@sara".
+		result = ParseRoute(QStringLiteral("u/") + Encode(parts[0].mid(1)));
+	} else if (parts[0] == QStringLiteral("p") && count == 2) {
+		// The public address of a post.
+		result = Make(RouteType::Post, parts[1]);
+	} else if (parts[0] == QStringLiteral("s") && count == 2) {
+		result = Make(RouteType::SharedPost, parts[1]);
 	} else if (parts[0] == QStringLiteral("eli")) {
 		if (count == 3 && parts[1] == QStringLiteral("thread")) {
 			result = Make(RouteType::Post, parts[2]);
@@ -253,6 +265,10 @@ QString Eli() {
 
 QString Post(const QString &postId) {
 	return Make(RouteType::Post, postId).toString();
+}
+
+QString SharedPost(const QString &slug) {
+	return Make(RouteType::SharedPost, slug).toString();
 }
 
 QString Topic(const QString &slug) {

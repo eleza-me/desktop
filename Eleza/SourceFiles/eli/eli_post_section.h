@@ -37,6 +37,7 @@ public:
 		const QString &postId);
 
 	QString sectionKey() const override;
+	int toastBottomSkip() const override;
 	void setInnerFocus() override;
 	bool onBackRequest() override;
 

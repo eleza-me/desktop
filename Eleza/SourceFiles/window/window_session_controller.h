@@ -42,6 +42,7 @@
 #include "window/window_registry.h"
 
 #include <QtCore/QObject>
+#include <QtCore/QStringList>
 
 namespace Main {
 class Account;
@@ -56,6 +57,13 @@ namespace Window {
 
 class MainLayout;
 class MainWindow;
+
+// Where the user is: the tab and the routes of every tab's main stack (bottom
+// to top). Taken before the window content is rebuilt and restored after.
+struct LayoutState {
+	Tab tab = Tab::Chats;
+	QStringList stacks[kTabsCount];
+};
 
 struct SectionShow {
 	// true: push over the current section; false: replace the whole stack.
@@ -83,7 +91,11 @@ public:
 	[[nodiscard]] Ui::RpWidget *bodyWidget() const;
 
 	// ---- tabs
+	// Like a click on the rail: on the current tab it returns to the tab's
+	// list (closes what is open in the main column).
 	void showTab(Tab tab);
+	// Only makes the tab current; what it has open stays.
+	void activateTab(Tab tab);
 	[[nodiscard]] Tab currentTab() const;
 	void setSideSection(Tab tab, SectionFactory factory);
 	[[nodiscard]] SectionWidget *sideSection(Tab tab) const; // null until first shown
@@ -104,6 +116,9 @@ public:
 	[[nodiscard]] SectionWidget *mainSection() const; // the visible one, or null
 	[[nodiscard]] int mainStackDepth() const;
 	[[nodiscard]] bool isSingleColumn() const;
+
+	[[nodiscard]] LayoutState saveState() const;
+	void restoreState(const LayoutState &state);
 
 	// ---- layers and toasts
 	void show(

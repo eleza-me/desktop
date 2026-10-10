@@ -6,7 +6,9 @@
 // and `sync.difference` is only the fallback for a gap (a skipped pts, a
 // Resync signal, a log that is too long) or for a connection that stays
 // down - then, and only then, a timer reads the difference every
-// `realtime.fallback_sync_interval`.
+// `realtime.fallback_sync_interval`. A client that starts without a stored
+// pts while the connection is down reads `sync.state` at once, so the
+// fallback has a point to read the difference from.
 //
 // Applied update kinds: message, edited, deleted, live_stopped, reaction,
 // read, played, draft, cleared, member, state, message_pinned,

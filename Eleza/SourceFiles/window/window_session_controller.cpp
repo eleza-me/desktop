@@ -1,5 +1,7 @@
 #include "window/window_session_controller.h"
 
+#include "core/core_application.h"
+#include "core/core_settings.h"
 #include "data/data_chats.h"
 #include "data/data_notifications.h"
 #include "data/data_session.h"
@@ -30,6 +32,12 @@ SessionController::SessionController(MainWindow *window, Main::Session *session)
 		&Data::Notifications::unreadChanged,
 		this,
 		[this] { refreshBadges(); });
+	// «شمارش گفتگوهای بی‌صدا» changes what the taskbar badge counts.
+	QObject::connect(
+		&Core::App().settings(),
+		&Core::Settings::changed,
+		this,
+		[this] { refreshBadges(); });
 }
 
 SessionController::~SessionController() = default;
@@ -52,8 +60,13 @@ void SessionController::setLayout(MainLayout *layout) {
 void SessionController::refreshBadges() {
 	auto &data = _session->data();
 	const auto chats = data.chats().unreadChats();
-	// The window title and the taskbar / tray icon count unread chats.
-	_window->setUnreadCount(chats);
+	// The window title and the taskbar / tray icon count unread chats; the
+	// muted ones only when the user asked for them (a grey badge when there
+	// is nothing else).
+	const auto muted = Core::App().settings().notifications().countUnreadMuted
+		? data.chats().unreadMutedChats()
+		: 0;
+	_window->setUnreadCount(chats + muted, (chats == 0) && (muted > 0));
 	if (_layout) {
 		_layout->setTabBadge(Tab::Chats, chats, false);
 		_layout->setTabBadge(Tab::Eli, data.notifications().unread(), false);
@@ -78,6 +91,12 @@ void SessionController::requestLogout() {
 
 void SessionController::showTab(Tab tab) {
 	if (_layout) {
+		_layout->showTab(tab);
+	}
+}
+
+void SessionController::activateTab(Tab tab) {
+	if (_layout && _layout->currentTab() != tab) {
 		_layout->showTab(tab);
 	}
 }
@@ -136,6 +155,16 @@ void SessionController::clearMainStack(Tab tab) {
 	}
 }
 
+LayoutState SessionController::saveState() const {
+	return _layout ? _layout->saveState() : LayoutState();
+}
+
+void SessionController::restoreState(const LayoutState &state) {
+	if (_layout) {
+		_layout->restoreState(state);
+	}
+}
+
 SectionWidget *SessionController::mainSection() const {
 	return _layout ? _layout->mainSection() : nullptr;
 }
@@ -169,10 +198,19 @@ void SessionController::hideLayers() {
 }
 
 void SessionController::showToast(const QString &text) {
-	_window->showToast(text);
+	auto config = Ui::Toast::Config();
+	config.text = text;
+	showToast(std::move(config));
 }
 
 void SessionController::showToast(Ui::Toast::Config config) {
+	// Over a box the toast sits at the bottom of the window; otherwise it
+	// stays clear of what the visible section keeps at its bottom.
+	if (!config.bottomSkip && !_window->layers()->hasLayers()) {
+		if (const auto section = mainSection()) {
+			config.bottomSkip = section->toastBottomSkip();
+		}
+	}
 	Ui::Toast::Show(_window->bodyWidget(), std::move(config));
 }
 

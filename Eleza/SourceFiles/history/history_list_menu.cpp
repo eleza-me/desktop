@@ -159,10 +159,12 @@ void ListWidget::showContextMenu(
 		};
 		menu->addItem(std::move(copy));
 		// The quote must be an exact part of the message text.
-		if (_canWrite && element->text() == message.text) {
+		// (The shown text has direction marks around its links.)
+		if (_canWrite
+			&& Ui::Text::StripIsolates(element->text()) == message.text) {
 			const auto quote = MakeQuote(
 				message.text,
-				selection,
+				Ui::Text::SourceSelection(element->text(), selection),
 				config ? config->maxQuoteLength() : 0);
 			if (quote) {
 				menu->addAction(tr::lng_chat_quote(tr::now), [=, this] {

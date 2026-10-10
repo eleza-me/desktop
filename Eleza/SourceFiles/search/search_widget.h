@@ -52,11 +52,13 @@ public:
 	QString sectionKey() const override;
 	void setInnerFocus() override;
 	bool onBackRequest() override;
+	bool handleCommand(Window::Command command) override;
 
 protected:
 	void resizeEvent(QResizeEvent *e) override;
 	void paintEvent(QPaintEvent *e) override;
 	void showEvent(QShowEvent *e) override;
+	void keyPressEvent(QKeyEvent *e) override;
 	bool eventFilter(QObject *object, QEvent *event) override;
 
 private:

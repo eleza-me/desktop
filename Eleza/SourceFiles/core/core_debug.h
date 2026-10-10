@@ -13,6 +13,7 @@
 //   key:Return         a key or a shortcut: Return, Esc, Tab, Backspace, Up, Ctrl+A …
 //   paste:text         puts the text on the clipboard and presses Ctrl+V
 //   route:chat/c1      opens a route (as --debug-route does)
+//   resize:520x800     resizes the window (wide <-> single column)
 //   wait:300           waits (milliseconds)
 //   grab:/tmp/a.png    saves a grab right now and continues
 //

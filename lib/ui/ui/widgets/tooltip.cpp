@@ -17,6 +17,7 @@ namespace {
 constexpr auto kShowDelay = 600;
 
 QPointer<Tooltip> Instance;
+bool HoverSuppressed = false;
 
 [[nodiscard]] QStringList WrapLines(const QString &text, int maxWidth) {
 	auto result = QStringList();
@@ -83,6 +84,9 @@ public:
 		_timer.setSingleShot(true);
 		_timer.setInterval(kShowDelay);
 		QObject::connect(&_timer, &QTimer::timeout, this, [this] {
+			if (HoverSuppressed) {
+				return;
+			}
 			if (_widget && _widget->underMouse() && _text) {
 				const auto text = _text();
 				if (!text.isEmpty()) {
@@ -221,6 +225,17 @@ void Tooltip::paintEvent(QPaintEvent *e) {
 
 void InstallTooltip(QWidget *widget, std::function<QString()> text) {
 	new Watcher(widget, std::move(text));
+}
+
+void SetHoverTooltipsSuppressed(bool suppressed) {
+	HoverSuppressed = suppressed;
+	if (suppressed) {
+		Tooltip::Hide();
+	}
+}
+
+bool HoverTooltipsSuppressed() {
+	return HoverSuppressed;
 }
 
 } // namespace Ui

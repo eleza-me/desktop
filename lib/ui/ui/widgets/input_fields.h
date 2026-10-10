@@ -298,6 +298,7 @@ public:
 		QWidget *parent,
 		const style::InputField &st = st::defaultInputField,
 		const QString &countryCode = QStringLiteral("98"));
+	~PhoneInput();
 
 	void setCountryCode(const QString &code); // digits without "+"
 	[[nodiscard]] QString countryCode() const;
@@ -409,6 +410,7 @@ public:
 		QWidget *parent,
 		const QString &placeholder = QString(),
 		const style::SearchField &st = st::defaultSearchField);
+	~SearchField();
 
 	[[nodiscard]] QString text() const;
 	void setText(const QString &text);

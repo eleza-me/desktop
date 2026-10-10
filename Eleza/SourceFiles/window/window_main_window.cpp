@@ -8,6 +8,8 @@
 #include "ui/toast/toast.h"
 #include "ui/ui_utility.h"
 #include "window/window_main_layout.h"
+#include "window/window_section_widget.h"
+#include "window/window_shortcuts.h"
 #include "window/window_upgrade_blocker.h"
 #include "window/window_session_controller.h"
 #include "styles/style_window.h"
@@ -224,29 +226,77 @@ void MainWindow::refreshIcons() {
 }
 
 void MainWindow::setupShortcuts() {
-	const auto add = [this](const QKeySequence &keys, std::function<void()> callback) {
-		const auto shortcut = new QShortcut(keys, this);
+	// The one table of the app's shortcuts (window_shortcuts.h).
+	for (const auto &entry : Shortcuts()) {
+		const auto shortcut = new QShortcut(entry.keys, this);
 		shortcut->setContext(Qt::WindowShortcut);
-		QObject::connect(shortcut, &QShortcut::activated, this, std::move(callback));
-	};
-	const auto tab = [this](Tab value) {
-		return [this, value] {
-			if (_controller && !_upgrade && !_layers->hasLayers()) {
-				_controller->showTab(value);
-			}
-		};
-	};
-	add(QKeySequence(Qt::CTRL | Qt::Key_1), tab(Tab::Eli));
-	add(QKeySequence(Qt::CTRL | Qt::Key_2), tab(Tab::Chats));
-	add(QKeySequence(Qt::CTRL | Qt::Key_3), tab(Tab::Search));
-	add(QKeySequence(Qt::CTRL | Qt::Key_4), tab(Tab::Me));
-	add(QKeySequence(Qt::CTRL | Qt::Key_Comma), tab(Tab::Settings));
-	add(QKeySequence(Qt::CTRL | Qt::Key_Q), [] { Core::App().quit(); });
-	add(QKeySequence(Qt::CTRL | Qt::Key_W), [this] { close(); });
-	add(QKeySequence(Qt::ALT | Qt::Key_Left), [this] { handleBack(); });
-	add(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_D), [] {
+		const auto command = entry.command;
+		const auto run = [this, command] { runCommand(command); };
+		QObject::connect(shortcut, &QShortcut::activated, this, run);
+		QObject::connect(shortcut, &QShortcut::activatedAmbiguously, this, run);
+	}
+}
+
+void MainWindow::runCommand(Command command) {
+	switch (command) {
+	case Command::Quit:
+		Core::App().quit();
+		return;
+	case Command::ToggleTheme:
 		Core::App().toggleTheme();
-	});
+		return;
+	case Command::Back:
+		handleBack();
+		return;
+	case Command::Close:
+		if (_upgrade) {
+			close();
+		} else if (_layers->hasLayers()) {
+			_layers->hideTopLayer();
+		} else if (!_controller
+			|| !_controller->mainSection()
+			|| !_controller->showBack()) {
+			close();
+		}
+		return;
+	default: break;
+	}
+	if (!_controller || _upgrade || _layers->hasLayers()) {
+		// The intro and the boxes have their own keys.
+		return;
+	}
+	const auto tab = [&]() -> std::optional<Tab> {
+		switch (command) {
+		case Command::ShowTabEli: return Tab::Eli;
+		case Command::ShowTabChats: return Tab::Chats;
+		case Command::ShowTabSearch: return Tab::Search;
+		case Command::ShowTabMe: return Tab::Me;
+		case Command::ShowTabSettings: return Tab::Settings;
+		default: return std::nullopt;
+		}
+	}();
+	if (tab) {
+		_controller->showTab(*tab);
+		return;
+	}
+	// The section with the keyboard focus first, then the other visible one.
+	const auto side = _controller->isSingleColumn() && _controller->mainSection()
+		? nullptr
+		: _controller->sideSection(_controller->currentTab());
+	const auto main = _controller->mainSection();
+	const auto focused = QApplication::focusWidget();
+	const auto sideFocused = side
+		&& focused
+		&& (focused == side || side->isAncestorOf(focused));
+	const auto first = sideFocused ? side : main;
+	const auto second = sideFocused ? main : side;
+	if ((first && first->handleCommand(command))
+		|| (second && second->handleCommand(command))) {
+		return;
+	}
+	[[maybe_unused]] const auto handled = RunCommandHandlers(
+		command,
+		_controller.get());
 }
 
 void MainWindow::setupTray() {

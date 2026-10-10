@@ -94,13 +94,15 @@ int Chats::unreadRequests() const {
 
 void Chats::recount() {
 	auto unread = 0;
+	auto muted = 0;
 	for (const auto &chat : _chats) {
-		if (!chat.archived && !chat.muted && !chat.isRequest() && chat.unread > 0) {
-			++unread;
+		if (!chat.archived && !chat.isRequest() && chat.unread > 0) {
+			++(chat.muted ? muted : unread);
 		}
 	}
-	if (_unreadChats != unread) {
+	if (_unreadChats != unread || _unreadMutedChats != muted) {
 		_unreadChats = unread;
+		_unreadMutedChats = muted;
 		Q_EMIT unreadChanged();
 	}
 }

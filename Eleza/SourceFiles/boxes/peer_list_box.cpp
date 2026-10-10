@@ -3,6 +3,7 @@
 #include "data/data_chats.h"
 #include "data/data_session.h"
 #include "data/data_users.h"
+#include "lang/lang_format.h"
 #include "lang_auto.h"
 #include "main/main_session.h"
 #include "support/chat_text.h"
@@ -32,9 +33,7 @@ PeerListRow PeerListRow::FromUser(const Data::User &user) {
 	result.title = user.deleted
 		? tr::lng_deleted_account(tr::now)
 		: user.displayName;
-	result.subtitle = user.handle.isEmpty()
-		? QString()
-		: (QLatin1Char('@') + user.handle);
+	result.subtitle = Lang::Handle(user.handle);
 	result.verified = user.verified;
 	if (user.deleted) {
 		result.special = Ui::UserpicKind::Deleted;
@@ -513,7 +512,7 @@ public:
 				if (!chat.peerUserId.isEmpty() && !chat.anonymous) {
 					const auto user = session->data().users().get(chat.peerUserId);
 					if (!user.handle.isEmpty()) {
-						row.subtitle = QLatin1Char('@') + user.handle;
+						row.subtitle = Lang::Handle(user.handle);
 					}
 				}
 				rows.push_back(row);

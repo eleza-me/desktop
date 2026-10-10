@@ -6,6 +6,8 @@
 #include "ui/ui_phrases.h"
 #include "ui/ui_utility.h"
 
+#include <QtCore/QCoreApplication>
+#include <QtCore/QMetaMethod>
 #include <QtCore/QMimeData>
 #include <QtCore/QTimerEvent>
 #include <QtGui/QAbstractTextDocumentLayout>
@@ -133,6 +135,12 @@ public:
 	explicit Inner(InputField *owner) : QTextEdit(owner), _owner(owner) {
 	}
 
+	// The owner is being destroyed: the focus leaves this widget inside
+	// ~QWidget of the owner, when there is no InputField to tell any more.
+	void detach() {
+		_owner = nullptr;
+	}
+
 protected:
 	void focusInEvent(QFocusEvent *e) override {
 		QTextEdit::focusInEvent(e);
@@ -140,8 +148,11 @@ protected:
 	}
 	void focusOutEvent(QFocusEvent *e) override {
 		QTextEdit::focusOutEvent(e);
-		_owner->innerFocusChanged(false);
+		if (_owner) {
+			_owner->innerFocusChanged(false);
+		}
 	}
+
 	void keyPressEvent(QKeyEvent *e) override {
 		if (!_owner->innerKeyPress(e)) {
 			QTextEdit::keyPressEvent(e);
@@ -229,7 +240,9 @@ InputField::InputField(
 	}
 }
 
-InputField::~InputField() = default;
+InputField::~InputField() {
+	_inner->detach();
+}
 
 QString InputField::text() const {
 	return _lastText;
@@ -489,8 +502,17 @@ bool InputField::innerKeyPress(QKeyEvent *e) {
 	const auto key = e->key();
 	const auto modifiers = e->modifiers();
 	if (key == Qt::Key_Escape) {
-		e->ignore();
-		emit cancelled();
+		// Whoever listens to cancelled() handles the key. Without a listener
+		// it travels on to the parents (a box, the window's "back"); never
+		// both, or one press would go back twice.
+		static const auto signal = QMetaMethod::fromSignal(
+			&InputField::cancelled);
+		if (isSignalConnected(signal)) {
+			e->accept();
+			emit cancelled();
+		} else {
+			e->ignore();
+		}
 		return true;
 	} else if (key == Qt::Key_Return || key == Qt::Key_Enter) {
 		const auto ctrl = (modifiers & (Qt::ControlModifier | Qt::MetaModifier))
@@ -653,6 +675,11 @@ public:
 		setStyle(style);
 	}
 
+	// See InputField::Inner::detach().
+	void detach() {
+		_owner = nullptr;
+	}
+
 protected:
 	void focusInEvent(QFocusEvent *e) override {
 		QLineEdit::focusInEvent(e);
@@ -660,8 +687,11 @@ protected:
 	}
 	void focusOutEvent(QFocusEvent *e) override {
 		QLineEdit::focusOutEvent(e);
-		_owner->innerFocusChanged(false);
+		if (_owner) {
+			_owner->innerFocusChanged(false);
+		}
 	}
+
 	void keyPressEvent(QKeyEvent *e) override {
 		if (!_owner->innerKeyPress(e)) {
 			QLineEdit::keyPressEvent(e);
@@ -717,7 +747,9 @@ MaskedInputField::MaskedInputField(
 	}
 }
 
-MaskedInputField::~MaskedInputField() = default;
+MaskedInputField::~MaskedInputField() {
+	_inner->detach();
+}
 
 QString MaskedInputField::text() const {
 	return _lastText;
@@ -910,8 +942,15 @@ void MaskedInputField::innerTextChanged() {
 bool MaskedInputField::innerKeyPress(QKeyEvent *e) {
 	const auto key = e->key();
 	if (key == Qt::Key_Escape) {
-		e->ignore();
-		emit cancelled();
+		// The same rule as InputField: a listener handles it, or the parents.
+		static const auto signal = QMetaMethod::fromSignal(
+			&MaskedInputField::cancelled);
+		if (isSignalConnected(signal)) {
+			e->accept();
+			emit cancelled();
+		} else {
+			e->ignore();
+		}
 		return true;
 	} else if (key == Qt::Key_Return || key == Qt::Key_Enter) {
 		emit submitted(e->modifiers());
@@ -1248,6 +1287,13 @@ PhoneInput::PhoneInput(
 	setFocusProxy(_number);
 }
 
+PhoneInput::~PhoneInput() {
+	// The fields are children: they lose the focus inside ~QWidget, when the
+	// handlers above would run on what is left of this object.
+	QObject::disconnect(_code, nullptr, this, nullptr);
+	QObject::disconnect(_number, nullptr, this, nullptr);
+}
+
 void PhoneInput::setCountryCode(const QString &code) {
 	_code->setText(code);
 }
@@ -1539,8 +1585,14 @@ void CodeInput::keyPressEvent(QKeyEvent *e) {
 			emit finished(_digits);
 		}
 	} else if (key == Qt::Key_Escape) {
-		e->ignore();
-		emit cancelled();
+		static const auto signal = QMetaMethod::fromSignal(
+			&CodeInput::cancelled);
+		if (isSignalConnected(signal)) {
+			e->accept();
+			emit cancelled();
+		} else {
+			e->ignore();
+		}
 	} else if (!e->text().isEmpty()
 		&& !(e->modifiers() & (Qt::ControlModifier | Qt::MetaModifier))) {
 		insertDigits(e->text());
@@ -1688,10 +1740,20 @@ SearchField::SearchField(
 		emit submitted();
 	});
 	QObject::connect(_field, &InputField::cancelled, this, [this] {
+		static const auto signal = QMetaMethod::fromSignal(
+			&SearchField::cancelled);
 		if (!_field->empty()) {
 			_field->clear();
-		} else {
+		} else if (isSignalConnected(signal)) {
 			emit cancelled();
+		} else if (const auto parent = parentWidget()) {
+			// Nobody handles an Esc in the empty field here: it goes on to
+			// the parents as if the field had not seen it.
+			auto event = QKeyEvent(
+				QEvent::KeyPress,
+				Qt::Key_Escape,
+				Qt::NoModifier);
+			QCoreApplication::sendEvent(parent, &event);
 		}
 	});
 	QObject::connect(_field, &InputField::focusedChanged, this, [this] {
@@ -1700,6 +1762,11 @@ SearchField::SearchField(
 	setFocusProxy(_field);
 	setCursor(style::cur_text);
 	resize(width(), _st.height);
+}
+
+SearchField::~SearchField() {
+	// As in ~PhoneInput: no signals of the field after this point.
+	QObject::disconnect(_field, nullptr, this, nullptr);
 }
 
 QString SearchField::text() const {

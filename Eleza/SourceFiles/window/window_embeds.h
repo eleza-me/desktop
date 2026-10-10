@@ -29,6 +29,14 @@
 //           return Ui::Owned<Ui::RpWidget>(new Conversation::TopicsList(parent, controller)); } });
 //
 // The widget of a sub-tab fills the area below the segmented control and scrolls itself.
+//
+// Chat menu fillers (the context menu of a chat row and the «…» menu of the chat
+// screen get the same extra actions from the module that owns a kind of chat):
+//
+//   // conversation/conversation_module.cpp
+//   Window::RegisterChatMenuFiller(Conversation::FillChatMenu);  // «پایان گفتگو», «مسدود کردن»
+//   // dialogs/dialogs_menu.cpp, history/history_widget.cpp
+//   Window::FillChatMenu(menu, controller, chatId);              // after their own actions
 #pragma once
 
 #include "ui/rp_widget.h"
@@ -38,6 +46,10 @@
 #include <QtCore/QVector>
 
 #include <functional>
+
+namespace Ui {
+class PopupMenu;
+} // namespace Ui
 
 namespace Window {
 
@@ -88,6 +100,19 @@ struct SideSubTab {
 		QWidget *parent,
 		SessionController *controller)> factory;
 };
+
+using ChatMenuFiller = std::function<void(
+	Ui::PopupMenu *menu,
+	SessionController *controller,
+	const QString &chatId)>;
+
+void RegisterChatMenuFiller(ChatMenuFiller filler);
+[[nodiscard]] bool HasChatMenuFillers();
+// Every registered filler appends what it has for this chat (often nothing).
+void FillChatMenu(
+	Ui::PopupMenu *menu,
+	SessionController *controller,
+	const QString &chatId);
 
 void RegisterSideSubTab(Tab tab, SideSubTab subTab);
 // Sorted by order.

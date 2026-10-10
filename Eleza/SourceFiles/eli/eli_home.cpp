@@ -25,6 +25,7 @@
 #include "ui/wrap/vertical_layout.h"
 #include "window/window_routes.h"
 #include "window/window_session_controller.h"
+#include "window/window_shortcuts.h"
 #include "styles/style_eli.h"
 
 #include <QtCore/QMimeData>
@@ -349,6 +350,8 @@ HomeSection::HomeSection(
 	});
 	_badge = new Ui::UnreadBadge(_bar, st::smallBadge);
 	Ui::MakeTransparentForMouse(_badge);
+	// The bar places its actions in its own resize, which may come after ours.
+	_bell->installEventFilter(this);
 	connect(&data.notifications(), &Data::Notifications::unreadChanged, this, [this] {
 		updateBadge();
 	});
@@ -693,8 +696,21 @@ bool HomeSection::eventFilter(QObject *object, QEvent *event) {
 				}
 			});
 		}
+	} else if (object == _bell
+		&& (event->type() == QEvent::Move
+			|| event->type() == QEvent::Resize
+			|| event->type() == QEvent::Show)) {
+		placeBadge();
 	}
 	return SectionWidget::eventFilter(object, event);
+}
+
+bool HomeSection::handleCommand(Window::Command command) {
+	if (command == Window::Command::Refresh) {
+		refreshCurrent();
+		return true;
+	}
+	return false;
 }
 
 void HomeSection::keyPressEvent(QKeyEvent *e) {

@@ -40,4 +40,10 @@ private:
 // Shows `text()` after a short hover over `widget`; hides on leave / press.
 void InstallTooltip(QWidget *widget, std::function<QString()> text);
 
+// Hover tooltips are not shown while suppressed (scripted screenshot runs: the
+// pointer of a headless platform rests at the window origin and would raise
+// the tooltip of whatever is there). Manual Tooltip::Show() is not affected.
+void SetHoverTooltipsSuppressed(bool suppressed);
+[[nodiscard]] bool HoverTooltipsSuppressed();
+
 } // namespace Ui

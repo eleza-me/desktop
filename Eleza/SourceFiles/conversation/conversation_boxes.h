@@ -14,6 +14,10 @@
 
 class QWidget;
 
+namespace Ui {
+class PopupMenu;
+} // namespace Ui
+
 namespace Window {
 class SessionController;
 } // namespace Window
@@ -59,6 +63,14 @@ void ShowTopicMenu(
 	Window::SessionController *controller,
 	const Card &card,
 	const QPoint &globalPosition);
+
+// The conversation actions of a chat's menus (the chat list row, the chat's
+// «…»): «پایان گفتگو» while it runs, «مسدود کردن» for a masked counterpart.
+// Adds nothing for a direct chat. Registered as a Window::ChatMenuFiller.
+void FillChatMenu(
+	Ui::PopupMenu *menu,
+	Window::SessionController *controller,
+	const QString &chatId);
 
 // Where a conversation id leads for me: my waiting topic -> the radar, a
 // conversation I take part in -> its chat, somebody's open topic -> the join box.

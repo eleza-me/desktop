@@ -101,7 +101,7 @@ protected:
 				st::settingsProfileStatusTop,
 				width(),
 				st::settingsProfileStatusFont->elided(
-					QLatin1Char('@') + me.handle,
+					Lang::Handle(me.handle),
 					available));
 		}
 	}

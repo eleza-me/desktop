@@ -633,6 +633,15 @@ QString Widget::sectionKey() const {
 	return QString();
 }
 
+QString Widget::restoreRoute() const {
+	switch (_source.type) {
+	case Source::Type::Me: return QString();
+	case Source::Type::UserId: return Window::Routes::User(_source.value);
+	case Source::Type::Handle: return Window::Routes::Handle(_source.value);
+	}
+	return QString();
+}
+
 void Widget::showFinished() {
 	_scroll->setFocus();
 }

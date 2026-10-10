@@ -387,8 +387,6 @@ private Q_SLOTS:
 			RemainingText(now / 1000 + 3 * 86400, now),
 			tr::lng_conv_days_left(tr::now, lt_count, 3.));
 
-		QCOMPARE(ReportReasonTitle(QStringLiteral("spam")), U("هرزنامه"));
-		QCOMPARE(ReportReasonTitle(QStringLiteral("made_up")), QStringLiteral("made_up"));
 		QCOMPARE(LtrText(QStringLiteral("@a")).size(), 4);
 	}
 

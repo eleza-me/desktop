@@ -1,7 +1,8 @@
 // The composer under the message list: the field with its buttons (attach,
 // emoji / stickers, send or microphone), the bar above it (what is being
 // replied to / edited / forwarded, the link preview of the text) and the
-// voice recording strip.
+// voice recording strip. In a chat with a bot the bot's reply keyboard (the
+// markup of its newest message that carries one) sits under the field.
 //
 //   _compose = Ui::CreateChild<ComposeControls>(this, controller, chatId, this);
 //   connect(_compose, &Ui::RpWidget::heightChanged, ...);   // grows with the text
@@ -45,6 +46,7 @@ class SessionController;
 
 namespace History {
 
+class BotKeyboard;
 class TabbedPanel;
 class VoiceRecorder;
 
@@ -169,6 +171,10 @@ private:
 	void typing();
 	void showToast(const QString &text);
 
+	// ---- the bot's reply keyboard
+	void refreshBotKeyboard();
+	[[nodiscard]] int keyboardHeight() const;
+
 	// ---- link preview
 	void checkPreview();
 	void requestPreview(const QString &url);
@@ -197,6 +203,9 @@ private:
 	Ui::IconButton *_previewClose = nullptr;
 	Ui::IconButton *_recordCancel = nullptr;
 	TabbedPanel *_panel = nullptr;
+	BotKeyboard *_keyboard = nullptr;
+	qint64 _keyboardUsedSeq = 0;          // a one-time keyboard that was pressed
+	bool _keyboardOneTime = false;
 	QPointer<Ui::PopupMenu> _attachMenu;
 
 	// ---- the text

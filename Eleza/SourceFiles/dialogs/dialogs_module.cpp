@@ -9,6 +9,7 @@
 #include "ui/ui_utility.h"
 #include "window/window_registry.h"
 #include "window/window_session_controller.h"
+#include "window/window_shortcuts.h"
 
 namespace Dialogs {
 namespace {
@@ -111,6 +112,47 @@ void Register() {
 		return true;
 	});
 	Window::RegisterRouteHandler(HandleDebugRoute);
+
+	// The window-wide shortcuts of the chat list (window_shortcuts.h).
+	using Command = Window::Command;
+	const auto list = [](Window::SessionController *controller) {
+		// The open chat stays open.
+		controller->activateTab(Window::Tab::Chats);
+		return dynamic_cast<Widget*>(
+			controller->sideSection(Window::Tab::Chats));
+	};
+	Window::RegisterCommandHandler(Command::SearchChats, [=](
+			Window::SessionController *controller) {
+		if (const auto widget = list(controller)) {
+			if (controller->isSingleColumn()) {
+				// The list is under the open chat in the single column mode.
+				controller->clearMainStack(Window::Tab::Chats);
+			}
+			widget->focusSearch();
+		}
+		return true;
+	});
+	Window::RegisterCommandHandler(Command::NewMessage, [=](
+			Window::SessionController *controller) {
+		controller->activateTab(Window::Tab::Chats);
+		ShowNewMessageBox(controller);
+		return true;
+	});
+	const auto jump = [](int direction) {
+		return [=](Window::SessionController *controller) {
+			if (controller->currentTab() != Window::Tab::Chats) {
+				return false;
+			}
+			const auto widget = dynamic_cast<Widget*>(
+				controller->sideSection(Window::Tab::Chats));
+			if (widget) {
+				widget->jumpToChat(direction);
+			}
+			return (widget != nullptr);
+		};
+	};
+	Window::RegisterCommandHandler(Command::NextChat, jump(1));
+	Window::RegisterCommandHandler(Command::PreviousChat, jump(-1));
 }
 
 } // namespace Dialogs

@@ -118,4 +118,19 @@ struct Link {
 // The address to open for Url / CustomUrl / Email / Phone links, empty otherwise.
 [[nodiscard]] QString LinkUrl(const Link &link);
 
+// ---- direction isolates around links
+// Wraps every link entity (address, e-mail, @mention, #tag, …) in Unicode
+// direction isolates, so it keeps its own direction inside a paragraph of the
+// other one ("@sara" must not turn into "sara@" in Persian text). The other
+// entities keep covering the same characters. Use it for text that is shown;
+// keep the source text for everything else (copying, quoting, editing).
+[[nodiscard]] TextWithEntities IsolateLinks(TextWithEntities text);
+// U+2066 … U+2069.
+[[nodiscard]] bool IsIsolateChar(QChar ch);
+[[nodiscard]] QString StripIsolates(const QString &text);
+// A selection in a text made by IsolateLinks() as a selection in its source.
+[[nodiscard]] Selection SourceSelection(const QString &isolated, Selection selection);
+// The other way: a range of the source in the text made by IsolateLinks().
+[[nodiscard]] Selection IsolatedSelection(const QString &isolated, Selection source);
+
 } // namespace Ui::Text

@@ -78,15 +78,25 @@ void Register() {
 	});
 	Window::RegisterRouteHandler(Window::RouteType::ConversationTopics, [](
 			Window::SessionController *controller,
-			const Window::Route &) {
-		controller->showTab(Window::Tab::Chats);
+			const Window::Route &route) {
 		if (Window::RegisteredTabFactory(Window::Tab::Chats)) {
-			// The chat list hosts the «چت‌ها | موضوع‌ها» control.
+			// The chat list hosts the «چت‌ها | موضوع‌ها» control. An open
+			// chat stays where the list is visible beside it.
+			controller->activateTab(Window::Tab::Chats);
+			if (controller->isSingleColumn()) {
+				controller->clearMainStack(Window::Tab::Chats);
+			}
 			controller->requestSideSubTab(Window::Tab::Chats, kTopicsSubTab);
 		} else {
 			controller->showMainSection(
 				TopicsSectionFactory(),
 				{ .stack = false, .tab = Window::Tab::Chats });
+		}
+		// "conversation/topics?new=<title>": a hint from another screen (a
+		// topic page of the feed) to start a conversation about something.
+		const auto hint = u"new"_s;
+		if (route.query.contains(hint)) {
+			ShowNewConversationBox(controller, route.queryValue(hint).trimmed());
 		}
 		return true;
 	});
@@ -96,11 +106,12 @@ void Register() {
 		if (route.id.isEmpty()) {
 			return false;
 		}
-		controller->showTab(Window::Tab::Chats);
+		controller->activateTab(Window::Tab::Chats);
 		OpenConversation(controller, route.id);
 		return true;
 	});
 	Window::RegisterRouteHandler(HandleDebugRoute);
+	Window::RegisterChatMenuFiller(FillChatMenu);
 }
 
 } // namespace Conversation

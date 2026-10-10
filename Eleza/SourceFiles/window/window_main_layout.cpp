@@ -324,6 +324,7 @@ void MainLayout::runTransition(
 		const std::function<void()> &change) {
 	_transition->finish();
 	const auto animate = (animated == anim::type::normal)
+		&& !_restoring
 		&& !Ui::AnimationsDisabled()
 		&& isVisible()
 		&& !area.isEmpty();
@@ -345,6 +346,50 @@ void MainLayout::runTransition(
 		}
 		setInnerFocus();
 	});
+}
+
+LayoutState MainLayout::saveState() const {
+	auto result = LayoutState();
+	result.tab = _tab;
+	for (auto i = 0; i != kTabsCount; ++i) {
+		for (const auto section : _tabs[i].stack) {
+			const auto route = section->restoreRoute();
+			if (!route.isEmpty()) {
+				result.stacks[i].push_back(route);
+			}
+		}
+	}
+	return result;
+}
+
+void MainLayout::restoreState(const LayoutState &state) {
+	_restoring = true;
+	const auto restore = [&](Tab tab) {
+		const auto &routes = state.stacks[int(tab)];
+		if (routes.isEmpty()) {
+			return;
+		}
+		if (tab != _tab) {
+			showTab(tab, anim::type::instant);
+		}
+		for (const auto &route : routes) {
+			// Routes that open "where the user is" land in this tab.
+			if (_tab != tab) {
+				showTab(tab, anim::type::instant);
+			}
+			[[maybe_unused]] const auto opened = _controller->openRoute(route);
+		}
+	};
+	for (auto i = 0; i != kTabsCount; ++i) {
+		if (Tab(i) != state.tab) {
+			restore(Tab(i));
+		}
+	}
+	restore(state.tab);
+	if (_tab != state.tab) {
+		showTab(state.tab, anim::type::instant);
+	}
+	_restoring = false;
 }
 
 void MainLayout::showTab(Tab tab, anim::type animated) {

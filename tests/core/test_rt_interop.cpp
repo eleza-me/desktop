@@ -533,12 +533,20 @@ void TestRtInterop::reconnectResumes() {
 	// The new connection told the server where we were ...
 	const auto state = peer.state();
 	QCOMPARE(qint64(LastOf(state, "auths").value("pts"_L1).toDouble()), local);
-	// ... and the subscriptions were made again without being asked.
+	// ... and the subscriptions were made again without being asked. (They
+	// follow Hello on the wire: on a busy machine the peer may not have
+	// read them yet when Resumed arrives here.)
 	auto resent = QStringList();
-	const auto all = state.value("signals"_L1).toArray();
-	for (auto i = signalsBefore; i < all.size(); ++i) {
-		resent.push_back(all[i].toObject().value("t"_L1).toString());
-	}
+	const auto collect = [&] {
+		resent.clear();
+		const auto all = peer.state().value("signals"_L1).toArray();
+		for (auto i = signalsBefore; i < all.size(); ++i) {
+			resent.push_back(all[i].toObject().value("t"_L1).toString());
+		}
+		return resent.contains(u"presence_sub"_s)
+			&& resent.contains(u"topics_sub"_s);
+	};
+	[[maybe_unused]] const auto arrived = Test::WaitFor(collect, 5000);
 	QVERIFY2(resent.contains(u"presence_sub"_s), qPrintable(resent.join(u',')));
 	QVERIFY2(resent.contains(u"topics_sub"_s), qPrintable(resent.join(u',')));
 }

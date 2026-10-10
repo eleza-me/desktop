@@ -5,7 +5,9 @@
 #include "eli/eli_actions.h"
 #include "eli/eli_home.h"
 #include "eli/eli_posts_embed.h"
+#include "lang_auto.h"
 #include "main/main_session.h"
+#include "support/error_text.h"
 #include "window/window_embeds.h"
 #include "window/window_registry.h"
 #include "window/window_routes.h"
@@ -100,6 +102,25 @@ void Register() {
 		controller->showMainSection(
 			PostFactory(route.id),
 			{ .tab = Window::Tab::Eli });
+		return true;
+	});
+	Window::RegisterRouteHandler(Window::RouteType::SharedPost, [](
+			Window::SessionController *controller,
+			const Window::Route &route) {
+		// A share link names the post by a slug: ask which post it is, then
+		// open it like any other.
+		controller->session().data().feed().sharedPost(
+			route.id,
+			base::Guard(controller),
+			[=](const Data::Post &post) {
+				controller->openRoute(Window::Routes::Post(post.id));
+			},
+			[=](const Api::Error &error) {
+				Support::ShowError(
+					controller,
+					error,
+					tr::lng_eli_post_no_longer_available(tr::now));
+			});
 		return true;
 	});
 	Window::RegisterRouteHandler(Window::RouteType::Topic, [](

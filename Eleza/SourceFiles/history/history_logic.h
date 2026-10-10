@@ -182,6 +182,15 @@ enum class FileType {
 [[nodiscard]] bool HasCopyableText(const Data::Message &message);
 [[nodiscard]] bool CanForward(const Data::Message &message);
 
+// The reply keyboard a bot left under the field: the markup of the newest
+// incoming message that carries one, unless that message removes it. `after`
+// skips the messages up to this seq (a one-time keyboard that was used).
+[[nodiscard]] std::optional<Data::ReplyMarkup> CurrentReplyKeyboard(
+	const QVector<Data::Message> &items,
+	qint64 after = 0);
+// The seq of the message that keyboard came with (0 if there is none).
+[[nodiscard]] qint64 ReplyKeyboardSeq(const QVector<Data::Message> &items);
+
 // States in which nobody can write to a conversation any more.
 [[nodiscard]] bool ConversationEnded(const QString &state);
 

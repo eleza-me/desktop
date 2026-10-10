@@ -1,5 +1,6 @@
 #include "lang/lang_format.h"
 
+#include "lang/lang_countries.h"
 #include "lang/lang_instance.h"
 #include "lang_auto.h"
 
@@ -484,6 +485,69 @@ bool IsRtlText(const QString &text) {
 		}
 	}
 	return IsPersian();
+}
+
+QString Ltr(const QString &text) {
+	return text.isEmpty()
+		? QString()
+		: (QChar(0x2066) + text + QChar(0x2069));
+}
+
+QString Isolated(const QString &text) {
+	return text.isEmpty()
+		? QString()
+		: (QChar(0x2068) + text + QChar(0x2069));
+}
+
+QString Handle(const QString &handle) {
+	if (handle.isEmpty()) {
+		return QString();
+	}
+	return Ltr(handle.startsWith(QLatin1Char('@'))
+		? handle
+		: (QLatin1Char('@') + handle));
+}
+
+QString PhoneGroups(const QString &phone) {
+	const auto latin = Latinize(phone.trimmed());
+	auto digits = QString();
+	for (const auto ch : latin) {
+		if (ch.isDigit()) {
+			digits.push_back(ch);
+		} else if (ch != QLatin1Char('+')
+			&& ch != QLatin1Char(' ')
+			&& ch != QLatin1Char('-')
+			&& ch != QLatin1Char('(')
+			&& ch != QLatin1Char(')')) {
+			// Not a number (a masked one, a label): shown as it is.
+			return phone;
+		}
+	}
+	if (digits.size() < 7) {
+		return phone;
+	}
+	const auto country = CountryByPhone(digits);
+	const auto code = country ? country->code : QString();
+	const auto national = digits.mid(code.size());
+	// 912 123 4567: threes, the last group takes what is left (up to four).
+	auto groups = QStringList();
+	if (!code.isEmpty()) {
+		groups.push_back(code);
+	}
+	auto from = 0;
+	const auto size = int(national.size());
+	while (size - from > 4) {
+		groups.push_back(national.mid(from, 3));
+		from += 3;
+	}
+	if (from < size) {
+		groups.push_back(national.mid(from));
+	}
+	return QLatin1Char('+') + Num(groups.join(QLatin1Char(' ')));
+}
+
+QString Phone(const QString &phone) {
+	return Ltr(PhoneGroups(phone));
 }
 
 } // namespace Lang

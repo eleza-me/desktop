@@ -416,6 +416,16 @@ historyRecordSkip: 10px;
 historyComposeSpoilerBg: stateSelected;
 
 // reply / edit / quote / link preview bars above the field
+historyBotKeyboardPadding: margins(8px, 2px, 8px, 8px);
+historyBotKeyboardSkip: 6px;
+historyBotKeyboardButtonHeight: 38px;
+historyBotKeyboardRadius: 10px;
+historyBotKeyboardTextSkip: 10px;
+historyBotKeyboardFont: font(14px semibold);
+historyBotKeyboardFg: textPrimary;
+historyBotKeyboardBg: bgSunken;
+historyBotKeyboardBgOver: stateHover;
+historyBotKeyboardBgDown: statePressed;
 historyComposeBarHeight: 48px;
 historyComposeBarPadding: margins(14px, 0px, 4px, 0px);
 historyComposeBarIconSkip: 12px;

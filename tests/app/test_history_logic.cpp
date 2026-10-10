@@ -430,6 +430,46 @@ private Q_SLOTS:
 		QVERIFY(!History::ConversationEnded(u"active"_s));
 	}
 
+	void replyKeyboard() {
+		const auto keyboard = [](qint64 seq, bool mine, QVector<QStringList> rows, bool remove = false) {
+			auto message = Text(seq, mine, At(5, 10, int(seq)));
+			auto markup = Data::ReplyMarkup();
+			markup.keyboard = std::move(rows);
+			markup.removeKeyboard = remove;
+			message.replyMarkup = markup;
+			return message;
+		};
+		auto items = QVector<Data::Message>{
+			Text(1, false, At(5, 10, 0)),
+			keyboard(2, false, { { u"a"_s, u"b"_s }, { u"c"_s } }),
+			Text(3, true, At(5, 10, 3)),
+			Text(4, false, At(5, 10, 4)), // a plain answer keeps the keyboard
+		};
+		QVERIFY(!History::CurrentReplyKeyboard({}).has_value());
+		QVERIFY(!History::CurrentReplyKeyboard({ Text(1, false, At(5, 10, 0)) }).has_value());
+		const auto current = History::CurrentReplyKeyboard(items);
+		QVERIFY(current.has_value());
+		QCOMPARE(current->keyboard.size(), 2);
+		QCOMPARE(current->keyboard[0], (QStringList{ u"a"_s, u"b"_s }));
+		QCOMPARE(History::ReplyKeyboardSeq(items), 2);
+		// A one-time keyboard that was used stays hidden until a newer one.
+		QVERIFY(!History::CurrentReplyKeyboard(items, 2).has_value());
+		items.push_back(keyboard(5, false, { { u"yes"_s } }));
+		QCOMPARE(History::CurrentReplyKeyboard(items, 2)->keyboard[0], (QStringList{ u"yes"_s }));
+		// My own messages never carry one; the bot removes it.
+		items.push_back(keyboard(6, true, { { u"mine"_s } }));
+		QCOMPARE(History::ReplyKeyboardSeq(items), 5);
+		items.push_back(keyboard(7, false, {}, true));
+		QVERIFY(!History::CurrentReplyKeyboard(items).has_value());
+		QCOMPARE(History::ReplyKeyboardSeq(items), 7);
+		// An inline keyboard is part of its message, not of the composer.
+		auto inlineOnly = Text(8, false, At(5, 10, 8));
+		auto markup = Data::ReplyMarkup();
+		markup.inlineKeyboard.push_back({ Data::MarkupButton{ u"x"_s, u"callback"_s, QString(), std::nullopt } });
+		inlineOnly.replyMarkup = markup;
+		QVERIFY(!History::CurrentReplyKeyboard({ inlineOnly }).has_value());
+	}
+
 	void messageText() {
 		auto message = Text(1, false, At(5, 10, 0), U("ببین https://eleza.me و @sara #تهران"));
 		message.entities.push_back(Data::Entity{ u"spoiler"_s, 0, 4, QString(), QString() });

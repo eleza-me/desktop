@@ -65,6 +65,8 @@ public:
 	void showMoreMenu();
 	void showThemeBox();
 	void debugShowDropArea();
+	int toastBottomSkip() const override;
+	bool handleCommand(Window::Command command) override;
 
 protected:
 	void resizeEvent(QResizeEvent *e) override;
@@ -108,7 +110,6 @@ private:
 	void hideSearch();
 	void fillMuteMenu(Ui::PopupMenu *menu);
 	void confirmBlock();
-	void confirmEndConversation();
 	void unpin(qint64 seq);
 	void copySelection();
 	void forwardSelection();
