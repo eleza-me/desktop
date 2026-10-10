@@ -83,7 +83,7 @@ public:
 	void setViewportHeight(int height);
 	void activateDefault();
 	void setLeaveCallback(std::function<void()> callback) {
-		_leave = std::move(callback);
+		_leaveCallback = std::move(callback);
 	}
 
 protected:
@@ -114,7 +114,7 @@ private:
 	Window::SessionController *_controller = nullptr;
 	RadarModel *_model = nullptr;
 	Support::UserpicPainter _userpics;
-	std::function<void()> _leave;
+	std::function<void()> _leaveCallback;
 
 	Ui::FlatLabel *_title = nullptr;
 	Ui::FlatLabel *_matchedTitle = nullptr;
@@ -194,8 +194,8 @@ Content::Content(
 	});
 
 	_toChats->setClickedCallback([this] {
-		if (_leave) {
-			_leave();
+		if (_leaveCallback) {
+			_leaveCallback();
 		}
 	});
 	_invite->setClickedCallback([this] {
@@ -205,8 +205,8 @@ Content::Content(
 	_end->setClickedCallback([this] {
 		const auto weak = QPointer<Content>(this);
 		ConfirmEnd(_controller, _model->id(), [weak] {
-			if (weak && weak->_leave) {
-				weak->_leave();
+			if (weak && weak->_leaveCallback) {
+				weak->_leaveCallback();
 			}
 		});
 	});
