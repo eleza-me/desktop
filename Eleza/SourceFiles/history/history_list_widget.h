@@ -108,7 +108,9 @@ public:
 	[[nodiscard]] QString senderName(const Data::Message &message);
 
 	// ---- debug: a timeline that is not in the store (the stress test)
+#ifdef ELEZA_DEBUG_TOOLS
 	void setDebugItems(const QVector<Data::Message> &items);
+#endif // ELEZA_DEBUG_TOOLS
 	struct PaintStats {
 		int paints = 0;
 		qint64 totalUs = 0;

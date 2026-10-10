@@ -18,7 +18,9 @@ namespace Core {
 
 void RegisterModules() {
 	Intro::Register();
+#ifdef ELEZA_DEBUG_TOOLS
 	Support::RegisterDebugRoutes();
+#endif // ELEZA_DEBUG_TOOLS
 	Dialogs::Register();
 	History::Register();
 	Conversation::Register();

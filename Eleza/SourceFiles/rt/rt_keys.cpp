@@ -88,7 +88,7 @@ void Keys::refresh(QObject *guard, Fn<void()> done) {
 			finish();
 		})
 		.fail([=](const Api::Error &error) {
-			qWarning("Rt: GET /v2/keys failed (%s); keeping the cached keys", qPrintable(error.describe()));
+			qWarning("Rt: GET /v2/keys failed (%s); keeping the cached keys", qPrintable(error.forLog()));
 			finish();
 		})
 		.send();

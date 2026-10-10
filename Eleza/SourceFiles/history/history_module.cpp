@@ -22,6 +22,7 @@
 namespace History {
 namespace {
 
+#ifdef ELEZA_DEBUG_TOOLS
 constexpr auto kStressCount = 5000;
 constexpr auto kStressSteps = 240;
 constexpr auto kStressJumps = 60;
@@ -280,6 +281,8 @@ void StressSection::paintEvent(QPaintEvent *e) {
 	}
 }
 
+#endif // ELEZA_DEBUG_TOOLS
+
 [[nodiscard]] Widget *CurrentChat(Window::SessionController *controller) {
 	return qobject_cast<Widget*>(controller->mainSection());
 }
@@ -311,6 +314,7 @@ void Register() {
 			{ .stack = (current == nullptr), .tab = Window::Tab::Chats });
 		return true;
 	});
+#ifdef ELEZA_DEBUG_TOOLS
 	// Developer routes: the stress test and states that need a real drag or
 	// a system dialog to reach.
 	Window::RegisterRouteHandler([](
@@ -348,6 +352,7 @@ void Register() {
 		}
 		return true;
 	});
+#endif // ELEZA_DEBUG_TOOLS
 }
 
 } // namespace History

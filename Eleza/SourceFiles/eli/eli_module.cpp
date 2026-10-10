@@ -43,6 +43,7 @@ namespace {
 		OpenThread(controller, id);
 	} else if (const auto id = after(u"eli/sound/"); !id.isEmpty()) {
 		OpenSound(controller, id);
+#ifdef ELEZA_DEBUG_TOOLS
 	} else if (const auto count = after(u"debug/eli/pill/"); !count.isEmpty()) {
 		controller->showTab(Window::Tab::Eli);
 		Q_EMIT controller->session().data().feed().newPosts(count.toInt(), 0);
@@ -74,6 +75,7 @@ namespace {
 		args.kind = ComposeArgs::Kind::Invite;
 		args.conversationId = id;
 		OpenCompose(controller, args);
+#endif // ELEZA_DEBUG_TOOLS
 	} else {
 		return false;
 	}

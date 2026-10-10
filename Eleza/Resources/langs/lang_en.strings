@@ -336,6 +336,7 @@
 "lng_chat_sent" = "Sent";
 // pwa: فایل در دسترس نیست
 "lng_chat_file_isnt_available" = "The file isn’t available";
+"lng_chat_file_larger_than_declared" = "The file is larger than its declared size";
 // pwa: برای فرستادن لمس کن
 "lng_chat_tap_send" = "Tap to send";
 // pwa: مرورگر ضبط صدا را پشتیبانی نمی‌کند

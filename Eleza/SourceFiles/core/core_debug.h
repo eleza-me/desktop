@@ -21,7 +21,11 @@
 // popup menu / dropdown that opened over the window. Grabs include popups and
 // other top-level windows of the app (menus, notification toasts) at their place
 // over the main window.
+//
+// Only in builds with the debug tools (ELEZA_DEBUG_TOOLS).
 #pragma once
+
+#ifdef ELEZA_DEBUG_TOOLS
 
 #include <QtCore/QObject>
 #include <QtCore/QPoint>
@@ -74,3 +78,5 @@ private:
 };
 
 } // namespace Core
+
+#endif // ELEZA_DEBUG_TOOLS

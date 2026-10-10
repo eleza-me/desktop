@@ -56,6 +56,17 @@ private Q_SLOTS:
 			"https://eleza.me.",
 			"https://eleza.me%2eevil.example/",
 			"https://eleza.me%40evil.example/",
+			// Other names under eleza.me are not ours to vouch for.
+			"https://app.eleza.me/u/sara",
+			"https://api.eleza.me/v1/me",
+			"https://cdn.eleza.me/x.png",
+			"https://status.eleza.me/",
+			"https://evil.web.eleza.me/",
+			"https://www.web.eleza.me/",
+			"https://web.eleza.me.evil.example/",
+			"https://xweb.eleza.me/",
+			"https://wwww.eleza.me/",
+			"https://.eleza.me/",
 		};
 		for (const auto link : foreign) {
 			const auto parsed = ParseLink(QString::fromLatin1(link));
@@ -87,7 +98,14 @@ private Q_SLOTS:
 		}
 
 		QVERIFY(Support::IsElezaHost(QStringLiteral("eleza.me")));
-		QVERIFY(Support::IsElezaHost(QStringLiteral("App.Eleza.Me")));
+		QVERIFY(Support::IsElezaHost(QStringLiteral("www.eleza.me")));
+		QVERIFY(Support::IsElezaHost(QStringLiteral("web.eleza.me")));
+		QVERIFY(Support::IsElezaHost(QStringLiteral("Web.Eleza.Me")));
+		QVERIFY(!Support::IsElezaHost(QStringLiteral("app.eleza.me")));
+		QVERIFY(!Support::IsElezaHost(QStringLiteral("api.eleza.me")));
+		QVERIFY(!Support::IsElezaHost(QStringLiteral("a.b.eleza.me")));
+		QVERIFY(!Support::IsElezaHost(QStringLiteral("evil.www.eleza.me")));
+		QVERIFY(!Support::IsElezaHost(QStringLiteral(".eleza.me")));
 		QVERIFY(!Support::IsElezaHost(QStringLiteral("eleza.me.evil.example")));
 		QVERIFY(!Support::IsElezaHost(QStringLiteral("evil-eleza.me")));
 		QVERIFY(!Support::IsElezaHost(QStringLiteral("eleza.me.")));
@@ -129,6 +147,19 @@ private Q_SLOTS:
 		QCOMPARE(
 			ParseLink(QStringLiteral("https://eleza.me/terms")).type,
 			ParsedLink::Type::OwnWeb);
+		// The three hosts that are ours, and only they, skip the question.
+		for (const auto host : { "eleza.me", "www.eleza.me", "web.eleza.me", "WEB.Eleza.me" }) {
+			const auto base = QStringLiteral("https://") + QString::fromLatin1(host);
+			QVERIFY2(ParseLink(base + QStringLiteral("/terms")).type == ParsedLink::Type::OwnWeb, host);
+			const auto user = ParseLink(base + QStringLiteral("/u/sara"));
+			QVERIFY2(user.type == ParsedLink::Type::Route, host);
+			QCOMPARE(user.route.toString(), QStringLiteral("u/sara"));
+		}
+		for (const auto host : { "app.eleza.me", "help.eleza.me", "x.web.eleza.me" }) {
+			const auto base = QStringLiteral("https://") + QString::fromLatin1(host);
+			QVERIFY2(ParseLink(base + QStringLiteral("/terms")).type == ParsedLink::Type::External, host);
+			QVERIFY2(ParseLink(base + QStringLiteral("/u/sara")).type == ParsedLink::Type::External, host);
+		}
 		// Plain http to our own name is still ours, a foreign one is not.
 		QCOMPARE(
 			ParseLink(QStringLiteral("example.com/x")).type,

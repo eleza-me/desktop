@@ -96,6 +96,7 @@ void StartFonts() {
 			QFontDatabase::FixedFont).family();
 	}
 
+#ifdef ELEZA_DEBUG_TOOLS
 	if (qEnvironmentVariableIsSet("ELEZA_DEBUG_FONTS")) {
 		qInfo(
 			"Fonts: text '%s', display '%s', monospace '%s', emoji '%s'.",
@@ -104,6 +105,7 @@ void StartFonts() {
 			qPrintable(MonospaceFamily),
 			qPrintable(EmojiFamily));
 	}
+#endif // ELEZA_DEBUG_TOOLS
 
 	// The default font for anything that is not painted through style::font
 	// (native inner editors, tray menu).

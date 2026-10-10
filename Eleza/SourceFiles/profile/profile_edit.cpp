@@ -2,6 +2,7 @@
 
 #include "api/api_client_config.h"
 #include "boxes/photo_crop_box.h"
+#include "data/data_image_decode.h"
 #include "data/data_session.h"
 #include "data/data_users.h"
 #include "lang/lang_format.h"
@@ -30,7 +31,6 @@
 #include <QtCore/QCoreApplication>
 #include <QtCore/QThreadPool>
 #include <QtGui/QDragEnterEvent>
-#include <QtGui/QImageReader>
 #include <QtGui/QKeyEvent>
 
 namespace Profile {
@@ -708,17 +708,7 @@ void EditSection::cropPhotoFile(const QString &path) {
 	const auto weak = QPointer<EditSection>(this);
 	// Decoding a photo may take a while: off the GUI thread.
 	QThreadPool::globalInstance()->start([=] {
-		auto reader = QImageReader(path);
-		reader.setAutoTransform(true);
-		const auto size = reader.size();
-		if (size.isValid()
-			&& std::max(size.width(), size.height()) > kMaxDroppedSide) {
-			reader.setScaledSize(size.scaled(
-				kMaxDroppedSide,
-				kMaxDroppedSide,
-				Qt::KeepAspectRatio));
-		}
-		auto image = reader.read();
+		auto image = Data::DecodeImageFile(path, kMaxDroppedSide);
 		if (!image.isNull() && image.hasAlphaChannel()) {
 			auto flat = QImage(image.size(), QImage::Format_RGB32);
 			flat.fill(Qt::white);

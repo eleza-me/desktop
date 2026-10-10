@@ -16,6 +16,7 @@ dist="$build/dist"
 
 cmake -S "$root" -B "$build" -G Ninja \
 	-DCMAKE_BUILD_TYPE=Release \
+	-DELEZA_DEBUG_TOOLS=OFF \
 	-DCMAKE_INSTALL_PREFIX=/usr \
 	-DELEZA_BUILD_TESTS=OFF
 cmake --build "$build"

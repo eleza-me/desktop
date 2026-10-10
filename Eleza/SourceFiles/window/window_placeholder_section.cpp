@@ -78,6 +78,7 @@ void PlaceholderSection::resizeEvent(QResizeEvent *e) {
 		std::max(height() - _bar->height(), 0));
 }
 
+#ifdef ELEZA_DEBUG_TOOLS
 PlaceholderMainSection::PlaceholderMainSection(
 	QWidget *parent,
 	SessionController *controller,
@@ -121,6 +122,7 @@ void PlaceholderMainSection::resizeEvent(QResizeEvent *e) {
 		width(),
 		std::max(height() - _bar->height(), 0));
 }
+#endif // ELEZA_DEBUG_TOOLS
 
 RoutePlaceholderSection::RoutePlaceholderSection(
 	QWidget *parent,

@@ -42,7 +42,9 @@ class MainWindow;
 
 namespace Core {
 
+#ifdef ELEZA_DEBUG_TOOLS
 class DebugActions;
+#endif // ELEZA_DEBUG_TOOLS
 
 class Application final : public QObject {
 	Q_OBJECT
@@ -67,16 +69,19 @@ public:
 	[[nodiscard]] const CommandLine &commandLine() const {
 		return _launcher->commandLine();
 	}
+#ifdef ELEZA_DEBUG_TOOLS
 	[[nodiscard]] QString debugRoute() const {
 		return _debugRoute;
 	}
+#endif // ELEZA_DEBUG_TOOLS
 	[[nodiscard]] QString apiUrl() const {
 		return _launcher->apiUrl();
 	}
 	// The data directory (a temporary one for screenshot runs without --workdir).
 	[[nodiscard]] QString workDir() const;
 
-	// Exists always except in the gallery (--gallery).
+	// Exists always except in the gallery (--gallery, builds with the debug
+	// tools).
 	[[nodiscard]] bool hasAccount() const {
 		return _account != nullptr;
 	}
@@ -90,7 +95,9 @@ public:
 	// Light <-> dark, as a manual override.
 	void toggleTheme();
 
+#ifdef ELEZA_DEBUG_TOOLS
 	void showGallery(const QString &page = QString());
+#endif // ELEZA_DEBUG_TOOLS
 	void showIntro();
 
 	// ---- for the intro
@@ -120,7 +127,9 @@ Q_SIGNALS:
 private:
 	enum class Content {
 		None,
+#ifdef ELEZA_DEBUG_TOOLS
 		Gallery,
+#endif // ELEZA_DEBUG_TOOLS
 		Intro,
 		Session,
 	};
@@ -136,25 +145,29 @@ private:
 	void windowActiveChanged();
 	void applyBackground();
 
+#ifdef ELEZA_DEBUG_TOOLS
 	void startDebugLogin();
 	void debugLoginFailed(const QString &why);
 	void runDebugScenario();
 	void finishDebugScenario();
+#endif // ELEZA_DEBUG_TOOLS
 
 	Launcher *_launcher = nullptr;
 	std::unique_ptr<QTemporaryDir> _temporaryDir;
 	std::unique_ptr<Settings> _settings;
 	std::unique_ptr<Main::Account> _account;
 	std::unique_ptr<Window::MainWindow> _window;
-	std::unique_ptr<DebugActions> _debugActions;
-	QString _debugRoute;
 	QString _pendingRoute;
 	Content _content = Content::None;
-	QString _galleryPage;
 	QTimer _backgroundTimer;
+	bool _quitting = false;
+#ifdef ELEZA_DEBUG_TOOLS
+	std::unique_ptr<DebugActions> _debugActions;
+	QString _debugRoute;
+	QString _galleryPage;
 	bool _debugLoginRunning = false;
 	bool _debugScenarioStarted = false;
-	bool _quitting = false;
+#endif // ELEZA_DEBUG_TOOLS
 
 };
 

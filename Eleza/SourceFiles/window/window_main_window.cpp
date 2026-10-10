@@ -426,6 +426,7 @@ void MainWindow::saveGeometryNow() {
 	Core::App().settings().setWindowGeometry(geometry);
 }
 
+#ifdef ELEZA_DEBUG_TOOLS
 void MainWindow::setFixedDebugSize(QSize size) {
 	_debugSize = true;
 	setMinimumSize(1, 1);
@@ -436,6 +437,7 @@ QImage MainWindow::grabForDebug() {
 	Ui::SendPendingMoveResizeEvents(this);
 	return Ui::GrabWidgetToImage(this, QRect(), st::bgCanvas->c);
 }
+#endif // ELEZA_DEBUG_TOOLS
 
 void MainWindow::handleBack() {
 	if (_upgrade) {

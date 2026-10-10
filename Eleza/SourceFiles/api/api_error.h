@@ -36,8 +36,14 @@ struct Error {
 	[[nodiscard]] bool transient() const {
 		return status == 0 || retryable || status >= 500 || status == 429;
 	}
-	// "404 chat.not_found: ..." for logs.
+	// "404 chat.not_found: <message> (request <id>)": everything, for tests
+	// and developer tools. The message is the server's (or the network
+	// stack's) text and is not for the log of a release build.
 	[[nodiscard]] QString describe() const;
+	// What a log line may hold: describe() in a build with the debug tools
+	// (ELEZA_DEBUG_TOOLS), otherwise the status, the error code and the
+	// request id only.
+	[[nodiscard]] QString forLog() const;
 
 	[[nodiscard]] static Error Offline(const QString &message = QStringLiteral("offline"));
 	[[nodiscard]] static Error Cancelled();
@@ -50,6 +56,16 @@ struct Error {
 		const QString &reason,
 		const QString &requestId);
 };
+
+// The route of a request without anything that names a chat, a user, a post or
+// a file: "/v1/chats/c1/messages/42/attachment?variant=thumb" ->
+// "/v1/chats/:id/messages/:id/attachment". Only the fixed words of the API stay;
+// every other segment becomes ":id", the query is dropped, an absolute URL
+// (media on another host) becomes "<url>".
+[[nodiscard]] QString RouteTemplate(const QString &path);
+// The route as a log line may hold it: the path itself in a build with the
+// debug tools, the template otherwise.
+[[nodiscard]] QString RouteForLog(const QString &path);
 
 } // namespace Api
 

@@ -1,6 +1,7 @@
 # Builds Eleza Desktop for Windows (MSVC 2022, Qt from the online repository,
 # OpenSSL from the vcpkg manifest) and for Linux (the distribution's Qt 6), runs
-# the unit tests and uploads the packages. No secrets are used.
+# the unit tests and uploads the packages. No secrets are used. Both jobs build
+# Release: ELEZA_DEBUG_TOOLS is off, the packages have no debug / test hooks.
 #
 #   Windows: Eleza-<version>-windows-x64-portable (unpack and run Eleza.exe)
 #            Eleza-<version>-windows-x64-setup    (the Inno Setup installer)
@@ -112,23 +113,17 @@ jobs:
           }
           Get-ChildItem -Recurse $dist | Measure-Object -Property Length -Sum | ForEach-Object { 'Deployed {0:N1} MB' -f ($_.Sum / 1MB) }
 
-      # Starts the deployed build once (the widget gallery, offscreen) to catch a
-      # missing library or plugin. Never blocks the artifacts. windeployqt deploys
-      # only platforms/qwindows.dll: the offscreen plugin is taken from the Qt kit.
+      # Starts the deployed build once to catch a missing library. Never blocks
+      # the artifacts. What is shipped is built without ELEZA_DEBUG_TOOLS (no
+      # --gallery, no --debug-* flags): --version is all it is asked.
       - name: Smoke test of the deployed build
         shell: pwsh
         continue-on-error: true
         timeout-minutes: 3
-        env:
-          QT_QPA_PLATFORM: offscreen
         run: |
-          $env:QT_QPA_PLATFORM_PLUGIN_PATH = Join-Path $env:QT_ROOT_DIR 'plugins/platforms'
-          $work = Join-Path $env:RUNNER_TEMP 'eleza-smoke'
-          $grab = Join-Path $env:RUNNER_TEMP 'eleza-smoke.png'
-          $process = Start-Process -FilePath 'dist/Eleza/Eleza.exe' -ArgumentList '--gallery', '--no-single-instance', "--workdir=$work", "--debug-grab=$grab" -PassThru
-          if (-not $process.WaitForExit(120000)) { $process.Kill(); throw 'Eleza.exe did not exit' }
+          $process = Start-Process -FilePath 'dist/Eleza/Eleza.exe' -ArgumentList '--version' -PassThru
+          if (-not $process.WaitForExit(60000)) { $process.Kill(); throw 'Eleza.exe did not exit' }
           if ($process.ExitCode -ne 0) { throw "Eleza.exe exited with $($process.ExitCode)" }
-          if (-not (Test-Path $grab)) { throw 'No grab was written' }
 
       - name: Upload the portable build
         uses: actions/upload-artifact@v4
@@ -175,7 +170,7 @@ jobs:
             xvfb dpkg-dev
 
       - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DELEZA_DEBUG_TOOLS=OFF -DCMAKE_INSTALL_PREFIX=/usr
 
       - name: Build
         run: cmake --build build
@@ -185,13 +180,21 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: xvfb-run -a ctest --test-dir build --output-on-failure
 
-      - name: Smoke test (the widget gallery, offscreen)
+      # The packaged binary is this one: Release, so without ELEZA_DEBUG_TOOLS
+      # (no --gallery, no --debug-* flags; the tests do not need them). It must
+      # answer --version, have none of the debug flags in it, and stay up on the
+      # offscreen platform until the timeout ends it (exit code 124).
+      - name: Smoke test (the release binary, offscreen)
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          timeout 120 build/Eleza/Eleza --gallery --no-single-instance \
-            --workdir="$RUNNER_TEMP/eleza-smoke" --debug-grab="$RUNNER_TEMP/eleza-smoke.png"
-          test -s "$RUNNER_TEMP/eleza-smoke.png"
+          grep -q '^ELEZA_DEBUG_TOOLS:BOOL=OFF$' build/CMakeCache.txt
+          build/Eleza/Eleza --version
+          test "$(strings build/Eleza/Eleza | grep -c 'debug-login')" = 0
+          code=0
+          timeout 10 build/Eleza/Eleza --no-single-instance \
+            --workdir="$RUNNER_TEMP/eleza-smoke" || code=$?
+          test "$code" = 124
 
       - name: Package (tarball and .deb)
         id: package

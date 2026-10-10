@@ -210,7 +210,7 @@ void Users::fetchChunk(const QStringList &ids, int offset, Fn<void()> done) {
 			next();
 		})
 		.fail([=](const Api::Error &error) {
-			qWarning("Data: users.cards failed: %s", qPrintable(error.describe()));
+			qWarning("Data: users.cards failed: %s", qPrintable(error.forLog()));
 			next();
 		})
 		.send();

@@ -2,6 +2,7 @@
 
 #include "base/platform_file.h"
 #include "data/data_feed.h"
+#include "data/data_image_decode.h"
 #include "data/data_session.h"
 #include "data/data_social_types.h"
 #include "data/data_stickers.h"
@@ -21,7 +22,6 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QPointer>
 #include <QtCore/QThreadPool>
-#include <QtGui/QImageReader>
 #include <QtGui/QPainterPath>
 
 #include <cmath>
@@ -127,17 +127,8 @@ public:
 			const auto path = _path;
 			const auto side = _maxSide;
 			QThreadPool::globalInstance()->start([=] {
-				auto reader = QImageReader(path);
-				reader.setAutoTransform(true);
-				const auto original = reader.size();
-				if (original.isValid()
-					&& std::max(original.width(), original.height()) > side) {
-					reader.setScaledSize(original.scaled(
-						side,
-						side,
-						Qt::KeepAspectRatio));
-				}
-				auto image = reader.read();
+				// A file of the user's, or one a peer sent: the safe decoder.
+				const auto image = Data::DecodeImageFile(path, side);
 				QMetaObject::invokeMethod(qApp, [=] {
 					if (weak) {
 						weak->done(image);
@@ -972,6 +963,11 @@ private:
 				Lang::Bytes(qint64(size * download.progress)),
 				lt_total,
 				Lang::Bytes(size));
+		} else if (download.failed && download.path.isEmpty()) {
+			// Stays until the next attempt (a click on the icon).
+			return download.oversized
+				? tr::lng_chat_file_larger_than_declared(tr::now)
+				: tr::lng_chat_file_isnt_available(tr::now);
 		}
 		return (size > 0) ? Lang::Bytes(size) : QString();
 	}

@@ -83,10 +83,10 @@ bool SingleInstance::notifyRunning(const QString &message) {
 	QLocalServer::removeServer(_name);
 	_server.setSocketOptions(QLocalServer::UserAccessOption);
 	if (!_server.listen(_name)) {
+		// The socket name has the account name of the system in it.
 		qWarning(
-			"SingleInstance: could not listen on '%s': %s",
-			qPrintable(_name),
-			qPrintable(_server.errorString()));
+			"SingleInstance: could not listen (%d).",
+			int(_server.serverError()));
 	}
 	return false;
 }

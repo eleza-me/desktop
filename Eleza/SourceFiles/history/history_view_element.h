@@ -82,6 +82,8 @@ struct DownloadState {
 	bool loading = false;
 	double progress = 0.;
 	QString path; // where the saved copy is, when there is one
+	bool failed = false; // the last attempt failed (until the next one)
+	bool oversized = false; // … because the file was larger than declared
 };
 
 // What an audio row shows of the player.

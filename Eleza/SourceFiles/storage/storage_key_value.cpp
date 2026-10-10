@@ -105,7 +105,8 @@ void KeyValue::flush() {
 	_dirty = false;
 	const auto bytes = QJsonDocument(_data).toJson(QJsonDocument::Compact);
 	if (!base::platform::WriteFileAtomic(_path, bytes, true)) {
-		qWarning("Storage: could not save %s", qPrintable(_path));
+		// Not the path: it has the name of the user's home folder in it.
+		qWarning("Storage: could not save a settings file.");
 	}
 }
 

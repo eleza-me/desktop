@@ -1396,7 +1396,7 @@ private:
 				if (generation == _photoGeneration) {
 					qWarning(
 						"Intro: the photo upload failed: %s",
-						qPrintable(error.describe()));
+						qPrintable(error.forLog()));
 					photoFinished(false);
 				}
 			};

@@ -1062,11 +1062,13 @@ void Widget::dropEvent(QDropEvent *e) {
 	}
 }
 
+#ifdef ELEZA_DEBUG_TOOLS
 void Widget::debugShowDropArea() {
 	_drop->setGeometry(_scroll->geometry());
 	_drop->show();
 	_drop->raise();
 }
+#endif // ELEZA_DEBUG_TOOLS
 
 // ---- layout
 

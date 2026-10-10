@@ -1,5 +1,6 @@
 #include "media/media_image_viewer.h"
 
+#include "data/data_image_decode.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
 #include "media/media_video_player.h"
@@ -13,7 +14,6 @@
 #include <QtCore/QThreadPool>
 #include <QtGui/QClipboard>
 #include <QtGui/QGuiApplication>
-#include <QtGui/QImageReader>
 #include <QtGui/QKeyEvent>
 #include <QtGui/QMouseEvent>
 #include <QtGui/QWheelEvent>
@@ -211,17 +211,8 @@ void ImageViewer::refreshImage() {
 void ImageViewer::loadFile(const QString &path, int index) {
 	const auto weak = QPointer<ImageViewer>(this);
 	QThreadPool::globalInstance()->start([=] {
-		auto reader = QImageReader(path);
-		reader.setAutoTransform(true);
-		const auto size = reader.size();
-		if (size.isValid()
-			&& std::max(size.width(), size.height()) > kMaxDecodedSide) {
-			reader.setScaledSize(size.scaled(
-				kMaxDecodedSide,
-				kMaxDecodedSide,
-				Qt::KeepAspectRatio));
-		}
-		const auto image = reader.read();
+		// A downloaded file is as untrusted as the bytes it came from.
+		const auto image = Data::DecodeImageFile(path, kMaxDecodedSide);
 		QMetaObject::invokeMethod(qApp, [=] {
 			if (!weak || weak->_index != index) {
 				return;

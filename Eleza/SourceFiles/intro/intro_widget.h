@@ -97,7 +97,9 @@ private:
 	void updateCorner();
 	[[nodiscard]] QRect columnRect(int height) const;
 	void switchLanguage();
+#ifdef ELEZA_DEBUG_TOOLS
 	void applyDebugRoute();
+#endif // ELEZA_DEBUG_TOOLS
 
 	Window::MainWindow *_window = nullptr;
 	State _state;

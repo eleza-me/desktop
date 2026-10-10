@@ -175,7 +175,8 @@ private:
 			QSqlDatabase::removeDatabase(_connection);
 			Database::Wipe(_path);
 		}
-		fail(u"could not open "_s + _path);
+		// Not the path: it has the name of the user's home folder in it.
+		fail(u"could not open the database file"_s);
 	}
 
 	[[nodiscard]] bool tryOpen() {

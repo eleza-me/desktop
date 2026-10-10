@@ -30,6 +30,7 @@ private:
 
 };
 
+#ifdef ELEZA_DEBUG_TOOLS
 // A stand-in main column section ("debug/main" route): a top bar and a button that
 // pushes one more. Lets the navigation be tried before the feature modules exist.
 class PlaceholderMainSection final : public SectionWidget {
@@ -52,6 +53,8 @@ private:
 	Ui::EmptyPlaceholder *_placeholder = nullptr;
 
 };
+
+#endif // ELEZA_DEBUG_TOOLS
 
 // What a canonical route (window_routes.h) opens until the module that owns it
 // registers a handler: the tab's title, the route and a "coming soon" state.

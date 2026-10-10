@@ -30,6 +30,7 @@ void ShowFolder(Window::SessionController *controller, Folder folder) {
 	}
 }
 
+#ifdef ELEZA_DEBUG_TOOLS
 // "debug/dialogs/<what>": states that need a live peer or a second device.
 bool HandleDebugRoute(
 		Window::SessionController *controller,
@@ -84,6 +85,8 @@ bool HandleDebugRoute(
 	return true;
 }
 
+#endif // ELEZA_DEBUG_TOOLS
+
 } // namespace
 
 void ShowRequests(Window::SessionController *controller) {
@@ -111,7 +114,9 @@ void Register() {
 				: Folder::Main);
 		return true;
 	});
+#ifdef ELEZA_DEBUG_TOOLS
 	Window::RegisterRouteHandler(HandleDebugRoute);
+#endif // ELEZA_DEBUG_TOOLS
 
 	// The window-wide shortcuts of the chat list (window_shortcuts.h).
 	using Command = Window::Command;

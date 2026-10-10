@@ -158,6 +158,14 @@ QString Downloads::SuggestedName(const Data::Message &message) {
 	}
 }
 
+qint64 Downloads::DeclaredSize(
+		const Data::Message &message,
+		Data::MediaVariant variant) {
+	return (variant == Data::MediaVariant::File && message.media)
+		? std::max(message.media->size, qint64(0))
+		: qint64(0);
+}
+
 bool Downloads::IsExecutable(const QString &path) {
 	return base::platform::OpensAsProgram(path);
 }
@@ -183,6 +191,10 @@ View::DownloadState Downloads::state(const Data::Message &message) const {
 		}
 	}
 	result.path = savedPath(message);
+	if (const auto i = _failures.constFind(key); i != _failures.cend()) {
+		result.failed = true;
+		result.oversized = *i;
+	}
 	return result;
 }
 
@@ -241,8 +253,11 @@ void Downloads::start(
 		return;
 	}
 	job.name = SuggestedName(message);
+	const auto messageKey = Key(message);
+	_failures.remove(messageKey);
 	auto options = Data::Media::Options();
 	options.decode = false;
+	options.expectedBytes = DeclaredSize(message, variant);
 	job.handle = _session->data().media().request(
 		Data::MediaRef::Attachment(chat, seq),
 		variant,
@@ -265,6 +280,8 @@ void Downloads::start(
 		finished(key, chat, seq);
 	});
 	connect(handle, &Data::MediaHandle::failed, this, [=, this] {
+		// Kept for the bubble until the next attempt.
+		_failures.insert(messageKey, (handle->error().code == u"too_large"));
 		finish(key, chat, seq, QString());
 		Q_EMIT failed(chat, seq);
 	});

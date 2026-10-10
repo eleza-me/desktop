@@ -723,7 +723,7 @@ void Feed::flushViews() {
 		.body(QJsonObject{ { u"ids"_s, Json::Array(batch) } })
 		.guard(this)
 		.fail([](const Api::Error &error) {
-			qInfo("Data: views beacon failed: %s", qPrintable(error.describe()));
+			qInfo("Data: views beacon failed: %s", qPrintable(error.forLog()));
 		})
 		.send();
 	if (!_viewQueue.isEmpty()) {
@@ -763,7 +763,7 @@ void Feed::sendCounts() {
 			applyCounts(result.value("posts"_L1).toObject());
 		})
 		.fail([](const Api::Error &error) {
-			qInfo("Data: counts refresh failed: %s", qPrintable(error.describe()));
+			qInfo("Data: counts refresh failed: %s", qPrintable(error.forLog()));
 		})
 		.send();
 	if (!_countsQueue.isEmpty()) {

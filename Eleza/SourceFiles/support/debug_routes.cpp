@@ -1,6 +1,10 @@
 // "debug/…" routes for the shared helpers: open them with --debug-route or the
 // "route:" step of --debug-actions to see a helper without the screen that will
 // use it (docs/DEVELOPING.md lists them).
+//
+// Only in builds with the debug tools (ELEZA_DEBUG_TOOLS).
+#ifdef ELEZA_DEBUG_TOOLS
+
 #include "support/session_services.h"
 
 #include "boxes/about_box.h"
@@ -205,3 +209,5 @@ void RegisterDebugRoutes() {
 }
 
 } // namespace Support
+
+#endif // ELEZA_DEBUG_TOOLS

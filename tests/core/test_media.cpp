@@ -1,10 +1,13 @@
 // Data::Media: addresses and cache keys, decoding, authenticated downloads
 // through a redirect, the memory and disk caches, and handle sharing.
+#include "data/data_image_decode.h"
 #include "data/data_media.h"
+#include "data/data_upload.h"
 #include "test_harness.h"
 
 #include <QtCore/QBuffer>
 #include <QtCore/QDirIterator>
+#include <QtCore/QFileInfo>
 #include <QtCore/QTemporaryDir>
 #include <QtGui/QImage>
 #include <QtTest/QSignalSpy>
@@ -62,7 +65,9 @@ class TestMedia final : public QObject {
 private Q_SLOTS:
 	void addresses();
 	void decode();
+	void userFilesUseTheAllowList();
 	void downloadThroughRedirect();
+	void downloadStopsAtDeclaredSize();
 	void handlesAreShared();
 	void diskCache();
 	void memoryOnly();
@@ -201,6 +206,64 @@ void TestMedia::decode() {
 	QVERIFY(Media::Decode(QString(), header(0, 0), QSize()).isNull());
 }
 
+void TestMedia::userFilesUseTheAllowList() {
+	auto dir = QTemporaryDir();
+	const auto write = [&](const QString &name, const QByteArray &bytes) {
+		const auto path = dir.filePath(name);
+		auto file = QFile(path);
+		[&] { QVERIFY(file.open(QIODevice::WriteOnly)); }();
+		file.write(bytes);
+		return path;
+	};
+	// The four formats, whatever the file is called.
+	for (const auto format : { "PNG", "JPG", "GIF", "WEBP" }) {
+		const auto bytes = Picture(120, 80, format);
+		if (bytes.isEmpty()) {
+			continue; // no encoder for it in this Qt
+		}
+		const auto path = write(u"picture."_s + QString::fromLatin1(format).toLower(), bytes);
+		QVERIFY2(IsSupportedImageFile(path), format);
+		QCOMPARE(ImageFileDimensions(path), QSize(120, 80));
+		QCOMPARE(DecodeImageFile(path).size(), QSize(120, 80));
+		QCOMPARE(DecodeImageFile(path, 60).size(), QSize(60, 40));
+		const auto probe = Upload::Probe(path);
+		QVERIFY(probe.kind == UploadKind::Image || probe.kind == UploadKind::Gif);
+		QCOMPARE(probe.width, 120);
+		QCOMPARE(probe.height, 80);
+	}
+	const auto disguised = write(u"notes.txt"_s, Picture(32, 16));
+	QCOMPARE(DecodeImageFile(disguised).size(), QSize(32, 16));
+
+	// Everything else Qt (or a plugin) could read is not a picture for us:
+	// it has no preview and is sent as a plain file.
+	const auto svg = write(u"drawing.svg"_s, QByteArray(
+		"<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'>"
+		"<image href='file:///etc/hostname'/><rect width='64' height='64'/></svg>"));
+	const auto svgAsPng = write(u"drawing.png"_s, QByteArray(
+		"<?xml version='1.0'?><svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'/>"));
+	const auto bmp = write(u"scan.bmp"_s, Picture(40, 30, "BMP"));
+	const auto ico = write(u"icon.jpg"_s, Picture(32, 32, "ICO"));
+	const auto ppm = write(u"raw.png"_s, Picture(8, 8, "PPM"));
+	const auto cut = write(u"cut.png"_s, Picture(64, 64).left(20));
+	const auto empty = write(u"empty.png"_s, QByteArray());
+	for (const auto &path : { svg, svgAsPng, bmp, ico, ppm, cut, empty, dir.filePath(u"missing.png"_s), QString() }) {
+		QVERIFY2(!IsSupportedImageFile(path), qPrintable(path));
+		QVERIFY2(ImageFileDimensions(path).isEmpty(), qPrintable(path));
+		QVERIFY2(DecodeImageFile(path).isNull(), qPrintable(path));
+		QVERIFY2(DecodeImageFile(path, 256).isNull(), qPrintable(path));
+	}
+	for (const auto &path : { svg, bmp }) {
+		const auto probe = Upload::Probe(path);
+		QVERIFY(probe.exists);
+		QVERIFY2(probe.kind == UploadKind::File, qPrintable(path));
+		QCOMPARE(probe.width, 0);
+	}
+	// A header that promises more pixels than we would allocate.
+	auto huge = Picture(8, 8);
+	huge.replace(16, 8, QByteArray::fromHex("0000ea600000ea60")); // 60000 x 60000
+	QVERIFY(!IsSupportedImageFile(write(u"huge.png"_s, huge)));
+}
+
 void TestMedia::downloadThroughRedirect() {
 	auto dir = QTemporaryDir();
 	auto storage = Test::HttpServer();
@@ -252,6 +315,88 @@ void TestMedia::downloadThroughRedirect() {
 	QCOMPARE(FilesIn(options.cacheDir), 1);
 	QCOMPARE(media.diskUsage(), qint64(png.size()));
 	QCOMPARE(media.cached(ref, MediaVariant::Thumb).size(), QSize(120, 80));
+}
+
+void TestMedia::downloadStopsAtDeclaredSize() {
+	// The margin over the declared size: 5% or 64 KiB, whichever is more,
+	// never above the global cap; nothing declared: the global cap.
+	const auto kib = qint64(1024);
+	const auto fileCap = Media::DownloadLimit(0, false);
+	const auto imageCap = Media::DownloadLimit(0, true);
+	QCOMPARE(fileCap, qint64(4) << 30);
+	QCOMPARE(imageCap, qint64(64) << 20);
+	QCOMPARE(Media::DownloadLimit(-5, false), fileCap);
+	QCOMPARE(Media::DownloadLimit(1, false), 1 + 64 * kib);
+	QCOMPARE(Media::DownloadLimit(100 * kib, false), 164 * kib);
+	QCOMPARE(Media::DownloadLimit(64 * kib * 20, false), 64 * kib * 21);
+	QCOMPARE(Media::DownloadLimit(100 * 1024 * kib, false), 105 * 1024 * kib);
+	QCOMPARE(Media::DownloadLimit(fileCap - 1, false), fileCap);
+	QCOMPARE(Media::DownloadLimit(fileCap * 4, false), fileCap);
+	QCOMPARE(Media::DownloadLimit(63 * 1024 * kib, true), imageCap);
+
+	auto dir = QTemporaryDir();
+	auto options = Harness::Options();
+	options.cacheDir = dir.filePath(u"media"_s);
+	auto harness = Harness(options);
+	auto token = Token();
+	harness.api.setTokenProvider(&token);
+	auto body = QByteArray();
+	harness.http.handler = [&](const Request &) {
+		return Response::Bytes(body);
+	};
+	auto &media = harness.session->media();
+	const auto fetch = [&](qint64 seq, qint64 declared) {
+		auto request = Media::Options();
+		request.decode = false;
+		request.expectedBytes = declared;
+		const auto handle = media.request(
+			MediaRef::Attachment(u"c1"_s, seq),
+			MediaVariant::File,
+			request);
+		[&] { QVERIFY(Loaded(handle)); }();
+		return handle;
+	};
+	const auto declared = 100 * kib;
+
+	// Exactly what was declared, and the most the margin lets through.
+	body = QByteArray(int(declared), 'a');
+	const auto exact = fetch(1, declared);
+	QVERIFY(exact->isReady());
+	QCOMPARE(QFileInfo(exact->filePath()).size(), declared);
+	body = QByteArray(int(declared + 64 * kib), 'b');
+	const auto margin = fetch(2, declared);
+	QVERIFY(margin->isReady());
+	QCOMPARE(QFileInfo(margin->filePath()).size(), declared + 64 * kib);
+	QCOMPARE(FilesIn(options.cacheDir), 2);
+
+	// One byte more: stopped, a clear error, nothing left on the disk.
+	body = QByteArray(int(declared + 64 * kib + 1), 'c');
+	const auto over = fetch(3, declared);
+	QVERIFY(over->isFailed());
+	QCOMPARE(over->error().code, u"too_large"_s);
+	QVERIFY(over->filePath().isEmpty());
+	QVERIFY(!QFile::exists(media.filePathFor(MediaRef::Attachment(u"c1"_s, 3), MediaVariant::File)));
+	QCOMPARE(FilesIn(options.cacheDir), 2);
+
+	// Far more than declared: the same, long before the body ends.
+	body = QByteArray(int(40 * declared), 'd');
+	const auto flood = fetch(4, declared);
+	QVERIFY(flood->isFailed());
+	QCOMPARE(flood->error().code, u"too_large"_s);
+	QCOMPARE(FilesIn(options.cacheDir), 2);
+
+	// Nothing declared: only the global cap applies.
+	{
+		const auto undeclared = fetch(5, 0);
+		QVERIFY(undeclared->isReady());
+		QCOMPARE(QFileInfo(undeclared->filePath()).size(), 40 * declared);
+	}
+
+	// A copy that was cached without a bound is not served against one.
+	const auto bounded = fetch(5, declared);
+	QVERIFY(bounded->isFailed());
+	QCOMPARE(bounded->error().code, u"too_large"_s);
+	QVERIFY(!QFile::exists(media.filePathFor(MediaRef::Attachment(u"c1"_s, 5), MediaVariant::File)));
 }
 
 void TestMedia::handlesAreShared() {

@@ -14,21 +14,31 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC OFF)
 set(CMAKE_AUTOUIC OFF)
 
+# Every test / debug surface of the app is behind ELEZA_DEBUG_TOOLS: the --debug-*
+# flags, --gallery, the "debug/…" routes, the ELEZA_DEBUG_* environment hooks, clear
+# text API addresses outside the loopback interface and request paths in the log.
+# Off: all of it is compiled out. The default is ON for a Debug build and for a build
+# without a build type (a developer's plain `cmake -S . -B build`), OFF for Release,
+# RelWithDebInfo and MinSizeRel on every platform, and OFF for multi-config
+# generators (one cache serves Debug and Release there): what is shipped never has it.
+if (CMAKE_CONFIGURATION_TYPES)
+	set(_eleza_debug_tools_default OFF)
+elseif (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "Debug")
+	set(_eleza_debug_tools_default ON)
+else()
+	set(_eleza_debug_tools_default OFF)
+endif()
+option(ELEZA_DEBUG_TOOLS
+	"Debug / test hooks: --debug-* flags, --gallery, debug/ routes, verbose request logs."
+	${_eleza_debug_tools_default})
+if (ELEZA_DEBUG_TOOLS)
+	# For every target: the libraries have hooks of their own (fonts, logs).
+	add_compile_definitions(ELEZA_DEBUG_TOOLS)
+endif()
+
 if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 	set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Build type" FORCE)
 endif()
-
-# Scripted input for screenshots (--debug-actions click / type / key steps) calls two
-# functions QtGui exports for QtTest only. Off: those steps are refused with a warning;
-# --debug-grab, --debug-route and the wait / grab / route / resize steps keep working.
-if (MSVC AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-	set(_eleza_debug_tools_default OFF)
-else()
-	set(_eleza_debug_tools_default ON)
-endif()
-option(ELEZA_DEBUG_TOOLS
-	"Scripted mouse / keyboard input (--debug-actions) through QtGui's test entry points."
-	${_eleza_debug_tools_default})
 
 if (MSVC)
 	# Sources (and generated strings) are UTF-8 with Persian literals. The options are

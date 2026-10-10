@@ -83,7 +83,13 @@ void AudioPlayer::ensurePlayer() {
 		this,
 		[this](QMediaPlayer::Error error, const QString &text) {
 			if (error != QMediaPlayer::NoError) {
+				// The text may name the file or its address.
+#ifdef ELEZA_DEBUG_TOOLS
 				qWarning("Media: audio playback failed: %s", qPrintable(text));
+#else // ELEZA_DEBUG_TOOLS
+				Q_UNUSED(text);
+				qWarning("Media: audio playback failed: %d", int(error));
+#endif // ELEZA_DEBUG_TOOLS
 				fail();
 			}
 		});

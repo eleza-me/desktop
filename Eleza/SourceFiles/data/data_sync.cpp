@@ -543,7 +543,7 @@ void Sync::readState(Fn<void(std::optional<qint64>)> done) {
 			done(Json::Int64(result, "pts"_L1));
 		})
 		.fail([=](const Api::Error &error) {
-			qInfo("Data: sync.state failed: %s", qPrintable(error.describe()));
+			qInfo("Data: sync.state failed: %s", qPrintable(error.forLog()));
 			done(std::nullopt);
 		})
 		.send();
@@ -609,7 +609,7 @@ void Sync::differenceStep(qint64 pts, int page, Fn<void()> done) {
 			}
 		})
 		.fail([=](const Api::Error &error) {
-			qInfo("Data: sync.difference failed: %s", qPrintable(error.describe()));
+			qInfo("Data: sync.difference failed: %s", qPrintable(error.forLog()));
 			done();
 		})
 		.send();

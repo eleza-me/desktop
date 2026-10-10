@@ -28,7 +28,8 @@ class SessionController;
 
 namespace Support {
 
-// eleza.me and its subdomains.
+// Our own hosts, opened without a question: eleza.me, www.eleza.me and
+// web.eleza.me, nothing else (no other subdomain).
 [[nodiscard]] bool IsElezaHost(const QString &host);
 
 // What a piece of link text means.

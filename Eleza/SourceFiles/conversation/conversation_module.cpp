@@ -13,6 +13,7 @@ namespace {
 
 const auto kTopicsSubTab = u"topics"_s;
 
+#ifdef ELEZA_DEBUG_TOOLS
 // "debug/…" routes of the module (docs/DEVELOPING.md, section 2):
 //   debug/topics                    the topics list as a main section
 //   debug/conversation-new[?q=…]    the «گفتگوی تازه» box (optionally prefilled)
@@ -65,6 +66,8 @@ bool HandleDebugRoute(
 	return false;
 }
 
+#endif // ELEZA_DEBUG_TOOLS
+
 } // namespace
 
 void Register() {
@@ -110,7 +113,9 @@ void Register() {
 		OpenConversation(controller, route.id);
 		return true;
 	});
+#ifdef ELEZA_DEBUG_TOOLS
 	Window::RegisterRouteHandler(HandleDebugRoute);
+#endif // ELEZA_DEBUG_TOOLS
 	Window::RegisterChatMenuFiller(FillChatMenu);
 }
 

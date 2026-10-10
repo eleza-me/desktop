@@ -82,14 +82,21 @@ ErrorReporter::ErrorReporter(
 				const QString &action,
 				const QString &subject,
 				const Api::Error &error) {
+			// The subject is a chat / user / post id: for the log of a build
+			// with the debug tools only.
+#ifdef ELEZA_DEBUG_TOOLS
 			qWarning(
-				"[eleza] %s (%s): %s%s",
+				"[eleza] %s (%s): %s",
 				qPrintable(action),
 				qPrintable(subject),
-				qPrintable(error.describe()),
-				error.requestId.isEmpty()
-					? ""
-					: qPrintable(u" request="_s + error.requestId));
+				qPrintable(error.forLog()));
+#else // ELEZA_DEBUG_TOOLS
+			Q_UNUSED(subject);
+			qWarning(
+				"[eleza] %s: %s",
+				qPrintable(action),
+				qPrintable(error.forLog()));
+#endif // ELEZA_DEBUG_TOOLS
 			if (!QuietAction(action)) {
 				ShowError(_controller, error);
 			}
@@ -105,15 +112,15 @@ ErrorReporter::ErrorReporter(
 			if (Silent(error)) {
 				return;
 			}
-			// The caller decides what to show; the log tells why it failed.
+			// The caller decides what to show; the log tells why it failed:
+			// the method, the route (its template in a release build: no
+			// chat / user / post ids, no handles), the status, the error
+			// code and the request id.
 			qInfo(
-				"[eleza] %s %s: %s%s",
+				"[eleza] %s %s: %s",
 				qPrintable(method),
-				qPrintable(path),
-				qPrintable(error.describe()),
-				error.requestId.isEmpty()
-					? ""
-					: qPrintable(u" request="_s + error.requestId));
+				qPrintable(Api::RouteForLog(path)),
+				qPrintable(error.forLog()));
 		});
 }
 

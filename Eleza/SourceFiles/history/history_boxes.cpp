@@ -5,6 +5,7 @@
 #include "core/core_application.h"
 #include "core/core_settings.h"
 #include "data/data_chats.h"
+#include "data/data_image_decode.h"
 #include "data/data_messages.h"
 #include "data/data_outbox.h"
 #include "data/data_session.h"
@@ -32,7 +33,6 @@
 
 #include <QtCore/QFileInfo>
 #include <QtCore/QRegularExpression>
-#include <QtGui/QImageReader>
 #include <QtGui/QMouseEvent>
 
 #include <algorithm>
@@ -121,12 +121,7 @@ void FilesPreview::setFiles(const QStringList &paths) {
 		item.image = Support::IsImageFile(path);
 		item.video = Support::IsVideoFile(path);
 		if (item.image) {
-			auto reader = QImageReader(path);
-			reader.setAutoTransform(true);
-			item.dimensions = reader.size();
-			if (reader.transformation() & QImageIOHandler::TransformationRotate90) {
-				item.dimensions.transpose();
-			}
+			item.dimensions = Data::ImageFileDimensions(path);
 			item.source = View::MakeLocalImageSource(path);
 			if (item.source) {
 				connect(item.source.get(), &Ui::ImageSource::updated, this, [this] {

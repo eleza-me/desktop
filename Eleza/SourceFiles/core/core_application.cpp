@@ -3,9 +3,7 @@
 #include "api/api_auth.h"
 #include "api/api_client_config.h"
 #include "base/platform_file.h"
-#include "core/core_debug.h"
 #include "core/core_modules.h"
-#include "gallery/gallery_widget.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
 #include "main/main_account.h"
@@ -26,6 +24,11 @@
 #include <QtCore/QTemporaryDir>
 #include <QtWidgets/QApplication>
 
+#ifdef ELEZA_DEBUG_TOOLS
+#include "core/core_debug.h"
+#include "gallery/gallery_widget.h"
+#endif // ELEZA_DEBUG_TOOLS
+
 namespace Core {
 namespace {
 
@@ -41,9 +44,11 @@ Application *InstanceValue = nullptr;
 } // namespace
 
 Application::Application(Launcher *launcher)
-: _launcher(launcher)
-, _debugRoute(launcher->commandLine().debugRoute) {
+: _launcher(launcher) {
 	InstanceValue = this;
+#ifdef ELEZA_DEBUG_TOOLS
+	_debugRoute = launcher->commandLine().debugRoute;
+#endif // ELEZA_DEBUG_TOOLS
 	const auto &arguments = launcher->commandLine();
 	if (arguments.ephemeral() && arguments.workDir.isEmpty()) {
 		// A screenshot run must not touch the real data directory.
@@ -73,7 +78,9 @@ Application::Application(Launcher *launcher)
 }
 
 Application::~Application() {
+#ifdef ELEZA_DEBUG_TOOLS
 	_debugActions = nullptr;
+#endif // ELEZA_DEBUG_TOOLS
 	// The window's sections use the session: they go first.
 	_window = nullptr;
 	_account = nullptr;
@@ -128,38 +135,53 @@ void Application::start() {
 
 	RegisterModules();
 
-	if (!arguments.gallery) {
+#ifdef ELEZA_DEBUG_TOOLS
+	const auto gallery = arguments.gallery;
+#else // ELEZA_DEBUG_TOOLS
+	constexpr auto gallery = false;
+#endif // ELEZA_DEBUG_TOOLS
+	if (!gallery) {
 		createAccount();
 	}
 	_window = std::make_unique<Window::MainWindow>();
+#ifdef ELEZA_DEBUG_TOOLS
 	if (arguments.debugSize.isValid()) {
 		_window->setFixedDebugSize(arguments.debugSize);
 	}
+#endif // ELEZA_DEBUG_TOOLS
 	QObject::connect(
 		_window.get(),
 		&Window::MainWindow::activeChanged,
 		this,
 		[this] { windowActiveChanged(); });
 
-	if (arguments.gallery) {
+#ifdef ELEZA_DEBUG_TOOLS
+	if (gallery) {
 		showGallery(arguments.galleryPage);
-	} else {
-		_account->start();
-		if (_account->session() && !introNeedsProfile()) {
-			showSession();
-		} else {
-			showIntro();
-			if (!_account->session() && arguments.debugLogin()) {
-				startDebugLogin();
-			}
-		}
-		checkUpgradeRequired();
+		_window->showFirstTime();
+		runDebugScenario();
+		return;
 	}
+#endif // ELEZA_DEBUG_TOOLS
+	_account->start();
+	if (_account->session() && !introNeedsProfile()) {
+		showSession();
+	} else {
+		showIntro();
+#ifdef ELEZA_DEBUG_TOOLS
+		if (!_account->session() && arguments.debugLogin()) {
+			startDebugLogin();
+		}
+#endif // ELEZA_DEBUG_TOOLS
+	}
+	checkUpgradeRequired();
 	_window->showFirstTime();
 
+#ifdef ELEZA_DEBUG_TOOLS
 	if (!_debugLoginRunning) {
 		runDebugScenario();
 	}
+#endif // ELEZA_DEBUG_TOOLS
 }
 
 void Application::createAccount() {
@@ -337,7 +359,9 @@ void Application::rebuildContent() {
 	}
 	_window->refreshTitle();
 	switch (_content) {
+#ifdef ELEZA_DEBUG_TOOLS
 	case Content::Gallery: showGallery(_galleryPage); break;
+#endif // ELEZA_DEBUG_TOOLS
 	case Content::Intro: showIntro(); break;
 	case Content::Session: {
 		// Back to where the user was: the tab and what every tab had open.
@@ -355,6 +379,7 @@ void Application::rebuildContent() {
 	}
 }
 
+#ifdef ELEZA_DEBUG_TOOLS
 void Application::showGallery(const QString &page) {
 	_content = Content::Gallery;
 	if (!page.isEmpty()) {
@@ -375,6 +400,7 @@ void Application::showGallery(const QString &page) {
 		[this](const QString &now) { _galleryPage = now; });
 	window->setContent(Ui::Owned<Ui::RpWidget>(widget));
 }
+#endif // ELEZA_DEBUG_TOOLS
 
 void Application::showIntro() {
 	const auto wasSession = (_content == Content::Session);
@@ -413,9 +439,14 @@ void Application::openRoute(const QString &route) {
 	const auto controller = _window ? _window->sessionController() : nullptr;
 	if (controller) {
 		controller->openRoute(route);
-	} else if (_content != Content::Gallery) {
-		_pendingRoute = route;
+		return;
 	}
+#ifdef ELEZA_DEBUG_TOOLS
+	if (_content == Content::Gallery) {
+		return;
+	}
+#endif // ELEZA_DEBUG_TOOLS
+	_pendingRoute = route;
 }
 
 bool Application::windowActive() const {
@@ -450,6 +481,7 @@ void Application::handleActivation(const QString &message) {
 	if (_window) {
 		_window->activateAndShow();
 	}
+#ifdef ELEZA_DEBUG_TOOLS
 	// The message comes from another process: only a place of the app may be
 	// opened through it - never a "debug/..." hook (those end the session or
 	// load files by path) and nothing that is not a canonical route.
@@ -460,6 +492,10 @@ void Application::handleActivation(const QString &message) {
 			openRoute(route.toString());
 		}
 	}
+#else // ELEZA_DEBUG_TOOLS
+	// Nothing but "come to the front" is taken from another process.
+	Q_UNUSED(message);
+#endif // ELEZA_DEBUG_TOOLS
 }
 
 void Application::quit() {
@@ -471,6 +507,7 @@ void Application::quit() {
 }
 
 // ---- debug hooks
+#ifdef ELEZA_DEBUG_TOOLS
 
 void Application::startDebugLogin() {
 	const auto &arguments = _launcher->commandLine();
@@ -566,5 +603,7 @@ void Application::finishDebugScenario() {
 		QCoreApplication::exit(0);
 	});
 }
+
+#endif // ELEZA_DEBUG_TOOLS
 
 } // namespace Core

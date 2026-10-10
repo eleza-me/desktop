@@ -13,7 +13,6 @@ find_package(Qt6 6.4 REQUIRED COMPONENTS Multimedia)
 set(eleza_gui_modules
 	core
 	window
-	gallery
 	intro
 	dialogs
 	history
@@ -26,6 +25,10 @@ set(eleza_gui_modules
 	media
 	support
 )
+if (ELEZA_DEBUG_TOOLS)
+	# The widget gallery (--gallery) is a development tool.
+	list(APPEND eleza_gui_modules gallery)
+endif()
 set(eleza_sources)
 set(eleza_styles)
 foreach(module ${eleza_gui_modules})
@@ -56,9 +59,6 @@ target_link_libraries(Eleza PRIVATE
 eleza_target_defaults(Eleza)
 target_compile_definitions(Eleza PRIVATE
 	ELEZA_VERSION_STRING="${PROJECT_VERSION}")
-if (ELEZA_DEBUG_TOOLS)
-	target_compile_definitions(Eleza PRIVATE ELEZA_DEBUG_TOOLS)
-endif()
 
 if (eleza_styles)
 	eleza_generate_styles(Eleza

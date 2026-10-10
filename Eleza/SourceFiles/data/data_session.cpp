@@ -96,11 +96,20 @@ void Session::reportFailure(
 		const QString &action,
 		const QString &subject,
 		const Api::Error &error) {
+	// The subject is a chat / user / post id: for the log of a build with the
+	// debug tools only.
+#ifdef ELEZA_DEBUG_TOOLS
 	qInfo(
 		"Data: %s (%s) failed: %s",
 		qPrintable(action),
 		qPrintable(subject),
-		qPrintable(error.describe()));
+		qPrintable(error.forLog()));
+#else // ELEZA_DEBUG_TOOLS
+	qInfo(
+		"Data: %s failed: %s",
+		qPrintable(action),
+		qPrintable(error.forLog()));
+#endif // ELEZA_DEBUG_TOOLS
 	Q_EMIT actionFailed(action, subject, error);
 }
 

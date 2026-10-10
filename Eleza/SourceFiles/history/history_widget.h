@@ -64,7 +64,9 @@ public:
 	void showSearch();
 	void showMoreMenu();
 	void showThemeBox();
+#ifdef ELEZA_DEBUG_TOOLS
 	void debugShowDropArea();
+#endif // ELEZA_DEBUG_TOOLS
 	int toastBottomSkip() const override;
 	bool handleCommand(Window::Command command) override;
 

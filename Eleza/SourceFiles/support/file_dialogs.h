@@ -15,8 +15,9 @@
 // the callback (not at all when the dialog is cancelled or the guard widget
 // died). The last directory is remembered in Core::Settings.
 //
-// Headless runs: the environment variable ELEZA_DEBUG_PICK ("path1;path2") answers
-// every pick dialog at once, ELEZA_DEBUG_SAVE (a file path) every save dialog.
+// Headless runs (builds with ELEZA_DEBUG_TOOLS only): the environment variable
+// ELEZA_DEBUG_PICK ("path1;path2") answers every pick dialog at once,
+// ELEZA_DEBUG_SAVE (a file path) every save dialog.
 #pragma once
 
 #include <QtCore/QString>
@@ -70,6 +71,8 @@ void SaveImageAs(
 	const QString &suggestedName,
 	std::function<void(bool saved)> done = nullptr);
 
+// A picture by its name and by its content (Data::IsSupportedImageFile: JPEG,
+// PNG, GIF, WebP within the decoder's limits). Reads the file's header.
 [[nodiscard]] bool IsImageFile(const QString &path);
 [[nodiscard]] bool IsVideoFile(const QString &path);
 [[nodiscard]] bool IsAudioFile(const QString &path);

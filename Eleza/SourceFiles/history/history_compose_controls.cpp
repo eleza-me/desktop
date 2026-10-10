@@ -1509,6 +1509,7 @@ void ComposeControls::paintRecording(Painter &p, QRect rect) {
 	}
 }
 
+#ifdef ELEZA_DEBUG_TOOLS
 // ---- debug hooks
 
 void ComposeControls::debugShowPanel(bool stickers) {
@@ -1521,5 +1522,6 @@ void ComposeControls::debugShowPanel(bool stickers) {
 void ComposeControls::debugShowAttachMenu() {
 	showAttachMenu();
 }
+#endif // ELEZA_DEBUG_TOOLS
 
 } // namespace History

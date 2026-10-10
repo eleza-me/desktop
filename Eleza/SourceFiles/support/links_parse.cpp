@@ -97,8 +97,13 @@ constexpr auto kMaxShownUrl = 300;
 } // namespace
 
 bool IsElezaHost(const QString &host) {
+	// The site, and the web app. Every other name under eleza.me (a status
+	// page, a help desk, storage, whatever is delegated to somebody else one
+	// day) is a foreign host: opened only after the confirmation.
 	const auto lower = host.toLower();
-	return (lower == u"eleza.me") || lower.endsWith(u".eleza.me");
+	return (lower == u"eleza.me")
+		|| (lower == u"www.eleza.me")
+		|| (lower == u"web.eleza.me");
 }
 
 ParsedLink ParseLink(const QString &link) {
@@ -155,21 +160,15 @@ ParsedLink ParseLink(const QString &link) {
 		result.type = ParsedLink::Type::External;
 		return result;
 	}
-	const auto host = url.host().toLower();
-	const auto appHost = (host == u"eleza.me")
-		|| (host == u"www.eleza.me")
-		|| (host == u"app.eleza.me");
-	if (appHost) {
-		if (const auto route = Window::RouteFromWebPath(
-				url.path(QUrl::FullyEncoded),
-				url.query(QUrl::FullyEncoded))) {
-			// The bare site address is the home page, not the feed.
-			const auto home = url.path().isEmpty() || url.path() == u"/";
-			if (!home) {
-				result.type = ParsedLink::Type::Route;
-				result.route = *route;
-				return result;
-			}
+	if (const auto route = Window::RouteFromWebPath(
+			url.path(QUrl::FullyEncoded),
+			url.query(QUrl::FullyEncoded))) {
+		// The bare site address is the home page, not the feed.
+		const auto home = url.path().isEmpty() || url.path() == u"/";
+		if (!home) {
+			result.type = ParsedLink::Type::Route;
+			result.route = *route;
+			return result;
 		}
 	}
 	result.type = ParsedLink::Type::OwnWeb;

@@ -1,6 +1,7 @@
 #include "data/data_upload.h"
 
 #include "base/bytes.h"
+#include "data/data_image_decode.h"
 #include "crypto/crypto_primitives.h"
 #include "data/data_json.h"
 #include "data/data_session.h"
@@ -8,7 +9,6 @@
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QMimeDatabase>
-#include <QtGui/QImageReader>
 
 #include <atomic>
 
@@ -163,16 +163,16 @@ FileProbe Upload::Probe(const QString &path, bool asVoice) {
 	result.mime = QMimeDatabase().mimeTypeForFile(info).name();
 	result.kind = KindFor(result.mime, asVoice);
 	if (result.mime.startsWith(u"image/")) {
-		// Reads the header only.
-		auto reader = QImageReader(path);
-		reader.setAutoTransform(true);
-		auto size = reader.size();
-		if (size.isValid()) {
-			if (reader.transformation() & QImageIOHandler::TransformationRotate90) {
-				size.transpose();
-			}
+		// Reads the header only, with the decoder every preview uses.
+		const auto size = ImageFileDimensions(path);
+		if (!size.isEmpty()) {
 			result.width = size.width();
 			result.height = size.height();
+		} else if (result.kind == UploadKind::Image
+			|| result.kind == UploadKind::Gif) {
+			// A picture we would not decode ourselves (SVG, TIFF, HEIC, a
+			// broken or an oversized one) goes as a plain file.
+			result.kind = UploadKind::File;
 		}
 	}
 	return result;

@@ -1,3 +1,6 @@
+// Only in builds with the debug tools (ELEZA_DEBUG_TOOLS).
+#ifdef ELEZA_DEBUG_TOOLS
+
 #include "core/core_debug.h"
 
 #include "ui/ui_utility.h"
@@ -18,7 +21,6 @@
 #include <algorithm>
 #include <utility>
 
-#ifdef ELEZA_DEBUG_TOOLS
 // The entry points Qt's own test library uses to inject input the way a platform
 // plugin delivers it (shortcut map, popups, enter / leave, double clicks). They
 // are exported by QtGui; declaring them here avoids linking QtTest into the app.
@@ -26,8 +28,8 @@
 // The declarations must match <QtTest/qtestmouse.h> and <QtTest/qtestkeyboard.h>
 // of the Qt in use exactly, return type included: MSVC encodes it in the symbol
 // name and the link fails on a mismatch (GCC and Clang link anyway). They are the
-// same from Qt 6.0 to 6.9; build with -DELEZA_DEBUG_TOOLS=OFF should a later Qt
-// change them.
+// same from Qt 6.0 to 6.9. A build without ELEZA_DEBUG_TOOLS (every release
+// build) has nothing of this file.
 Q_GUI_EXPORT void qt_handleMouseEvent(
 	QWindow *window,
 	const QPointF &local,
@@ -45,7 +47,6 @@ Q_GUI_EXPORT void qt_handleKeyEvent(
 	const QString &text,
 	bool autorep,
 	ushort count);
-#endif // ELEZA_DEBUG_TOOLS
 
 namespace Core {
 namespace {
@@ -71,8 +72,6 @@ constexpr auto kDragSteps = 6;
 	}
 	return result;
 }
-
-#ifdef ELEZA_DEBUG_TOOLS
 
 void InjectMouse(
 		QWindow *window,
@@ -101,33 +100,6 @@ void InjectKey(
 	qt_handleKeyEvent(window, QEvent::KeyPress, key, modifiers, text, false, 1);
 	qt_handleKeyEvent(window, QEvent::KeyRelease, key, modifiers, text, false, 1);
 }
-
-#else // ELEZA_DEBUG_TOOLS
-
-void WarnNoInput() {
-	static auto Warned = false;
-	if (!std::exchange(Warned, true)) {
-		qWarning("debug-actions: mouse and keyboard steps need a build with "
-			"-DELEZA_DEBUG_TOOLS=ON.");
-	}
-}
-
-void InjectMouse(
-		QWindow*,
-		const QPointF&,
-		const QPointF&,
-		Qt::MouseButtons,
-		Qt::MouseButton,
-		QEvent::Type,
-		int) {
-	WarnNoInput();
-}
-
-void InjectKey(QWindow*, int, Qt::KeyboardModifiers, const QString&) {
-	WarnNoInput();
-}
-
-#endif // ELEZA_DEBUG_TOOLS
 
 [[nodiscard]] bool ParsePoint(const QStringList &parts, int from, QPoint &to) {
 	if (parts.size() < from + 2) {
@@ -433,3 +405,5 @@ void DebugActions::type(const QString &text) {
 }
 
 } // namespace Core
+
+#endif // ELEZA_DEBUG_TOOLS

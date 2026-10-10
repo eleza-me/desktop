@@ -40,11 +40,40 @@ signed in (`--debug-login` is skipped then). Delete the directory to start clean
 
 ## 2. Debug hooks
 
+Everything in this section except the first table exists only in a build with the CMake
+option `ELEZA_DEBUG_TOOLS`: ON by default for a Debug build (and for a configure without
+a build type), OFF for Release / RelWithDebInfo / MinSizeRel on every platform — pass
+`-DELEZA_DEBUG_TOOLS=ON` to get the hooks in an optimized build of your own. Nothing that
+is shipped has them (`docs/BUILDING.md`, "Debug tools"). With the option off the code is
+compiled out; a `--debug-*` / `--gallery` argument prints `… not available in this build
+(ignored).` and the app starts normally.
+
+When you add a hook, put it behind the same switch:
+
+```cpp
+#ifdef ELEZA_DEBUG_TOOLS
+	Window::RegisterRouteHandler(HandleDebugRoute); // and the handler itself
+#endif // ELEZA_DEBUG_TOOLS
+```
+
+The definition reaches every target (the libraries and the tests too). Routes that start
+with `debug/` are refused by `Window::HandleRoute` in a build without the option, whoever
+registered them.
+
+In every build:
+
 | Flag | Meaning |
 | --- | --- |
-| `--api=<url>` / env `ELEZA_API` | API base (default `https://api.eleza.me`) |
+| `--api=<url>` / env `ELEZA_API` | API base (default `https://api.eleza.me`): `https://`, or `http://` on the loopback interface; `http://` to another machine only with the debug tools |
 | `--workdir=<dir>` | data directory; screenshot runs without it use a temporary one |
 | `--lang=fa\|en`, `--theme=light\|dark` | for this run only |
+| `--no-single-instance` | allow a second process on the same workdir |
+| `--version`, `--help` | print and exit (no display needed) |
+
+Only with `ELEZA_DEBUG_TOOLS`:
+
+| Flag | Meaning |
+| --- | --- |
 | `--debug-size=<W>x<H>`, `--debug-scale=<f>` | window size, device pixel ratio |
 | `--debug-login=<phone>:<code>[:<password>]` | signs in through the API at startup when nobody is signed in (no intro UI); exits with code 2 if it fails in a grab run |
 | `--debug-route=<route>` | opened once the session layout is shown (section 5; `debug/…` and `intro/…` below) |
@@ -52,7 +81,7 @@ signed in (`--debug-login` is skipped then). Delete the directory to start clean
 | `--debug-grab=<png>` | save a grab and exit |
 | `--debug-grab-delay=<ms>` | wait this long after the route was opened and the actions finished (default 600) |
 | `--gallery[=<page>]` | the UI gallery instead of the app |
-| `--no-single-instance` | allow a second process on the same workdir |
+| env `ELEZA_DEBUG_FONTS` | logs the font families that were picked |
 
 A run with `--debug-grab` or `--debug-actions` is *ephemeral*: preferences are not saved, no
 tray icon, no sounds, animations jump to their end, the process exits when done. Hover
@@ -104,7 +133,22 @@ to answer every "open" dialog at once and `ELEZA_DEBUG_SAVE=/path/out.bin` for "
 | `debug/logout`, `debug/link`, `debug/error`, `debug/upgrade` | sign-out confirmation, external link confirmation, an error toast, the "update required" screen |
 | `debug/session-expired` | ends the session as the server would |
 
-Add your own in your module's route handler (`route.startsWith(u"debug/…")`).
+Add your own in your module's route handler (`route.startsWith(u"debug/…")`), inside
+`#ifdef ELEZA_DEBUG_TOOLS`.
+
+### Logs
+
+`qInfo` / `qWarning` lines never hold tokens, phone numbers, codes, passwords, message
+text, file names or people's names — in any build. Ids, handles and routes are for a build
+with the debug tools only:
+
+* an `Api::Error` goes to the log as `error.forLog()` (status, code, request id; with the
+  debug tools also the server's message), never `describe()`;
+* a request path as `Api::RouteForLog(path)`: the path with the debug tools, otherwise its
+  template (`/v1/chats/:id/messages/:id/attachment`, see `Api::RouteTemplate` — a new fixed
+  word of the API has to be added to its list or it is logged as `:id`);
+* anything else that names a chat, a user, a post or a file (a subject, a local path, the
+  text of a system error) goes inside `#ifdef ELEZA_DEBUG_TOOLS`.
 
 ## 3. How the app is wired
 
@@ -467,6 +511,17 @@ MediaRef::Avatar(userId, avatarId) | Attachment(chat, seq) | PostMedia(postId, m
 MediaVariant::Thumb | Feed | Full | Poster | Mp4 | Audio | File | Cover
 MediaHandle: isReady(), isFailed(), image(), filePath(), progress(); signals ready(), failed(), progressChanged()
 // Keep the handle while the media is on screen.
+// Options::expectedBytes: the size the message declares for the bytes (the File variant). The
+// download stops with the error code "too_large" beyond Media::DownloadLimit(expectedBytes)
+// = max(declared × 1.05, declared + 64 KiB); nothing declared: the global caps.
+
+// ---- pictures from files (data/data_image_decode.h): the only decoder for anything the user
+// attached, pasted, dropped or received. JPEG / PNG / GIF / WebP by their first bytes, size caps.
+// Never QImage(path) / QImageReader(path) / QPixmap(path) on such a file (":/…" resources are ours).
+QImage Data::DecodeImageFile(const QString &path, int maxSide = 0);   // any thread; null: not a picture
+QSize Data::ImageFileDimensions(const QString &path);                 // header only, orientation applied
+bool Data::IsSupportedImageFile(const QString &path);                 // false: attach it as a file
+// Support::IsImageFile(path) (the name and the content) and Upload::Probe(path).kind already use it.
 
 // ---- upload (data/data_upload.h) — chat attachments go through Outbox::sendFile
 Upload::Id Upload::start(const UploadRequest &request, base::Guard guard, UploadCallbacks callbacks);  // filePath, kind, purpose

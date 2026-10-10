@@ -1,6 +1,7 @@
 #include "support/file_dialogs.h"
 
 #include "base/platform_file.h"
+#include "data/data_image_decode.h"
 #include "core/core_application.h"
 #include "lang_auto.h"
 
@@ -26,8 +27,6 @@ const auto kImageExtensions = QStringList{
 	QStringLiteral("jpeg"),
 	QStringLiteral("webp"),
 	QStringLiteral("gif"),
-	QStringLiteral("bmp"),
-	QStringLiteral("heic"),
 };
 const auto kVideoExtensions = QStringList{
 	QStringLiteral("mp4"),
@@ -155,7 +154,10 @@ void InBackground(QObject *guard, Work work, Done done) {
 } // namespace
 
 bool IsImageFile(const QString &path) {
-	return HasExtension(path, kImageExtensions);
+	// By the name and by the content: what the decoder would refuse is not
+	// treated as a picture anywhere (it is attached as a file).
+	return HasExtension(path, kImageExtensions)
+		&& Data::IsSupportedImageFile(path);
 }
 
 bool IsVideoFile(const QString &path) {
@@ -170,6 +172,7 @@ void PickFiles(
 		QWidget *parent,
 		PickArgs args,
 		std::function<void(const QStringList &paths)> done) {
+#ifdef ELEZA_DEBUG_TOOLS
 	if (const auto debug = qEnvironmentVariable("ELEZA_DEBUG_PICK");
 		!debug.isEmpty()) {
 		auto paths = ExistingFiles(debug.split(QLatin1Char(';'), Qt::SkipEmptyParts));
@@ -184,6 +187,7 @@ void PickFiles(
 		}, Qt::QueuedConnection);
 		return;
 	}
+#endif // ELEZA_DEBUG_TOOLS
 	const auto dialog = new QFileDialog(
 		parent ? parent->window() : nullptr,
 		DefaultTitle(args),
@@ -225,6 +229,7 @@ void AskSavePath(
 		const QString &suggestedName,
 		std::function<void(const QString &path)> done,
 		const QString &title) {
+#ifdef ELEZA_DEBUG_TOOLS
 	if (const auto debug = qEnvironmentVariable("ELEZA_DEBUG_SAVE");
 		!debug.isEmpty()) {
 		const auto weak = QPointer<QWidget>(parent);
@@ -235,6 +240,7 @@ void AskSavePath(
 		}, Qt::QueuedConnection);
 		return;
 	}
+#endif // ELEZA_DEBUG_TOOLS
 	// A name from the network must stay a plain file name, valid on every
 	// file system (Windows: no <>:"|?*, no device names, no trailing dots).
 	const auto name = base::platform::SafeFileName(

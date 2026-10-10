@@ -166,7 +166,9 @@ Widget::Widget(QWidget *parent, Window::MainWindow *window)
 		initial = StepType::Profile;
 	}
 	showStep(initial);
+#ifdef ELEZA_DEBUG_TOOLS
 	applyDebugRoute();
+#endif // ELEZA_DEBUG_TOOLS
 }
 
 Widget::~Widget() {
@@ -177,6 +179,7 @@ Main::Account &Widget::account() const {
 	return Core::App().account();
 }
 
+#ifdef ELEZA_DEBUG_TOOLS
 void Widget::applyDebugRoute() {
 	const auto route = Core::App().debugRoute();
 	const auto prefix = QStringLiteral("intro/");
@@ -223,6 +226,7 @@ void Widget::applyDebugRoute() {
 		showStep(StepType::Profile);
 	}
 }
+#endif // ELEZA_DEBUG_TOOLS
 
 Step *Widget::createStep(StepType type) {
 	return CreateStep(type, this, this);

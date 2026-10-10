@@ -87,4 +87,7 @@ Device key: Ed25519 or P-256 generated on first run, private key stored through
 
 `docs/DEVELOPING.md` is the working guide for feature modules; its section 2 lists every hook
 (`--api`, `--workdir`, `--debug-login`, `--debug-route`, `--debug-actions`, `--debug-grab`…),
-the scripted input player and the `debug/…` routes.
+the scripted input player and the `debug/…` routes. All of it except `--api`, `--workdir`,
+`--lang`, `--theme`, `--no-single-instance`, `--version` and `--help` is compiled only with
+the CMake option `ELEZA_DEBUG_TOOLS` (on for Debug builds, off for everything that is
+shipped; `docs/BUILDING.md`).

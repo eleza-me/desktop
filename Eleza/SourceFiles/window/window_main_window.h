@@ -85,9 +85,11 @@ public:
 		return _upgrade != nullptr;
 	}
 
+#ifdef ELEZA_DEBUG_TOOLS
 	// Screenshot helpers (--debug-size / --debug-grab).
 	void setFixedDebugSize(QSize size);
 	[[nodiscard]] QImage grabForDebug();
+#endif // ELEZA_DEBUG_TOOLS
 
 Q_SIGNALS:
 	// The window was activated / deactivated, minimized, hidden or shown.

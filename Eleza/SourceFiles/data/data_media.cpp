@@ -1,6 +1,7 @@
 #include "data/data_media.h"
 
 #include "base/platform_file.h"
+#include "data/data_image_decode.h"
 #include "data/data_session.h"
 
 #include <QtCore/QBuffer>
@@ -13,7 +14,6 @@
 #include <QtCore/QPointer>
 #include <QtCore/QThread>
 #include <QtCore/QUrl>
-#include <QtGui/QImageReader>
 
 #include <algorithm>
 
@@ -22,30 +22,20 @@ namespace {
 
 constexpr auto kDefaultMemoryLimit = qint64(64) << 20;
 constexpr auto kPruneTo = 0.8;
-// Remote pictures: the bytes are whatever the other side made them.
+// Remote pictures: the bytes are whatever the other side made them (the same
+// bound the decoder has, data_image_decode.cpp).
 constexpr auto kMaxImageBytes = qint64(64) << 20;
-constexpr auto kMaxImageSide = 16384;
-constexpr auto kMaxImagePixels = qint64(48) << 20;
 // Anything else the cache fetches (videos, files).
 constexpr auto kMaxFileBytes = qint64(4) << 30;
+// What a download may bring over the size its metadata declares.
+constexpr auto kDeclaredSizeMargin = qint64(64) << 10;
+constexpr auto kDeclaredSizeRatio = 20; // + 1/20: 5%
 
-// The formats the server produces, recognised by their first bytes. The
-// decoder is never chosen by Qt's own detection: with the image plugins that
-// may be installed that would also mean SVG (a document format with external
-// references, rendered by QtSvg), PDF, TIFF, ICO, TGA...
-[[nodiscard]] QByteArray SniffImageFormat(const QByteArray &head) {
-	const auto bytes = reinterpret_cast<const uchar*>(head.constData());
-	const auto size = head.size();
-	if (size >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
-		return "jpeg"_ba;
-	} else if (size >= 8 && head.startsWith("\x89PNG\r\n\x1a\n")) {
-		return "png"_ba;
-	} else if (size >= 6 && (head.startsWith("GIF87a") || head.startsWith("GIF89a"))) {
-		return "gif"_ba;
-	} else if (size >= 12 && head.startsWith("RIFF") && head.mid(8, 4) == "WEBP") {
-		return "webp"_ba;
-	}
-	return QByteArray();
+[[nodiscard]] Api::Error LargerThanDeclared() {
+	return Api::Error::Local(
+		413,
+		u"too_large"_s,
+		u"the file is larger than its declared size"_s);
 }
 
 [[nodiscard]] QString Encoded(const QString &segment) {
@@ -315,7 +305,39 @@ void Media::released(const QString &key) {
 	}
 }
 
+qint64 Media::DownloadLimit(qint64 declared, bool decode) {
+	const auto cap = decode ? kMaxImageBytes : kMaxFileBytes;
+	if (declared <= 0) {
+		return cap;
+	} else if (declared >= cap) {
+		return cap;
+	}
+	return std::min(
+		cap,
+		declared + std::max(declared / kDeclaredSizeRatio, kDeclaredSizeMargin));
+}
+
 void Media::startJob(const std::shared_ptr<Job> &job) {
+	if (!job->options.force
+		&& job->options.expectedBytes > 0
+		&& !job->filePath.isEmpty()
+		&& QFileInfo(job->filePath).size()
+			> DownloadLimit(job->options.expectedBytes, job->options.decode)) {
+		// Cached before the size was known to be wrong: not served either.
+		const auto size = QFileInfo(job->filePath).size();
+		if (QFile::remove(job->filePath)) {
+			_diskUsage = std::max(_diskUsage - size, qint64(0));
+			Q_EMIT diskUsageChanged();
+		}
+		// Asynchronous like every other outcome.
+		const auto weak = std::weak_ptr<Job>(job);
+		QMetaObject::invokeMethod(this, [=, this] {
+			if (const auto job = weak.lock()) {
+				fail(job, LargerThanDeclared());
+			}
+		}, Qt::QueuedConnection);
+		return;
+	}
 	if (!job->options.force && !job->filePath.isEmpty() && QFile::exists(job->filePath)) {
 		decode(job, QByteArray());
 	} else {
@@ -332,8 +354,9 @@ void Media::download(const std::shared_ptr<Job> &job) {
 		builder.toFile(job->filePath);
 	}
 	// An endless or absurd body ends the download instead of filling the
-	// disk (or, without a disk cache, the memory).
-	builder.maxBytes(job->options.decode ? kMaxImageBytes : kMaxFileBytes);
+	// disk (or, without a disk cache, the memory); so does one that brings
+	// more than the message said the file has.
+	builder.maxBytes(DownloadLimit(job->options.expectedBytes, job->options.decode));
 	const auto weak = std::weak_ptr<Job>(job);
 	job->download = builder
 		.guard(this)
@@ -366,70 +389,7 @@ void Media::download(const std::shared_ptr<Job> &job) {
 }
 
 QImage Media::Decode(const QString &filePath, const QByteArray &bytes, QSize fit) {
-	auto buffer = QBuffer();
-	auto file = QFile();
-	auto device = static_cast<QIODevice*>(nullptr);
-	if (!filePath.isEmpty()) {
-		file.setFileName(filePath);
-		if (!file.open(QIODevice::ReadOnly) || file.size() > kMaxImageBytes) {
-			return QImage();
-		}
-		device = &file;
-	} else {
-		if (bytes.size() > kMaxImageBytes) {
-			return QImage();
-		}
-		buffer.setData(bytes);
-		buffer.open(QIODevice::ReadOnly);
-		device = &buffer;
-	}
-	const auto format = SniffImageFormat(device->peek(16));
-	if (format.isEmpty()) {
-		return QImage();
-	}
-	// The format is forced: no plugin other than the four is ever asked.
-	auto reader = QImageReader(device, format);
-	reader.setAutoDetectImageFormat(false);
-	reader.setDecideFormatFromContent(false);
-	reader.setAutoTransform(true);
-	if (!reader.canRead()) {
-		return QImage();
-	}
-	// The header is checked before anything is allocated for the pixels.
-	const auto declared = reader.size();
-	if (!declared.isValid()
-		|| declared.isEmpty()
-		|| declared.width() > kMaxImageSide
-		|| declared.height() > kMaxImageSide
-		|| qint64(declared.width()) * declared.height() > kMaxImagePixels) {
-		return QImage();
-	}
-	if (fit.isValid() && !fit.isEmpty()) {
-		const auto size = declared;
-		if (size.width() > fit.width() || size.height() > fit.height()) {
-			// Scaled by the decoder where the format can (JPEG): cheaper than a full decode.
-			auto bounds = fit;
-			if (reader.transformation() & QImageIOHandler::TransformationRotate90) {
-				bounds.transpose();
-			}
-			reader.setScaledSize(size.scaled(bounds, Qt::KeepAspectRatio));
-		}
-	}
-	auto image = reader.read();
-	if (image.isNull()) {
-		return QImage();
-	}
-	if (fit.isValid() && !fit.isEmpty()
-		&& (image.width() > fit.width() || image.height() > fit.height())) {
-		image = image.scaled(fit, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-	}
-	const auto pixelFormat = image.hasAlphaChannel()
-		? QImage::Format_ARGB32_Premultiplied
-		: QImage::Format_RGB32;
-	if (image.format() != pixelFormat) {
-		image = image.convertToFormat(pixelFormat);
-	}
-	return image;
+	return DecodeImage(filePath, bytes, fit);
 }
 
 void Media::decode(const std::shared_ptr<Job> &job, const QByteArray &bytes) {

@@ -1,6 +1,7 @@
 #include "boxes/photo_crop_box.h"
 
 #include "base/platform_file.h"
+#include "data/data_image_decode.h"
 #include "lang_auto.h"
 #include "support/file_dialogs.h"
 #include "ui/painter.h"
@@ -10,7 +11,6 @@
 #include <QtCore/QPointer>
 #include <QtCore/QThreadPool>
 #include <QtCore/QUuid>
-#include <QtGui/QImageReader>
 #include <QtGui/QKeyEvent>
 #include <QtGui/QMouseEvent>
 #include <QtGui/QWheelEvent>
@@ -382,17 +382,7 @@ void PickAndCropPhoto(
 	const auto weak = QPointer<QWidget>(parent);
 	Support::PickImage(parent, [=](const QString &path) {
 		QThreadPool::globalInstance()->start([=] {
-			auto reader = QImageReader(path);
-			reader.setAutoTransform(true);
-			const auto size = reader.size();
-			if (size.isValid()
-				&& std::max(size.width(), size.height()) > kMaxDecodedSide) {
-				reader.setScaledSize(size.scaled(
-					kMaxDecodedSide,
-					kMaxDecodedSide,
-					Qt::KeepAspectRatio));
-			}
-			auto image = reader.read();
+			auto image = Data::DecodeImageFile(path, kMaxDecodedSide);
 			if (!image.isNull() && image.hasAlphaChannel()) {
 				// A transparent picture gets a white backing, like the server does.
 				auto flat = QImage(image.size(), QImage::Format_RGB32);

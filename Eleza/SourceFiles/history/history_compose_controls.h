@@ -99,8 +99,10 @@ public:
 	}
 	void updatePanelPosition();
 	// Debug hooks of the screenshots.
+#ifdef ELEZA_DEBUG_TOOLS
 	void debugShowPanel(bool stickers);
 	void debugShowAttachMenu();
+#endif // ELEZA_DEBUG_TOOLS
 
 Q_SIGNALS:
 	// A message went into the outbox: the list shows its end.

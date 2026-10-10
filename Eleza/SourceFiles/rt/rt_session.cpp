@@ -89,7 +89,11 @@ void Session::connectToServer(int keyId, const QByteArray &serverKey, const Auth
 		socketEnded(int(socket->closeCode()), socket->closeReason());
 	});
 	const auto onError = [=, this](QAbstractSocket::SocketError) {
+#ifdef ELEZA_DEBUG_TOOLS
 		qCInfo(Log, "socket error: %s", qPrintable(socket->errorString()));
+#else // ELEZA_DEBUG_TOOLS
+		qCInfo(Log, "socket error: %d", int(socket->error()));
+#endif // ELEZA_DEBUG_TOOLS
 		// A refused / unreachable socket or a failed upgrade (an HTTP error
 		// instead of 101) never reports `disconnected`; once the session is
 		// open, the socket's own close follows an error.

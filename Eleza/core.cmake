@@ -42,6 +42,8 @@ set(_eleza_core_files
 	data/data_feed.h
 	data/data_graph.cpp
 	data/data_graph.h
+	data/data_image_decode.cpp
+	data/data_image_decode.h
 	data/data_json.cpp
 	data/data_json.h
 	data/data_media.cpp

@@ -89,6 +89,7 @@ private Q_SLOTS:
 	void headersAndQuery();
 	void idempotencyKeys();
 	void problemJson();
+	void logLinesCarryNoIds();
 	void overloadRetriesReuseIds();
 	void upgradeRequired();
 	void unauthorizedRefreshesOnce();
@@ -235,6 +236,42 @@ void TestApi::problemJson() {
 	QVERIFY(html->error.code.isEmpty());
 	QVERIFY(html->error.retryable && html->error.serverSide());
 	QCOMPARE(failures, 4);
+}
+
+void TestApi::logLinesCarryNoIds() {
+	using Api::RouteTemplate;
+	QCOMPARE(RouteTemplate(u"/v1/me"_s), u"/v1/me"_s);
+	QCOMPARE(RouteTemplate(u"/v1/auth/otp/verify"_s), u"/v1/auth/otp/verify"_s);
+	QCOMPARE(RouteTemplate(u"/v1/chats/c1/messages?before=40&limit=50"_s), u"/v1/chats/:id/messages"_s);
+	QCOMPARE(
+		RouteTemplate(u"/v1/chats/01HZX3K8/messages/42/attachment?variant=thumb"_s),
+		u"/v1/chats/:id/messages/:id/attachment"_s);
+	QCOMPARE(RouteTemplate(u"/v1/users/u_sara/follow"_s), u"/v1/users/:id/follow"_s);
+	QCOMPARE(RouteTemplate(u"/v1/posts/p1/media/m7?variant=full"_s), u"/v1/posts/:id/media/:id"_s);
+	QCOMPARE(RouteTemplate(u"/v1/me/follow-requests/u9/accept"_s), u"/v1/me/follow-requests/:id/accept"_s);
+	// A handle or a slug is never kept, even when it spells a word of the API.
+	QCOMPARE(RouteTemplate(u"/v1/users/by-handle/sara"_s), u"/v1/users/by-handle/:id"_s);
+	QCOMPARE(RouteTemplate(u"/v1/users/by-handle/settings"_s), u"/v1/users/by-handle/:id"_s);
+	QCOMPARE(RouteTemplate(u"/v1/handles/me/availability"_s), u"/v1/handles/:id/availability"_s);
+	QCOMPARE(RouteTemplate(u"/v1/posts/by-slug/search"_s), u"/v1/posts/by-slug/:id"_s);
+	// Unknown words, encoded text, other hosts, fragments.
+	QCOMPARE(RouteTemplate(u"/v1/something-new/x"_s), u"/v1/:id/:id"_s);
+	QCOMPARE(RouteTemplate(u"/v1/users/%D8%B3%D8%A7%D8%B1%D8%A7"_s), u"/v1/users/:id"_s);
+	QCOMPARE(RouteTemplate(u"https://storage.example/bucket/a1.png?sig=abc"_s), u"<url>"_s);
+	QCOMPARE(RouteTemplate(u"/v1/search?q=sara#frag"_s), u"/v1/search"_s);
+	QCOMPARE(RouteTemplate(u"/"_s), u"/"_s);
+	QCOMPARE(RouteTemplate(QString()), QString());
+
+	auto error = Api::Error::Local(404, u"chat.not_found"_s, u"no chat with Sara"_s);
+	error.requestId = u"req-1"_s;
+	QVERIFY(error.describe().contains(u"Sara"));
+#ifdef ELEZA_DEBUG_TOOLS
+	QCOMPARE(error.forLog(), error.describe());
+	QCOMPARE(Api::RouteForLog(u"/v1/chats/c1/read"_s), u"/v1/chats/c1/read"_s);
+#else // ELEZA_DEBUG_TOOLS
+	QCOMPARE(error.forLog(), u"404 chat.not_found (request req-1)"_s);
+	QCOMPARE(Api::RouteForLog(u"/v1/chats/c1/read"_s), u"/v1/chats/:id/read"_s);
+#endif // ELEZA_DEBUG_TOOLS
 }
 
 void TestApi::overloadRetriesReuseIds() {

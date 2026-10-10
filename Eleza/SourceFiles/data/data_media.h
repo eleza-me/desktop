@@ -149,6 +149,10 @@ public:
 		QSize fit;
 		// Ignore what is cached and fetch again.
 		bool force = false;
+		// The size the message / media metadata declares for these bytes
+		// (0: unknown). The download is stopped and fails with the code
+		// "too_large" once it goes beyond DownloadLimit(expectedBytes).
+		qint64 expectedBytes = 0;
 	};
 
 	explicit Media(Session *session);
@@ -180,6 +184,13 @@ public:
 
 	// Where an item lives in the disk cache.
 	[[nodiscard]] QString filePathFor(const MediaRef &ref, MediaVariant variant) const;
+
+	// How many bytes a download whose metadata declares `declared` bytes may
+	// bring before it is stopped: a small margin over the declared size,
+	// max(declared × 1.05, declared + 64 KiB), never above the global cap of
+	// its kind (`decode`: pictures, otherwise files). Nothing declared
+	// (<= 0): the global cap.
+	[[nodiscard]] static qint64 DownloadLimit(qint64 declared, bool decode);
 
 	// Synchronous decode helper (used by the worker threads; exposed for tests).
 	[[nodiscard]] static QImage Decode(const QString &filePath, const QByteArray &bytes, QSize fit);

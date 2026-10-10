@@ -46,6 +46,13 @@ public:
 	[[nodiscard]] static Data::MediaVariant FileVariant(
 		const Data::Message &message);
 	[[nodiscard]] static QString SuggestedName(const Data::Message &message);
+	// The size the message declares for the bytes of this variant, when it
+	// declares one: the download is stopped beyond it (plus a small margin,
+	// Data::Media::DownloadLimit). Known for the file as it was uploaded;
+	// the other variants are made by the server and have sizes of their own.
+	[[nodiscard]] static qint64 DeclaredSize(
+		const Data::Message &message,
+		Data::MediaVariant variant);
 	// A file that should not be launched by a click (programs, scripts).
 	[[nodiscard]] static bool IsExecutable(const QString &path);
 
@@ -86,6 +93,7 @@ private:
 	Main::Session *_session = nullptr;
 	QHash<QString, Job> _jobs;
 	QHash<QString, QString> _saved; // key -> path
+	QHash<QString, bool> _failures; // message key -> larger than declared
 	bool _savedLoaded = false;
 
 };

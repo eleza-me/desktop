@@ -123,9 +123,13 @@ ListWidget::ListWidget(
 			updateRow(indexOfSeq(seq));
 		}
 	});
-	connect(_downloads, &Downloads::failed, this, [this](const QString &chat, qint64) {
+	connect(_downloads, &Downloads::failed, this, [this](const QString &chat, qint64 seq) {
 		if (chat == _chatId) {
-			_controller->showToast(tr::lng_chat_file_isnt_available(tr::now));
+			const auto item = message(seq);
+			_controller->showToast(
+				(item && _downloads->state(*item).oversized)
+					? tr::lng_chat_file_larger_than_declared(tr::now)
+					: tr::lng_chat_file_isnt_available(tr::now));
 		}
 	});
 	const auto player = &Media::Player();
@@ -470,6 +474,7 @@ const Data::Message *ListWidget::message(qint64 seq) const {
 	return (index >= 0) ? &_rows[index].element->data() : nullptr;
 }
 
+#ifdef ELEZA_DEBUG_TOOLS
 void ListWidget::setDebugItems(const QVector<Data::Message> &items) {
 	_debugMode = true;
 	_started = true;
@@ -477,6 +482,7 @@ void ListWidget::setDebugItems(const QVector<Data::Message> &items) {
 	_initialLoading = false;
 	applyRows(_debugItems);
 }
+#endif // ELEZA_DEBUG_TOOLS
 
 // ---- rows
 

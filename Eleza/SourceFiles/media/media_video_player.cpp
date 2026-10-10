@@ -190,7 +190,13 @@ void VideoPlayerWidget::ensurePlayer() {
 			if (error == QMediaPlayer::NoError) {
 				return;
 			}
+			// The text may name the file or its address.
+#ifdef ELEZA_DEBUG_TOOLS
 			qWarning("Media: video playback failed: %s", qPrintable(text));
+#else // ELEZA_DEBUG_TOOLS
+			Q_UNUSED(text);
+			qWarning("Media: video playback failed: %d", int(error));
+#endif // ELEZA_DEBUG_TOOLS
 			_failed = true;
 			update();
 			emit failed();

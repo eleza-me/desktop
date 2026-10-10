@@ -46,6 +46,7 @@ bool OpenSection(Window::SessionController *controller, const QString &id) {
 	return true;
 }
 
+#ifdef ELEZA_DEBUG_TOOLS
 // "debug/settings/two-step", "debug/settings/export": the boxes directly.
 bool HandleDebugRoute(
 		Window::SessionController *controller,
@@ -70,6 +71,8 @@ bool HandleDebugRoute(
 	return true;
 }
 
+#endif // ELEZA_DEBUG_TOOLS
+
 } // namespace
 
 void Register() {
@@ -88,7 +91,9 @@ void Register() {
 		}
 		return OpenSection(controller, route.id);
 	});
+#ifdef ELEZA_DEBUG_TOOLS
 	Window::RegisterRouteHandler(HandleDebugRoute);
+#endif // ELEZA_DEBUG_TOOLS
 	QObject::connect(
 		&Core::App(),
 		&Core::Application::sessionShownChanged,

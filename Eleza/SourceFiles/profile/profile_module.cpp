@@ -64,6 +64,7 @@ namespace {
 	return true;
 }
 
+#ifdef ELEZA_DEBUG_TOOLS
 [[nodiscard]] bool OpenDebugRoute(
 		Window::SessionController *controller,
 		const QString &route) {
@@ -94,6 +95,8 @@ namespace {
 	return false;
 }
 
+#endif // ELEZA_DEBUG_TOOLS
+
 } // namespace
 
 void Register() {
@@ -111,9 +114,12 @@ void Register() {
 			: route;
 		if (clean.startsWith(u"me/")) {
 			return OpenOwnRoute(controller, clean);
-		} else if (clean.startsWith(u"debug/")) {
+		}
+#ifdef ELEZA_DEBUG_TOOLS
+		if (clean.startsWith(u"debug/")) {
 			return OpenDebugRoute(controller, clean);
 		}
+#endif // ELEZA_DEBUG_TOOLS
 		return OpenFollowRoute(controller, clean);
 	});
 	Window::RegisterRouteHandler(Window::RouteType::User, [](

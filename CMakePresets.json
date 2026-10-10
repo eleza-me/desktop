@@ -27,6 +27,7 @@
 			"condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
 			"cacheVariables": {
 				"CMAKE_BUILD_TYPE": "RelWithDebInfo",
+				"ELEZA_DEBUG_TOOLS": "OFF",
 				"CMAKE_INSTALL_PREFIX": "/usr"
 			}
 		},
@@ -40,6 +41,7 @@
 			"architecture": { "value": "x64", "strategy": "external" },
 			"cacheVariables": {
 				"CMAKE_BUILD_TYPE": "Release",
+				"ELEZA_DEBUG_TOOLS": "OFF",
 				"CMAKE_C_COMPILER": "cl",
 				"CMAKE_CXX_COMPILER": "cl",
 				"VCPKG_TARGET_TRIPLET": "x64-windows",

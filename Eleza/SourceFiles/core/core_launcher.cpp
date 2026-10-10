@@ -10,8 +10,43 @@
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QStyleFactory>
 
+#include <cstdio>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif // Q_OS_WIN
+
 namespace Core {
 namespace {
+
+constexpr auto kVersionText = "Eleza Desktop " ELEZA_VERSION_STRING "\n";
+constexpr auto kHelpText =
+	"Eleza Desktop " ELEZA_VERSION_STRING "\n"
+	"\n"
+	"  --api=<url>            API address (https, or http on the loopback interface)\n"
+	"  --workdir=<dir>        data directory\n"
+	"  --lang=fa|en           interface language for this run\n"
+	"  --theme=light|dark     palette for this run\n"
+	"  --no-single-instance   allow a second process on the same data directory\n"
+	"  --version              print the version and exit\n"
+	"  --help                 print this text and exit\n"
+#ifdef ELEZA_DEBUG_TOOLS
+	"\n"
+	"This build has the debug tools (--debug-*, --gallery): docs/DEVELOPING.md.\n"
+#endif // ELEZA_DEBUG_TOOLS
+	;
+
+// A GUI program has no console of its own on Windows: write to the one it was
+// started from, when there is one.
+void AttachOutput() {
+#ifdef Q_OS_WIN
+	if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+		auto file = (FILE*)nullptr;
+		freopen_s(&file, "CONOUT$", "w", stdout);
+		freopen_s(&file, "CONOUT$", "w", stderr);
+	}
+#endif // Q_OS_WIN
+}
 
 [[nodiscard]] bool TakeValue(
 		const QString &argument,
@@ -48,6 +83,13 @@ CommandLine ParseCommandLine(const QStringList &arguments) {
 			} else if (value == QStringLiteral("dark")) {
 				result.theme = style::Scheme::Dark;
 			}
+		} else if (argument == QStringLiteral("--no-single-instance")) {
+			result.noSingleInstance = true;
+		} else if (argument == QStringLiteral("--version")) {
+			result.showVersion = true;
+		} else if (argument == QStringLiteral("--help")) {
+			result.showHelp = true;
+#ifdef ELEZA_DEBUG_TOOLS
 		} else if (argument == QStringLiteral("--gallery")) {
 			result.gallery = true;
 		} else if (TakeValue(argument, "--gallery", value)) {
@@ -78,8 +120,12 @@ CommandLine ParseCommandLine(const QStringList &arguments) {
 			}
 		} else if (TakeValue(argument, "--debug-actions", value)) {
 			result.debugActions = value;
-		} else if (argument == QStringLiteral("--no-single-instance")) {
-			result.noSingleInstance = true;
+#else // ELEZA_DEBUG_TOOLS
+		} else if (argument.startsWith(QStringLiteral("--debug-"))
+			|| argument.startsWith(QStringLiteral("--gallery"))) {
+			const auto till = argument.indexOf(QLatin1Char('='));
+			result.unavailable.push_back(argument.left(till));
+#endif // ELEZA_DEBUG_TOOLS
 		}
 	}
 	return result;
@@ -104,12 +150,13 @@ QString Launcher::apiUrl() const {
 		return standard;
 	}
 	// The tokens go wherever this points: TLS, or a test server on the
-	// loopback interface. Clear text to another machine is for debug builds.
-#ifdef QT_NO_DEBUG
-	const auto allowInsecure = false;
-#else // QT_NO_DEBUG
+	// loopback interface. Clear text to another machine is for builds with the
+	// debug tools only.
+#ifdef ELEZA_DEBUG_TOOLS
 	const auto allowInsecure = true;
-#endif // QT_NO_DEBUG
+#else // ELEZA_DEBUG_TOOLS
+	const auto allowInsecure = false;
+#endif // ELEZA_DEBUG_TOOLS
 	if (!Api::Client::IsAcceptableBase(custom, allowInsecure)) {
 		qWarning("The API address is not accepted (https, or http on the loopback interface); using the default.");
 		return standard;
@@ -118,12 +165,14 @@ QString Launcher::apiUrl() const {
 }
 
 void Launcher::prepareEnvironment() {
+#ifdef ELEZA_DEBUG_TOOLS
 	// Must be set before the QApplication is created.
 	if (_commandLine.debugScale > 0.) {
 		qputenv(
 			"QT_SCALE_FACTOR",
 			QByteArray::number(_commandLine.debugScale));
 	}
+#endif // ELEZA_DEBUG_TOOLS
 	QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
 		Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
 	QCoreApplication::setOrganizationName(QStringLiteral("eleza"));
@@ -146,6 +195,21 @@ QString Launcher::computeWorkDir() const {
 }
 
 int Launcher::exec() {
+	// Answered without a display or a data directory.
+	if (_commandLine.showVersion || _commandLine.showHelp) {
+		AttachOutput();
+		std::fputs(_commandLine.showHelp ? kHelpText : kVersionText, stdout);
+		std::fflush(stdout);
+		return 0;
+	}
+	if (!_commandLine.unavailable.isEmpty()) {
+		AttachOutput();
+		std::fprintf(
+			stderr,
+			"Eleza: %s: not available in this build (ignored).\n",
+			qPrintable(_commandLine.unavailable.join(QStringLiteral(", "))));
+		std::fflush(stderr);
+	}
 	prepareEnvironment();
 
 	auto application = QApplication(_argc, _argv);
@@ -169,9 +233,13 @@ int Launcher::exec() {
 	if (!_commandLine.ephemeral() && !_commandLine.noSingleInstance) {
 		QDir().mkpath(_workDir);
 		instance = std::make_unique<SingleInstance>(_workDir);
+#ifdef ELEZA_DEBUG_TOOLS
 		const auto message = _commandLine.debugRoute.isEmpty()
 			? QStringLiteral("activate")
 			: (QStringLiteral("route:") + _commandLine.debugRoute);
+#else // ELEZA_DEBUG_TOOLS
+		const auto message = QStringLiteral("activate");
+#endif // ELEZA_DEBUG_TOOLS
 		if (instance->notifyRunning(message)) {
 			return 0;
 		}

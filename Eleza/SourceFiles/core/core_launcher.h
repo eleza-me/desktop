@@ -1,11 +1,17 @@
 // Core::Launcher — process start: command line, HiDPI setup, single instance,
 // QApplication and Core::Application.
 //
-// Command line (see docs/DEVELOPING.md "Debug hooks"):
+// Command line:
 //   --api=<url>               API base (or env ELEZA_API), default https://api.eleza.me
 //   --workdir=<dir>           data directory (default: platform app-data)
 //   --lang=fa|en              interface language for this run
 //   --theme=light|dark        palette for this run
+//   --no-single-instance      allow a second process with the same workdir
+//   --version, --help         print and exit
+//
+// Only in a build with ELEZA_DEBUG_TOOLS (docs/DEVELOPING.md "Debug hooks"; a
+// build without it has none of this code, says once that the flag is not
+// available and goes on):
 //   --gallery[=<page>]        open the UI gallery instead of the app
 //                             (pages: buttons, inputs, text, lists, layers, misc)
 //   --debug-route=<route>     route to open after start ("chats", "eli", "settings",
@@ -23,7 +29,6 @@
 //   --debug-actions=<script>  scripted input played on the main window, e.g.
 //                             "click:600,400;type:متن;key:Return;wait:300;grab:/tmp/a.png"
 //                             (core_debug.h has the whole list)
-//   --no-single-instance      allow a second process with the same workdir
 #pragma once
 
 #include "lang/lang_instance.h"
@@ -42,6 +47,13 @@ struct CommandLine {
 	QString workDir;
 	std::optional<Lang::Language> language;
 	std::optional<style::Scheme> theme;
+	bool noSingleInstance = false;
+	bool showVersion = false;
+	bool showHelp = false;
+	// Debug flags given to a build that has none.
+	QStringList unavailable;
+
+#ifdef ELEZA_DEBUG_TOOLS
 	bool gallery = false;
 	QString galleryPage;
 	QString debugRoute;
@@ -53,7 +65,6 @@ struct CommandLine {
 	QString debugLoginCode;
 	QString debugLoginPassword;
 	QString debugActions;
-	bool noSingleInstance = false;
 
 	// True for screenshot / scripted runs: preferences are not written to disk,
 	// no tray icon, animations jump to the end, the process exits when done.
@@ -63,6 +74,12 @@ struct CommandLine {
 	[[nodiscard]] bool debugLogin() const {
 		return !debugLoginPhone.isEmpty() && !debugLoginCode.isEmpty();
 	}
+#else // ELEZA_DEBUG_TOOLS
+	// No screenshot / scripted runs in this build.
+	[[nodiscard]] constexpr bool ephemeral() const {
+		return false;
+	}
+#endif // ELEZA_DEBUG_TOOLS
 };
 
 [[nodiscard]] CommandLine ParseCommandLine(const QStringList &arguments);

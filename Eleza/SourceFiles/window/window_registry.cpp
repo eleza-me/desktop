@@ -99,6 +99,14 @@ bool HandleRoute(SessionController *controller, const QString &route) {
 	if (route.isEmpty()) {
 		return false;
 	}
+#ifndef ELEZA_DEBUG_TOOLS
+	// A build without the debug tools has no developer routes at all; whatever
+	// produced one (a link, a stored state) opens nothing.
+	if (route.startsWith(QStringLiteral("debug/"))
+		|| route.startsWith(QStringLiteral("/debug/"))) {
+		return false;
+	}
+#endif // !ELEZA_DEBUG_TOOLS
 	// Modules first: they may refine a tab route ("settings/privacy").
 	for (const auto &handler : Data().routes) {
 		if (handler(controller, route)) {
@@ -113,6 +121,7 @@ bool HandleRoute(SessionController *controller, const QString &route) {
 			}
 		}
 	}
+#ifdef ELEZA_DEBUG_TOOLS
 	// "debug/main[/<n>]": n placeholder sections in the main column.
 	const auto debugPrefix = QStringLiteral("debug/main");
 	if (route.startsWith(debugPrefix)) {
@@ -124,6 +133,7 @@ bool HandleRoute(SessionController *controller, const QString &route) {
 		}
 		return true;
 	}
+#endif // ELEZA_DEBUG_TOOLS
 	if (!parsed.valid()) {
 		return false;
 	}

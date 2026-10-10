@@ -9,6 +9,7 @@
 
 #include "api/api_client_config.h"
 #include "data/data_feed.h"
+#include "data/data_image_decode.h"
 #include "data/data_session.h"
 #include "data/data_upload.h"
 #include "data/data_users.h"
@@ -44,7 +45,6 @@
 #include <QtGui/QClipboard>
 #include <QtGui/QDragEnterEvent>
 #include <QtGui/QGuiApplication>
-#include <QtGui/QImageReader>
 #include <QtGui/QKeyEvent>
 #include <QtGui/QSyntaxHighlighter>
 #include <QtGui/QTextCursor>
@@ -566,16 +566,7 @@ private:
 	void loadThumb(const QString &path) {
 		const auto weak = QPointer<Tiles>(this);
 		QThreadPool::globalInstance()->start([=] {
-			auto reader = QImageReader(path);
-			reader.setAutoTransform(true);
-			const auto size = reader.size();
-			if (size.isValid() && std::max(size.width(), size.height()) > kThumbSide * 2) {
-				reader.setScaledSize(size.scaled(
-					kThumbSide * 2,
-					kThumbSide * 2,
-					Qt::KeepAspectRatio));
-			}
-			const auto image = reader.read();
+			const auto image = Data::DecodeImageFile(path, kThumbSide * 2);
 			QMetaObject::invokeMethod(qApp, [=] {
 				if (!weak) {
 					return;

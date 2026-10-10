@@ -273,7 +273,12 @@ void Client::openSession(int generation, const QString &token) {
 		}
 	});
 	connect(session, &Session::closed, this, [=, this](int code, const QString &reason) {
+#ifdef ELEZA_DEBUG_TOOLS
 		qCInfo(Log, "closed: %d %s", code, qPrintable(reason));
+#else // ELEZA_DEBUG_TOOLS
+		Q_UNUSED(reason);
+		qCInfo(Log, "closed: %d", code);
+#endif // ELEZA_DEBUG_TOOLS
 		sessionClosed(session, code);
 	});
 
@@ -579,7 +584,7 @@ void Client::call(
 		} else if (!response.ok()) {
 			const auto error = ToApiError(response);
 			if (!response.transport()) {
-				qCInfo(Log, "%s -> %s", qPrintable(method), qPrintable(error.describe()));
+				qCInfo(Log, "%s -> %s", qPrintable(method), qPrintable(error.forLog()));
 			}
 			if (fail) {
 				fail(error);

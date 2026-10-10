@@ -38,6 +38,8 @@ private:
 
 // Registers the "debug/…" routes of the shared helpers (a sample notification,
 // the image viewer, the crop box, …). Called from Core::RegisterModules.
+#ifdef ELEZA_DEBUG_TOOLS
 void RegisterDebugRoutes();
+#endif // ELEZA_DEBUG_TOOLS
 
 } // namespace Support

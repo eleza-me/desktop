@@ -66,9 +66,41 @@ cmake --preset linux-debug && cmake --build --preset linux-debug && ctest --pres
 * One test, `test_rt_interop`, talks to a peer built from the web client and needs `node`
   and a checkout of the web client next to this repository (`-DELEZA_PWA_DIR=…`); it reports
   itself as *skipped* otherwise.
-* Without a display: `QT_QPA_PLATFORM=offscreen ./build/Eleza/Eleza --gallery
-  --debug-grab=/tmp/gallery.png` renders the widget gallery to a file and exits — a quick
-  check that the binary and its plugins work.
+* Without a display: `./build/Eleza/Eleza --version` checks that the binary and its
+  libraries load; `QT_QPA_PLATFORM=offscreen timeout 5 ./build/Eleza/Eleza
+  --no-single-instance --workdir=/tmp/wd` must run until the timeout ends it. In a build
+  with the debug tools (below) `QT_QPA_PLATFORM=offscreen ./build/Eleza/Eleza --gallery
+  --debug-grab=/tmp/gallery.png` renders the widget gallery to a file and exits.
+
+### Debug tools (`ELEZA_DEBUG_TOOLS`)
+
+One CMake option is the switch for every test / debug surface of the app:
+
+* the flags `--debug-login`, `--debug-actions`, `--debug-route`, `--debug-grab`,
+  `--debug-grab-delay`, `--debug-size`, `--debug-scale` and `--gallery` (with the gallery
+  sources themselves);
+* the `debug/…` routes of every module and the `intro/…` sample steps;
+* the environment hooks `ELEZA_DEBUG_PICK`, `ELEZA_DEBUG_SAVE`, `ELEZA_DEBUG_FONTS`;
+* a clear text (`http://`) API address outside the loopback interface;
+* request paths, subjects (chat / user / post ids) and error texts in the log.
+
+| `CMAKE_BUILD_TYPE` | default |
+| --- | --- |
+| `Debug`, or not given | `ON` |
+| `Release`, `RelWithDebInfo`, `MinSizeRel` (every platform) | `OFF` |
+| a multi-config generator (Visual Studio, Ninja Multi-Config) | `OFF` |
+
+`-DELEZA_DEBUG_TOOLS=ON|OFF` overrides the default (the value is cached: pass it again
+when an existing build directory changes its build type). With the option off the code is
+not in the binary at all — `strings build/Eleza/Eleza | grep -c debug-login` prints 0 — a
+`--debug-*` or `--gallery` argument prints one line (`… not available in this build
+(ignored).`) and the app starts as usual. `--api=`, `--workdir=`, `--lang=`, `--theme=`,
+`--no-single-instance`, `--version` and `--help` are in every build; so is `http://` to the
+loopback interface (a local test server). **Whatever is shipped is built with the option
+off**: the release presets, `packaging/linux/build-deb.sh` and the CI workflow say so
+explicitly. The log of such a build has the method, the route template (`/v1/chats/:id/read`),
+the status, the error code and the request id of a failed request — never ids, handles or
+the server's message text.
 
 ### Install and packages
 
@@ -149,11 +181,13 @@ toolchain). The build itself and `ctest` do not need Qt in `PATH`: the code gene
 the tests are started with Qt's `bin` directory prepended (CMake 3.25+ for the generators,
 3.22+ for the tests; with an older CMake keep the `set PATH` line above).
 
-`ELEZA_DEBUG_TOOLS` (scripted mouse and keyboard input for `--debug-actions`, see
-`docs/DEVELOPING.md`) is off by default in MSVC builds other than Debug: it calls two
-functions QtGui exports for QtTest only, declared by hand in `core/core_debug.cpp`. Turn it
-on with `-DELEZA_DEBUG_TOOLS=ON`; `--debug-grab`, `--debug-route` and the `wait`, `grab`,
-`route` and `resize` steps work either way.
+`ELEZA_DEBUG_TOOLS` (every debug flag and route, see "Debug tools" in the Linux section and
+`docs/DEVELOPING.md`) is off in the `windows-msvc-release` preset, as in every build that is
+not Debug. For a build with the hooks configure a Debug build or pass
+`-DELEZA_DEBUG_TOOLS=ON`. The scripted input of `--debug-actions` calls two functions QtGui
+exports for QtTest only, declared by hand in `core/core_debug.cpp`: should a Qt version
+change them, the link of such a build fails there (a build without the option is not
+affected).
 
 ### Deploying (a folder that runs anywhere)
 
@@ -229,8 +263,10 @@ icon and "start when I sign in", and registers an uninstaller. User data lives i
 ## Continuous integration
 
 `.github/workflows/build.yml` builds both platforms on every push to `main`, on pull
-requests and on `v*` tags, runs `ctest`, starts the deployed build once (the widget gallery
-on the offscreen platform) and uploads:
+requests and on `v*` tags, runs `ctest`, starts the built binary once (`--version`; on
+Linux also a few seconds on the offscreen platform) and uploads the packages. Both jobs
+build Release with `ELEZA_DEBUG_TOOLS` off — the tests do not need the debug flags — so the
+artifacts have no debug hooks; the Linux job checks that:
 
 * `Eleza-<version>-windows-x64-portable` — the deployed folder;
 * `Eleza-<version>-windows-x64-setup` — the installer;
