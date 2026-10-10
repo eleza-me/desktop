@@ -1,0 +1,99 @@
+// The image viewer, the video player widget and their controls. These live on
+// top of media, so their colors do not follow the light / dark palette.
+using "ui/basic.style";
+using "ui/widgets/widgets.style";
+
+mediaOverFg: #ffffffeb;
+mediaOverFgDim: #ffffffa8;
+mediaOverBg: #0d0f0d99;
+mediaOverBgOver: #ffffff29;
+mediaOverRipple: RippleAnimation(defaultRipple) {
+	color: #ffffff2e;
+}
+
+// ---- image viewer
+viewerBg: #050806eb;
+viewerPadding: 56px;       // free space kept around a fitted image
+viewerTopHeight: 56px;
+viewerButton: IconButton(defaultIconButton) {
+	width: 44px;
+	height: 44px;
+	icon: icon {{ "close", mediaOverFg }};
+	iconOver: icon {{ "close", mediaOverFg }};
+	rippleSize: 40px;
+	bgOver: mediaOverBgOver;
+	ripple: mediaOverRipple;
+}
+viewerClose: IconButton(viewerButton) {
+}
+viewerSave: IconButton(viewerButton) {
+	icon: icon {{ "download", mediaOverFg }};
+	iconOver: icon {{ "download", mediaOverFg }};
+}
+viewerPrevious: IconButton(viewerButton) {
+	width: 48px;
+	height: 48px;
+	icon: icon {{ "chevron-left", mediaOverFg, 28px }};
+	iconOver: icon {{ "chevron-left", mediaOverFg, 28px }};
+	rippleSize: 48px;
+}
+viewerNext: IconButton(viewerPrevious) {
+	icon: icon {{ "chevron-right", mediaOverFg, 28px }};
+	iconOver: icon {{ "chevron-right", mediaOverFg, 28px }};
+}
+viewerNavSkip: 12px;
+viewerNavBg: #0d0f0d73;
+viewerCounterFont: font(14px medium);
+viewerCounterFg: mediaOverFg;
+viewerCaptionStyle: TextStyle(defaultTextStyle) {
+	font: font(14px);
+	lineHeight: 22px;
+	linkFg: brandMint;
+}
+viewerCaptionFg: mediaOverFg;
+viewerCaptionBg: #0d0f0db8;
+viewerCaptionPadding: margins(16px, 10px, 16px, 10px);
+viewerCaptionMaxWidth: 640px;
+viewerCaptionBottom: 20px;
+viewerCaptionRadius: 12px;
+viewerCaptionLines: 4;
+viewerSpinnerSize: 36px;
+viewerErrorFont: font(14px);
+
+// ---- video player
+videoBg: #000000;
+videoControlsHeight: 44px;
+videoControlsPadding: margins(8px, 0px, 8px, 0px);
+videoControlsBg: #0d0f0db3;
+videoControlsRadius: 12px;
+videoControlsMargin: 10px;
+videoControlsMinWidth: 220px;
+videoButton: IconButton(defaultIconButton) {
+	width: 36px;
+	height: 36px;
+	icon: icon {{ "play", mediaOverFg, 22px }};
+	iconOver: icon {{ "play", mediaOverFg, 22px }};
+	rippleSize: 32px;
+	bgOver: mediaOverBgOver;
+	ripple: mediaOverRipple;
+}
+videoPlayIcon: icon {{ "play", mediaOverFg, 22px }};
+videoPauseIcon: icon {{ "pause", mediaOverFg, 22px }};
+videoVolumeIcon: icon {{ "volume", mediaOverFg, 22px }};
+videoMutedIcon: icon {{ "mute", mediaOverFg, 22px }};
+videoFullscreenIcon: icon {{ "external", mediaOverFg, 20px }};
+videoFullscreenExitIcon: icon {{ "close", mediaOverFg, 20px }};
+videoTimeFont: font(12px medium);
+videoTimeFg: mediaOverFg;
+videoTimeSkip: 8px;
+videoSeekHeight: 4px;
+videoSeekKnob: 12px;
+videoSeekFg: #ffffff;
+videoSeekBg: #ffffff4d;
+videoSeekBuffered: #ffffff80;
+videoVolumeWidth: 64px;
+videoBigPlaySize: 64px;
+videoBigPlayBg: #0d0f0d8c;
+videoBigPlayIcon: icon {{ "play", mediaOverFg, 32px }};
+videoControlsHideDelay: 2600ms;
+videoErrorFont: font(14px);

@@ -1,0 +1,56 @@
+{
+ "api": {
+  "min_client_version": {
+   "web": "0.0.0"
+  }
+ },
+ "conversation.topic_max_chars": 120,
+ "conversation.durations": [
+  "1h",
+  "6h",
+  "24h"
+ ],
+ "conversation.default_duration": "24h",
+ "conversation.categories": [
+  {
+   "slug": "heart",
+   "title": "دلی"
+  },
+  {
+   "slug": "cinema",
+   "title": "سینما"
+  },
+  {
+   "slug": "study_work",
+   "title": "تحصیل و کار"
+  },
+  {
+   "slug": "migration",
+   "title": "مهاجرت"
+  },
+  {
+   "slug": "family",
+   "title": "خانواده"
+  },
+  {
+   "slug": "sport",
+   "title": "ورزش"
+  },
+  {
+   "slug": "music",
+   "title": "موسیقی"
+  },
+  {
+   "slug": "books",
+   "title": "کتاب"
+  },
+  {
+   "slug": "tech",
+   "title": "تکنولوژی"
+  },
+  {
+   "slug": "other",
+   "title": "سایر"
+  }
+ ]
+}

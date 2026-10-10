@@ -1,1 +1,17 @@
-*.strings merge=union
+# LF in the working tree on every platform: the style / strings / palette parsers, the
+# test data (hashed and compared byte by byte) and the shell scripts must not turn into
+# CRLF on a Windows checkout with core.autocrlf=true (the default of Git for Windows
+# and of the CI runners). MSVC, rc.exe and Inno Setup read LF files.
+* text=auto eol=lf
+*.strings text eol=lf merge=union
+*.png binary
+*.ico binary
+*.jpg binary
+*.webp binary
+*.ttf binary
+*.otf binary
+*.wav binary
+*.ogg binary
+*.bin binary
+# Kept as shipped by the font's authors.
+Eleza/Resources/fonts/*.txt -text

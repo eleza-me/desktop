@@ -1,0 +1,125 @@
+{
+ "chats": [
+  {
+   "chat": "c1",
+   "section": "message",
+   "state": "active",
+   "last_seq": 9,
+   "unread": 2,
+   "muted": false,
+   "pinned": true,
+   "last_activity_at": 1791576279862,
+   "last_message": {
+    "chat": "c1",
+    "seq": 9,
+    "id": "m_c1_9",
+    "sender": "u_sara",
+    "kind": "text",
+    "created_at": 1791576279862,
+    "text": "باشه 👍"
+   },
+   "chat_info": {
+    "chat": "c1",
+    "kind": "direct",
+    "state": "active",
+    "participants": [
+     {
+      "ref": "u_me",
+      "user_id": "u_me",
+      "me": true
+     },
+     {
+      "ref": "u_sara",
+      "user_id": "u_sara"
+     }
+    ],
+    "last_seq": 9,
+    "peer_read_seq": 4,
+    "last_read_seq": 5,
+    "can_send": true
+   }
+  },
+  {
+   "chat": "c2",
+   "section": "message",
+   "state": "active",
+   "last_seq": 4,
+   "unread": 0,
+   "muted": false,
+   "pinned": false,
+   "last_activity_at": 1791576287234,
+   "last_message": {
+    "chat": "c2",
+    "seq": 4,
+    "id": "m_c2_4",
+    "sender": "u_me",
+    "kind": "file",
+    "created_at": 1791576287234,
+    "text": "note.txt",
+    "client_message_id": "1d4c6cc1-3bb9-4e4e-92cd-8fb7a2e987f2",
+    "attachment": "media_new"
+   },
+   "chat_info": {
+    "chat": "c2",
+    "kind": "direct",
+    "state": "active",
+    "participants": [
+     {
+      "ref": "u_me",
+      "user_id": "u_me",
+      "me": true
+     },
+     {
+      "ref": "u_ali",
+      "user_id": "u_ali"
+     }
+    ],
+    "last_seq": 4,
+    "peer_read_seq": 0,
+    "last_read_seq": 10,
+    "can_send": true
+   }
+  },
+  {
+   "chat": "c3",
+   "section": "message",
+   "state": "active",
+   "last_seq": 1,
+   "unread": 0,
+   "muted": true,
+   "pinned": false,
+   "last_activity_at": 1791057861925,
+   "last_message": {
+    "chat": "c3",
+    "seq": 1,
+    "id": "m_c3_1",
+    "sender": "u_bot",
+    "kind": "text",
+    "created_at": 1791057861925,
+    "text": "سلام! برای ساختن پک استیکر /new رو بفرست."
+   },
+   "chat_info": {
+    "chat": "c3",
+    "kind": "direct",
+    "state": "active",
+    "participants": [
+     {
+      "ref": "u_me",
+      "user_id": "u_me",
+      "me": true
+     },
+     {
+      "ref": "u_bot",
+      "user_id": "u_bot",
+      "bot": true
+     }
+    ],
+    "last_seq": 1,
+    "peer_read_seq": 0,
+    "last_read_seq": 11,
+    "can_send": true
+   }
+  }
+ ],
+ "next_cursor": ""
+}

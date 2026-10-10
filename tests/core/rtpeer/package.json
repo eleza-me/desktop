@@ -1,0 +1,16 @@
+{
+  "name": "eleza-rtpeer",
+  "version": "1.0.0",
+  "description": "Realtime v2 test peer for the desktop client, built from the web client's protocol code",
+  "author": "eleza",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@noble/ciphers": "^2.4.0",
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
+    "esbuild": "^0.25.0",
+    "ws": "^8.18.0"
+  }
+}

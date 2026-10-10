@@ -1,0 +1,287 @@
+{
+  "BirthdayOut": [
+    "calendar",
+    "day",
+    "month"
+  ],
+  "CallRecord": [
+    "outcome"
+  ],
+  "CallbackAnswer": [
+    "answered"
+  ],
+  "CardOut": [
+    "display_name"
+  ],
+  "ChatCallbackRequest": [
+    "col",
+    "row"
+  ],
+  "ChatCapabilityResponse": [
+    "capability",
+    "expires_at"
+  ],
+  "ChatDraftSaveRequest": [
+    "text"
+  ],
+  "ChatDraftSaveResponse": [
+    "updated_at"
+  ],
+  "ChatEditRequest": [
+    "text"
+  ],
+  "ChatInboxResponse": [
+    "chats"
+  ],
+  "ChatLiveLocationsResponse": [
+    "items"
+  ],
+  "ChatPinsResponse": [
+    "pins"
+  ],
+  "ChatSendRequest": [
+    "client_message_id",
+    "kind"
+  ],
+  "ChatSendResponse": [
+    "created_at",
+    "message_id",
+    "seq"
+  ],
+  "ChatView": [
+    "can_send",
+    "chat",
+    "kind",
+    "last_read_seq",
+    "last_seq",
+    "participants",
+    "pins",
+    "state"
+  ],
+  "ClearedData": [
+    "chat",
+    "cleared_before_seq",
+    "for_both"
+  ],
+  "ClientButton": [
+    "kind",
+    "text"
+  ],
+  "ConvCreateRequest": [
+    "category",
+    "duration",
+    "masked",
+    "topic"
+  ],
+  "ConvOpenResponse": [
+    "conversations"
+  ],
+  "ConvView": [
+    "category",
+    "expires_at",
+    "id",
+    "speaker",
+    "state",
+    "topic"
+  ],
+  "DraftUpdate": [
+    "chat"
+  ],
+  "DraftView": [
+    "text",
+    "updated_at"
+  ],
+  "Entity": [
+    "length",
+    "offset",
+    "type"
+  ],
+  "Entry": [
+    "actor_count",
+    "actors",
+    "id",
+    "kind",
+    "read",
+    "tab",
+    "updated_at"
+  ],
+  "ForwardIn": [
+    "chat",
+    "seq"
+  ],
+  "InboxEntry": [
+    "chat",
+    "last_activity_at",
+    "last_seq",
+    "section",
+    "state",
+    "unread"
+  ],
+  "InlineResultIn": [
+    "bot",
+    "query_id",
+    "result_id"
+  ],
+  "KeyButton": [
+    "text"
+  ],
+  "LinkPreview": [
+    "url"
+  ],
+  "LiveItem": [
+    "sender",
+    "seq",
+    "until"
+  ],
+  "LiveView": [
+    "period",
+    "until"
+  ],
+  "Location": [
+    "lat",
+    "lng"
+  ],
+  "MeGetResponse": [
+    "bio",
+    "display_name",
+    "followers",
+    "following",
+    "handle",
+    "id",
+    "is_private",
+    "posts",
+    "verified",
+    "visibility"
+  ],
+  "MemberData": [
+    "archived",
+    "chat",
+    "cleared_before_seq",
+    "hidden_seq",
+    "muted"
+  ],
+  "MessageView": [
+    "chat",
+    "created_at",
+    "id",
+    "kind",
+    "sender",
+    "seq"
+  ],
+  "NotifData": [
+    "news"
+  ],
+  "NotifListResponse": [
+    "notifications"
+  ],
+  "NotifUnreadResponse": [
+    "news"
+  ],
+  "OpenItem": [
+    "category",
+    "expires_at",
+    "id",
+    "speaker_masked",
+    "topic"
+  ],
+  "Page": [
+    "chat",
+    "messages"
+  ],
+  "Participant": [
+    "masked",
+    "ref",
+    "role"
+  ],
+  "PinData": [
+    "chat",
+    "pinned",
+    "scope",
+    "seq"
+  ],
+  "PinnedMessage": [
+    "message",
+    "pinned_at",
+    "scope"
+  ],
+  "PlayedData": [
+    "chat",
+    "played",
+    "seq"
+  ],
+  "PresenceOut": [
+    "status",
+    "user"
+  ],
+  "PresenceRequest": [
+    "users"
+  ],
+  "PresenceResponse": [
+    "presence"
+  ],
+  "ProfileOut": [
+    "bio",
+    "display_name",
+    "followers",
+    "following",
+    "handle",
+    "id",
+    "is_private",
+    "posts",
+    "verified",
+    "visibility"
+  ],
+  "Quote": [
+    "offset",
+    "text"
+  ],
+  "ReactionData": [
+    "by",
+    "chat",
+    "emoji",
+    "seq"
+  ],
+  "ReadData": [
+    "chat",
+    "reader",
+    "seq"
+  ],
+  "StickerView": [
+    "height",
+    "id",
+    "pack",
+    "url",
+    "width"
+  ],
+  "SyncDifferenceResponse": [
+    "pts",
+    "too_long",
+    "updates"
+  ],
+  "SyncStateResponse": [
+    "pts"
+  ],
+  "Update": [
+    "chat",
+    "kind",
+    "pts"
+  ],
+  "UsersCardsResponse": [
+    "users"
+  ],
+  "UsersGetResponse": [
+    "bio",
+    "display_name",
+    "followers",
+    "following",
+    "handle",
+    "id",
+    "is_private",
+    "posts",
+    "verified",
+    "visibility"
+  ],
+  "ViaBotView": [
+    "id"
+  ]
+}

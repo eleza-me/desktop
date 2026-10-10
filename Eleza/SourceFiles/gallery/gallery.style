@@ -1,0 +1,34 @@
+// The UI gallery (--gallery): a showcase and visual test bed of the widget library.
+using "ui/basic.style";
+using "ui/widgets/widgets.style";
+
+galleryMaxWidth: 760px;
+galleryPadding: margins(24px, 16px, 24px, 32px);
+gallerySectionSkip: 22px;
+galleryTitlePadding: margins(0px, 0px, 0px, 10px);
+galleryRowSkip: 10px;
+galleryCardRadius: 14px;
+galleryCardBg: bgSurface;
+galleryCardBorder: borderSubtle;
+
+galleryChatRowHeight: 68px;
+galleryChatUserpic: 48px;
+galleryChatNameFont: semiboldFont;
+galleryChatTextFont: font(13px);
+galleryChatTimeFont: microFont;
+
+gallerySwatchSize: size(132px, 54px);
+galleryIconCell: size(92px, 64px);
+
+galleryThemeButton: IconButton(defaultIconButton) {
+	icon: icon {{ "moon", iconButtonFg }};
+	iconOver: icon {{ "moon", iconButtonFgOver }};
+}
+galleryThemeSunIcon: icon {{ "sun", iconButtonFg }};
+galleryLanguageButton: IconButton(defaultIconButton) {
+	icon: icon {{ "globe", iconButtonFg }};
+	iconOver: icon {{ "globe", iconButtonFgOver }};
+}
+galleryButtonIcon: icon {{ "send:mirror-ltr", textOnBrand, 20px }};
+galleryLightButtonIcon: icon {{ "follow", brandText, 20px }};
+galleryChipIcon: icon {{ "like", textSecondary, 18px }};

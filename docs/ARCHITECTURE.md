@@ -41,8 +41,10 @@ Eleza/
     search/               browse + search
     profile/              profiles, follow lists, edit profile
     settings/             settings sections
-    boxes/                modal boxes shared by sections
+    boxes/                modal boxes shared by sections (peer list, photo crop, country list, about)
     media/                audio/voice player, video player widget, image viewer
+    support/              shared session helpers: media images / userpics, error texts, links,
+                          connection label, desktop notifications, file dialogs
 tests/                    unit tests (noise vectors, proto codec, frames, style codegen)
 ```
 
@@ -83,8 +85,9 @@ Device key: Ed25519 or P-256 generated on first run, private key stored through
 
 ## Debug / test hooks
 
-* `--api=<url>` or env `ELEZA_API` — API base (default `https://api.eleza.me`).
-* `--workdir=<dir>` — data directory (default: platform app-data).
-* `--debug-grab=<png>` `--debug-grab-delay=<ms>` — save a grab of the main window and exit
-  (works with `-platform offscreen`), used by the screenshot smoke tests.
-* `--debug-route=<route>` — open a section after start (e.g. `chat/<id>`, `eli`, `settings`).
+`docs/DEVELOPING.md` is the working guide for feature modules; its section 2 lists every hook
+(`--api`, `--workdir`, `--debug-login`, `--debug-route`, `--debug-actions`, `--debug-grab`…),
+the scripted input player and the `debug/…` routes. All of it except `--api`, `--workdir`,
+`--lang`, `--theme`, `--no-single-instance`, `--version` and `--help` is compiled only with
+the CMake option `ELEZA_DEBUG_TOOLS` (on for Debug builds, off for everything that is
+shipped; `docs/BUILDING.md`).

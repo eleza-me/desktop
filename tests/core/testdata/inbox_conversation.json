@@ -1,0 +1,60 @@
+{
+ "chats": [
+  {
+   "chat": "c4",
+   "section": "conversation",
+   "state": "active",
+   "last_seq": 1,
+   "unread": 1,
+   "muted": false,
+   "pinned": false,
+   "last_activity_at": 1791574461925,
+   "last_message": {
+    "chat": "c4",
+    "seq": 1,
+    "id": "m_c4_1",
+    "sender": "p_b",
+    "kind": "text",
+    "created_at": 1791574461925,
+    "text": "سلام، منم همین حس رو داشتم امروز"
+   },
+   "chat_info": {
+    "chat": "c4",
+    "kind": "conversation",
+    "state": "active",
+    "participants": [
+     {
+      "ref": "p_a",
+      "me": true
+     },
+     {
+      "ref": "p_b",
+      "masked": true,
+      "mask_name": "ناشناس"
+     }
+    ],
+    "last_seq": 1,
+    "can_send": true,
+    "conversation": {
+     "id": "conv1",
+     "topic": "یه روز خوب تو تهران",
+     "category": "heart",
+     "state": "open",
+     "expires_at": 1791594261,
+     "speaker": {
+      "ref": "p_a",
+      "me": true,
+      "role": "speaker"
+     },
+     "listener": {
+      "ref": "p_b",
+      "masked": true,
+      "role": "listener"
+     },
+     "my_role": "speaker"
+    }
+   }
+  }
+ ],
+ "next_cursor": ""
+}

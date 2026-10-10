@@ -1,0 +1,565 @@
+// The chat screen: top bar, bars under it, the message list (bubbles, media,
+// service messages), the composer, the emoji / sticker panel and the boxes.
+using "ui/basic.style";
+using "ui/widgets/widgets.style";
+using "ui/layers/layers.style";
+
+// ---- the list
+historyPadding: margins(0px, 6px, 0px, 8px);
+// From the column edge to a bubble (the tail hangs into this space).
+historySideSkip: 14px;
+// Free space kept on the other side of a bubble.
+historyFarSkip: 56px;
+historyBubbleMaxWidth: 430px;
+historyBubbleMinWidth: 56px;
+historyMessageSkip: 7px;      // between groups
+historyGroupSkip: 2px;        // inside a group
+historyWallpaperTile: 192px;
+historyWallpaperIcon: 26px;
+
+historyBubbleRadius: 16px;
+historyBubbleRadiusSmall: 6px;
+historyBubblePadding: margins(11px, 6px, 11px, 7px);
+historyBubbleShadow: chromeHairline;
+historyTailSize: size(7px, 17px);
+historyTailOut: 6px;
+
+historyTextStyle: TextStyle(defaultTextStyle) {
+	font: font(14px);
+	lineHeight: 21px;
+	linkFg: brandText;
+	linkUnderline: false;
+}
+historyTextFg: textPrimary;
+historyAnonTextFg: anonContent;
+historyJumboStyle1: TextStyle(defaultTextStyle) {
+	font: font(42px);
+	lineHeight: 54px;
+}
+historyJumboStyle2: TextStyle(defaultTextStyle) {
+	font: font(36px);
+	lineHeight: 46px;
+}
+historyJumboStyle3: TextStyle(defaultTextStyle) {
+	font: font(30px);
+	lineHeight: 40px;
+}
+
+// time, «edited», ticks
+historyMetaFont: font(11px medium);
+historyMetaHeight: 14px;
+historyMetaSkip: 8px;         // between the last line and the time
+historyMetaInnerSkip: 3px;
+historyMetaFgIn: textTertiary;
+historyMetaFgOut: chatMetaOut;
+historyMetaFgAnon: anonAccent;
+historyMetaFgFailed: statusError;
+historyMetaOverPadding: margins(7px, 2px, 7px, 2px);
+historyMetaOverBg: glassOnMedia;
+historyMetaOverFg: textOnNight;
+historyMetaOverMargin: 6px;
+historyTickSize: 15px;
+historySentIcon: icon {{ "check", staticWhite, 15px }};
+historyReadIcon: icon {{ "check-double", staticWhite, 15px }};
+historySendingIcon: icon {{ "clock", staticWhite, 12px }};
+
+// day pill, service messages, the unread divider
+historyServiceFont: font(12px medium);
+historyServiceStyle: TextStyle(defaultTextStyle) {
+	font: font(12px medium);
+	lineHeight: 18px;
+}
+historyServiceBg: glassOnMedia;
+historyServiceFg: staticWhite;
+historyServicePadding: margins(11px, 3px, 11px, 3px);
+historyServiceMargin: margins(0px, 5px, 0px, 5px);
+historyServiceMaxWidth: 420px;
+historyDateFloatTop: 8px;
+historyUnreadHeight: 26px;
+historyUnreadMargin: margins(0px, 6px, 0px, 4px);
+historyUnreadFg: staticWhite;
+
+// reply header, quote, forwarded label
+historyReplyPadding: margins(9px, 4px, 8px, 5px);
+historyReplyBar: 3px;
+historyReplyRadius: 6px;
+historyReplySkip: 5px;        // under the header
+historyReplyMaxWidth: 300px;
+historyReplyNameFont: font(12px semibold);
+historyReplyTextStyle: TextStyle(defaultTextStyle) {
+	font: font(12px);
+	lineHeight: 17px;
+}
+historyReplyTextFg: textSecondary;
+historyReplyNameHeight: 17px;
+historyReplyBarFg: brandPrimary;
+historyQuoteLines: 3;
+historyQuoteIcon: icon {{ "quote", brandPrimary, 14px }};
+historyForwardedFont: font(12px semibold);
+historyForwardedHeight: 19px;
+historyForwardedIcon: icon {{ "forward:mirror-ltr", brandText, 14px }};
+
+// photos and videos
+historyMediaPadding: 2px;
+historyMediaRadius: 14px;
+historyMediaRadiusSmall: 5px;
+historyMediaMaxWidth: 360px;
+historyMediaCaptionMinWidth: 240px;
+historyMediaCaptionSkip: 5px;
+historyMediaBg: bgSunken;
+historyMediaBadgeFont: font(11px medium);
+historyMediaBadgePadding: margins(7px, 2px, 7px, 2px);
+historyMediaBadgeMargin: 6px;
+historyMediaPlaySize: 48px;
+historyMediaPlayBg: glassOnMedia;
+historyMediaPlayIcon: icon {{ "play", staticWhite, 24px }};
+historyMediaCancelIcon: icon {{ "close", staticWhite, 20px }};
+historyMediaProgressLine: 2.5;
+historyMediaSpoilerIcon: icon {{ "eye-off", staticWhite, 22px }};
+historyVideoNoteSize: 220px;
+
+// voice and music
+historyVoicePlaySize: 40px;
+historyVoiceSkip: 10px;
+historyVoiceWidth: 236px;
+historyVoiceBars: 40;
+historyVoiceBarWidth: 2.5;
+historyVoiceBarSkip: 2;
+historyVoiceWaveHeight: 22px;
+historyVoiceTimeFont: font(11px medium);
+historyVoiceTimeTop: 4px;
+historyVoiceDot: 6px;
+historyVoiceSpeedFont: font(11px semibold);
+historyVoiceSpeedSize: size(30px, 18px);
+historyVoicePlayIcon: icon {{ "play", textOnBrand, 20px }};
+historyVoicePauseIcon: icon {{ "pause", textOnBrand, 20px }};
+historyAudioTitleFont: font(14px medium);
+historyAudioPerformerFont: font(12px);
+historyAudioSeekHeight: 3px;
+
+// files
+historyFileIconSize: 42px;
+historyFileIconRadius: 10px;
+historyFileSkip: 10px;
+historyFileWidth: 250px;
+historyFileNameFont: font(14px medium);
+historyFileSizeFont: font(12px);
+historyFileExtFont: font(10px bold);
+historyFileIconBg: brandPrimary;
+historyFileIcon: icon {{ "file", textOnBrand, 22px }};
+historyFileDownloadIcon: icon {{ "download", textOnBrand, 22px }};
+historyFileCancelIcon: icon {{ "close", textOnBrand, 20px }};
+historyFileMusicIcon: icon {{ "music", textOnBrand, 22px }};
+historyFileImageIcon: icon {{ "image", textOnBrand, 22px }};
+historyFileVideoIcon: icon {{ "video", textOnBrand, 22px }};
+historyCallIcon: icon {{ "call", textOnBrand, 22px }};
+historyCallMissedIcon: icon {{ "call-end", staticWhite, 22px }};
+historyCallMissedBg: statusError;
+
+// stickers, locations, shared posts
+historyStickerSize: 168px;
+historyLocationSize: size(260px, 150px);
+historyLocationRadius: 12px;
+historyLocationPinIcon: icon {{ "location", statusError, 34px }};
+historyLocationLiveIcon: icon {{ "location", brandPrimary, 34px }};
+historyLocationTitleFont: font(14px medium);
+historyLocationTextFont: font(12px);
+historyLocationInfoPadding: margins(2px, 7px, 2px, 0px);
+historyLocationStopFont: font(13px semibold);
+historyLocationStopHeight: 32px;
+historyPostWidth: 290px;
+historyPostPadding: margins(10px, 8px, 10px, 9px);
+historyPostRadius: 8px;
+historyPostIcon: icon {{ "eli", brandText, 16px }};
+historyPostLabelFont: font(12px semibold);
+historyPostAuthorFont: font(13px semibold);
+historyPostTextStyle: TextStyle(defaultTextStyle) {
+	font: font(13px);
+	lineHeight: 19px;
+}
+historyPostTextLines: 4;
+historyPostThumb: 64px;
+historyPostThumbRadius: 8px;
+
+// link preview card
+historyPreviewPadding: margins(10px, 6px, 8px, 7px);
+historyPreviewSkip: 6px;
+historyPreviewWidth: 320px;
+historyPreviewSiteFont: font(12px semibold);
+historyPreviewTitleStyle: TextStyle(defaultTextStyle) {
+	font: font(13px semibold);
+	lineHeight: 19px;
+}
+historyPreviewTextStyle: TextStyle(defaultTextStyle) {
+	font: font(12px);
+	lineHeight: 17px;
+}
+historyPreviewTitleLines: 2;
+historyPreviewTextLines: 3;
+historyPreviewThumb: 60px;
+historyPreviewThumbRadius: 6px;
+historyPreviewThumbSkip: 8px;
+
+// reactions under the content
+historyReactionHeight: 24px;
+historyReactionPadding: margins(7px, 0px, 8px, 0px);
+historyReactionSkip: 4px;
+historyReactionTop: 5px;
+historyReactionEmojiFont: font(14px);
+historyReactionCountFont: font(12px semibold);
+historyReactionMineFg: textOnBrand;
+historyReactionOutsideBg: glassOnMedia;
+historyReactionOutsideFg: staticWhite;
+
+// a bot's buttons under a bubble
+historyKeyboardHeight: 34px;
+historyKeyboardSkip: 4px;
+historyKeyboardRadius: 8px;
+historyKeyboardFont: font(13px semibold);
+historyKeyboardBg: glassOnMedia;
+historyKeyboardBgOver: overlayScrim;
+historyKeyboardFg: staticWhite;
+historyKeyboardMinWidth: 220px;
+historyKeyboardUrlIcon: icon {{ "external", staticWhite, 12px }};
+
+// failed / selection / highlight
+historyRetrySize: 22px;
+historyRetrySkip: 8px;
+historyRetryBg: statusError;
+historySelectedBg: selectionBg;
+historyHighlightBg: selectionBg;
+
+// floating «to the bottom» button
+historyDownSize: 42px;
+historyDownMargin: margins(0px, 0px, 14px, 12px);
+historyDownBg: bgRaised;
+historyDownIcon: icon {{ "chevron-down", textSecondary, 26px }};
+historyDownIconOver: icon {{ "chevron-down", textPrimary, 26px }};
+historyDownBadgeShift: 9px;
+
+// empty / loading states
+historyEmptyFont: font(13px medium);
+historyEmptyPadding: margins(16px, 8px, 16px, 9px);
+historyLoadingSize: 28px;
+
+// ---- top bar
+historyTopBarHeight: 56px;
+historyTopBarPadding: margins(8px, 0px, 6px, 0px);
+historyTopBarUserpic: 40px;
+historyTopBarUserpicSkip: 12px;
+historyTopBarNameStyle: TextStyle(defaultTextStyle) {
+	font: titleFontS;
+}
+historyTopBarTopicStyle: TextStyle(defaultTextStyle) {
+	font: topicFontS;
+}
+historyTopBarNameTop: 8px;
+historyTopBarStatusTop: 31px;
+historyTopBarStatusFont: font(13px);
+historyTopBarStatusFg: textTertiary;
+historyTopBarStatusFgActive: brandText;
+historyTopBarVerified: icon {{ "verified_active", brandPrimary, 17px }};
+historyTopBarVerifiedSkip: 4px;
+historyTopBarDotSize: 4px;
+historyTopBarDotSkip: 3px;
+historyTopBarMuteButton: IconButton(defaultIconButton) {
+	icon: icon {{ "mute", iconButtonFg }};
+	iconOver: icon {{ "mute", iconButtonFgOver }};
+}
+historyTopBarUnmuteIcon: icon {{ "unmute", iconButtonFg }};
+historyTopBarUnmuteIconOver: icon {{ "unmute", iconButtonFgOver }};
+historyTopBarSelectionFont: titleFontS;
+historyTopBarSelectionSkip: 8px;
+
+menuIconClear: icon {{ "refresh", menuIconFg, 20px }};
+menuIconUser: icon {{ "me", menuIconFg, 20px }};
+menuIconTheme: icon {{ "appearance", menuIconFg, 20px }};
+menuIconSearch: icon {{ "search", menuIconFg, 20px }};
+menuIconQuote: icon {{ "quote", menuIconFg, 20px }};
+menuIconSaveAs: icon {{ "download", menuIconFg, 20px }};
+menuIconOpen: icon {{ "external", menuIconFg, 20px }};
+menuIconFolder: icon {{ "archive", menuIconFg, 20px }};
+menuIconImage: icon {{ "image", menuIconFg, 20px }};
+menuIconSpoiler: icon {{ "eye-off", menuIconFg, 20px }};
+menuIconRetry: icon {{ "refresh", menuIconFg, 20px }};
+menuIconEndConversation: icon {{ "end-conversation", menuIconFg, 20px }};
+menuIconUnpin: icon {{ "pin", menuIconFg, 20px }};
+menuIconFile: icon {{ "file", menuIconFg, 20px }};
+menuIconLocation: icon {{ "location", menuIconFg, 20px }};
+menuIconStop: icon {{ "close-circle", menuIconFg, 20px }};
+
+// ---- bars under the top bar
+historyBarHeight: 46px;
+historyBarBg: bgCanvas;
+historyBarLineFg: chromeHairline;
+historyBarPadding: margins(14px, 0px, 6px, 0px);
+historyPinnedLine: 3px;
+historyPinnedLineSkip: 10px;
+historyPinnedLineHeight: 32px;
+historyPinnedLineFg: brandPrimary;
+historyPinnedLineFgDim: borderStrong;
+historyPinnedTitleFont: font(13px semibold);
+historyPinnedTitleFg: brandText;
+historyPinnedTextFont: font(13px);
+historyPinnedTextFg: textSecondary;
+historyPinnedTitleTop: 5px;
+historyPinnedTextTop: 23px;
+historyPinnedThumb: 34px;
+historyPinnedThumbRadius: 5px;
+historyPinnedThumbSkip: 8px;
+historyBarClose: IconButton(smallCloseButton) {
+	width: 36px;
+	height: 36px;
+}
+historyPinnedUnpin: IconButton(historyBarClose) {
+}
+
+historyRequestHeight: 62px;
+historyRequestPadding: margins(16px, 0px, 12px, 0px);
+historyRequestTitleFont: font(14px semibold);
+historyRequestTextFont: font(12px);
+historyRequestTextFg: textTertiary;
+historyRequestSkip: 8px;
+
+historyBannerHeight: 38px;
+historyBannerFont: font(13px semibold);
+historyBannerSmallFont: font(12px);
+historyBannerPadding: margins(16px, 0px, 10px, 0px);
+historyBannerSkip: 8px;
+historyBannerWaitingBg: accentLampSoft;
+historyBannerWaitingFg: textPrimary;
+historyBannerActiveBg: brandSoft;
+historyBannerActiveFg: brandText;
+historyBannerReadonlyBg: anonSurface;
+historyBannerReadonlyFg: anonContent;
+historyBannerEndedBg: bgSunken;
+historyBannerEndedFg: textSecondary;
+historyBannerDot: 8px;
+historyBannerDotFg: accentLamp;
+historyBannerTimerIcon: icon {{ "timer", brandText, 18px }};
+historyBannerTimerSmallIcon: icon {{ "timer", textSecondary, 15px }};
+historyBannerLockIcon: icon {{ "lock", anonContent, 18px }};
+historyBannerMessageIcon: icon {{ "message", anonContent, 18px }};
+historyBannerEndedIcon: icon {{ "end-conversation", textSecondary, 18px }};
+
+// search in the chat
+historySearchPadding: margins(12px, 0px, 6px, 0px);
+historySearchCountFont: font(13px);
+historySearchCountFg: textTertiary;
+historySearchUp: IconButton(defaultIconButton) {
+	width: 36px;
+	height: 36px;
+	icon: icon {{ "chevron-up", iconButtonFg }};
+	iconOver: icon {{ "chevron-up", iconButtonFgOver }};
+	rippleSize: 32px;
+}
+historySearchDown: IconButton(historySearchUp) {
+	icon: icon {{ "chevron-down", iconButtonFg }};
+	iconOver: icon {{ "chevron-down", iconButtonFgOver }};
+}
+historySearchClose: IconButton(historySearchUp) {
+	icon: icon {{ "close", iconButtonFg }};
+	iconOver: icon {{ "close", iconButtonFgOver }};
+}
+
+// ---- composer
+historyComposeBg: bgCanvas;
+historyComposeLineFg: chromeHairline;
+historyComposePadding: margins(6px, 5px, 6px, 5px);
+historyComposeMaxWidth: 920px;
+historyComposeField: InputField(composeField) {
+	textMargins: margins(6px, 11px, 6px, 11px);
+	font: font(14px);
+	placeholderFont: font(14px);
+	heightMin: 46px;
+	heightMax: 240px;
+}
+historyComposeButton: IconButton(defaultIconButton) {
+	width: 44px;
+	height: 46px;
+	rippleSize: 40px;
+	icon: icon {{ "attach", iconButtonFg }};
+	iconOver: icon {{ "attach", iconButtonFgOver }};
+}
+historyAttachButton: IconButton(historyComposeButton) {
+}
+historyEmojiButton: IconButton(historyComposeButton) {
+	icon: icon {{ "emoji", iconButtonFg }};
+	iconOver: icon {{ "emoji", iconButtonFgOver }};
+}
+historyEmojiButtonActiveIcon: icon {{ "emoji", brandPrimary }};
+historySendButton: IconButton(historyComposeButton) {
+	icon: icon {{ "send:mirror-ltr", brandPrimary }};
+	iconOver: icon {{ "send:mirror-ltr", brandPressed }};
+	bgOver: rippleBrandFg;
+	ripple: brandRipple;
+}
+historyMicButton: IconButton(historyComposeButton) {
+	icon: icon {{ "mic", iconButtonFg }};
+	iconOver: icon {{ "mic", iconButtonFgOver }};
+}
+historySaveEditIcon: icon {{ "check", brandPrimary }};
+historySaveEditIconOver: icon {{ "check", brandPressed }};
+historyRecordCancel: IconButton(historyComposeButton) {
+	icon: icon {{ "trash", statusError }};
+	iconOver: icon {{ "trash", statusError }};
+	bgOver: rippleDangerFg;
+	ripple: dangerRipple;
+}
+historyRecordDot: 10px;
+historyRecordDotFg: statusError;
+historyRecordTimeFont: font(15px medium);
+historyRecordHintFont: font(13px);
+historyRecordHintFg: textTertiary;
+historyRecordSkip: 10px;
+
+historyComposeSpoilerBg: stateSelected;
+
+// reply / edit / quote / link preview bars above the field
+historyBotKeyboardPadding: margins(8px, 2px, 8px, 8px);
+historyBotKeyboardSkip: 6px;
+historyBotKeyboardButtonHeight: 38px;
+historyBotKeyboardRadius: 10px;
+historyBotKeyboardTextSkip: 10px;
+historyBotKeyboardFont: font(14px semibold);
+historyBotKeyboardFg: textPrimary;
+historyBotKeyboardBg: bgSunken;
+historyBotKeyboardBgOver: stateHover;
+historyBotKeyboardBgDown: statePressed;
+historyComposeBarHeight: 48px;
+historyComposeBarPadding: margins(14px, 0px, 4px, 0px);
+historyComposeBarIconSkip: 12px;
+historyComposeBarLine: 2px;
+historyComposeBarLineHeight: 34px;
+historyComposeBarLineSkip: 10px;
+historyComposeBarTitleFont: font(13px semibold);
+historyComposeBarTitleFg: brandText;
+historyComposeBarTextFont: font(13px);
+historyComposeBarTextFg: textSecondary;
+historyComposeBarTitleTop: 6px;
+historyComposeBarTextTop: 24px;
+historyComposeBarThumb: 36px;
+historyComposeBarThumbRadius: 5px;
+historyComposeReplyIcon: icon {{ "reply-arrow:mirror-rtl", brandPrimary, 22px }};
+historyComposeEditIcon: icon {{ "edit", brandPrimary, 22px }};
+historyComposeQuoteIcon: icon {{ "quote", brandPrimary, 22px }};
+historyComposeLinkIcon: icon {{ "link", brandPrimary, 22px }};
+historyComposeBarClose: IconButton(smallCloseButton) {
+	width: 40px;
+	height: 40px;
+}
+
+// what replaces the field when one cannot write
+historyComposeNoticeFont: font(13px);
+historyComposeNoticeFg: textSecondary;
+historyComposeNoticeHeight: 52px;
+historyDangerFlatButton: RoundButton(defaultFlatButton) {
+	textFg: statusError;
+	textFgOver: statusError;
+}
+
+// drag-and-drop target
+historyDropBg: glassFill;
+historyDropBorder: brandPrimary;
+historyDropFg: brandText;
+historyDropFont: font(17px semibold);
+historyDropSubFont: font(13px);
+historyDropMargin: 14px;
+historyDropRadius: 16px;
+historyDropIcon: icon {{ "upload", brandPrimary, 44px }};
+
+// ---- emoji / sticker panel
+historyPanelSize: size(380px, 430px);
+historyPanelRadius: 14px;
+historyPanelBg: bgRaised;
+historyPanelBorder: borderSubtle;
+historyPanelMargin: 8px;
+historyPanelSearchPadding: margins(10px, 8px, 10px, 4px);
+historyPanelPadding: margins(8px, 0px, 8px, 8px);
+historyPanelHeaderFont: font(12px semibold);
+historyPanelHeaderFg: textTertiary;
+historyPanelHeaderHeight: 30px;
+historyPanelHeaderPadding: 8px;
+historyEmojiCell: 40px;
+historyEmojiFont: font(24px);
+historyEmojiOverBg: stateHover;
+historyEmojiOverRadius: 8px;
+historyEmojiCategoryHeight: 40px;
+historyEmojiCategoryFont: font(18px);
+historyEmojiCategoryActiveBg: stateSelected;
+historyStickerPadding: 6px;
+historyStickerRecentIcon: icon {{ "clock", textSecondary, 22px }};
+historyPanelEmptyFg: textTertiary;
+historyPanelEmptyFont: font(13px);
+
+// ---- reactions strip over the message menu
+historyReactionsStripHeight: 44px;
+historyReactionsStripPadding: 6px;
+historyReactionsStripCell: 36px;
+historyReactionsStripFont: font(22px);
+historyReactionsStripOverBg: stateHover;
+historyReactionsStripSelectedBg: stateActive;
+historyReactionsStripExpand: icon {{ "chevron-down", textSecondary, 20px }};
+historyReactionsStripCollapse: icon {{ "chevron-up", textSecondary, 20px }};
+
+// ---- boxes
+historyBoxTextStyle: TextStyle(defaultTextStyle) {
+	font: font(15px);
+	lineHeight: 24px;
+}
+historyBoxText: FlatLabel(defaultFlatLabel) {
+	style: historyBoxTextStyle;
+	textFg: textSecondary;
+}
+historySendFilesWidth: 420px;
+historySendFilesPreviewHeight: 280px;
+historySendFilesPadding: margins(20px, 4px, 20px, 8px);
+historySendFilesRadius: 12px;
+historySendFilesSkip: 8px;
+historySendFilesRowHeight: 56px;
+historySendFilesRemove: IconButton(smallCloseButton) {
+	width: 28px;
+	height: 28px;
+	icon: icon {{ "close", staticWhite, 16px }};
+	iconOver: icon {{ "close", staticWhite, 16px }};
+	bgOver: glassOnMedia;
+}
+historySendFilesRemoveBg: glassOnMedia;
+historySendFilesNameFont: font(14px medium);
+historySendFilesSizeFont: font(12px);
+historySendFilesCaption: InputField(defaultInputField) {
+	heightMin: 44px;
+	heightMax: 120px;
+	font: font(14px);
+	placeholderFont: font(14px);
+}
+historySendFilesCheckPadding: margins(12px, 2px, 12px, 0px);
+
+historyLocationField: InputField(defaultInputField) {
+}
+
+historyThemeCell: size(87px, 118px);
+historyThemeSkip: 10px;
+historyThemeRadius: 12px;
+historyThemeNameFont: font(12px medium);
+historyThemeActiveBorder: brandPrimary;
+historyThemeBoxPadding: margins(20px, 4px, 20px, 12px);
+historyThemeBubbleRadius: 7px;
+
+// ---- selection mode of the top bar
+historySelectionCancel: IconButton(topBarCloseButton) {
+}
+historySelectionCopy: IconButton(defaultIconButton) {
+	icon: icon {{ "copy", iconButtonFg }};
+	iconOver: icon {{ "copy", iconButtonFgOver }};
+}
+historySelectionForward: IconButton(defaultIconButton) {
+	icon: icon {{ "forward:mirror-ltr", iconButtonFg }};
+	iconOver: icon {{ "forward:mirror-ltr", iconButtonFgOver }};
+}
+historySelectionDelete: IconButton(defaultIconButton) {
+	icon: icon {{ "trash", statusError }};
+	iconOver: icon {{ "trash", statusError }};
+	bgOver: rippleDangerFg;
+	ripple: dangerRipple;
+}

@@ -1,0 +1,37 @@
+{
+ "conversations": [
+  {
+   "id": "conv1",
+   "topic": "یه روز خوب تو تهران",
+   "category": "heart",
+   "expires_at": 1791594261,
+   "speaker_masked": false,
+   "speaker_id": "u_me"
+  },
+  {
+   "id": "conv2",
+   "topic": "کسی اینجا فیلم «جدایی» رو دیده؟ می‌خوام دربارهٔ پایانش حرف بزنم",
+   "category": "cinema",
+   "expires_at": 1791655461,
+   "speaker_masked": true,
+   "mask_name": "رهگذر",
+   "mask_avatar": 3
+  },
+  {
+   "id": "conv3",
+   "topic": "مهاجرت یا ماندن؟ هر دو طرف ماجرا رو شنیدم و هنوز گیجم",
+   "category": "migration",
+   "expires_at": 1791579261,
+   "speaker_masked": false,
+   "speaker_id": "u_sara"
+  },
+  {
+   "id": "conv4",
+   "topic": "یادگیری گیتار بعد از سی سالگی",
+   "category": "music",
+   "expires_at": 1791608661,
+   "speaker_masked": true,
+   "mask_name": "ناشناس"
+  }
+ ]
+}

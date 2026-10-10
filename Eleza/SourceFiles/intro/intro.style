@@ -1,0 +1,175 @@
+// The signed-out flow: welcome, phone, code, two-step password / recovery, profile.
+using "ui/basic.style";
+using "ui/widgets/widgets.style";
+
+introWidth: 360px;
+introSidePadding: 24px;
+introTopMin: 72px;
+introBottomMin: 32px;
+// The column sits a little above the middle of the window.
+introCenterShift: 28px;
+introSlideDuration: 240ms;
+
+introBg: bgCanvas;
+introNightBg: bgNight;
+
+// ---- corner controls
+introCornerPadding: 12px;
+introCornerSkip: 2px;
+introThemeButton: IconButton(defaultIconButton) {
+	icon: icon {{ "moon", iconButtonFg }};
+	iconOver: icon {{ "moon", iconButtonFgOver }};
+}
+introThemeSunIcon: icon {{ "sun", iconButtonFg }};
+introThemeSunIconOver: icon {{ "sun", iconButtonFgOver }};
+introLanguageButton: IconButton(defaultIconButton) {
+	icon: icon {{ "globe", iconButtonFg }};
+	iconOver: icon {{ "globe", iconButtonFgOver }};
+}
+introNightIconFg: textOnNight;
+
+// ---- welcome
+introMarkSize: size(140px, 112px);
+introMarkSkip: 20px;
+introWordmarkStyle: TextStyle(defaultTextStyle) {
+	font: displayFontXL;
+}
+introWordmark: FlatLabel(defaultFlatLabel) {
+	style: introWordmarkStyle;
+	textFg: textOnNight;
+	align: align(top);
+}
+introTaglineStyle: TextStyle(defaultTextStyle) {
+	font: editorialFontTitle;
+	lineHeight: 36px;
+}
+introTagline: FlatLabel(defaultFlatLabel) {
+	style: introTaglineStyle;
+	textFg: brandMint;
+	align: align(top);
+}
+introTaglineSkip: 44px;
+introStartRipple: RippleAnimation(defaultRipple) {
+	color: #06412c2e;
+}
+introStartButton: RoundButton(bigRoundButton) {
+	textFg: bgNight;
+	textFgOver: bgNight;
+	textBg: brandMint;
+	textBgOver: staticWhite;
+	height: 48px;
+	radius: 24px;
+	font: font(15px semibold);
+	ripple: introStartRipple;
+}
+introStartWidth: 280px;
+introSwitchLink: LinkButton(defaultLinkButton) {
+	color: brandMint;
+	overColor: brandMint;
+	font: semiboldFont;
+	overFont: font(14px semibold underline);
+}
+introSwitchSkip: 18px;
+introLegalStyle: TextStyle(defaultTextStyle) {
+	font: smallFont;
+	lineHeight: 20px;
+	linkFg: brandMint;
+	linkUnderline: true;
+}
+introLegal: FlatLabel(defaultFlatLabel) {
+	style: introLegalStyle;
+	textFg: #eefbf2b3;
+	align: align(top);
+}
+introLegalSkip: 28px;
+
+// ---- steps
+introTitleStyle: TextStyle(defaultTextStyle) {
+	font: titleFontL;
+	lineHeight: 34px;
+}
+introTitle: FlatLabel(defaultFlatLabel) {
+	style: introTitleStyle;
+	align: align(top);
+}
+introAboutStyle: TextStyle(defaultTextStyle) {
+	font: font(15px);
+	lineHeight: 24px;
+}
+introAbout: FlatLabel(defaultFlatLabel) {
+	style: introAboutStyle;
+	textFg: textSecondary;
+	align: align(top);
+}
+introTitleSkip: 8px;
+introAboutSkip: 28px;
+introFieldSkip: 10px;
+introButtonSkip: 14px;
+introLinkSkip: 16px;
+introButton: RoundButton(bigRoundButton) {
+	height: 46px;
+	radius: 23px;
+	font: font(15px semibold);
+}
+introLink: LinkButton(defaultLinkButton) {
+	font: font(14px medium);
+	overFont: font(14px medium underline);
+}
+introHintStyle: TextStyle(defaultTextStyle) {
+	font: font(13px);
+	lineHeight: 20px;
+}
+introHintFg: textTertiary;
+introHintErrorFg: statusError;
+introHintOkFg: brandText;
+introHintSkip: 6px;
+introInputField: InputField(defaultInputField) {
+	heightMin: 48px;
+	textMargins: margins(16px, 12px, 16px, 12px);
+	font: font(16px);
+	placeholderFont: font(16px);
+}
+introPartField: InputField(phonePartField) {
+	font: font(16px);
+	placeholderFont: font(16px);
+}
+
+// The country row above the phone field.
+introCountryHeight: 48px;
+introCountryPadding: margins(14px, 0px, 12px, 0px);
+introCountryFlagWidth: 30px;
+introCountryFlagFont: font(20px);
+introCountryIsoFont: smallSemiboldFont;
+introCountryNameFont: font(16px);
+introCountryChevron: icon {{ "chevron-down", textTertiary, 20px }};
+introCountrySkip: 10px;
+
+// The code step.
+introCodeInput: CodeInput(defaultCodeInput) {
+	width: 48px;
+	height: 58px;
+	skip: 8px;
+	radius: 14px;
+	font: numericFontL;
+}
+introSentSkip: 6px;
+introCodeSkip: 24px;
+introResendHeight: 36px;
+introSpinnerSize: 24px;
+
+// The handle field of the profile step: "@" + text in one frame.
+introHandlePrefixFont: font(16px);
+introHandlePrefixFg: textTertiary;
+introHandlePrefixWidth: 20px;
+
+// The photo button of the profile step.
+introPhotoSize: 96px;
+introPhotoSkip: 20px;
+introPhotoBg: bgSunken;
+introPhotoBorder: borderStrong;
+introPhotoIcon: icon {{ "camera", textTertiary, 32px }};
+introPhotoBadgeSize: 30px;
+introPhotoBadgeBg: brandPrimary;
+introPhotoBadgeIcon: icon {{ "camera", textOnBrand, 18px }};
+introPhotoProgressFg: staticWhite;
+introPhotoProgressBg: #0d0f0d61;

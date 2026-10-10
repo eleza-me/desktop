@@ -1,0 +1,115 @@
+# Unit tests (QtTest, registered with CTest):  ctest --test-dir <build> --output-on-failure
+#
+#   tests/ui/    style codegen, lang codegen, lang formatting (Jalali, digits), Ui::Text
+#   tests/core/  the non-GUI core (added when present)
+#   tests/app/   widget-free parts of the application: routes, error texts
+
+find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Test)
+
+# eleza_test_runtime_path(<name>)
+#   Windows: the test executables need the Qt DLLs; ctest finds them without Qt's bin
+#   directory being in PATH.
+function(eleza_test_runtime_path name)
+	if (WIN32 AND NOT CMAKE_VERSION VERSION_LESS 3.22)
+		set_property(TEST ${name} APPEND PROPERTY
+			ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+	endif()
+endfunction()
+
+# eleza_add_test(<name> <source> [LIBS libs...] [GUI])
+#   GUI tests run with the offscreen platform plugin.
+function(eleza_add_test name source)
+	cmake_parse_arguments(ARG "GUI" "" "LIBS" ${ARGN})
+	add_executable(${name} ${source})
+	target_link_libraries(${name} PRIVATE Qt6::Core Qt6::Test ${ARG_LIBS})
+	eleza_target_defaults(${name})
+	add_test(NAME ${name} COMMAND ${name})
+	if (ARG_GUI)
+		set_tests_properties(${name} PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
+	eleza_test_runtime_path(${name})
+endfunction()
+
+eleza_add_test(test_style_codegen ui/test_style_codegen.cpp LIBS codegen_style_lib)
+eleza_add_test(test_lang_codegen ui/test_lang_codegen.cpp LIBS codegen_lang_lib)
+eleza_add_test(test_lang_format ui/test_lang_format.cpp LIBS ElezaLang)
+eleza_add_test(test_ui_text ui/test_ui_text.cpp LIBS ElezaUi Qt6::Gui GUI)
+eleza_add_test(test_ui_style ui/test_ui_style.cpp LIBS ElezaUi Qt6::Gui GUI)
+
+# Parts of the executable that have no widget dependencies are compiled straight
+# into their tests.
+set(_eleza_app_src "${CMAKE_CURRENT_SOURCE_DIR}/../Eleza/SourceFiles")
+eleza_add_test(test_routes app/test_routes.cpp)
+target_sources(test_routes PRIVATE "${_eleza_app_src}/window/window_routes.cpp")
+target_include_directories(test_routes PRIVATE "${_eleza_app_src}")
+# What a link in somebody's text may open (support/links_parse.cpp has no widgets).
+eleza_add_test(test_links app/test_links.cpp LIBS ElezaUi Qt6::Gui)
+target_sources(test_links PRIVATE
+	"${_eleza_app_src}/support/links_parse.cpp"
+	"${_eleza_app_src}/window/window_routes.cpp")
+target_include_directories(test_links PRIVATE "${_eleza_app_src}")
+eleza_add_test(test_eli_logic app/test_eli_logic.cpp)
+target_sources(test_eli_logic PRIVATE "${_eleza_app_src}/eli/eli_logic.cpp")
+target_include_directories(test_eli_logic PRIVATE "${_eleza_app_src}")
+if (TARGET ElezaCore)
+	eleza_add_test(test_error_text app/test_error_text.cpp LIBS ElezaCore ElezaLang)
+	target_sources(test_error_text PRIVATE "${_eleza_app_src}/support/error_text.cpp")
+	target_include_directories(test_error_text PRIVATE "${_eleza_app_src}")
+
+	eleza_add_test(test_dialogs_logic app/test_dialogs_logic.cpp LIBS ElezaCore ElezaLang)
+	target_sources(test_dialogs_logic PRIVATE
+		"${_eleza_app_src}/dialogs/dialogs_logic.cpp"
+		"${_eleza_app_src}/support/chat_text.cpp")
+	target_include_directories(test_dialogs_logic PRIVATE "${_eleza_app_src}")
+
+	eleza_add_test(test_settings_logic app/test_settings_logic.cpp LIBS ElezaCore ElezaLang)
+	target_sources(test_settings_logic PRIVATE
+		"${_eleza_app_src}/settings/settings_logic.cpp")
+	target_include_directories(test_settings_logic PRIVATE "${_eleza_app_src}")
+	# The chat screen's widget-free rules (history/history_*logic.cpp).
+	eleza_add_test(test_history_logic app/test_history_logic.cpp LIBS ElezaCore ElezaUi)
+	target_sources(test_history_logic PRIVATE "${_eleza_app_src}/history/history_logic.cpp")
+	target_include_directories(test_history_logic PRIVATE "${_eleza_app_src}")
+	eleza_add_test(test_history_compose app/test_history_compose.cpp LIBS ElezaCore ElezaUi)
+	target_sources(test_history_compose PRIVATE "${_eleza_app_src}/history/history_compose_logic.cpp")
+	target_include_directories(test_history_compose PRIVATE "${_eleza_app_src}")
+endif()
+
+
+# ---- conversation / search (widget-free logic of the two modules)
+eleza_add_test(test_conversation_time app/test_conversation_time.cpp LIBS ElezaLang)
+target_sources(test_conversation_time PRIVATE
+	"${_eleza_app_src}/conversation/conversation_time.cpp")
+target_include_directories(test_conversation_time PRIVATE "${_eleza_app_src}")
+if (TARGET ElezaCore)
+	eleza_add_test(test_conversation_radar app/test_conversation_radar.cpp LIBS ElezaCore ElezaLang)
+	target_sources(test_conversation_radar PRIVATE
+		"${_eleza_app_src}/conversation/conversation_radar_model.cpp"
+		"${_eleza_app_src}/conversation/conversation_radar_model.h")
+	target_include_directories(test_conversation_radar PRIVATE
+		"${_eleza_app_src}"
+		"${CMAKE_CURRENT_SOURCE_DIR}/core")
+	target_compile_definitions(test_conversation_radar PRIVATE
+		ELEZA_TESTDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/core/testdata")
+	set_tests_properties(test_conversation_radar PROPERTIES TIMEOUT 120)
+
+	eleza_add_test(test_search_logic app/test_search_logic.cpp LIBS ElezaCore ElezaLang)
+	target_sources(test_search_logic PRIVATE
+		"${_eleza_app_src}/search/search_recent.cpp"
+		"${_eleza_app_src}/search/search_debounce.cpp"
+		"${_eleza_app_src}/search/search_debounce.h"
+		"${_eleza_app_src}/search/search_people.cpp")
+	target_include_directories(test_search_logic PRIVATE "${_eleza_app_src}")
+	# profile: relationship -> buttons, handle check, bio, birthday ranges, QR.
+	eleza_add_test(test_profile_logic app/test_profile_logic.cpp
+		LIBS ElezaCore ElezaLang ElezaUi ElezaBase Qt6::Gui GUI)
+	target_sources(test_profile_logic PRIVATE
+		"${_eleza_app_src}/profile/profile_logic.cpp"
+		"${_eleza_app_src}/profile/profile_qr.cpp")
+	target_include_directories(test_profile_logic PRIVATE "${_eleza_app_src}")
+endif()
+
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/core/CMakeLists.txt")
+	add_subdirectory(core)
+endif()

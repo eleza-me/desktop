@@ -1,0 +1,116 @@
+{
+ "chat": {
+  "chat": "c1",
+  "kind": "direct",
+  "state": "active",
+  "participants": [
+   {
+    "ref": "u_me",
+    "user_id": "u_me",
+    "me": true
+   },
+   {
+    "ref": "u_sara",
+    "user_id": "u_sara"
+   }
+  ],
+  "last_seq": 9,
+  "peer_read_seq": 4,
+  "last_read_seq": 5,
+  "can_send": true
+ },
+ "messages": [
+  {
+   "chat": "c1",
+   "seq": 9,
+   "id": "m_c1_9",
+   "sender": "u_sara",
+   "kind": "text",
+   "created_at": 1791576279862,
+   "text": "باشه 👍"
+  },
+  {
+   "chat": "c1",
+   "seq": 8,
+   "id": "m_c1_8",
+   "sender": "u_me",
+   "kind": "text",
+   "created_at": 1791576277349,
+   "text": "سلام از دسکتاپ",
+   "client_message_id": "94aa6839-7a2f-4a11-8bc7-6b00f596f11d"
+  },
+  {
+   "chat": "c1",
+   "seq": 7,
+   "id": "m_c1_7",
+   "sender": "u_sara",
+   "kind": "text",
+   "created_at": 1791572761925,
+   "text": "این عکس دیروز رو ببین",
+   "reply_to_seq": 6
+  },
+  {
+   "chat": "c1",
+   "seq": 6,
+   "id": "m_c1_6",
+   "sender": "u_sara",
+   "kind": "photo",
+   "created_at": 1791572661925,
+   "attachment": "media1",
+   "media": {
+    "w": 1200,
+    "h": 800,
+    "blurhash": "LKO2?U%2Tw=w]~RBVZRi};RPxuwH"
+   }
+  },
+  {
+   "chat": "c1",
+   "seq": 5,
+   "id": "m_c1_5",
+   "sender": "u_sara",
+   "kind": "text",
+   "created_at": 1791561861925,
+   "text": "عالیه 😍 پس می‌بینمت",
+   "reactions": {
+    "❤️": 1
+   }
+  },
+  {
+   "chat": "c1",
+   "seq": 4,
+   "id": "m_c1_4",
+   "sender": "u_me",
+   "kind": "text",
+   "created_at": 1791558261925,
+   "text": "آره حتماً. ساعت ۵ خوبه؟"
+  },
+  {
+   "chat": "c1",
+   "seq": 3,
+   "id": "m_c1_3",
+   "sender": "u_sara",
+   "kind": "text",
+   "created_at": 1791317181925,
+   "text": "منم خوبم. فردا میای کافه؟ ☕️"
+  },
+  {
+   "chat": "c1",
+   "seq": 2,
+   "id": "m_c1_2",
+   "sender": "u_me",
+   "kind": "text",
+   "created_at": 1791317121925,
+   "text": "سلام سارا، خوبم مرسی. تو چطوری؟"
+  },
+  {
+   "chat": "c1",
+   "seq": 1,
+   "id": "m_c1_1",
+   "sender": "u_sara",
+   "kind": "text",
+   "created_at": 1791317061925,
+   "text": "سلام! چطوری؟"
+  }
+ ],
+ "has_more_before": false
+}

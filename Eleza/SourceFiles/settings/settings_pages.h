@@ -1,0 +1,25 @@
+// The pages of the settings (main column) by section.
+#pragma once
+
+#include "settings/settings_logic.h"
+#include "window/window_registry.h"
+
+namespace Settings {
+
+// The page of a section; null for an unknown one.
+[[nodiscard]] Window::SectionFactory PageFactory(Section section);
+
+// settings_account.cpp
+[[nodiscard]] Window::SectionFactory AccountPageFactory();
+[[nodiscard]] Window::SectionFactory DevicesPageFactory();
+// settings_filters.cpp
+[[nodiscard]] Window::SectionFactory FiltersPageFactory();
+// settings_storage.cpp
+[[nodiscard]] Window::SectionFactory StoragePageFactory();
+
+// «خروجی داده‌ها»: the state of the latest export, a new request (confirmed by
+// an SMS code; needs the recovery e-mail of two-step verification) and the
+// download of a finished one.
+void ShowExportBox(Window::SessionController *controller);
+
+} // namespace Settings

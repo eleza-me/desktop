@@ -1,0 +1,12 @@
+<RCC>
+	<qresource prefix="/gui">
+		<file alias="art/icon512.png">../art/icon512.png</file>
+		<file alias="art/icon256.png">../art/icon256.png</file>
+		<file alias="art/icon64.png">../art/icon64.png</file>
+		<file alias="art/icon48.png">../art/icon48.png</file>
+		<file alias="art/icon32.png">../art/icon32.png</file>
+		<file alias="art/icon24.png">../art/icon24.png</file>
+		<file alias="art/icon16.png">../art/icon16.png</file>
+		<file alias="sounds/notify.wav">../sounds/notify.wav</file>
+	</qresource>
+</RCC>

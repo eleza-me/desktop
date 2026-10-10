@@ -1,0 +1,19 @@
+{
+ "id": "u_me",
+ "handle": "hadi",
+ "display_name": "هادی",
+ "verified": true,
+ "followers": 12,
+ "following": 30,
+ "posts": 4,
+ "bio": "سازندهٔ الزا ✨ @sara",
+ "link": "https://eleza.me",
+ "province": "IR-07",
+ "is_private": false,
+ "visibility": "full",
+ "birthday": {
+  "calendar": "jalali",
+  "month": 7,
+  "day": 12
+ }
+}

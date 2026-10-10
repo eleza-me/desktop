@@ -1,0 +1,940 @@
+// Styles of the widget library (lib/ui/ui/widgets, image, toast).
+// Structs are declared next to the default value of each widget.
+using "ui/basic.style";
+
+// ---- icons used by the library itself
+menuIconFg: textSecondary;
+menuIconCopy: icon {{ "copy", menuIconFg, 20px }};
+menuIconLink: icon {{ "link", menuIconFg, 20px }};
+menuIconCut: icon {{ "edit", menuIconFg, 20px }};
+menuIconDelete: icon {{ "trash", menuIconFg, 20px }};
+menuIconReply: icon {{ "reply-arrow:mirror-rtl", menuIconFg, 20px }};
+menuIconForward: icon {{ "forward:mirror-ltr", menuIconFg, 20px }};
+menuIconEdit: icon {{ "edit", menuIconFg, 20px }};
+menuIconPin: icon {{ "pin", menuIconFg, 20px }};
+menuIconSelect: icon {{ "check", menuIconFg, 20px }};
+menuIconMute: icon {{ "mute", menuIconFg, 20px }};
+menuIconUnmute: icon {{ "unmute", menuIconFg, 20px }};
+menuIconArchive: icon {{ "archive", menuIconFg, 20px }};
+menuIconBlock: icon {{ "block", menuIconFg, 20px }};
+menuIconReport: icon {{ "report", menuIconFg, 20px }};
+menuIconShare: icon {{ "share", menuIconFg, 20px }};
+menuIconBookmark: icon {{ "bookmark", menuIconFg, 20px }};
+menuIconSettings: icon {{ "settings", menuIconFg, 20px }};
+menuIconLogout: icon {{ "logout:mirror-rtl", menuIconFg, 20px }};
+menuIconInfo: icon {{ "info", menuIconFg, 20px }};
+menuIconDownload: icon {{ "download", menuIconFg, 20px }};
+menuIconSun: icon {{ "sun", menuIconFg, 20px }};
+menuIconMoon: icon {{ "moon", menuIconFg, 20px }};
+menuIconGlobe: icon {{ "globe", menuIconFg, 20px }};
+
+// ---- RoundButton
+RoundButton {
+	textFg: color;
+	textFgOver: color;
+	textBg: color;
+	textBgOver: color;
+	borderFg: color;      // transparent = no outline
+	height: pixels;
+	padding: pixels;      // horizontal padding around the content
+	minWidth: pixels;
+	radius: pixels;
+	font: font;
+	iconSkip: pixels;     // between the icon and the text
+	ripple: RippleAnimation;
+}
+
+// Filled brand button: the main action.
+defaultRoundButton: RoundButton {
+	textFg: textOnBrand;
+	textFgOver: textOnBrand;
+	textBg: brandPrimary;
+	textBgOver: brandPressed;
+	borderFg: transparent;
+	height: 36px;
+	padding: 18px;
+	minWidth: 72px;
+	radius: 18px;
+	font: semiboldFont;
+	iconSkip: 8px;
+	ripple: onBrandRipple;
+}
+// Taller variant for the main button of a form (intro screens).
+bigRoundButton: RoundButton(defaultRoundButton) {
+	height: 44px;
+	padding: 24px;
+	radius: 22px;
+	minWidth: 120px;
+}
+// Brand text on a soft brand surface: secondary action.
+lightRoundButton: RoundButton(defaultRoundButton) {
+	textFg: brandText;
+	textFgOver: brandText;
+	textBg: brandSoft;
+	textBgOver: brandSoft;
+	ripple: brandRipple;
+}
+// Filled destructive action.
+dangerRoundButton: RoundButton(defaultRoundButton) {
+	textFg: textOnBrand;
+	textFgOver: textOnBrand;
+	textBg: statusError;
+	textBgOver: statusError;
+	ripple: onBrandRipple;
+}
+// Destructive text without a fill.
+dangerLightButton: RoundButton(defaultRoundButton) {
+	textFg: statusError;
+	textFgOver: statusError;
+	textBg: transparent;
+	textBgOver: statusErrorSoft;
+	ripple: dangerRipple;
+}
+// Neutral outlined button.
+outlineRoundButton: RoundButton(defaultRoundButton) {
+	textFg: textPrimary;
+	textFgOver: textPrimary;
+	textBg: transparent;
+	textBgOver: stateHover;
+	borderFg: borderStrong;
+	ripple: defaultRipple;
+}
+// Text-only button.
+defaultFlatButton: RoundButton(defaultRoundButton) {
+	textFg: brandText;
+	textFgOver: brandText;
+	textBg: transparent;
+	textBgOver: stateHover;
+	padding: 14px;
+	minWidth: 0px;
+	radius: 10px;
+	ripple: brandRipple;
+}
+smallRoundButton: RoundButton(defaultRoundButton) {
+	height: 30px;
+	padding: 14px;
+	minWidth: 0px;
+	radius: 15px;
+	font: smallSemiboldFont;
+}
+smallLightButton: RoundButton(smallRoundButton) {
+	textFg: brandText;
+	textFgOver: brandText;
+	textBg: brandSoft;
+	textBgOver: brandSoft;
+	ripple: brandRipple;
+}
+smallOutlineButton: RoundButton(smallRoundButton) {
+	textFg: textPrimary;
+	textFgOver: textPrimary;
+	textBg: transparent;
+	textBgOver: stateHover;
+	borderFg: borderStrong;
+	ripple: defaultRipple;
+}
+
+// ---- IconButton
+IconButton {
+	width: pixels;
+	height: pixels;
+	icon: icon;
+	iconOver: icon;
+	rippleSize: pixels;   // diameter of the hover circle / ripple
+	bgOver: color;
+	ripple: RippleAnimation;
+}
+
+iconButtonFg: textSecondary;
+iconButtonFgOver: textPrimary;
+defaultIconButton: IconButton {
+	width: 40px;
+	height: 40px;
+	icon: icon {{ "more", iconButtonFg }};
+	iconOver: icon {{ "more", iconButtonFgOver }};
+	rippleSize: 36px;
+	bgOver: stateHover;
+	ripple: defaultRipple;
+}
+topBarBackButton: IconButton(defaultIconButton) {
+	icon: icon {{ "back:mirror-ltr", iconButtonFg }};
+	iconOver: icon {{ "back:mirror-ltr", iconButtonFgOver }};
+}
+topBarCloseButton: IconButton(defaultIconButton) {
+	icon: icon {{ "close", iconButtonFg }};
+	iconOver: icon {{ "close", iconButtonFgOver }};
+}
+topBarMoreButton: IconButton(defaultIconButton) {
+	icon: icon {{ "more", iconButtonFg }};
+	iconOver: icon {{ "more", iconButtonFgOver }};
+}
+topBarSearchButton: IconButton(defaultIconButton) {
+	icon: icon {{ "search", iconButtonFg }};
+	iconOver: icon {{ "search", iconButtonFgOver }};
+}
+topBarCallButton: IconButton(defaultIconButton) {
+	icon: icon {{ "call", iconButtonFg }};
+	iconOver: icon {{ "call", iconButtonFgOver }};
+}
+topBarEditButton: IconButton(defaultIconButton) {
+	icon: icon {{ "edit", iconButtonFg }};
+	iconOver: icon {{ "edit", iconButtonFgOver }};
+}
+topBarCreateButton: IconButton(defaultIconButton) {
+	icon: icon {{ "create", iconButtonFg }};
+	iconOver: icon {{ "create", iconButtonFgOver }};
+}
+topBarSettingsButton: IconButton(defaultIconButton) {
+	icon: icon {{ "settings", iconButtonFg }};
+	iconOver: icon {{ "settings", iconButtonFgOver }};
+}
+topBarBellButton: IconButton(defaultIconButton) {
+	icon: icon {{ "notifications", iconButtonFg }};
+	iconOver: icon {{ "notifications", iconButtonFgOver }};
+}
+smallIconButton: IconButton(defaultIconButton) {
+	width: 32px;
+	height: 32px;
+	rippleSize: 30px;
+	icon: icon {{ "more", iconButtonFg, 20px }};
+	iconOver: icon {{ "more", iconButtonFgOver, 20px }};
+}
+smallCloseButton: IconButton(smallIconButton) {
+	icon: icon {{ "close", iconButtonFg, 20px }};
+	iconOver: icon {{ "close", iconButtonFgOver, 20px }};
+}
+// A round brand button with an icon (send, compose).
+brandIconButton: IconButton(defaultIconButton) {
+	icon: icon {{ "send:mirror-ltr", brandPrimary }};
+	iconOver: icon {{ "send:mirror-ltr", brandPressed }};
+	bgOver: rippleBrandFg;
+	ripple: brandRipple;
+}
+passwordToggleButton: IconButton(defaultIconButton) {
+	icon: icon {{ "eye", textTertiary, 20px }};
+	iconOver: icon {{ "eye", textSecondary, 20px }};
+	width: 36px;
+	height: 36px;
+	rippleSize: 32px;
+}
+passwordHideIcon: icon {{ "eye-off", textSecondary, 20px }};
+
+// ---- LinkButton
+LinkButton {
+	color: color;
+	overColor: color;
+	font: font;
+	overFont: font;
+}
+defaultLinkButton: LinkButton {
+	color: brandText;
+	overColor: brandText;
+	font: normalFont;
+	overFont: font(14px underline);
+}
+smallLinkButton: LinkButton(defaultLinkButton) {
+	font: smallSemiboldFont;
+	overFont: font(12px semibold underline);
+}
+
+// ---- Toggle / Check / Radio / Checkbox
+Toggle {
+	width: pixels;
+	height: pixels;
+	diameter: pixels;   // the thumb
+	untoggledBg: color;
+	toggledBg: color;
+	thumbFg: color;
+	duration: duration;
+}
+defaultToggle: Toggle {
+	width: 40px;
+	height: 24px;
+	diameter: 18px;
+	untoggledBg: toggleOffBg;
+	toggledBg: brandPrimary;
+	thumbFg: staticWhite;
+	duration: 180ms;
+}
+
+Check {
+	diameter: pixels;
+	thickness: double;
+	radius: pixels;
+	untoggledFg: color;
+	toggledBg: color;
+	checkFg: color;
+	duration: duration;
+}
+defaultCheck: Check {
+	diameter: 20px;
+	thickness: 1.5;
+	radius: 6px;
+	untoggledFg: borderStrong;
+	toggledBg: brandPrimary;
+	checkFg: textOnBrand;
+	duration: 160ms;
+}
+
+Radio {
+	diameter: pixels;
+	thickness: double;
+	skip: pixels;       // gap between the ring and the dot
+	untoggledFg: color;
+	toggledFg: color;
+	duration: duration;
+}
+defaultRadio: Radio {
+	diameter: 20px;
+	thickness: 1.5;
+	skip: 5px;
+	untoggledFg: borderStrong;
+	toggledFg: brandPrimary;
+	duration: 160ms;
+}
+
+Checkbox {
+	check: Check;
+	style: TextStyle;
+	textFg: color;
+	margin: margins;
+	textSkip: pixels;
+	ripple: RippleAnimation;
+}
+defaultCheckbox: Checkbox {
+	check: defaultCheck;
+	style: defaultTextStyle;
+	textFg: textPrimary;
+	margin: margins(8px, 6px, 8px, 6px);
+	textSkip: 12px;
+	ripple: defaultRipple;
+}
+
+// ---- SettingsButton
+SettingsButton {
+	height: pixels;
+	padding: margins;
+	font: font;
+	textFg: color;
+	textFgOver: color;
+	textBg: color;
+	textBgOver: color;
+	valueFont: font;
+	valueFg: color;
+	iconFg: color;
+	iconSkip: pixels;   // from the icon's leading edge to the text
+	chevron: icon;
+	dangerFg: color;
+	ripple: RippleAnimation;
+	toggle: Toggle;
+}
+defaultSettingsButton: SettingsButton {
+	height: 48px;
+	padding: margins(20px, 0px, 20px, 0px);
+	font: mediumFont;
+	textFg: textPrimary;
+	textFgOver: textPrimary;
+	textBg: transparent;
+	textBgOver: stateHover;
+	valueFont: normalFont;
+	valueFg: textTertiary;
+	iconFg: textSecondary;
+	iconSkip: 40px;
+	chevron: icon {{ "chevron-left:mirror-ltr", textTertiary, 18px }};
+	dangerFg: statusError;
+	ripple: defaultRipple;
+	toggle: defaultToggle;
+}
+settingsIconAccount: icon {{ "me", textSecondary }};
+settingsIconPrivacy: icon {{ "lock", textSecondary }};
+settingsIconNotifications: icon {{ "notifications", textSecondary }};
+settingsIconMessages: icon {{ "message", textSecondary }};
+settingsIconLanguage: icon {{ "globe", textSecondary }};
+settingsIconAppearance: icon {{ "appearance", textSecondary }};
+settingsIconDevices: icon {{ "devices", textSecondary }};
+settingsIconMuted: icon {{ "block", textSecondary }};
+settingsIconRegion: icon {{ "region", textSecondary }};
+settingsIconAbout: icon {{ "info", textSecondary }};
+settingsIconLogout: icon {{ "logout:mirror-rtl", textSecondary }};
+settingsIconDelete: icon {{ "trash", textSecondary }};
+
+// ---- PillButton / ChipsRow
+PillButton {
+	height: pixels;
+	padding: pixels;
+	font: font;
+	textFg: color;
+	bg: color;
+	borderFg: color;
+	activeBg: color;
+	activeFg: color;
+	radius: pixels;
+	tailRadius: pixels;   // the small bottom-left corner of the design's chips
+	iconSkip: pixels;
+	ripple: RippleAnimation;
+}
+defaultPillButton: PillButton {
+	height: 32px;
+	padding: 12px;
+	font: semiboldFont;
+	textFg: textPrimary;
+	bg: bgSurface;
+	borderFg: borderStrong;
+	activeBg: bgNight;
+	activeFg: textOnNight;
+	radius: 13px;
+	tailRadius: 4px;
+	iconSkip: 6px;
+	ripple: defaultRipple;
+}
+smallPillButton: PillButton(defaultPillButton) {
+	height: 26px;
+	padding: 10px;
+	font: smallSemiboldFont;
+	radius: 11px;
+}
+
+ChipsRow {
+	height: pixels;
+	padding: margins;
+	skip: pixels;
+	chip: PillButton;
+	bg: color;          // also the color the edges fade to
+	fadeWidth: pixels;
+}
+defaultChipsRow: ChipsRow {
+	height: 48px;
+	padding: margins(16px, 0px, 16px, 0px);
+	skip: 8px;
+	chip: defaultPillButton;
+	bg: bgCanvas;
+	fadeWidth: 24px;
+}
+
+// ---- FlatLabel
+FlatLabel {
+	style: TextStyle;
+	textFg: color;
+	minWidth: pixels;
+	maxLines: int;      // 0 = unlimited
+	align: align;
+}
+defaultFlatLabel: FlatLabel {
+	style: defaultTextStyle;
+	textFg: textPrimary;
+	minWidth: 0px;
+	maxLines: 0;
+	align: align(left);
+}
+secondaryLabel: FlatLabel(defaultFlatLabel) {
+	textFg: textSecondary;
+}
+captionLabel: FlatLabel(defaultFlatLabel) {
+	style: smallTextStyle;
+	textFg: textTertiary;
+}
+titleLabelStyle: TextStyle(defaultTextStyle) {
+	font: titleFontM;
+}
+titleLabel: FlatLabel(defaultFlatLabel) {
+	style: titleLabelStyle;
+}
+largeTitleLabelStyle: TextStyle(defaultTextStyle) {
+	font: titleFontL;
+}
+largeTitleLabel: FlatLabel(defaultFlatLabel) {
+	style: largeTitleLabelStyle;
+}
+subtitleLabelStyle: TextStyle(defaultTextStyle) {
+	font: titleFontS;
+}
+subtitleLabel: FlatLabel(defaultFlatLabel) {
+	style: subtitleLabelStyle;
+}
+sectionTitleLabelStyle: TextStyle(defaultTextStyle) {
+	font: smallSemiboldFont;
+}
+// Small caption above a group of rows.
+sectionTitleLabel: FlatLabel(defaultFlatLabel) {
+	style: sectionTitleLabelStyle;
+	textFg: textTertiary;
+}
+displayLabelStyle: TextStyle(defaultTextStyle) {
+	font: displayFontM;
+}
+displayLabel: FlatLabel(defaultFlatLabel) {
+	style: displayLabelStyle;
+}
+bodyLargeLabelStyle: TextStyle(defaultTextStyle) {
+	font: bodyFontL;
+	lineHeight: 28px;
+}
+bodyLargeLabel: FlatLabel(defaultFlatLabel) {
+	style: bodyLargeLabelStyle;
+}
+centeredLabel: FlatLabel(defaultFlatLabel) {
+	align: align(top);
+	textFg: textSecondary;
+}
+
+// ---- ScrollArea
+ScrollArea {
+	width: pixels;        // idle bar width
+	widthOver: pixels;    // hovered bar width
+	deltaX: pixels;       // gap to the edge
+	deltaY: pixels;
+	barBg: color;
+	barBgOver: color;
+	bgOver: color;        // track, hovered
+	duration: duration;
+	hideTimeout: duration;
+}
+defaultScrollArea: ScrollArea {
+	width: 4px;
+	widthOver: 8px;
+	deltaX: 3px;
+	deltaY: 3px;
+	barBg: scrollBarFg;
+	barBgOver: scrollBarFgOver;
+	bgOver: scrollBarBgOver;
+	duration: 150ms;
+	hideTimeout: 1200ms;
+}
+
+// ---- Menu / PopupMenu / DropdownMenu
+Menu {
+	skip: pixels;             // vertical padding of the list
+	itemHeight: pixels;
+	itemPadding: margins;     // text / icon insets inside the full-width item
+	itemMargin: pixels;       // horizontal inset of the hover highlight
+	itemFont: font;
+	itemFg: color;
+	itemFgOver: color;
+	itemBgOver: color;
+	itemRadius: pixels;
+	itemIconSkip: pixels;     // text offset when the menu has icons
+	separatorPadding: margins;
+	separatorFg: color;
+	widthMin: pixels;
+	widthMax: pixels;
+	dangerFg: color;
+	shortcutFont: font;
+	shortcutFg: color;
+	ripple: RippleAnimation;
+	arrow: icon;              // submenu
+	check: icon;              // checked item
+}
+defaultMenu: Menu {
+	skip: 6px;
+	itemHeight: 36px;
+	itemPadding: margins(18px, 0px, 18px, 0px);
+	itemMargin: 6px;
+	itemFont: normalFont;
+	itemFg: textPrimary;
+	itemFgOver: textPrimary;
+	itemBgOver: stateHover;
+	itemRadius: 8px;
+	itemIconSkip: 32px;
+	separatorPadding: margins(0px, 5px, 0px, 5px);
+	separatorFg: borderSubtle;
+	widthMin: 180px;
+	widthMax: 320px;
+	dangerFg: statusError;
+	shortcutFont: smallFont;
+	shortcutFg: textTertiary;
+	ripple: defaultRipple;
+	arrow: icon {{ "chevron-left:mirror-ltr", textTertiary, 16px }};
+	check: icon {{ "check", brandPrimary, 18px }};
+}
+
+PopupMenu {
+	shadow: Shadow;
+	radius: pixels;
+	bg: color;
+	borderFg: color;
+	menu: Menu;
+	duration: duration;
+}
+defaultPopupMenu: PopupMenu {
+	shadow: defaultShadow;
+	radius: 12px;
+	bg: bgRaised;
+	borderFg: borderSubtle;
+	menu: defaultMenu;
+	duration: 120ms;
+}
+
+// ---- Tooltip
+Tooltip {
+	font: font;
+	bg: color;
+	fg: color;
+	padding: margins;
+	radius: pixels;
+	maxWidth: pixels;
+	skip: pixels;
+}
+defaultTooltip: Tooltip {
+	font: smallFont;
+	bg: tooltipBg;
+	fg: tooltipFg;
+	padding: margins(10px, 5px, 10px, 6px);
+	radius: 8px;
+	maxWidth: 260px;
+	skip: 6px;
+}
+
+// ---- InputField and friends
+InputField {
+	textBg: color;
+	textFg: color;
+	textMargins: margins;
+	font: font;
+	placeholderFg: color;
+	placeholderFgActive: color;
+	placeholderFont: font;
+	placeholderShift: pixels;   // how far the placeholder slides away when text appears
+	border: double;
+	borderActive: double;
+	borderFg: color;
+	borderFgActive: color;
+	borderFgError: color;
+	radius: pixels;
+	heightMin: pixels;
+	heightMax: pixels;          // multi-line fields grow up to this
+	duration: duration;
+}
+// Outlined field of forms.
+defaultInputField: InputField {
+	textBg: inputBg;
+	textFg: textPrimary;
+	textMargins: margins(14px, 10px, 14px, 10px);
+	font: font(15px);
+	placeholderFg: textTertiary;
+	placeholderFgActive: textTertiary;
+	placeholderFont: font(15px);
+	placeholderShift: 16px;
+	border: 1.;
+	borderActive: 1.5;
+	borderFg: borderStrong;
+	borderFgActive: borderFocus;
+	borderFgError: statusError;
+	radius: 12px;
+	heightMin: 44px;
+	heightMax: 160px;
+	duration: 150ms;
+}
+// Borderless field on a sunken pill (search, inline filters).
+sunkenInputField: InputField(defaultInputField) {
+	textBg: transparent;
+	textMargins: margins(0px, 6px, 0px, 6px);
+	font: normalFont;
+	placeholderFont: normalFont;
+	border: 0.;
+	borderActive: 0.;
+	heightMin: 34px;
+}
+// The message composer: grows with the text, no frame of its own.
+composeField: InputField(defaultInputField) {
+	textBg: transparent;
+	textMargins: margins(4px, 10px, 4px, 10px);
+	border: 0.;
+	borderActive: 0.;
+	radius: 0px;
+	heightMin: 44px;
+	heightMax: 220px;
+}
+// Parts of Ui::PhoneInput.
+phonePartField: InputField(defaultInputField) {
+	textBg: transparent;
+	textMargins: margins(0px, 0px, 0px, 0px);
+	border: 0.;
+	borderActive: 0.;
+}
+
+CodeInput {
+	width: pixels;      // one box
+	height: pixels;
+	skip: pixels;
+	radius: pixels;
+	border: double;
+	borderActive: double;
+	bg: color;
+	borderFg: color;
+	borderFgActive: color;
+	borderFgError: color;
+	font: font;
+	textFg: color;
+}
+defaultCodeInput: CodeInput {
+	width: 44px;
+	height: 52px;
+	skip: 8px;
+	radius: 12px;
+	border: 1.;
+	borderActive: 1.5;
+	bg: inputBg;
+	borderFg: borderStrong;
+	borderFgActive: borderFocus;
+	borderFgError: statusError;
+	font: font(22px semibold);
+	textFg: textPrimary;
+}
+
+SearchField {
+	field: InputField;
+	icon: icon;
+	iconLeft: pixels;
+	iconSkip: pixels;
+	clear: IconButton;
+	height: pixels;
+	bg: color;
+	radius: pixels;
+}
+defaultSearchField: SearchField {
+	field: sunkenInputField;
+	icon: icon {{ "search", textTertiary, 20px }};
+	iconLeft: 12px;
+	iconSkip: 8px;
+	clear: smallCloseButton;
+	height: 36px;
+	bg: inputBgSunken;
+	radius: 18px;
+}
+
+// ---- Toast
+Toast {
+	style: TextStyle;
+	shadow: Shadow;
+	bg: color;
+	fg: color;
+	padding: margins;
+	margin: pixels;       // distance to the window edges
+	maxWidth: pixels;
+	minHeight: pixels;
+	maxLines: int;
+	radius: pixels;
+	iconSkip: pixels;
+	slide: pixels;        // travel of the show animation
+	duration: duration;
+}
+toastTextStyle: TextStyle(defaultTextStyle) {
+	font: smallSemiboldFont;
+	linkFg: brandMint;
+}
+defaultToast: Toast {
+	style: toastTextStyle;
+	shadow: defaultShadow;
+	bg: bgNight;
+	fg: textOnNight;
+	padding: margins(18px, 9px, 18px, 10px);
+	margin: 24px;
+	maxWidth: 480px;
+	minHeight: 38px;
+	maxLines: 4;
+	radius: 19px;
+	iconSkip: 8px;
+	slide: 16px;
+	duration: 200ms;
+}
+toastIconCheck: icon {{ "check", brandMint, 20px }};
+toastIconWarning: icon {{ "warning", accentLamp, 20px }};
+
+// ---- TopBar
+TopBar {
+	height: pixels;
+	bg: color;
+	lineFg: color;
+	padding: margins;
+	back: IconButton;
+	backSkip: pixels;
+	titleLeftNoBack: pixels;  // extra inset of the title when there is no back button
+	leadingSkip: pixels;      // after the leading widget (userpic)
+	actionsSkip: pixels;
+	titleStyle: TextStyle;
+	titleFg: color;
+	subtitleStyle: TextStyle;
+	subtitleFg: color;
+	subtitleFgAccent: color;
+}
+topBarTitleStyle: TextStyle(defaultTextStyle) {
+	font: titleFontS;
+}
+topBarSubtitleStyle: TextStyle(defaultTextStyle) {
+	font: smallFont;
+}
+defaultTopBar: TopBar {
+	height: 56px;
+	bg: bgCanvas;
+	lineFg: chromeHairline;
+	padding: margins(8px, 0px, 8px, 0px);
+	back: topBarBackButton;
+	backSkip: 4px;
+	titleLeftNoBack: 12px;
+	leadingSkip: 12px;
+	actionsSkip: 4px;
+	titleStyle: topBarTitleStyle;
+	titleFg: textPrimary;
+	subtitleStyle: topBarSubtitleStyle;
+	subtitleFg: textTertiary;
+	subtitleFgAccent: brandText;
+}
+
+// ---- TabBar
+TabBar {
+	height: pixels;
+	bg: color;
+	lineFg: color;
+	padding: pixels;
+	tabPadding: pixels;
+	skip: pixels;
+	font: font;
+	fontActive: font;
+	textFg: color;
+	textFgOver: color;
+	textFgActive: color;
+	textTop: pixels;          // fine tuning of the text position
+	indicatorFg: color;
+	indicatorHeight: pixels;
+	indicatorExtend: pixels;  // how much wider than the text
+	indicatorBottom: pixels;
+	duration: duration;
+	ripple: RippleAnimation;
+	rippleSkip: pixels;
+	rippleRadius: pixels;
+}
+defaultTabBar: TabBar {
+	height: 44px;
+	bg: transparent;
+	lineFg: chromeHairline;
+	padding: 8px;
+	tabPadding: 12px;
+	skip: 4px;
+	font: semiboldFont;
+	fontActive: semiboldFont;
+	textFg: textTertiary;
+	textFgOver: textSecondary;
+	textFgActive: textPrimary;
+	textTop: 0px;
+	indicatorFg: brandPrimary;
+	indicatorHeight: 3px;
+	indicatorExtend: 2px;
+	indicatorBottom: 0px;
+	duration: 240ms;
+	ripple: defaultRipple;
+	rippleSkip: 5px;
+	rippleRadius: 10px;
+}
+
+// ---- Badge / Divider / EmptyPlaceholder / skeleton
+Badge {
+	font: font;
+	height: pixels;
+	padding: pixels;
+	bg: color;
+	fg: color;
+	bgMuted: color;
+	fgMuted: color;
+}
+defaultBadge: Badge {
+	font: microFont;
+	height: 20px;
+	padding: 6px;
+	bg: brandPrimary;
+	fg: textOnBrand;
+	bgMuted: borderStrong;
+	fgMuted: textSecondary;
+}
+smallBadge: Badge(defaultBadge) {
+	font: font(10px semibold);
+	height: 16px;
+	padding: 4px;
+}
+
+Divider {
+	padding: margins;
+	thickness: pixels;
+	fg: color;
+	bg: color;
+}
+defaultDivider: Divider {
+	padding: margins(0px, 0px, 0px, 0px);
+	thickness: 1px;
+	fg: borderSubtle;
+	bg: transparent;
+}
+// A line inset from the leading side (between settings rows with icons).
+insetDivider: Divider(defaultDivider) {
+	padding: margins(60px, 0px, 0px, 0px);
+}
+// A line with space around (between groups).
+sectionDivider: Divider(defaultDivider) {
+	padding: margins(0px, 8px, 0px, 8px);
+}
+
+EmptyPlaceholder {
+	padding: pixels;
+	maxWidth: pixels;
+	iconSkip: pixels;
+	titleStyle: TextStyle;
+	titleFg: color;
+	textStyle: TextStyle;
+	textFg: color;
+	textSkip: pixels;
+	buttonSkip: pixels;
+	button: RoundButton;
+}
+emptyPlaceholderTitleStyle: TextStyle(defaultTextStyle) {
+	font: titleFontS;
+}
+emptyPlaceholderTextStyle: TextStyle(defaultTextStyle) {
+	lineHeight: 24px;
+}
+defaultEmptyPlaceholder: EmptyPlaceholder {
+	padding: 24px;
+	maxWidth: 320px;
+	iconSkip: 12px;
+	titleStyle: emptyPlaceholderTitleStyle;
+	titleFg: textPrimary;
+	textStyle: emptyPlaceholderTextStyle;
+	textFg: textSecondary;
+	textSkip: 6px;
+	buttonSkip: 18px;
+	button: lightRoundButton;
+}
+emptyIconChats: icon {{ "conversation", textTertiary, 48px }};
+emptyIconEli: icon {{ "eli", textTertiary, 48px }};
+emptyIconSearch: icon {{ "search", textTertiary, 48px }};
+emptyIconMe: icon {{ "me", textTertiary, 48px }};
+emptyIconNotifications: icon {{ "notifications", textTertiary, 48px }};
+emptyIconBookmarks: icon {{ "bookmark", textTertiary, 48px }};
+emptyIconError: icon {{ "warning", textTertiary, 48px }};
+
+serviceLabelFont: smallSemiboldFont;
+serviceLabelPadding: margins(14px, 5px, 14px, 6px);
+
+skeletonChatRowHeight: 68px;
+skeletonPostRowHeight: 120px;
+skeletonLineRowHeight: 28px;
+skeletonUserpicSize: 48px;
+skeletonUserpicSmall: 40px;
+
+// ---- ListWidget
+ListWidget {
+	bg: color;
+	bgOver: color;
+	bgActive: color;
+	ripple: RippleAnimation;
+}
+defaultListWidget: ListWidget {
+	bg: transparent;
+	bgOver: stateHover;
+	bgActive: stateActive;
+	ripple: defaultRipple;
+}
+
+// ---- userpic sizes of the design
+userpicSizeLarge: 88px;
+userpicSizeRow: 48px;
+userpicSizeMedium: 40px;
+userpicSizeSmall: 32px;
+userpicSizeTiny: 24px;
