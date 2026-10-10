@@ -120,9 +120,18 @@ CommandLine ParseCommandLine(const QStringList &arguments) {
 			}
 		} else if (TakeValue(argument, "--debug-actions", value)) {
 			result.debugActions = value;
+		} else if (TakeValue(argument, "--update-url", value)) {
+			result.updateUrls.push_back(value);
+		} else if (TakeValue(argument, "--update-key", value)) {
+			result.updateKeys.push_back(value);
+		} else if (argument == QStringLiteral("--update-now")) {
+			result.updateNow = true;
+		} else if (TakeValue(argument, "--update-state", value)) {
+			result.updateState = value;
 #else // ELEZA_DEBUG_TOOLS
 		} else if (argument.startsWith(QStringLiteral("--debug-"))
-			|| argument.startsWith(QStringLiteral("--gallery"))) {
+			|| argument.startsWith(QStringLiteral("--gallery"))
+			|| argument.startsWith(QStringLiteral("--update-"))) {
 			const auto till = argument.indexOf(QLatin1Char('='));
 			result.unavailable.push_back(argument.left(till));
 #endif // ELEZA_DEBUG_TOOLS

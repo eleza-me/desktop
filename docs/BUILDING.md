@@ -117,10 +117,10 @@ installs `bin/Eleza`, `share/applications/me.eleza.desktop.desktop` and the icon
 packaging/linux/build-deb.sh            # -> build/package/dist/
 ```
 
-makes a Release build and writes `Eleza-<version>-linux-<arch>.tar.gz` (the installed tree,
-`usr/…`) and, when `dpkg-deb` is available, `eleza-desktop_<version>_<arch>.deb`. The `.deb`
-is described by `packaging/linux/cpack-deb.cmake`; it can also be made from any configured
-build directory:
+makes a Release build and writes `Eleza-<version>-linux-<arch>.zip` (the portable build: the
+binary, an icon and a README in a directory of their own, see below) and, when `dpkg-deb` is
+available, `eleza-desktop_<version>_<arch>.deb`. The `.deb` is described by
+`packaging/linux/cpack-deb.cmake`; it can also be made from any configured build directory:
 
 ```sh
 ELEZA_BUILD_DIR=$PWD/build cpack --config packaging/linux/cpack-deb.cmake -B build/cpack
@@ -130,6 +130,18 @@ Its dependencies on libraries come from `dpkg-shlibdeps`; the run-time plugins (
 driver, platform plugins, image formats) are listed by hand in that file. The binaries link
 the Qt of the machine they were built on: build on the oldest distribution you want to
 support.
+
+The portable build alone:
+
+```sh
+packaging/linux/make-portable.sh build out/Eleza out/Eleza-<version>-linux-x86_64.zip
+```
+
+It is the archive people download *and* the package the app updates itself from
+(`docs/RELEASING.md`): `packaging/make-package.py` writes `eleza-files.list` into the
+directory — the marker of a copy that updates itself — and packs it reproducibly. Unpacked
+into a directory the user owns it keeps itself up to date; the `.deb` is updated by the
+package manager and only announces new versions.
 
 ## Windows
 
@@ -194,21 +206,33 @@ affected).
 ```bat
 mkdir dist\Eleza
 copy build\windows-msvc-release\Eleza\Eleza.exe dist\Eleza\
+copy build\windows-msvc-release\Eleza\Updater.exe dist\Eleza\
 windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw --no-compiler-runtime dist\Eleza\Eleza.exe
 copy build\windows-msvc-release\vcpkg_installed\x64-windows\bin\libcrypto-3-x64.dll dist\Eleza\
 copy build\windows-msvc-release\vcpkg_installed\x64-windows\bin\libssl-3-x64.dll dist\Eleza\
 copy "%VCToolsRedistDir%x64\Microsoft.VC143.CRT\*.dll" dist\Eleza\
 ```
 
-`dist\Eleza` is the portable build. The installer is made from it with
+`Updater.exe` is the small program that swaps the files when the app updates itself
+(`lib/install`, no Qt, static C++ runtime: it must not need the DLLs it replaces). Then:
+
+```bat
+python packaging\make-package.py dist\Eleza dist\Eleza-0.1.0-windows-x64.zip
+```
+
+writes `dist\Eleza\eleza-files.list` (without it and `Updater.exe` a copy does not update
+itself) and packs the folder: the zip is the portable build and the update package. The
+installer is made from the same folder with
 [Inno Setup](https://jrsoftware.org/isinfo.php) 6.3 or newer:
 
 ```bat
 iscc /DAppVersion=0.1.0 /DSourceDir=%CD%\dist\Eleza /DOutputDir=%CD%\dist\installer packaging\windows\eleza.iss
 ```
 
-It installs per user (no administrator rights), adds a Start menu entry, offers a desktop
-icon and "start when I sign in", and registers an uninstaller. User data lives in
+It installs per user into `%LOCALAPPDATA%\Programs\Eleza` (no administrator rights, so the
+app can update itself there silently; `/ALLUSERS` on the command line installs under Program
+Files instead), adds a Start menu entry, offers a desktop icon and "start when I sign in",
+and registers an uninstaller. User data lives in
 `%APPDATA%\eleza\Eleza` and is left alone by upgrades and by the uninstaller.
 
 ### Common pitfalls
@@ -262,15 +286,18 @@ icon and "start when I sign in", and registers an uninstaller. User data lives i
 
 ## Continuous integration
 
-`.github/workflows/build.yml` builds both platforms on every push to `main`, on pull
-requests and on `v*` tags, runs `ctest`, starts the built binary once (`--version`; on
+`.github/workflows/build.yml` builds both platforms on every push to `main` and on pull
+requests (and for a `v*` tag as a part of `release.yml`, which then signs the update
+manifest and publishes the release: `docs/RELEASING.md`), runs `ctest`, starts the built binary once (`--version`; on
 Linux also a few seconds on the offscreen platform) and uploads the packages. Both jobs
 build Release with `ELEZA_DEBUG_TOOLS` off — the tests do not need the debug flags — so the
 artifacts have no debug hooks; the Linux job checks that:
 
-* `Eleza-<version>-windows-x64-portable` — the deployed folder;
+* `Eleza-<version>-windows-x64-portable` — `Eleza-<version>-windows-x64.zip`, the deployed
+  folder;
 * `Eleza-<version>-windows-x64-setup` — the installer;
-* `Eleza-<version>-linux-x86_64` — the tarball and the `.deb`.
+* `Eleza-<version>-linux-x86_64` — `Eleza-<version>-linux-x86_64.zip` (the portable build)
+  and the `.deb`.
 
 The version is the one of `project(Eleza VERSION …)` in the root `CMakeLists.txt` (keep
 `vcpkg.json` in step with it).

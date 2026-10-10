@@ -126,6 +126,13 @@ public:
 	}
 	void setRecentEmoji(const QStringList &emoji);
 
+	// «به‌روزرسانی خودکار»: a new version is downloaded in the background
+	// as soon as it is found (off: it is only announced).
+	[[nodiscard]] bool autoUpdate() const {
+		return _autoUpdate;
+	}
+	void setAutoUpdate(bool enabled);
+
 	// Writes pending changes right now (on quit).
 	void flush();
 
@@ -154,6 +161,7 @@ private:
 	bool _sendByCtrlEnter = false;
 	qint64 _mediaCacheLimit = 0;
 	QStringList _recentEmoji;
+	bool _autoUpdate = true;
 
 };
 

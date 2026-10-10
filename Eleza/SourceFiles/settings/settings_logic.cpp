@@ -19,7 +19,7 @@ struct SectionInfo {
 	const char *id;
 };
 
-constexpr auto kSections = std::array<SectionInfo, 10>{ {
+constexpr auto kSections = std::array<SectionInfo, 11>{ {
 	{ Section::Account, "account" },
 	{ Section::Privacy, "privacy" },
 	{ Section::Notifications, "notifications" },
@@ -29,6 +29,7 @@ constexpr auto kSections = std::array<SectionInfo, 10>{ {
 	{ Section::Appearance, "appearance" },
 	{ Section::Devices, "devices" },
 	{ Section::Storage, "storage" },
+	{ Section::Update, "update" },
 	{ Section::About, "about" },
 } };
 
@@ -108,6 +109,7 @@ QString SectionTitle(Section section) {
 		return tr::lng_settings_appearance_language(tr::now);
 	case Section::Devices: return tr::lng_settings_devices(tr::now);
 	case Section::Storage: return tr::lng_settings_storage(tr::now);
+	case Section::Update: return tr::lng_update_title(tr::now);
 	case Section::About: return tr::lng_settings_about_eleza(tr::now);
 	}
 	return QString();

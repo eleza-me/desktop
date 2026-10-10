@@ -4,8 +4,10 @@
 #   packaging/linux/build-deb.sh [build dir]        (default: build/package)
 #
 # Produces in <build dir>/dist:
-#   eleza-desktop_<version>_<arch>.deb          for Debian / Ubuntu
-#   Eleza-<version>-linux-<arch>.tar.gz         the same files as a plain tree (usr/…)
+#   eleza-desktop_<version>_<arch>.deb          for Debian / Ubuntu (updated by apt)
+#   Eleza-<version>-linux-<arch>.zip            the portable build: unpack anywhere and
+#                                               run ./Eleza; it updates itself
+#                                               (packaging/linux/make-portable.sh)
 #
 # Needs the build packages of docs/BUILDING.md plus dpkg-dev (for the .deb).
 set -eu
@@ -25,10 +27,10 @@ version="$(sed -n 's/^CMAKE_PROJECT_VERSION:[^=]*=//p' "$build/CMakeCache.txt")"
 arch="$(uname -m)"
 mkdir -p "$dist"
 
-stage="$build/stage"
+stage="$build/portable"
 rm -rf "$stage"
-DESTDIR="$stage" cmake --install "$build" --strip
-tar -C "$stage" -czf "$dist/Eleza-$version-linux-$arch.tar.gz" usr
+"$root/packaging/linux/make-portable.sh" "$build" "$stage" \
+	"$dist/Eleza-$version-linux-$arch.zip"
 
 if command -v dpkg-deb >/dev/null 2>&1; then
 	ELEZA_BUILD_DIR="$build" cpack \
@@ -36,7 +38,7 @@ if command -v dpkg-deb >/dev/null 2>&1; then
 		-B "$build/cpack"
 	cp "$build"/cpack/*.deb "$dist/"
 else
-	echo "dpkg-deb not found: skipping the .deb (the tarball is ready)." >&2
+	echo "dpkg-deb not found: skipping the .deb (the portable build is ready)." >&2
 fi
 
 ls -l "$dist"

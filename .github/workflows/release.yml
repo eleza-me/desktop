@@ -1,0 +1,223 @@
+# Publishes a release of Eleza Desktop: builds both platforms (build.yml),
+# writes and signs the update manifest and creates the GitHub Release the
+# installed copies update themselves from. docs/RELEASING.md is the guide.
+#
+#   push of a tag v<version>      the usual way
+#   workflow_dispatch + version   the same for the commit it is run on; the tag
+#                                 is created by the release
+#
+# The version must be the one of project(Eleza VERSION …) in CMakeLists.txt.
+#
+# Secrets (Settings -> Secrets and variables -> Actions):
+#   ELEZA_UPDATE_SIGNING_KEY      required. The Ed25519 private key (PEM, PKCS#8)
+#                                 whose public half is compiled into the app
+#                                 (Eleza/SourceFiles/updater/updater_keys.h).
+#   ELEZA_UPDATE_S3_ENDPOINT      optional, all four together: an S3-compatible
+#   ELEZA_UPDATE_S3_BUCKET        bucket (ArvanCloud) that is served as
+#   ELEZA_UPDATE_S3_ACCESS_KEY    https://eleza.me/desktop/updates/. Without
+#   ELEZA_UPDATE_S3_SECRET_KEY    them the mirror step is skipped.
+# Variable (optional):
+#   ELEZA_UPDATE_S3_PREFIX        the key prefix in the bucket
+#                                 (default: desktop/updates)
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (x.y.z, as in CMakeLists.txt)'
+        required: true
+        type: string
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Check the version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      value: ${{ steps.version.outputs.value }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: The tag, the input and the project agree
+        id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$REF_TYPE" = "tag" ]; then
+            version="${REF_NAME#v}"
+          else
+            version="$INPUT_VERSION"
+          fi
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Not a version (x.y.z): '$version'"
+            exit 1
+          fi
+          project="$(sed -n 's/^[[:space:]]*VERSION[[:space:]]\{1,\}\([0-9]\{1,\}\.[0-9]\{1,\}\.[0-9]\{1,\}\).*/\1/p' CMakeLists.txt | head -n 1)"
+          if [ "$project" != "$version" ]; then
+            echo "::error::The release is $version but CMakeLists.txt says VERSION $project. Bump the project version (and vcpkg.json) first, then tag that commit."
+            exit 1
+          fi
+          manifest="$(sed -n 's/.*"version-string"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' vcpkg.json)"
+          if [ "$manifest" != "$version" ]; then
+            echo "::error::vcpkg.json says version-string $manifest, the release is $version."
+            exit 1
+          fi
+          for language in fa en; do
+            if [ ! -f "packaging/release-notes/$version.$language.md" ]; then
+              echo "::warning::No release notes for $language (packaging/release-notes/$version.$language.md): the update will show none."
+            fi
+          done
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build
+    needs: version
+    uses: ./.github/workflows/build.yml
+
+  publish:
+    name: Sign and publish
+    needs: [version, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.value }}
+      S3_ENDPOINT: ${{ secrets.ELEZA_UPDATE_S3_ENDPOINT }}
+      S3_BUCKET: ${{ secrets.ELEZA_UPDATE_S3_BUCKET }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download the packages
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect the release files
+        run: |
+          mkdir -p dist
+          cp "artifacts/Eleza-$VERSION-windows-x64-portable/Eleza-$VERSION-windows-x64.zip" dist/
+          cp "artifacts/Eleza-$VERSION-windows-x64-setup/Eleza-$VERSION-windows-x64-setup.exe" dist/
+          cp "artifacts/Eleza-$VERSION-linux-x86_64/Eleza-$VERSION-linux-x86_64.zip" dist/
+          cp artifacts/Eleza-"$VERSION"-linux-x86_64/*.deb dist/
+          ls -l dist
+
+      # What a client must find in a package before it accepts it.
+      - name: Check the packages
+        run: |
+          python3 - <<'PY'
+          import os, sys, zipfile
+          version = os.environ["VERSION"]
+          expected = {
+              "dist/Eleza-%s-windows-x64.zip" % version: ["Eleza.exe", "Updater.exe", "eleza-files.list"],
+              "dist/Eleza-%s-linux-x86_64.zip" % version: ["Eleza", "eleza-files.list"],
+          }
+          for path, names in expected.items():
+              with zipfile.ZipFile(path) as archive:
+                  if archive.testzip() is not None:
+                      sys.exit("damaged archive: " + path)
+                  present = set(archive.namelist())
+                  for name in names:
+                      if name not in present:
+                          sys.exit("%s has no %s" % (path, name))
+                  listed = archive.read("eleza-files.list").decode("utf-8").split()
+                  if sorted(listed) != sorted(present):
+                      sys.exit("eleza-files.list of %s does not match its content" % path)
+              print("ok:", path, len(present), "files")
+          PY
+
+      - name: Write the update manifest
+        run: |
+          python3 packaging/make-update-manifest.py \
+            --version "$VERSION" \
+            --packages dist \
+            --output dist/update.json
+          cat dist/update.json
+
+      # The public keys come out of the source the packages were built from:
+      # a signature that does not verify with one of them stops the release.
+      - name: Sign the update manifest
+        env:
+          ELEZA_UPDATE_SIGNING_KEY: ${{ secrets.ELEZA_UPDATE_SIGNING_KEY }}
+        run: |
+          python3 packaging/update-public-keys.py --pem-dir "$RUNNER_TEMP/update-keys"
+          packaging/sign-update-manifest.sh dist/update.json "$RUNNER_TEMP"/update-keys/*.pem
+          test -s dist/update.json.sig
+
+      # A draft first: the assets are all there before the release becomes
+      # "latest" (which is where the app looks for update.json).
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ github.sha }}
+        run: |
+          notes="packaging/release-notes/$VERSION.en.md"
+          if [ ! -f "$notes" ]; then
+            notes="$RUNNER_TEMP/notes.md"
+            printf 'Eleza Desktop %s\n' "$VERSION" > "$notes"
+          fi
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "::error::The release v$VERSION exists already. Delete it (and think twice: clients may have seen it) or release a new version."
+            exit 1
+          fi
+          gh release create "v$VERSION" \
+            --draft \
+            --target "$TARGET" \
+            --title "Eleza Desktop $VERSION" \
+            --notes-file "$notes" \
+            "dist/Eleza-$VERSION-windows-x64-setup.exe" \
+            "dist/Eleza-$VERSION-windows-x64.zip" \
+            "dist/Eleza-$VERSION-linux-x86_64.zip" \
+            dist/*.deb \
+            dist/update.json \
+            dist/update.json.sig
+          gh release edit "v$VERSION" --draft=false --latest
+
+      # Optional: the same files on Eleza's own server, the first place the
+      # app looks. The packages go first, the manifest and its signature last,
+      # so a manifest never names a file that is not there yet.
+      - name: Mirror to the update bucket
+        if: env.S3_ENDPOINT != '' && env.S3_BUCKET != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.ELEZA_UPDATE_S3_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.ELEZA_UPDATE_S3_SECRET_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
+          # Stores that are not AWS do not all take the newer checksum headers.
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          S3_PREFIX: ${{ vars.ELEZA_UPDATE_S3_PREFIX || 'desktop/updates' }}
+        run: |
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "::error::ELEZA_UPDATE_S3_ENDPOINT / _BUCKET are set but _ACCESS_KEY / _SECRET_KEY are not."
+            exit 1
+          fi
+          upload_as() {
+            file="$1"; shift
+            aws s3 cp --only-show-errors --endpoint-url "$S3_ENDPOINT" \
+              --acl public-read "$@" "$file" "s3://$S3_BUCKET/$S3_PREFIX/$(basename "$file")"
+          }
+          upload_as "dist/Eleza-$VERSION-windows-x64.zip" --content-type application/zip
+          upload_as "dist/Eleza-$VERSION-linux-x86_64.zip" --content-type application/zip
+          upload_as "dist/Eleza-$VERSION-windows-x64-setup.exe" --content-type application/octet-stream
+          upload_as dist/update.json --content-type application/json --cache-control 'no-cache, max-age=0'
+          upload_as dist/update.json.sig --content-type text/plain --cache-control 'no-cache, max-age=0'
+          echo "Mirrored to s3://$S3_BUCKET/$S3_PREFIX/"
+
+      - name: Mirror skipped
+        if: env.S3_ENDPOINT == '' || env.S3_BUCKET == ''
+        run: echo "::notice::No update bucket is configured (ELEZA_UPDATE_S3_*); the release is on GitHub only. The app falls back to it by itself."

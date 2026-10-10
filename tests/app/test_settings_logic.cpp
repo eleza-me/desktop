@@ -30,6 +30,7 @@ private Q_SLOTS:
 			Settings::Section::Appearance,
 			Settings::Section::Devices,
 			Settings::Section::Storage,
+			Settings::Section::Update,
 			Settings::Section::About,
 		};
 		auto ids = QSet<QString>();

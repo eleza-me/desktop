@@ -8,6 +8,8 @@
 //   Core::App().setThemeMode(...)           System / Light / Dark
 //   Core::App().window()                    the main window
 //   Core::App().openRoute(route)            now, or as soon as the session is shown
+//   Core::App().updater()                   in-app updates (updater/updater_checker.h)
+//   Core::App().restartToUpdate()           «به‌روزرسانی الزا»
 //
 // What the window shows:
 //   the UI gallery        --gallery (no account is created)
@@ -35,6 +37,11 @@ class Account;
 class Session;
 enum class SessionEndReason;
 } // namespace Main
+
+namespace Updater {
+class Checker;
+struct InstallTarget;
+} // namespace Updater
 
 namespace Window {
 class MainWindow;
@@ -111,6 +118,23 @@ public:
 	// when it appears (a link that arrived while signed out).
 	void openRoute(const QString &route);
 
+	// ---- updates
+	// Null only in the gallery.
+	[[nodiscard]] Updater::Checker *updater() const {
+		return _updater.get();
+	}
+	// The update is unpacked and ready: asks first when messages are still
+	// on their way out, then quits, swaps the files and starts the new
+	// version with the arguments of this run.
+	void restartToUpdate();
+	// «بررسی به‌روزرسانی» of the tray menu: brings the window up, checks
+	// now and shows the answer (the settings page, or a toast when nobody is
+	// signed in).
+	void checkForUpdates();
+	// The page a copy that cannot update itself gets the new version from:
+	// the server's address for this platform, or the built-in one.
+	void openDownloadPage();
+
 	// Whether the main window is the active one (notifications, presence).
 	[[nodiscard]] bool windowActive() const;
 
@@ -142,10 +166,15 @@ private:
 	void sessionChanged();
 	void sessionEnded(Main::SessionEndReason reason);
 	void checkUpgradeRequired();
+	void createUpdater();
+	void updaterStateChanged();
+	void showInstallResult();
+	void restartToUpdateNow();
 	void windowActiveChanged();
 	void applyBackground();
 
 #ifdef ELEZA_DEBUG_TOOLS
+	void applyDebugUpdateState(const QString &name);
 	void startDebugLogin();
 	void debugLoginFailed(const QString &why);
 	void runDebugScenario();
@@ -156,7 +185,13 @@ private:
 	std::unique_ptr<QTemporaryDir> _temporaryDir;
 	std::unique_ptr<Settings> _settings;
 	std::unique_ptr<Main::Account> _account;
+	std::unique_ptr<Updater::Checker> _updater;
+	std::unique_ptr<Updater::InstallTarget> _installTarget;
 	std::unique_ptr<Window::MainWindow> _window;
+	// What the install step reported at this start (shown once).
+	QString _installedVersion;
+	QString _installFailedVersion;
+	bool _announceUpdateCheck = false;
 	QString _pendingRoute;
 	Content _content = Content::None;
 	QTimer _backgroundTimer;

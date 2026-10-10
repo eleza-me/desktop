@@ -8,6 +8,7 @@
 
 #include <QtCore/QEvent>
 #include <QtCore/QTimer>
+#include <QtGui/QMouseEvent>
 
 #include <algorithm>
 #include <deque>
@@ -29,7 +30,11 @@ public:
 	, _config(std::move(config))
 	, _text(_st.style, _config.text)
 	, _finished(std::move(finished)) {
-		setAttribute(Qt::WA_TransparentForMouseEvents);
+		if (_config.clicked) {
+			setCursor(style::cur_pointer);
+		} else {
+			setAttribute(Qt::WA_TransparentForMouseEvents);
+		}
 		_hideTimer.setSingleShot(true);
 		QObject::connect(&_hideTimer, &QTimer::timeout, this, [this] {
 			toggle(false);
@@ -123,6 +128,18 @@ protected:
 				: style::al_top,
 			.elisionLines = _st.maxLines,
 		});
+	}
+
+	void mouseReleaseEvent(QMouseEvent *e) override {
+		if (e->button() != Qt::LeftButton || !_shown) {
+			return;
+		}
+		const auto body = rect().marginsRemoved(_st.shadow.extend);
+		if (const auto callback = _config.clicked;
+			callback && body.contains(e->pos())) {
+			hideNow();
+			callback();
+		}
 	}
 
 private:

@@ -7,6 +7,7 @@
 #include "lang_auto.h"
 #include "main/main_session.h"
 #include "settings/settings_common.h"
+#include "core/core_application.h"
 #include "support/media_image.h"
 #include "ui/painter.h"
 #include "ui/widgets/buttons.h"
@@ -14,9 +15,11 @@
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/top_bar.h"
 #include "ui/wrap/vertical_layout.h"
+#include "updater/updater_checker.h"
 #include "window/window_routes.h"
 #include "window/window_session_controller.h"
 #include "styles/style_settings.h"
+#include "styles/style_settings_update.h"
 
 namespace Settings {
 
@@ -139,6 +142,14 @@ Widget::Widget(QWidget *parent, Window::SessionController *controller)
 		[this] { refreshActive(); });
 	refreshActive();
 
+	// «به‌روزرسانی» says when a new version waits there.
+	if (const auto updater = Core::App().updater()) {
+		connect(updater, &Updater::Checker::stateChanged, this, [this] {
+			refreshUpdateValue();
+		});
+		refreshUpdateValue();
+	}
+
 	// The values next to «حریم خصوصی» and «منطقهٔ الی».
 	auto &graph = controller->session().data().graph();
 	connect(&graph, &Data::Graph::settingsChanged, this, [this] {
@@ -198,6 +209,7 @@ void Widget::build() {
 	addSection(Section::Devices, &st::settingsIconDevices);
 	addSection(Section::Storage, &st::settingsIconStorage);
 	AddDivider(_content);
+	addSection(Section::Update, &st::settingsIconUpdate);
 	addSection(Section::About, &st::settingsIconAbout);
 	const auto logout = _content->add(Ui::object_ptr<Ui::SettingsButton>(
 		_content,
@@ -230,6 +242,25 @@ void Widget::refreshActive() {
 	}
 	for (const auto &[section, button] : _sections) {
 		button->setForceRippled(active && (*active == section));
+	}
+}
+
+void Widget::refreshUpdateValue() {
+	const auto updater = Core::App().updater();
+	if (!updater) {
+		return;
+	}
+	const auto state = updater->state();
+	const auto offered = (state == Updater::State::Available)
+		|| (state == Updater::State::Downloading)
+		|| (state == Updater::State::Preparing)
+		|| (state == Updater::State::Ready);
+	for (const auto &[section, button] : _sections) {
+		if (section == Section::Update) {
+			button->setValueText(offered
+				? Lang::Num(updater->info().version)
+				: QString());
+		}
 	}
 }
 

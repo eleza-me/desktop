@@ -81,6 +81,9 @@ Only with `ELEZA_DEBUG_TOOLS`:
 | `--debug-grab=<png>` | save a grab and exit |
 | `--debug-grab-delay=<ms>` | wait this long after the route was opened and the actions finished (default 600) |
 | `--gallery[=<page>]` | the UI gallery instead of the app |
+| `--update-url=<url>`, `--update-key=<base64>` | a test update manifest (http on the loopback interface is accepted) and the public key it is signed with, instead of the built-in ones (`docs/RELEASING.md`, "Testing an update locally") |
+| `--update-now` | check at once and install as soon as the update is ready |
+| `--update-state=<state>` | the update UI in a state, for screenshots: `checking`, `uptodate`, `available`, `announced`, `downloading`, `preparing`, `ready`, `failed`, `failed-install`, `required`, `required-ready` |
 | env `ELEZA_DEBUG_FONTS` | logs the font families that were picked |
 
 A run with `--debug-grab` or `--debug-actions` is *ephemeral*: preferences are not saved, no
@@ -176,6 +179,9 @@ Core::Launcher -> Core::Application                     core/
   `Data::Notifications::unreadChanged`.
 * `controller->requestLogout()` is the sign-out flow (confirmation box, then
   `account.logout()`).
+* `Core::App().updater()` — `Updater::Checker` (state, `info()`, `checkNow()`,
+  `download()`; signals `stateChanged`, `progressChanged`); `Core::App().restartToUpdate()`
+  is «به‌روزرسانی الزا». It exists signed out as well and never uses the account.
 
 ## 4. Adding a module
 
@@ -427,7 +433,7 @@ Preferences that exist already in `Core::Settings` (`Core::App().settings()`):
 `notifications()` (`desktopEnabled`, `soundEnabled`, `showPreview` = «نمایش متن پیام»,
 `showSender`, `onlyWhenInactive`, `flashTaskbar`, `countUnreadMuted`), `closeToTray`,
 `themeMode`, `language`, `sideColumnWidth`, `lastTab`, `playbackVolume`,
-`voicePlaybackSpeed`. Change them through the setters (they save themselves); language and
+`voicePlaybackSpeed`, `autoUpdate`. Change them through the setters (they save themselves); language and
 theme through `Core::App().setLanguage / setThemeMode`.
 
 ## 7. The core API

@@ -251,6 +251,9 @@ public:
 		QByteArray contentType = "application/json";
 		QVector<QPair<QByteArray, QByteArray>> headers;
 		bool hang = false; // never answer (cancellation tests)
+		// >= 0: announce the whole body, send only this many bytes of it
+		// and drop the connection (a download that is cut off).
+		int cutAfter = -1;
 
 		static Response Ok(const QJsonObject &json = QJsonObject()) {
 			auto response = Response();
@@ -355,6 +358,11 @@ private:
 					bytes += name + ": " + value + "\r\n";
 				}
 				bytes += "\r\n";
+				if (response.cutAfter >= 0) {
+					socket->write(bytes + response.body.left(response.cutAfter));
+					socket->disconnectFromHost();
+					return;
+				}
 				socket->write(bytes + response.body);
 			}
 		});

@@ -1,0 +1,45 @@
+// In-app updates in the window: the button on the nav rail, the banner of the
+// single column layout, the pill of the signed-out screen, the status line of
+// the "update required" screen.
+using "ui/basic.style";
+using "ui/widgets/widgets.style";
+
+// ---- the rail button (the size of a rail item)
+updateRailPillBg: brandPrimary;
+updateRailPillBgOver: brandPressed;
+updateRailIcon: icon {{ "download", textOnBrand, 20px }};
+// A version that is only announced (not downloaded yet).
+updateRailSoftPillBg: brandSoft;
+updateRailSoftIcon: icon {{ "download", brandText, 20px }};
+updateRailLabelFg: brandText;
+updateRailLabelFont: font(11px semibold);
+
+// ---- the banner
+updateBannerHeight: 36px;
+updateBannerBg: brandSoft;
+updateBannerBgOver: brandSoft;
+updateBannerLineFg: borderSubtle;
+updateBannerFg: textPrimary;
+updateBannerFont: font(13px);
+updateBannerActionFg: brandText;
+updateBannerActionFont: font(13px semibold);
+updateBannerPadding: 14px;
+updateBannerSkip: 10px;
+updateBannerIcon: icon {{ "download", brandText, 18px }};
+
+// ---- the pill (signed out)
+updatePillButton: RoundButton(smallRoundButton) {
+	height: 32px;
+	radius: 16px;
+	iconSkip: 6px;
+}
+updatePillIcon: icon {{ "download", textOnBrand, 16px }};
+updatePillMargin: 16px;
+
+// ---- the "update required" screen
+updateBlockerStatusStyle: TextStyle(defaultTextStyle) {
+	font: font(13px);
+	lineHeight: 20px;
+}
+updateBlockerStatusSkip: 14px;
+updateBlockerStatusFg: textTertiary;

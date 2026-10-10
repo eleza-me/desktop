@@ -333,6 +333,11 @@ void MainWindow::refreshTrayMenu() {
 	_trayMenu->addAction(tr::lng_tray_open(tr::now), this, [this] {
 		activateAndShow();
 	});
+	if (Core::App().updater()) {
+		_trayMenu->addAction(tr::lng_update_check(tr::now), this, [] {
+			Core::App().checkForUpdates();
+		});
+	}
 	_trayMenu->addSeparator();
 	_trayMenu->addAction(tr::lng_tray_quit(tr::now), this, [] {
 		Core::App().quit();

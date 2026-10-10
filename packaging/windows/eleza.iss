@@ -1,14 +1,20 @@
 ; Eleza Desktop — the Windows installer (Inno Setup 6.3 or newer).
 ;
 ; Packs a deployed build directory: Eleza.exe with the Qt libraries and plugins
-; that windeployqt put next to it, the OpenSSL DLLs and the C++ runtime (see
-; docs/BUILDING.md, "Deploying", and the Windows job of .github/workflows/build.yml).
+; that windeployqt put next to it, the OpenSSL DLLs, the C++ runtime, Updater.exe
+; and eleza-files.list (see docs/BUILDING.md, "Deploying", and the Windows job of
+; .github/workflows/build.yml). Run packaging\make-package.py on the directory
+; first: it writes eleza-files.list, without which the installed copy would not
+; update itself.
 ;
 ;   iscc /DAppVersion=0.1.0 /DSourceDir=C:\src\eleza\dist\Eleza /DOutputDir=C:\src\eleza\dist\installer packaging\windows\eleza.iss
 ;
-; Installs per user by default (no administrator rights); "for all users" can be
-; chosen in the first dialog. User data (%APPDATA%\eleza\Eleza) is never touched,
-; neither by an upgrade nor by the uninstaller.
+; Installs for the current user, into %LOCALAPPDATA%\Programs\Eleza, without
+; administrator rights: the app updates itself there (docs/RELEASING.md) and
+; never has to ask for them. An install for all users (under Program Files) is
+; still possible from the command line (/ALLUSERS); such a copy asks for
+; administrator rights at every update. User data (%APPDATA%\eleza\Eleza) is
+; never touched, neither by an upgrade nor by the uninstaller.
 
 #ifndef AppVersion
   #define AppVersion "0.1.0"
@@ -37,11 +43,15 @@ AppSupportURL={#AppUrl}
 AppUpdatesURL={#AppUrl}
 VersionInfoVersion={#AppVersion}
 VersionInfoDescription={#AppName} Desktop Setup
+; {autopf} is {localappdata}\Programs for the per-user install this is, and
+; Program Files only when setup was started with /ALLUSERS.
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
-PrivilegesRequiredOverridesAllowed=dialog
+; No "for all users?" question: the per-user install is the one that updates
+; itself silently. /ALLUSERS and /CURRENTUSER still work.
+PrivilegesRequiredOverridesAllowed=commandline
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.17763
@@ -70,6 +80,26 @@ Name: "autostart"; Description: "{cm:AutoStart}"; GroupDescription: "{cm:Startup
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+; The updater is one of the files above; setup stops when the deployed
+; directory was made without it or without the file list.
+#if !FileExists(AddBackslash(SourceDir) + "Updater.exe")
+  #error Updater.exe is missing from the source directory
+#endif
+#if !FileExists(AddBackslash(SourceDir) + "eleza-files.list")
+  #error eleza-files.list is missing: run packaging\make-package.py on the source directory first
+#endif
+
+[InstallDelete]
+; What an update that was cut off may have left (the app cleans these up as
+; well, see lib/install).
+Type: filesandordirs; Name: "{app}\_backup_*"
+Type: filesandordirs; Name: "{app}\_update_*"
+Type: files; Name: "{app}\_update_journal.txt"
+
+[UninstallDelete]
+; Updates bring files the uninstaller's own list does not know.
+Type: filesandordirs; Name: "{app}"
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
