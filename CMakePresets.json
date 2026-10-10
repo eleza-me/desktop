@@ -1,6 +1,10 @@
 {
 	"version": 3,
-	"cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+	"cmakeMinimumRequired": {
+		"major": 3,
+		"minor": 21,
+		"patch": 0
+	},
 	"configurePresets": [
 		{
 			"name": "base",
@@ -15,7 +19,11 @@
 			"name": "linux-debug",
 			"displayName": "Linux Debug",
 			"inherits": "base",
-			"condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Linux"
+			},
 			"cacheVariables": {
 				"CMAKE_BUILD_TYPE": "Debug"
 			}
@@ -24,7 +32,11 @@
 			"name": "linux-release",
 			"displayName": "Linux Release",
 			"inherits": "base",
-			"condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Linux"
+			},
 			"cacheVariables": {
 				"CMAKE_BUILD_TYPE": "RelWithDebInfo",
 				"ELEZA_DEBUG_TOOLS": "OFF",
@@ -36,9 +48,16 @@
 			"displayName": "Windows MSVC 2022 x64 Release (Qt 6.5+, OpenSSL from vcpkg)",
 			"description": "Set VCPKG_ROOT and CMAKE_PREFIX_PATH (or Qt6_DIR) to the Qt msvc2019_64 / msvc2022_64 kit; run from a x64 Native Tools prompt.",
 			"inherits": "base",
-			"condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			},
 			"toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-			"architecture": { "value": "x64", "strategy": "external" },
+			"architecture": {
+				"value": "x64",
+				"strategy": "external"
+			},
 			"cacheVariables": {
 				"CMAKE_BUILD_TYPE": "Release",
 				"ELEZA_DEBUG_TOOLS": "OFF",
@@ -50,20 +69,40 @@
 		}
 	],
 	"buildPresets": [
-		{ "name": "linux-debug", "configurePreset": "linux-debug" },
-		{ "name": "linux-release", "configurePreset": "linux-release" },
-		{ "name": "windows-msvc-release", "configurePreset": "windows-msvc-release" }
+		{
+			"name": "linux-debug",
+			"configurePreset": "linux-debug"
+		},
+		{
+			"name": "linux-release",
+			"configurePreset": "linux-release"
+		},
+		{
+			"name": "windows-msvc-release",
+			"configurePreset": "windows-msvc-release"
+		}
 	],
 	"testPresets": [
 		{
 			"name": "linux-debug",
 			"configurePreset": "linux-debug",
-			"output": { "outputOnFailure": true }
+			"output": {
+				"outputOnFailure": true
+			}
+		},
+		{
+			"name": "linux-release",
+			"configurePreset": "linux-release",
+			"output": {
+				"outputOnFailure": true
+			}
 		},
 		{
 			"name": "windows-msvc-release",
 			"configurePreset": "windows-msvc-release",
-			"output": { "outputOnFailure": true }
+			"output": {
+				"outputOnFailure": true
+			}
 		}
 	]
 }
