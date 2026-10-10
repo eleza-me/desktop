@@ -14,7 +14,7 @@ namespace Updater {
 // against exactly these keys.
 inline constexpr const char *kPublicKeys[] = {
 	// ELEZA-UPDATE-KEYS-BEGIN
-	"1vxoEOaHgMooKRlqvM3Nd5ZyGG+QaTjZAj5FTXQ0WIc=",
+	"zBxbxS+zjNXeLugZPtboVLpysdO3HzFgaieVFubhkrI=",
 	// ELEZA-UPDATE-KEYS-END
 };
 
