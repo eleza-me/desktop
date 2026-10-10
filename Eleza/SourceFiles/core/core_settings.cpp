@@ -105,6 +105,10 @@ void Settings::read() {
 	_voicePlaybackSpeed = (speed == 1.5 || speed == 2.) ? speed : 1.;
 	_sendByCtrlEnter = root.value(
 		QStringLiteral("send_by_ctrl_enter")).toBool(false);
+	const auto systemTitleBar = root.value(QStringLiteral("system_title_bar"));
+	_systemTitleBar = systemTitleBar.isBool()
+		? std::make_optional(systemTitleBar.toBool())
+		: std::nullopt;
 	_mediaCacheLimit = std::max(
 		qint64(root.value(QStringLiteral("media_cache_limit")).toDouble(0.)),
 		qint64(0));
@@ -160,6 +164,9 @@ QJsonObject Settings::serialize() const {
 	root.insert(QStringLiteral("playback_volume"), _playbackVolume);
 	root.insert(QStringLiteral("voice_speed"), _voicePlaybackSpeed);
 	root.insert(QStringLiteral("send_by_ctrl_enter"), _sendByCtrlEnter);
+	if (_systemTitleBar) {
+		root.insert(QStringLiteral("system_title_bar"), *_systemTitleBar);
+	}
 	if (_mediaCacheLimit > 0) {
 		root.insert(
 			QStringLiteral("media_cache_limit"),
@@ -275,6 +282,22 @@ void Settings::setVoicePlaybackSpeed(double speed) {
 void Settings::setSendByCtrlEnter(bool enabled) {
 	if (_sendByCtrlEnter != enabled) {
 		_sendByCtrlEnter = enabled;
+		scheduleWrite();
+	}
+}
+
+bool Settings::systemTitleBar() const {
+#ifdef Q_OS_WIN
+	constexpr auto byDefault = false;
+#else // Q_OS_WIN
+	constexpr auto byDefault = true;
+#endif // Q_OS_WIN
+	return _systemTitleBar.value_or(byDefault);
+}
+
+void Settings::setSystemTitleBar(bool enabled) {
+	if (systemTitleBar() != enabled) {
+		_systemTitleBar = enabled;
 		scheduleWrite();
 	}
 }

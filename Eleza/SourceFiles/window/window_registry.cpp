@@ -1,5 +1,6 @@
 #include "window/window_registry.h"
 
+#include "window/window_main_window.h"
 #include "window/window_placeholder_section.h"
 #include "window/window_section_widget.h"
 #include "window/window_session_controller.h"
@@ -122,6 +123,15 @@ bool HandleRoute(SessionController *controller, const QString &route) {
 		}
 	}
 #ifdef ELEZA_DEBUG_TOOLS
+	// "debug/title[/<states>]": what the custom title bar shows (inactive,
+	// maximized, dark, hover-close, press-max…); no states: back to normal.
+	const auto titlePrefix = QStringLiteral("debug/title");
+	if (route == titlePrefix
+		|| route.startsWith(titlePrefix + QLatin1Char('/'))) {
+		controller->window()->setDebugTitleState(
+			route.mid(titlePrefix.size() + 1));
+		return true;
+	}
 	// "debug/main[/<n>]": n placeholder sections in the main column.
 	const auto debugPrefix = QStringLiteral("debug/main");
 	if (route.startsWith(debugPrefix)) {

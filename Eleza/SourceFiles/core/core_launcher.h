@@ -7,6 +7,8 @@
 //   --lang=fa|en              interface language for this run
 //   --theme=light|dark        palette for this run
 //   --no-single-instance      allow a second process with the same workdir
+//   --system-title-bar        the window keeps the title bar of the system for
+//                             this run (also env ELEZA_SYSTEM_TITLE_BAR=1)
 //   --version, --help         print and exit
 //
 // Only in a build with ELEZA_DEBUG_TOOLS (docs/DEVELOPING.md "Debug hooks"; a
@@ -17,7 +19,14 @@
 //   --debug-route=<route>     route to open after start ("chats", "eli", "settings",
 //                             "chat/<id>"…); in the gallery: an overlay to show
 //                             (box, confirm, sheet, toast, menu, dropdown)
-//   --debug-size=<W>x<H>      window size
+//   --debug-size=<W>x<H>      size of the window body: with the custom title
+//                             bar the window is taller by the bar
+//   --debug-title-bar[=<states>]
+//                             the custom title bar also where this run would
+//                             not have it (Linux, the offscreen platform);
+//                             states for a grab, separated by commas: inactive,
+//                             maximized, dark, hover-min|max|close,
+//                             press-min|max|close
 //   --debug-scale=<factor>    device pixel ratio (sets QT_SCALE_FACTOR)
 //   --debug-grab=<png>        save a grab of the main window and exit
 //   --debug-grab-delay=<ms>   delay before the grab, counted from the moment the
@@ -48,6 +57,7 @@ struct CommandLine {
 	std::optional<Lang::Language> language;
 	std::optional<style::Scheme> theme;
 	bool noSingleInstance = false;
+	bool systemTitleBar = false;
 	bool showVersion = false;
 	bool showHelp = false;
 	// Debug flags given to a build that has none.
@@ -65,6 +75,8 @@ struct CommandLine {
 	QString debugLoginCode;
 	QString debugLoginPassword;
 	QString debugActions;
+	bool debugTitleBar = false;
+	QString debugTitleState;
 
 	// True for screenshot / scripted runs: preferences are not written to disk,
 	// no tray icon, animations jump to the end, the process exits when done.

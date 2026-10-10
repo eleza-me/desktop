@@ -1583,3 +1583,11 @@
 "lng_profile_province_29" = "Hamadan";
 "lng_profile_province_30" = "Yazd";
 "lng_profile_province_31" = "Alborz";
+
+// ---- title bar ----
+"lng_title_minimize" = "Minimise";
+"lng_title_maximize" = "Maximise";
+"lng_title_restore" = "Restore";
+"lng_title_close" = "Close";
+"lng_title_use_system" = "Use system title bar";
+"lng_title_use_system_about" = "Takes effect after the app is restarted.";

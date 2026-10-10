@@ -189,6 +189,12 @@ exports for QtTest only, declared by hand in `core/core_debug.cpp`: should a Qt 
 change them, the link of such a build fails there (a build without the option is not
 affected).
 
+The custom window frame (`window/window_title_win.cpp`, compiled on Windows only: sources
+named `*_win.cpp` are left out elsewhere) links `dwmapi`, `user32` and `shell32` — system
+import libraries of the Windows SDK, nothing to install or deploy. It needs Windows 10 1607
+or later and the Qt platform plugin of Qt 6.7 or later; with an older Qt the app keeps the
+title bar of the system (`docs/DEVELOPING.md`, "The window frame").
+
 ### Deploying (a folder that runs anywhere)
 
 ```bat

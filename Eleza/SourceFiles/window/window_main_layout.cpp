@@ -231,6 +231,10 @@ SectionWidget *MainLayout::mainSection() const {
 	return stack.empty() ? nullptr : stack.back();
 }
 
+QWidget *MainLayout::navRail() const {
+	return _rail;
+}
+
 int MainLayout::mainStackDepth() const {
 	return int(state(_tab).stack.size());
 }
