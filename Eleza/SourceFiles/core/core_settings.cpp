@@ -112,6 +112,7 @@ void Settings::read() {
 	_mediaCacheLimit = std::max(
 		qint64(root.value(QStringLiteral("media_cache_limit")).toDouble(0.)),
 		qint64(0));
+	_autoUpdate = root.value(QStringLiteral("auto_update")).toBool(true);
 	_recentEmoji.clear();
 	for (const auto &item : root.value(QStringLiteral("recent_emoji")).toArray()) {
 		if (item.isString() && !item.toString().isEmpty()) {
@@ -172,6 +173,7 @@ QJsonObject Settings::serialize() const {
 			QStringLiteral("media_cache_limit"),
 			double(_mediaCacheLimit));
 	}
+	root.insert(QStringLiteral("auto_update"), _autoUpdate);
 	if (!_recentEmoji.isEmpty()) {
 		root.insert(
 			QStringLiteral("recent_emoji"),
@@ -306,6 +308,13 @@ void Settings::setMediaCacheLimit(qint64 bytes) {
 	bytes = std::max(bytes, qint64(0));
 	if (_mediaCacheLimit != bytes) {
 		_mediaCacheLimit = bytes;
+		scheduleWrite();
+	}
+}
+
+void Settings::setAutoUpdate(bool enabled) {
+	if (_autoUpdate != enabled) {
+		_autoUpdate = enabled;
 		scheduleWrite();
 	}
 }

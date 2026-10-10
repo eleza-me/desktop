@@ -19,6 +19,7 @@ class Account;
 namespace Ui {
 class BoxContent;
 class IconButton;
+class RoundButton;
 } // namespace Ui
 
 namespace Window {
@@ -108,6 +109,8 @@ private:
 	Ui::IconButton *_back = nullptr;
 	Ui::IconButton *_theme = nullptr;
 	Ui::IconButton *_language = nullptr;
+	// «به‌روزرسانی الزا» in the bottom corner while a new version is ready.
+	Ui::RoundButton *_updatePill = nullptr;
 	Transition *_transition = nullptr;
 	bool _night = true;
 

@@ -38,6 +38,18 @@
 //   --debug-actions=<script>  scripted input played on the main window, e.g.
 //                             "click:600,400;type:متن;key:Return;wait:300;grab:/tmp/a.png"
 //                             (core_debug.h has the whole list)
+//   --update-url=<url>        an update manifest to use instead of the built-in
+//                             sources (may be repeated; http:// on the loopback
+//                             interface is accepted)
+//   --update-key=<base64>     the public key the test manifest is signed with
+//                             (may be repeated; replaces the built-in keys)
+//   --update-now              check at once and install as soon as the update
+//                             is ready (docs/RELEASING.md, "Testing an update")
+//   --update-state=<state>    screenshots: shows the update UI in a state
+//                             without any network (checking, uptodate,
+//                             available, announced, downloading, preparing,
+//                             ready, failed, failed-install, required,
+//                             required-ready)
 #pragma once
 
 #include "lang/lang_instance.h"
@@ -77,6 +89,10 @@ struct CommandLine {
 	QString debugActions;
 	bool debugTitleBar = false;
 	QString debugTitleState;
+	QStringList updateUrls;
+	QStringList updateKeys;
+	bool updateNow = false;
+	QString updateState;
 
 	// True for screenshot / scripted runs: preferences are not written to disk,
 	// no tray icon, animations jump to the end, the process exits when done.

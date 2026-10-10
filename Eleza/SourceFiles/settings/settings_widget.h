@@ -34,6 +34,7 @@ private:
 	Ui::SettingsButton *addSection(Section section, const style::icon *icon);
 	void refreshActive();
 	void refreshValues();
+	void refreshUpdateValue();
 
 	Ui::TopBar *_bar = nullptr;
 	Ui::ScrollArea *_scroll = nullptr;

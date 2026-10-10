@@ -7,6 +7,8 @@
 include("${CMAKE_CURRENT_LIST_DIR}/lang.cmake")
 # The non-GUI core (crypto, api, rt, storage, data, main): the ElezaCore library.
 include("${CMAKE_CURRENT_LIST_DIR}/core.cmake")
+# In-app updates without the widgets: the ElezaUpdater library.
+include("${CMAKE_CURRENT_LIST_DIR}/updater.cmake")
 
 find_package(Qt6 6.4 REQUIRED COMPONENTS Multimedia)
 
@@ -55,6 +57,7 @@ target_link_libraries(Eleza PRIVATE
 	ElezaUi
 	ElezaLang
 	ElezaCore
+	ElezaUpdater
 	Qt6::Core
 	Qt6::Gui
 	Qt6::Widgets

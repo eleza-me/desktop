@@ -675,6 +675,7 @@ Window::SectionFactory PageFactory(Section section) {
 	case Section::Appearance: return Make<AppearancePage>();
 	case Section::Devices: return DevicesPageFactory();
 	case Section::Storage: return StoragePageFactory();
+	case Section::Update: return UpdatePageFactory();
 	case Section::About: return Make<AboutPage>();
 	}
 	return nullptr;

@@ -5,8 +5,11 @@
 #include "ui/ui_utility.h"
 #include "window/window_nav_rail.h"
 #include "window/window_placeholder_section.h"
+#include "window/window_routes.h"
 #include "window/window_section_widget.h"
+#include "window/window_update.h"
 #include "styles/style_window.h"
+#include "styles/style_window_update.h"
 
 #include <QtGui/QMouseEvent>
 
@@ -165,6 +168,16 @@ MainLayout::MainLayout(QWidget *parent, SessionController *controller)
 , _empty(new EmptyMain(this))
 , _transition(new Transition(this)) {
 	_controller->setLayout(this);
+	const auto showUpdateDetails = [this] {
+		_controller->openRoute(Routes::Settings(QStringLiteral("update")));
+	};
+	_updateButton = new UpdateRailButton(this, showUpdateDetails);
+	_updateBanner = new UpdateBanner(this, showUpdateDetails);
+	// Both follow the same checker: one of them tells the layout.
+	_updateButton->setOfferChangedCallback([this] {
+		updateGeometries();
+		updateVisibility();
+	});
 	_sideWidth = Core::App().settings().sideColumnWidth();
 	if (_sideWidth <= 0) {
 		_sideWidth = st::sideColumnWidthDefault;
@@ -249,19 +262,40 @@ int MainLayout::sideWidthFor(int layoutWidth) const {
 		st::sideColumnWidthMax);
 }
 
+int MainLayout::bannerHeight() const {
+	return ((width() < st::layoutSingleColumnWidth)
+		&& (_updateButton->offer() != UpdateOffer::None))
+		? int(st::updateBannerHeight)
+		: 0;
+}
+
 void MainLayout::updateGeometries() {
 	const auto single = (width() < st::layoutSingleColumnWidth);
 	const auto railWidth = st::navRailWidth;
+	// The update banner of the single column layout pushes everything down.
+	const auto top = bannerHeight();
+	const auto bodyHeight = std::max(height() - top, 0);
 	if (single) {
-		_sideRect = QRect(railWidth, 0, std::max(width() - railWidth, 0), height());
-		_mainRect = QRect(0, 0, width(), height());
+		_sideRect = QRect(railWidth, top, std::max(width() - railWidth, 0), bodyHeight);
+		_mainRect = QRect(0, top, width(), bodyHeight);
 	} else {
 		const auto sideWidth = sideWidthFor(width());
-		_sideRect = QRect(railWidth, 0, sideWidth, height());
+		_sideRect = QRect(railWidth, top, sideWidth, bodyHeight);
 		const auto mainLeft = railWidth + sideWidth + st::lineWidth;
-		_mainRect = QRect(mainLeft, 0, std::max(width() - mainLeft, 0), height());
+		_mainRect = QRect(mainLeft, top, std::max(width() - mainLeft, 0), bodyHeight);
 	}
-	_rail->setGeometryToLeft(0, 0, railWidth, height(), width());
+	_rail->setGeometryToLeft(0, top, railWidth, bodyHeight, width());
+	_updateBanner->setGeometry(0, 0, width(), st::updateBannerHeight);
+	// Above «تنظیمات», which the rail pins to its bottom.
+	_updateButton->setGeometryToLeft(
+		0,
+		height()
+			- st::navRailPadding.bottom()
+			- 2 * st::navRailItemHeight
+			- st::navRailItemSkip,
+		railWidth,
+		st::navRailItemHeight,
+		width());
 	const auto &entry = state(_tab);
 	if (entry.side) {
 		entry.side->setGeometryToLeft(_sideRect, width());
@@ -273,9 +307,9 @@ void MainLayout::updateGeometries() {
 	const auto handle = st::columnResizerWidth;
 	_resizer->setGeometryToLeft(
 		_sideRect.x() + _sideRect.width() - handle / 2,
-		0,
+		top,
 		handle,
-		height(),
+		bodyHeight,
 		width());
 	if (_singleColumn != single) {
 		_singleColumn = single;
@@ -299,6 +333,10 @@ void MainLayout::updateVisibility() {
 		}
 	}
 	_rail->setVisible(!covered);
+	const auto offer = (_updateButton->offer() != UpdateOffer::None);
+	_updateButton->setVisible(offer && !_singleColumn);
+	_updateButton->raise();
+	_updateBanner->setVisible(offer && _singleColumn);
 	_empty->setVisible(!_singleColumn && !hasMain);
 	_resizer->setVisible(!_singleColumn);
 	_resizer->raise();
@@ -318,7 +356,7 @@ void MainLayout::updateBackButtons() {
 }
 
 QRect MainLayout::transitionArea() const {
-	return _singleColumn ? rect() : myrtlrect(_mainRect);
+	return myrtlrect(_mainRect);
 }
 
 void MainLayout::runTransition(

@@ -1,6 +1,10 @@
-// The screen that covers the whole window when the server refuses this build
-// (HTTP 426 / api.min_client_version): the mark, «نسخهٔ تازه لازم است» and a button
-// that opens the update page. Nothing under it can be reached.
+// The screen that covers the whole window when this build is refused: by the
+// server (HTTP 426 / api.min_client_version) or by the update manifest
+// (min_supported). The mark, «نسخهٔ تازه لازم است», and the update itself: the
+// checker downloads the new version whatever the settings say, a line under
+// the button tells how far it is, and «به‌روزرسانی» restarts into it. A copy
+// that cannot update itself (or a download that failed) gets the button that
+// opens the download page instead. Nothing under the screen can be reached.
 #pragma once
 
 #include "ui/rp_widget.h"
@@ -26,13 +30,18 @@ protected:
 private:
 	[[nodiscard]] int contentHeight(int textWidth) const;
 	[[nodiscard]] int textWidth() const;
+	void refresh();
+	void updateGeometries();
+	void openPage();
 
 	QString _url;
 	Ui::Text::String _title;
 	Ui::Text::String _text;
+	Ui::Text::String _status;
 	Ui::RoundButton *_update = nullptr;
 	Ui::LinkButton *_quit = nullptr;
 	int _contentTop = 0;
+	int _statusTop = 0;
 
 };
 

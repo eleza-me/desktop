@@ -24,6 +24,7 @@ enum class Section {
 	Appearance,
 	Devices,
 	Storage,
+	Update,
 	About,
 };
 
