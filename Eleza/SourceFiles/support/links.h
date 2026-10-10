@@ -1,5 +1,5 @@
 // Opening links: inside the app when they point into Eleza, in the browser
-// otherwise (after a confirmation for foreign hosts, like Telegram does).
+// otherwise (after a confirmation for foreign hosts).
 //
 //   Support::OpenLink(controller, u"https://eleza.me/u/sara"_s);   // -> route "u/sara"
 //   Support::OpenLink(controller, u"@sara"_s);                     // -> route "u/sara"

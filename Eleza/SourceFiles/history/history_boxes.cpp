@@ -890,7 +890,7 @@ void ShowForwardBox(
 			return;
 		}
 		if (chatIds.size() == 1) {
-			// Like Telegram: the chat opens with the messages attached, a
+			// The chat opens with the messages attached, a
 			// comment can be typed before they go out.
 			SetPendingForward(session, chatIds.front(), sorted);
 			guard->openRoute(Window::Routes::Chat(chatIds.front()));

@@ -306,7 +306,7 @@ void PinnedBar::mouseReleaseEvent(QMouseEvent *e) {
 		return;
 	}
 	const auto seq = pin->message.seq;
-	// Telegram: each click goes one pin further back.
+	// Each click goes one pin further back.
 	if (_pins.size() > 1) {
 		_index = (_index + 1) % int(_pins.size());
 		refreshThumb();

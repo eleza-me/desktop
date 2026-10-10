@@ -118,7 +118,7 @@ struct CopyItem {
 	QString text;
 };
 // One message: just its text. Several: «[sender, date time]\ntext» blocks
-// separated by an empty line (Telegram's format).
+// separated by an empty line.
 [[nodiscard]] QString FormatForCopy(const std::vector<CopyItem> &items);
 // What a message is as plain text (its text, or the label of its media
 // followed by the caption / file name).

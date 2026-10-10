@@ -1,79 +1,139 @@
-# Eleza Desktop — الزا دسکتاپ
+<div align="center">
 
-کلاینت دسکتاپ الزا برای **ویندوز و لینوکس**؛ بومی، بدون مرورگر و بدون Electron.
-از صفر و با همان دستور پخت تلگرام دسکتاپ نوشته شده: **C++20 + Qt 6 Widgets + CMake**، ویجت‌های
-خودنقاش، و یک زبان استایل اختصاصی (`.style`) که هنگام بیلد به C++ تبدیل می‌شود. هیچ کدی از
-کلاینت‌های دیگر در این ریپو نیست.
+<img src="Eleza/Resources/art/icon256.png" width="96" alt="Eleza">
 
-![chat](docs/screenshots/chat-fa-light.png)
+# الزا دسکتاپ
 
-## چه چیزهایی دارد
+**اپلیکیشن بومی الزا برای ویندوز و لینوکس**
 
-- **ورود**: شماره (انتخاب کشور)، کد پیامکی، رمز دومرحله‌ای و بازیابی با ایمیل، تکمیل نمایه.
-- **پیام‌رسان**: لیست چت (سنجاق، بی‌صدا، بایگانی، درخواست‌ها، پیش‌نویس، تایپینگ)، صفحهٔ چت به سبک
-  تلگرام — همهٔ انواع پیام، پاسخ و نقل‌قول، ویرایش، حذف برای هر دو طرف، ری‌اکشن، هدایت، انتخاب
-  چندتایی، اسپویلر، استیکر و ایموجی، ارسال فایل با کشیدن/چسباندن، ویس، سنجاق پیام، جستجو در چت،
-  صف ارسال آفلاین.
-- **گفتگوی ناشناس**: موضوع‌های باز، گفتگوی تازه، پیوستن، رادار، بنر و پایان/ادامه در چت.
-- **الی**: فید «برای تو»/«دنبال‌شده»، همهٔ انواع کارت پست، جزئیات پست و رشته، نوشتن پست (رسانه،
-  نظرسنجی، رشته)، اعلان‌ها، موضوع‌ها، ذخیره‌ها، «پرده».
-- **جستجو، نمایه‌ها، تنظیمات** (حساب، دستگاه‌ها، دومرحله‌ای، حریم خصوصی، اعلان‌ها، ظاهر، حافظه).
-- فارسی (راست‌به‌چپ) و انگلیسی، تم روشن/تاریک، اعلان دسکتاپ، سینی سیستم، میان‌برهای صفحه‌کلید.
-- همان اتصال پایدار **realtime v2** (Noise NK + protobuf روی WebSocket) با fallback به HTTP.
+سریع، سبک و کاملاً بومی — بدون مرورگر، بدون Electron.
 
-هنوز نیست: تماس صوتی/تصویری، دوربین و فیلترها، HLS (ویدیو با mp4 پخش می‌شود)، ترنسپورت رله (T2).
+</div>
 
-## وضعیت
+![الزا دسکتاپ](docs/screenshots/chat-fa-light.png)
+
+## دربارهٔ الزا دسکتاپ
+
+الزا دسکتاپ همهٔ الزا را روی کامپیوتر می‌آورد: پیام‌رسان، گفتگوی ناشناس و «الی». برنامه با
+C++ و Qt نوشته شده و همهٔ رابط کاربری آن را موتور رابط اختصاصی الزا مستقیم نقاشی می‌کند؛
+برای همین در چند لحظه باز می‌شود، حافظهٔ کمی می‌گیرد و فهرست‌های چندهزارتایی را روان اسکرول می‌کند.
+
+## امکانات
+
+**پیام‌رسان**
+- چت خصوصی با متن، عکس، ویدیو، ویس، فایل، استیکر و موقعیت
+- پاسخ و نقل‌قول، ویرایش، حذف برای هر دو طرف، واکنش، هدایت، سنجاق پیام
+- اسپویلر برای متن و رسانه، پیش‌نمایش پیوند، پیش‌نویسِ همگام بین دستگاه‌ها
+- ارسال با کشیدن و رها کردن یا چسباندن از کلیپ‌بورد، صف ارسال در حالت آفلاین
+- سنجاق، بی‌صدا و بایگانی گفتگوها، درخواست‌های پیام، جستجو
+
+**گفتگوی ناشناس**
+- موضوع‌های باز با دسته‌بندی و زمان باقی‌مانده
+- شروع گفتگوی تازه یا پیوستن به‌عنوان شنونده، با هویت پوشیده یا آشکار
+
+**الی**
+- فید «برای تو» و «دنبال‌شده»، پست متنی، تصویری، ویدیویی، صوتی، نظرسنجی و رشته
+- پاسخ، بازنشر، نقل، ذخیره، موضوع‌ها و اعلان‌ها
+- «پرده» برای تماشای پیوستهٔ ویدیوها
+
+**و همچنین**
+- جستجوی افراد، موضوع‌ها، پست‌ها و گفتگوها
+- نمایه، دنبال‌کننده‌ها و ویرایش نمایه
+- تأیید دومرحله‌ای، مدیریت دستگاه‌ها، حریم خصوصی و دریافت داده‌ها
+- فارسی و انگلیسی، پوستهٔ روشن و تاریک، اعلان دسکتاپ، سینی سیستم و میان‌برهای صفحه‌کلید
+
+<p>
+<img src="docs/screenshots/eli-post.png" width="49%" alt="الی">
+<img src="docs/screenshots/chat-en-dark.png" width="49%" alt="Dark theme">
+</p>
+
+## امنیت و حریم خصوصی
+
+- **کلید دستگاه**: هر نصب کلید امضای خودش را می‌سازد و نشست به همان دستگاه گره می‌خورد؛ توکنِ
+  کپی‌شده روی دستگاه دیگر کار نمی‌کند.
+- **اتصال رمزگذاری‌شده**: علاوه بر TLS، اتصال پایدار برنامه یک لایهٔ رمزگذاری مستقل
+  (Noise) دارد تا محتوای آن در میانهٔ مسیر خوانده نشود.
+- **نگهداری امن**: اطلاعات ورود روی ویندوز با DPAPI محافظت می‌شود و با خروج از حساب، دادهٔ
+  محلی پاک می‌شود.
+- **محتوای دریافتی**: تصویرها فقط در قالب‌های مجاز و با سقف اندازه باز می‌شوند، نام فایل‌ها
+  پاک‌سازی می‌شود و پیوندهای بیرونی پیش از باز شدن تأیید می‌خواهند.
+
+## فناوری
 
 | | |
 |---|---|
-| لینوکس (GCC 13 و Clang 18، Qt 6.4) | بیلد و تست می‌شود |
-| ویندوز (MSVC 2022، Qt 6.7+) | **هنوز روی ویندوز کامپایل نشده است**؛ کد با هدرهای ویندوز و Qt 6.7 بررسی نحوی شده و workflow آماده است |
-| سرور | ورود با پلتفرم `desktop` به [eleza-backend#89](https://github.com/eleza-me/eleza-backend/pull/89) نیاز دارد |
+| زبان و چارچوب | C++20، Qt 6 Widgets، CMake |
+| رابط کاربری | کتابخانهٔ رابط اختصاصی الزا؛ ویجت‌های خودنقاش، راست‌به‌چپ، HiDPI |
+| استایل و متن‌ها | زبان استایل (`.style`) و فایل‌های ترجمه که هنگام بیلد به C++ تبدیل می‌شوند |
+| ارتباط | اتصال پایدار روی WebSocket با protobuf و همگام‌سازی افزایشی؛ HTTP به‌عنوان پشتیبان |
+| ذخیره‌سازی | SQLite برای کش آفلاین، کش رسانه با سقف حجم |
+| آزمون | آزمون‌های واحد، آزمون سازگاری پروتکل و فازینگ ورودی‌ها |
 
-## بیلد
+## پلتفرم‌ها
 
-جزئیات در [docs/BUILDING.md](docs/BUILDING.md).
+- ویندوز ۱۰ و ۱۱ (x64)
+- لینوکس (x86_64)
+
+## بیلد از سورس
 
 ```sh
-# Linux (Ubuntu 24.04)
+# لینوکس (Ubuntu 24.04)
 sudo apt install cmake ninja-build g++ qt6-base-dev qt6-base-dev-tools qt6-svg-dev \
   qt6-multimedia-dev qt6-websockets-dev libqt6sql6-sqlite qt6-image-formats-plugins libssl-dev
-cmake --preset linux-release && cmake --build --preset linux-release
-ctest --preset linux-release
+cmake --preset linux-release
+cmake --build --preset linux-release
 
-# Windows (Visual Studio 2022 + Qt 6.7+ + vcpkg)
-cmake --preset windows-msvc-release && cmake --build --preset windows-msvc-release
+# ویندوز (Visual Studio 2022، Qt 6.7 یا تازه‌تر، vcpkg)
+cmake --preset windows-msvc-release
+cmake --build --preset windows-msvc-release
 ```
 
-اجرا: `Eleza [--api=https://api.eleza.me] [--workdir=<dir>] [--lang=fa|en] [--theme=light|dark]`
+راهنمای کامل: [docs/BUILDING.md](docs/BUILDING.md)
 
-## ساختار
+## مستندات
 
-```
-codegen/        ابزارهای زمان بیلد: style و lang
-lib/base        کمک‌کننده‌های بدون GUI
-lib/ui          کتابخانهٔ UI: استایل، انیمیشن، ویجت‌ها، متن، لایه‌ها
-Eleza/SourceFiles
-  crypto api rt storage data main      هستهٔ بدون ویجت
-  core window intro dialogs history conversation eli search profile settings boxes media support
-tests/          تست‌های واحد، interop برای realtime، فازرها
-```
-
-راهنمای توسعه: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) و [docs/DEVELOPING.md](docs/DEVELOPING.md).
+- [معماری](docs/ARCHITECTURE.md)
+- [راهنمای توسعه](docs/DEVELOPING.md)
+- [بیلد و بسته‌بندی](docs/BUILDING.md)
 
 ---
 
-## English
+<div dir="ltr">
 
-Native Eleza client for **Windows and Linux**, written from scratch with Telegram Desktop's recipe:
-C++20, Qt 6 Widgets, CMake, custom-painted widgets and a small style language compiled at build
-time. It covers sign-in, messaging, anonymous conversations, the Eli feed, search, profiles and
-settings, in Persian (RTL) and English, light and dark, over the same realtime v2 connection as the
-mobile and web clients. Not included yet: calls, camera and filters, HLS playback, the relay transport.
+## Eleza Desktop
 
-Linux builds and passes its tests. **The Windows build has not been compiled on Windows yet.**
-Signing in needs the `desktop` platform on the server
-([eleza-backend#89](https://github.com/eleza-me/eleza-backend/pull/89)).
+The native Eleza app for **Windows and Linux** — messaging, anonymous conversations and the Eli
+feed in one fast, lightweight application with no browser engine inside.
 
-Fonts: Vazirmatn and Markazi Text (SIL OFL, see `Eleza/Resources/fonts`).
+Eleza Desktop is written in C++20 on Qt 6. Its entire interface is painted by Eleza's own UI
+toolkit, so it starts instantly, stays light on memory and scrolls through thousands of messages
+smoothly. It speaks Persian (right-to-left) and English, in light and dark.
+
+**Highlights**
+
+- **Messenger** — text, media, voice, files, stickers; replies and quotes, edits, reactions,
+  forwarding, pins, spoilers, link previews, synced drafts, offline send queue.
+- **Anonymous conversations** — browse open topics, start one or join as a listener.
+- **Eli** — For You and Following feeds, posts with media, polls and threads, notifications, topics.
+- **Security** — device-bound sessions, an independently encrypted persistent connection on top
+  of TLS, protected credential storage, strict handling of received files and links.
+
+**Build**
+
+```sh
+cmake --preset linux-release && cmake --build --preset linux-release          # Linux
+cmake --preset windows-msvc-release && cmake --build --preset windows-msvc-release   # Windows
+```
+
+See [docs/BUILDING.md](docs/BUILDING.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
+[docs/DEVELOPING.md](docs/DEVELOPING.md).
+
+</div>
+
+---
+
+<div align="center">
+
+© eleza — فونت‌ها: Vazirmatn و Markazi Text (SIL Open Font License)
+
+</div>
