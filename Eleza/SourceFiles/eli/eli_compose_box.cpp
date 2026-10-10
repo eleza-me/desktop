@@ -908,7 +908,8 @@ public:
 		if (_rows.isEmpty()) {
 			return;
 		}
-		_selected = (_selected + delta + _rows.size()) % _rows.size();
+		const auto count = int(_rows.size());
+		_selected = (_selected + delta + count) % count;
 		update();
 	}
 	bool chooseSelected() {
@@ -1847,7 +1848,7 @@ void ComposeBox::checkMention() {
 		return;
 	}
 	_mentionQuery = match.captured(2);
-	_mentionFrom = position - _mentionQuery.size() - 1;
+	_mentionFrom = int(position - _mentionQuery.size() - 1);
 	_mentionTimer.callOnce(kMentionDelay);
 }
 

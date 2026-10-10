@@ -4,6 +4,8 @@
 #include <QtCore/QRegularExpression>
 
 #include <algorithm>
+#include <map>
+#include <vector>
 
 namespace Ui::Text {
 
@@ -81,29 +83,41 @@ TextWithEntities ParseEntities(
 		uint flags,
 		Entities existing) {
 	auto result = TextWithEntities{ text, NormalizeEntities(text, existing) };
-	const auto overlapsLink = [&](int offset, int length) {
-		for (const auto &entity : result.entities) {
-			const auto blocks = IsLinkType(entity.type)
-				|| entity.type == EntityType::Code
-				|| entity.type == EntityType::Pre;
-			if (blocks
-				&& entity.offset < offset + length
-				&& offset < entity.offset + entity.length) {
-				return true;
-			}
+	// The ranges nothing may be detected in (links, code), merged and keyed
+	// by their start: a lookup is logarithmic. The text and the number of
+	// entities are the sender's - a scan of every range for every match is
+	// quadratic and froze the window on a long message full of links.
+	auto blocked = std::map<int, int>();
+	for (const auto &entity : result.entities) { // sorted by offset
+		const auto blocks = IsLinkType(entity.type)
+			|| entity.type == EntityType::Code
+			|| entity.type == EntityType::Pre;
+		if (!blocks) {
+			continue;
 		}
-		return false;
+		const auto till = entity.offset + entity.length;
+		if (!blocked.empty() && std::prev(blocked.end())->second >= entity.offset) {
+			auto &last = std::prev(blocked.end())->second;
+			last = std::max(last, till);
+		} else {
+			blocked.emplace(entity.offset, till);
+		}
+	}
+	const auto overlaps = [&](int offset, int length) {
+		// The last range that starts before our end: ranges are disjoint, so
+		// it is the only one that can reach into us.
+		auto i = blocked.lower_bound(offset + length);
+		if (i == blocked.begin()) {
+			return false;
+		}
+		--i;
+		return (i->second > offset);
 	};
 	auto found = Entities();
 	const auto add = [&](EntityType type, int offset, int length) {
-		if (length > 0 && !overlapsLink(offset, length)) {
-			for (const auto &entity : found) {
-				if (entity.offset < offset + length
-					&& offset < entity.offset + entity.length) {
-					return;
-				}
-			}
+		if (length > 0 && !overlaps(offset, length)) {
 			found.push_back(Entity{ type, offset, length, QString() });
+			blocked.emplace(offset, offset + length);
 		}
 	};
 	const auto options = QRegularExpression::UseUnicodePropertiesOption;
@@ -115,7 +129,10 @@ TextWithEntities ParseEntities(
 			options);
 		static const auto url = QRegularExpression(
 			QStringLiteral(
-				"(?<![\\w@.])(?:(?:https?://|www\\.)[^\\s<>\"«»]+"
+				// "-" in the look-behind: a host label may hold hyphens, and
+				// without it every "-" of "-a-a-a-..." starts a new attempt
+				// that scans to the end (quadratic in the sender's text).
+				"(?<![\\w@.-])(?:(?:https?://|www\\.)[^\\s<>\"«»]+"
 				"|(?:[A-Za-z0-9-]+\\.)+(?:com|org|net|ir|me|io|app|dev|co|info"
 				"|edu|gov|tv|ai|xyz)(?:/[^\\s<>\"«»]*)?)"),
 			options | QRegularExpression::CaseInsensitiveOption);
@@ -220,21 +237,27 @@ TextWithEntities IsolateLinks(TextWithEntities text) {
 	// One character goes in before each link and one after it. A range
 	// starts after the marks that are at or before its first character and
 	// ends before the ones that are at or after its end.
+	// `links` are in order and do not overlap: their starts and their ends
+	// are both ascending, so the counts are binary searches.
+	auto starts = std::vector<int>();
+	auto ends = std::vector<int>();
+	starts.reserve(links.size());
+	ends.reserve(links.size());
+	for (const auto &link : links) {
+		starts.push_back(link.offset);
+		ends.push_back(link.offset + link.length);
+	}
+	const auto notAfter = [](const std::vector<int> &list, int position) {
+		return int(std::upper_bound(list.begin(), list.end(), position) - list.begin());
+	};
+	const auto before = [](const std::vector<int> &list, int position) {
+		return int(std::lower_bound(list.begin(), list.end(), position) - list.begin());
+	};
 	const auto shiftStart = [&](int position) {
-		auto result = 0;
-		for (const auto &link : links) {
-			result += (link.offset <= position) ? 1 : 0;
-			result += (link.offset + link.length <= position) ? 1 : 0;
-		}
-		return result;
+		return notAfter(starts, position) + notAfter(ends, position);
 	};
 	const auto shiftEnd = [&](int position) {
-		auto result = 0;
-		for (const auto &link : links) {
-			result += (link.offset < position) ? 1 : 0;
-			result += (link.offset + link.length < position) ? 1 : 0;
-		}
-		return result;
+		return before(starts, position) + before(ends, position);
 	};
 	auto result = TextWithEntities();
 	result.text.reserve(size + 2 * links.size());

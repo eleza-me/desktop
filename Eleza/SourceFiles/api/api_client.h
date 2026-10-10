@@ -258,6 +258,16 @@ public:
 	void cancel(RequestId id);
 	// Stops everything issued with this guard object.
 	void cancelAll(QObject *guard);
+	// The signed-in user is changing: stops every request that carries (or is
+	// waiting for) the bearer token and every upload, without callbacks. A
+	// request retried after a 401 or a token refresh must never go out with
+	// the next account's token.
+	void abortAuthenticated();
+
+	// An API origin we are willing to send tokens to: https, or http on the
+	// loopback interface (test servers). `allowInsecure` lifts the loopback
+	// rule (debug builds only pass it).
+	[[nodiscard]] static bool IsAcceptableBase(const QString &base, bool allowInsecure = false);
 
 	[[nodiscard]] static QString MethodName(Method method);
 
@@ -296,6 +306,7 @@ private:
 	void setReachable(bool reachable);
 	void applyCommonHeaders(QNetworkRequest &request) const;
 	[[nodiscard]] bool sameOriginAsBase(const QUrl &url) const;
+	[[nodiscard]] bool acceptableRemote(const QUrl &url) const;
 
 	QString _base;
 	QString _version;

@@ -138,16 +138,21 @@ const char *const kWeekdaysEn[7] = {
 // value / divisor with one digit after the point, halves rounded up
 // (1250 / 1000 -> "1.3", 2000 / 1000 -> "2").
 [[nodiscard]] QString OneDecimal(qint64 value, qint64 divisor) {
-	const auto tenths = (value * 10 + divisor / 2) / divisor;
-	const auto whole = tenths / 10;
-	const auto rest = tenths % 10;
+	// Whole and fraction apart: `value * 10` overflows for a count near the
+	// top of the range (counts and sizes are whatever the server sent).
+	auto whole = value / divisor;
+	auto rest = ((value % divisor) * 10 + divisor / 2) / divisor;
+	if (rest >= 10) {
+		++whole;
+		rest -= 10;
+	}
 	return rest
 		? (QString::number(whole) + QLatin1Char('.') + QString::number(rest))
 		: QString::number(whole);
 }
 
 [[nodiscard]] QString Rounded(qint64 value, qint64 divisor) {
-	return QString::number((value + divisor / 2) / divisor);
+	return QString::number(value / divisor + ((value % divisor) >= (divisor + 1) / 2 ? 1 : 0));
 }
 
 // The decimal point follows the digits: «۱٫۲» in Persian.
@@ -381,11 +386,18 @@ QString Bytes(qint64 bytes) {
 		return LocalizedDecimal(OneDecimal(bytes, kilo * kilo))
 			+ QStringLiteral(" MB");
 	}
-	const auto hundredths = (bytes * 100 + (kilo * kilo * kilo) / 2)
-		/ (kilo * kilo * kilo);
-	return LocalizedDecimal(QString::number(hundredths / 100)
+	// Whole and fraction apart: `bytes * 100` overflows for a size near the
+	// top of the range (the number is whatever the sender claimed).
+	const auto giga = kilo * kilo * kilo;
+	auto whole = bytes / giga;
+	auto fraction = ((bytes % giga) * 100 + giga / 2) / giga;
+	if (fraction >= 100) {
+		++whole;
+		fraction -= 100;
+	}
+	return LocalizedDecimal(QString::number(whole)
 		+ QLatin1Char('.')
-		+ TwoDigits(int(hundredths % 100))) + QStringLiteral(" GB");
+		+ TwoDigits(int(fraction))) + QStringLiteral(" GB");
 }
 
 QString CompactCount(qint64 value) {

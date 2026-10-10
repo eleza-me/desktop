@@ -4,6 +4,7 @@
 #include "ui/text/text_entity.h"
 #include "styles/style_basic.h"
 
+#include <QtCore/QElapsedTimer>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QImage>
 #include <QtGui/QPainter>
@@ -305,6 +306,38 @@ private Q_SLOTS:
 			QCOMPARE(belowLimit, 0); // nothing below the two allowed lines
 		}
 		style::SetRightToLeft(false);
+	}
+
+	// A peer (or a broken server) controls the text and its entities: none
+	// of this may take long on the GUI thread, whatever the length.
+	void hostileTextsAreFast() {
+		const auto check = [](const char *name, const QString &text, Entities entities = {}) {
+			auto timer = QElapsedTimer();
+			timer.start();
+			const auto parsed = ParseEntities(text, ParseAll, std::move(entities));
+			const auto shown = IsolateLinks(parsed);
+			const auto took = timer.elapsed();
+			for (const auto &entity : shown.entities) {
+				QVERIFY2(entity.offset >= 0 && entity.length >= 0
+					&& entity.offset + entity.length <= shown.text.size(), name);
+			}
+			qInfo("%s: %lld chars, %lld entities, %lld ms",
+				name, qlonglong(text.size()), qlonglong(shown.entities.size()), qlonglong(took));
+			QVERIFY2(took < 3000, name);
+		};
+		check("plain", QString(100000, QLatin1Char('x')));
+		check("dashes", QStringLiteral("-a").repeated(50000));
+		check("dots", QStringLiteral("a.").repeated(50000));
+		check("links", QStringLiteral("a.io ").repeated(20000));
+		check("mixed", QStringLiteral("@sara #tag x@y.co https://a.b/c ").repeated(3000));
+		check("at signs", QStringLiteral("a@").repeated(50000));
+		check("hashes", QStringLiteral("#a").repeated(50000));
+		check("percent", QStringLiteral("a%b+c-").repeated(16000) + QStringLiteral("@"));
+		auto many = Entities();
+		for (auto i = 0; i != 20000; ++i) {
+			many.push_back({ (i % 2) ? EntityType::CustomUrl : EntityType::Bold, i % 977, 1 + i % 13, QStringLiteral("https://x.example") });
+		}
+		check("many entities", QStringLiteral("a.io b ").repeated(2000), many);
 	}
 
 };

@@ -113,7 +113,8 @@ jobs:
           Get-ChildItem -Recurse $dist | Measure-Object -Property Length -Sum | ForEach-Object { 'Deployed {0:N1} MB' -f ($_.Sum / 1MB) }
 
       # Starts the deployed build once (the widget gallery, offscreen) to catch a
-      # missing library or plugin. Never blocks the artifacts.
+      # missing library or plugin. Never blocks the artifacts. windeployqt deploys
+      # only platforms/qwindows.dll: the offscreen plugin is taken from the Qt kit.
       - name: Smoke test of the deployed build
         shell: pwsh
         continue-on-error: true
@@ -121,6 +122,7 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
+          $env:QT_QPA_PLATFORM_PLUGIN_PATH = Join-Path $env:QT_ROOT_DIR 'plugins/platforms'
           $work = Join-Path $env:RUNNER_TEMP 'eleza-smoke'
           $grab = Join-Path $env:RUNNER_TEMP 'eleza-smoke.png'
           $process = Start-Process -FilePath 'dist/Eleza/Eleza.exe' -ArgumentList '--gallery', '--no-single-instance', "--workdir=$work", "--debug-grab=$grab" -PassThru

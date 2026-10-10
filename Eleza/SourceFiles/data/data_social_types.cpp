@@ -279,7 +279,7 @@ DeviceSession DeviceSession::FromJson(const QJsonObject &json) {
 				result.lastActiveAt = time.toMSecsSinceEpoch();
 			}
 		} else if (seen.isDouble()) {
-			result.lastActiveAt = qint64(seen.toDouble());
+			result.lastActiveAt = base::SafeInt64(seen.toDouble());
 		}
 	}
 	return result;

@@ -26,7 +26,23 @@ QByteArray ProtocolName() {
 	return QByteArrayLiteral("Noise_NK_25519_ChaChaPoly_SHA256");
 }
 
+CipherState &CipherState::operator=(const CipherState &other) {
+	if (this != &other) {
+		base::bytes::wipe(_key);
+		_key = other._key;
+		_nonce = other._nonce;
+		_count = other._count;
+		_hasKey = other._hasKey;
+	}
+	return *this;
+}
+
+CipherState::~CipherState() {
+	base::bytes::wipe(_key);
+}
+
 void CipherState::initializeKey(const QByteArray &key) {
+	base::bytes::wipe(_key);
 	_key = key;
 	_nonce = 0;
 	_count = 0;
@@ -76,12 +92,15 @@ std::optional<QByteArray> CipherState::decrypt(
 }
 
 void CipherState::rekey() {
-	const auto output = Crypto::ChaChaPolyEncrypt(
+	auto output = Crypto::ChaChaPolyEncrypt(
 		_key,
 		NonceBytes(kMaxNonce),
 		QByteArray(),
 		QByteArray(kKeySize, char(0)));
+	base::bytes::wipe(_key);
+	// A failed primitive leaves no key: every later record fails closed.
 	_key = output.left(kKeySize);
+	base::bytes::wipe(output);
 	_count = 0;
 }
 
@@ -95,10 +114,17 @@ SymmetricState::SymmetricState() {
 	_chainingKey = _hash;
 }
 
+SymmetricState::~SymmetricState() {
+	base::bytes::wipe(_chainingKey);
+}
+
 void SymmetricState::mixKey(const QByteArray &inputKeyMaterial) {
-	const auto output = Crypto::NoiseHkdf(_chainingKey, inputKeyMaterial, 2);
+	auto output = Crypto::NoiseHkdf(_chainingKey, inputKeyMaterial, 2);
+	base::bytes::wipe(_chainingKey);
 	_chainingKey = output.first;
 	_cipher.initializeKey(output.second);
+	base::bytes::wipe(output.first);
+	base::bytes::wipe(output.second);
 }
 
 void SymmetricState::mixHash(const QByteArray &data) {
@@ -122,10 +148,12 @@ std::optional<QByteArray> SymmetricState::decryptAndHash(const QByteArray &ciphe
 }
 
 std::pair<CipherState, CipherState> SymmetricState::split() const {
-	const auto output = Crypto::NoiseHkdf(_chainingKey, QByteArray(), 2);
+	auto output = Crypto::NoiseHkdf(_chainingKey, QByteArray(), 2);
 	auto result = std::pair<CipherState, CipherState>();
 	result.first.initializeKey(output.first);
 	result.second.initializeKey(output.second);
+	base::bytes::wipe(output.first);
+	base::bytes::wipe(output.second);
 	return result;
 }
 
@@ -153,12 +181,13 @@ std::optional<QByteArray> Initiator::writeMessage1(const QByteArray &payload) {
 		_ephemeralPrivate = Crypto::X25519GeneratePrivate();
 	}
 	const auto ephemeralPublic = Crypto::X25519PublicFromPrivate(_ephemeralPrivate);
-	const auto shared = Crypto::X25519Shared(_ephemeralPrivate, _remoteStatic);
+	auto shared = Crypto::X25519Shared(_ephemeralPrivate, _remoteStatic);
 	if (ephemeralPublic.isEmpty() || shared.isEmpty()) {
 		return std::nullopt;
 	}
 	_symmetric.mixHash(ephemeralPublic);
 	_symmetric.mixKey(shared);
+	base::bytes::wipe(shared);
 	const auto ciphertext = _symmetric.encryptAndHash(payload);
 	if (!ciphertext) {
 		return std::nullopt;
@@ -172,14 +201,18 @@ std::optional<QByteArray> Initiator::readMessage2(const QByteArray &message) {
 		return std::nullopt;
 	}
 	const auto remoteEphemeral = message.left(kKeySize);
-	const auto shared = Crypto::X25519Shared(_ephemeralPrivate, remoteEphemeral);
+	auto shared = Crypto::X25519Shared(_ephemeralPrivate, remoteEphemeral);
 	if (shared.isEmpty()) {
 		return std::nullopt;
 	}
 	_symmetric.mixHash(remoteEphemeral);
 	_symmetric.mixKey(shared);
+	base::bytes::wipe(shared);
 	auto payload = _symmetric.decryptAndHash(message.mid(kKeySize));
 	if (!payload) {
+		// The transcript is spent: no second message is tried against it.
+		_step = -1;
+		base::bytes::wipe(_ephemeralPrivate);
 		return std::nullopt;
 	}
 	auto [send, recv] = _symmetric.split();

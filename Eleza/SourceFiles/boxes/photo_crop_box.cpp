@@ -1,5 +1,6 @@
 #include "boxes/photo_crop_box.h"
 
+#include "base/platform_file.h"
 #include "lang_auto.h"
 #include "support/file_dialogs.h"
 #include "ui/painter.h"
@@ -424,7 +425,7 @@ void SaveCroppedPhoto(
 		std::function<void(const QString &path)> done) {
 	const auto weak = QPointer<QObject>(guard);
 	const auto bound = (guard != nullptr);
-	const auto directory = QDir(QDir::tempPath()).filePath(
+	const auto directory = QDir(base::platform::PrivateTempDirectory()).filePath(
 		QStringLiteral("eleza-photo"));
 	QThreadPool::globalInstance()->start([=] {
 		QDir().mkpath(directory);

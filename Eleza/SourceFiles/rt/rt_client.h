@@ -203,6 +203,9 @@ private:
 	int _pingInterval = 25;
 	int _reconnectSpread = 5;
 	int _authFailures = 0;
+	// Reconnects "at once" inside the current window (see scheduleReconnect).
+	qint64 _quickWindowStart = 0;
+	int _quickReconnects = 0;
 	int _serverClose = 0;
 	bool _wanted = false;
 	bool _connected = false;

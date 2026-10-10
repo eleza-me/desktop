@@ -160,7 +160,7 @@ void ShowExportStatusBox(Controller *controller, const QJsonObject &status) {
 				lt_state,
 				ExportStateText(state)));
 			const auto number = [&](const QString &key) {
-				return qint64(status.value(key).toDouble());
+				return base::SafeInt64(status.value(key).toDouble());
 			};
 			if (const auto at = number(u"requested_at"_s)) {
 				lines.push_back(tr::lng_settings_export_requested_at(

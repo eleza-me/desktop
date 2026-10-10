@@ -2,9 +2,11 @@
 #   Warning level and common definitions for our own targets.
 function(eleza_target_defaults target)
 	if (MSVC)
-		target_compile_options(${target} PRIVATE /W4 /wd4127 /wd4458 /wd4456 /wd4457 /wd4702)
+		# C++ only: a target with a .rc file would pass the same options to rc.exe.
+		target_compile_options(${target} PRIVATE
+			"$<$<COMPILE_LANGUAGE:C,CXX>:/W4;/wd4127;/wd4458;/wd4456;/wd4457;/wd4702>")
 		if (ELEZA_WARNINGS_AS_ERRORS)
-			target_compile_options(${target} PRIVATE /WX)
+			target_compile_options(${target} PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:/WX>")
 		endif()
 	else()
 		target_compile_options(${target} PRIVATE -Wall -Wextra -Wno-sign-compare)

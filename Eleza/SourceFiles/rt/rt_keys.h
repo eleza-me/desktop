@@ -3,6 +3,21 @@
 // key is only a seed for the very first connection before the listing is
 // cached - the listing always wins, so a server-side rotation needs no new
 // client build.
+//
+// Trust decision (the same one the web client makes, src/rt/client.ts): the
+// key is NOT pinned to the build. Whoever can answer GET /v2/keys for the
+// API host with a certificate this machine accepts - a TLS-intercepting
+// proxy whose root the user or an administrator installed, a mis-issued
+// certificate - can substitute a key of their own and then terminate the
+// Noise session as well. So Noise adds nothing against an attacker who has
+// already defeated TLS to the API; what it adds is confidentiality of the
+// realtime frames from everything between the TLS terminator and the gateway
+// (CDN, load balancers, relays) and padding of record sizes. A hard pin was
+// rejected because the gateway key changes with a fresh deploy and a pinned
+// build would lose its socket until it is updated. The listing is only ever
+// read with full certificate verification (no error is ignored anywhere in
+// Api::Client), and the clear-text 0xFF close can do no more than trigger a
+// (rate-limited) re-read of it.
 #pragma once
 
 #include "base/weak_guard.h"

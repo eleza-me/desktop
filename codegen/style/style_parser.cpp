@@ -1150,7 +1150,7 @@ bool ParsePaletteContent(
 			return fail(QStringLiteral(
 				"expected ';' after color '%1'").arg(color.name), token.line);
 		}
-		result.indexByName.insert(color.name, result.colors.size());
+		result.indexByName.insert(color.name, int(result.colors.size()));
 		result.colors.push_back(color);
 		if (!next()) {
 			return fail(token.text, token.line);

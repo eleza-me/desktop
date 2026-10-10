@@ -375,7 +375,13 @@ void Element::ensureLoaded() {
 		}
 	}
 	_reactions.clear();
+	// The server offers a dozen reactions at most; whatever a broken answer
+	// lists beyond that must not turn one message into a wall of chips.
+	constexpr auto kMaxReactionChips = 24;
 	for (const auto &reaction : SortedReactions(_data)) {
+		if (int(_reactions.size()) >= kMaxReactionChips) {
+			break;
+		}
 		auto chip = ReactionChip();
 		chip.emoji = reaction.emoji;
 		chip.count = (reaction.count > 1) ? Lang::Num(reaction.count) : QString();

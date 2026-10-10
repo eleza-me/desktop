@@ -1,5 +1,6 @@
 #include "history/history_view_media.h"
 
+#include "base/platform_file.h"
 #include "data/data_feed.h"
 #include "data/data_session.h"
 #include "data/data_social_types.h"
@@ -945,8 +946,13 @@ private:
 			size);
 	}
 	[[nodiscard]] QString name() const {
+		// The name is the sender's. It is shown exactly as the file will be
+		// saved: without direction overrides ("invoice<RLO>fdp.exe" must not
+		// read "invoiceexe.pdf"), control characters or path separators.
 		const auto &message = data();
-		return message.text.isEmpty() ? tr::lng_media_file(tr::now) : message.text;
+		return message.text.isEmpty()
+			? tr::lng_media_file(tr::now)
+			: base::platform::SafeFileName(message.text, tr::lng_media_file(tr::now));
 	}
 	[[nodiscard]] QString status() const {
 		const auto &message = data();

@@ -43,6 +43,11 @@ function(eleza_core_test name)
 	set_tests_properties(${name} PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 120)
+	if (WIN32 AND NOT CMAKE_VERSION VERSION_LESS 3.22)
+		# The Qt DLLs, without Qt's bin directory being in PATH.
+		set_property(TEST ${name} APPEND PROPERTY
+			ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+	endif()
 endfunction()
 
 eleza_core_test(test_base)

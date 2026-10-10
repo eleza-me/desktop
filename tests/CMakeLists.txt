@@ -6,6 +6,16 @@
 
 find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Test)
 
+# eleza_test_runtime_path(<name>)
+#   Windows: the test executables need the Qt DLLs; ctest finds them without Qt's bin
+#   directory being in PATH.
+function(eleza_test_runtime_path name)
+	if (WIN32 AND NOT CMAKE_VERSION VERSION_LESS 3.22)
+		set_property(TEST ${name} APPEND PROPERTY
+			ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+	endif()
+endfunction()
+
 # eleza_add_test(<name> <source> [LIBS libs...] [GUI])
 #   GUI tests run with the offscreen platform plugin.
 function(eleza_add_test name source)
@@ -18,6 +28,7 @@ function(eleza_add_test name source)
 		set_tests_properties(${name} PROPERTIES
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
+	eleza_test_runtime_path(${name})
 endfunction()
 
 eleza_add_test(test_style_codegen ui/test_style_codegen.cpp LIBS codegen_style_lib)
@@ -32,6 +43,12 @@ set(_eleza_app_src "${CMAKE_CURRENT_SOURCE_DIR}/../Eleza/SourceFiles")
 eleza_add_test(test_routes app/test_routes.cpp)
 target_sources(test_routes PRIVATE "${_eleza_app_src}/window/window_routes.cpp")
 target_include_directories(test_routes PRIVATE "${_eleza_app_src}")
+# What a link in somebody's text may open (support/links_parse.cpp has no widgets).
+eleza_add_test(test_links app/test_links.cpp LIBS ElezaUi Qt6::Gui)
+target_sources(test_links PRIVATE
+	"${_eleza_app_src}/support/links_parse.cpp"
+	"${_eleza_app_src}/window/window_routes.cpp")
+target_include_directories(test_links PRIVATE "${_eleza_app_src}")
 eleza_add_test(test_eli_logic app/test_eli_logic.cpp)
 target_sources(test_eli_logic PRIVATE "${_eleza_app_src}/eli/eli_logic.cpp")
 target_include_directories(test_eli_logic PRIVATE "${_eleza_app_src}")

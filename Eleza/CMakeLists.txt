@@ -56,6 +56,9 @@ target_link_libraries(Eleza PRIVATE
 eleza_target_defaults(Eleza)
 target_compile_definitions(Eleza PRIVATE
 	ELEZA_VERSION_STRING="${PROJECT_VERSION}")
+if (ELEZA_DEBUG_TOOLS)
+	target_compile_definitions(Eleza PRIVATE ELEZA_DEBUG_TOOLS)
+endif()
 
 if (eleza_styles)
 	eleza_generate_styles(Eleza

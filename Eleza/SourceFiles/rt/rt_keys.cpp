@@ -38,7 +38,7 @@ bool Keys::apply(const QJsonObject &listing, bool fromCache) {
 	auto fresh = QMap<int, QByteArray>();
 	for (const auto &item : listing.value(u"keys"_s).toArray()) {
 		const auto object = item.toObject();
-		const auto id = int(object.value(u"id"_s).toDouble());
+		const auto id = base::SafeInt(object.value(u"id"_s).toDouble());
 		const auto hex = object.value(u"pub"_s).toString();
 		if (id >= 1 && id <= 255 && hex.size() == 64) {
 			const auto key = base::bytes::fromHex(hex);
@@ -50,7 +50,7 @@ bool Keys::apply(const QJsonObject &listing, bool fromCache) {
 	if (fresh.isEmpty()) {
 		return false;
 	}
-	const auto preferred = int(listing.value(u"preferred"_s).toDouble());
+	const auto preferred = base::SafeInt(listing.value(u"preferred"_s).toDouble());
 	_keys = fresh;
 	_preferredId = fresh.contains(preferred) ? preferred : fresh.firstKey();
 	if (!fromCache) {

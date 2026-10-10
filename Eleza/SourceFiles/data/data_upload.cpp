@@ -443,7 +443,7 @@ void Upload::claim(Id id) {
 			}
 			current->requests.push_back(_session->api().request(
 				Api::Post,
-				u"/v1/uploads/%1/claim"_s.arg(current->uploadId))
+				u"/v1/uploads/%1/claim"_s.arg(QString::fromLatin1(QUrl::toPercentEncoding(current->uploadId))))
 				.body(QJsonObject{ { u"proof"_s, base::bytes::toHex(hash) } })
 				.guard(this)
 				.done([=, this](const QJsonObject &result) {
@@ -584,7 +584,7 @@ void Upload::complete(Id id) {
 	}
 	current->requests.push_back(_session->api().request(
 		Api::Post,
-		u"/v1/uploads/%1/complete"_s.arg(current->uploadId))
+		u"/v1/uploads/%1/complete"_s.arg(QString::fromLatin1(QUrl::toPercentEncoding(current->uploadId))))
 		.body(QJsonObject())
 		.guard(this)
 		.done([=, this] {

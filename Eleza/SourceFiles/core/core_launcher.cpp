@@ -1,5 +1,6 @@
 #include "core/core_launcher.h"
 
+#include "api/api_client.h"
 #include "core/core_application.h"
 #include "core/core_single_instance.h"
 
@@ -95,13 +96,25 @@ Launcher::Launcher(int argc, char *argv[])
 }
 
 QString Launcher::apiUrl() const {
-	if (!_commandLine.apiUrl.isEmpty()) {
-		return _commandLine.apiUrl;
+	const auto standard = QStringLiteral("https://api.eleza.me");
+	const auto custom = !_commandLine.apiUrl.isEmpty()
+		? _commandLine.apiUrl
+		: qEnvironmentVariable("ELEZA_API");
+	if (custom.isEmpty()) {
+		return standard;
 	}
-	const auto fromEnvironment = qEnvironmentVariable("ELEZA_API");
-	return fromEnvironment.isEmpty()
-		? QStringLiteral("https://api.eleza.me")
-		: fromEnvironment;
+	// The tokens go wherever this points: TLS, or a test server on the
+	// loopback interface. Clear text to another machine is for debug builds.
+#ifdef QT_NO_DEBUG
+	const auto allowInsecure = false;
+#else // QT_NO_DEBUG
+	const auto allowInsecure = true;
+#endif // QT_NO_DEBUG
+	if (!Api::Client::IsAcceptableBase(custom, allowInsecure)) {
+		qWarning("The API address is not accepted (https, or http on the loopback interface); using the default.");
+		return standard;
+	}
+	return custom;
 }
 
 void Launcher::prepareEnvironment() {
@@ -136,6 +149,12 @@ int Launcher::exec() {
 	prepareEnvironment();
 
 	auto application = QApplication(_argc, _argv);
+#ifdef Q_OS_WIN
+	// argv is in the ANSI code page on Windows: a --workdir or a route with
+	// characters outside of it (Persian on an English system) arrives as
+	// "?". Qt reads the wide command line.
+	_commandLine = ParseCommandLine(QCoreApplication::arguments());
+#endif // Q_OS_WIN
 	// One look on every platform for the few native pieces we keep (the inner
 	// text editors, the tray menu).
 	if (const auto fusion = QStyleFactory::create(QStringLiteral("Fusion"))) {

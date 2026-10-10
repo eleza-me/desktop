@@ -260,7 +260,7 @@ QStringList SplitIntoThread(const QString &text, int limit, int maxParts) {
 		// A paragraph break in the second half of the part.
 		const auto paragraph = rest.lastIndexOf(QChar('\n'), hard - 1);
 		if (paragraph >= half) {
-			cut = paragraph;
+			cut = int(paragraph);
 		}
 		if (cut < 0) {
 			// The end of a sentence followed by a space.

@@ -24,6 +24,12 @@ inline constexpr auto kMaxMessage = 65535;
 // One direction of an established session (spec section 5.1).
 class CipherState {
 public:
+	CipherState() = default;
+	CipherState(const CipherState &other) = default;
+	CipherState &operator=(const CipherState &other);
+	// The key is wiped, not just released.
+	~CipherState();
+
 	void initializeKey(const QByteArray &key);
 	[[nodiscard]] bool hasKey() const {
 		return _hasKey;
@@ -63,6 +69,9 @@ struct Session {
 class SymmetricState {
 public:
 	SymmetricState();
+	SymmetricState(const SymmetricState &other) = default;
+	SymmetricState &operator=(const SymmetricState &other) = default;
+	~SymmetricState();
 
 	void mixKey(const QByteArray &inputKeyMaterial);
 	void mixHash(const QByteArray &data);

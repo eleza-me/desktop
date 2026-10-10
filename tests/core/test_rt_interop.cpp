@@ -18,6 +18,8 @@
 #include <QtCore/QTemporaryDir>
 #include <QtTest/QSignalSpy>
 
+#include <cstdio>
+
 namespace {
 
 using Type = Rt::Frame::Type;

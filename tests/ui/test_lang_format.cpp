@@ -6,6 +6,8 @@
 
 #include <QtTest/QtTest>
 
+#include <limits>
+
 using namespace Lang;
 
 class TestLangFormat : public QObject {
@@ -226,6 +228,13 @@ private Q_SLOTS:
 		QCOMPARE(CompactCount(3400000), QStringLiteral("3.4M"));
 		QCOMPARE(Bytes(3565158), QStringLiteral("3.4 MB"));
 		QCOMPARE(Bytes(qint64(5) * 1024 * 1024 * 1024 / 2), QStringLiteral("2.50 GB"));
+		// The numbers are the sender's: the top of the range must not overflow.
+		QCOMPARE(Bytes(std::numeric_limits<qint64>::max()), QStringLiteral("8589934592.00 GB"));
+		QCOMPARE(Bytes(qint64(1024) * 1024 * 1024 - 1), QStringLiteral("1024 MB"));
+		QCOMPARE(Bytes(1535), QStringLiteral("1 KB"));
+		QCOMPARE(Bytes(1536), QStringLiteral("2 KB"));
+		QCOMPARE(CompactCount(1999999), QStringLiteral("2M"));
+		QVERIFY(CompactCount(std::numeric_limits<qint64>::max()).startsWith(QStringLiteral("9223372036854.8")));
 	}
 
 	void phonesAndNames() {

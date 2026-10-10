@@ -25,6 +25,10 @@ private Q_SLOTS:
 	void unixtimeShift();
 	void expectedHoldsEither();
 	void atomicFiles();
+	void safeIntegers();
+	void fileNamesFromStrangers();
+	void programsAreNotOpened();
+	void privateTemp();
 
 };
 
@@ -178,6 +182,142 @@ void TestBase::atomicFiles() {
 	QVERIFY(!QFileInfo::exists(path));
 	QVERIFY(!base::platform::SystemDescription().isEmpty());
 	QVERIFY(base::platform::DeviceName().size() <= 64);
+}
+
+void TestBase::safeIntegers() {
+	// A JSON number that does not fit: saturated, never undefined behaviour.
+	QCOMPARE(base::SafeInt64(1e30), std::numeric_limits<qint64>::max());
+	QCOMPARE(base::SafeInt64(-1e30), std::numeric_limits<qint64>::min());
+	QCOMPARE(base::SafeInt64(9223372036854775808.), std::numeric_limits<qint64>::max());
+	QCOMPARE(base::SafeInt64(std::numeric_limits<double>::quiet_NaN()), qint64(0));
+	QCOMPARE(base::SafeInt64(std::numeric_limits<double>::infinity()), std::numeric_limits<qint64>::max());
+	QCOMPARE(base::SafeInt64(-12.9), qint64(-12));
+	QCOMPARE(base::SafeInt(4294967296.), std::numeric_limits<int>::max());
+	QCOMPARE(base::SafeInt(-4294967296.), std::numeric_limits<int>::min());
+	QCOMPARE(base::SafeInt(qint64(1) << 40), std::numeric_limits<int>::max());
+	QCOMPARE(base::SafeInt(-(qint64(1) << 40)), std::numeric_limits<int>::min());
+	QCOMPARE(base::SafeInt(640.), 640);
+}
+
+void TestBase::fileNamesFromStrangers() {
+	using base::platform::SafeFileName;
+	const auto rlo = QChar(0x202E);
+	QCOMPARE(SafeFileName(u"report.pdf"_s), u"report.pdf"_s);
+	QCOMPARE(SafeFileName(u"گزارش نهایی.pdf"_s), u"گزارش نهایی.pdf"_s);
+	// No way out of the directory.
+	QCOMPARE(SafeFileName(u"..\\..\\Windows\\evil.dll"_s), u"_.._Windows_evil.dll"_s);
+	QCOMPARE(SafeFileName(u"../../etc/cron.d/evil"_s), u"_.._etc_cron.d_evil"_s);
+	QCOMPARE(SafeFileName(u"/etc/passwd"_s), u"_etc_passwd"_s);
+	QCOMPARE(SafeFileName(u".."_s), u"file"_s);
+	QCOMPARE(SafeFileName(u"...."_s, u"photo.jpg"_s), u"photo.jpg"_s);
+	QCOMPARE(SafeFileName(QString()), u"file"_s);
+	QCOMPARE(SafeFileName(u" . . "_s), u"file"_s);
+	// Hidden files and what Windows silently drops from the end.
+	QCOMPARE(SafeFileName(u".bashrc"_s), u"bashrc"_s);
+	QCOMPARE(SafeFileName(u"evil.exe."_s), u"evil.exe"_s);
+	QCOMPARE(SafeFileName(u"evil.exe . . "_s), u"evil.exe"_s);
+	QCOMPARE(SafeFileName(u"evil.exe::$DATA"_s), u"evil.exe__$DATA"_s);
+	// The right-to-left override that shows "photo<RLO>gnp.exe" as "photoexe.png".
+	QCOMPARE(SafeFileName(u"photo"_s + rlo + u"gnp.exe"_s), u"photognp.exe"_s);
+	QCOMPARE(SafeFileName(QString(QChar(0x2066)) + u"a"_s + QChar(0x200B) + u"b"_s + QChar(0xFEFF) + QChar(0x2069)), u"ab"_s);
+	// Control characters and line ends.
+	QCOMPARE(SafeFileName(u"a\nb\tc"_s + QChar(0) + u"d"_s + QChar(0x7F) + u".txt"_s), u"a_b_c_d_.txt"_s);
+	// Device names, with or without an extension.
+	QCOMPARE(SafeFileName(u"CON"_s), u"_CON"_s);
+	QCOMPARE(SafeFileName(u"nul.txt"_s), u"_nul.txt"_s);
+	QCOMPARE(SafeFileName(u"Com1.tar.gz"_s), u"_Com1.tar.gz"_s);
+	QCOMPARE(SafeFileName(u"LPT9 .x"_s), u"_LPT9 .x"_s);
+	QCOMPARE(SafeFileName(u"console.log"_s), u"console.log"_s);
+	// Long names are cut; the result never needs another pass.
+	const auto longName = SafeFileName(QString(5000, u'n') + u".txt"_s);
+	QCOMPARE(longName.size(), 180);
+	for (const auto &name : { u"CON."_s + QString(300, u'x'), u" . a . "_s, QString(200, u'.') + u"x"_s, QString(179, u'a') + u". b"_s }) {
+		const auto once = SafeFileName(name);
+		QCOMPARE(SafeFileName(once), once);
+		QVERIFY(once.size() <= 181);
+	}
+}
+
+void TestBase::programsAreNotOpened() {
+	using base::platform::OpensAsProgram;
+	for (const auto name : {
+		"a.exe", "a.EXE", "a.bat", "a.cmd", "a.com", "a.scr", "a.msi", "a.ps1", "a.vbs", "a.js",
+		"a.jar", "a.lnk", "a.url", "a.reg", "a.hta", "a.cpl", "a.pif", "a.msc", "a.wsf", "a.chm",
+		"a.dll", "a.iso", "a.docm", "a.xlsm", "a.sh", "a.run", "a.desktop", "a.AppImage", "a.deb",
+		"a.rpm", "a.py", "a.pl", "a.command", "a.app", "a.dmg", "a.pkg", "a.html", "a.svg",
+		// The name as the file system reads it, not as it is spelled.
+		"report.pdf.exe", "a.exe.", "a.exe ", "a.exe. . .", "a.exe::$DATA", "a.txt:evil.exe",
+		"dir.with.dots/a.sh",
+	}) {
+		QVERIFY2(OpensAsProgram(QString::fromLatin1(name)), name);
+	}
+	// The stream name decides nothing: "a.txt:evil.exe" is a stream of a.txt,
+	// but nothing good comes from opening such a path either.
+	for (const auto name : {
+		"a.pdf", "a.txt", "a.jpg", "a.png", "a.mp4", "a.mp3", "a.ogg", "a.zip", "a.docx", "a.exe.txt",
+		"a", "exe", "dir.exe/a.txt",
+	}) {
+		QVERIFY2(!OpensAsProgram(QString::fromLatin1(name)), name);
+	}
+#ifndef Q_OS_WIN
+	// No extension: a program when the file may be run.
+	auto dir = QTemporaryDir();
+	QVERIFY(dir.isValid());
+	const auto tool = dir.filePath(u"tool"_s);
+	{
+		auto file = QFile(tool);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write("#!/bin/sh\n");
+	}
+	QVERIFY(!OpensAsProgram(tool));
+	QVERIFY(QFile::setPermissions(tool, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner));
+	QVERIFY(OpensAsProgram(tool));
+#endif // !Q_OS_WIN
+}
+
+void TestBase::privateTemp() {
+	auto dir = QTemporaryDir();
+	QVERIFY(dir.isValid());
+	const auto root = dir.filePath(u"data/temp"_s);
+	base::platform::SetPrivateTempRoot(root);
+	const auto path = base::platform::PrivateTempDirectory();
+	QCOMPARE(path, QDir(root).absolutePath());
+	QVERIFY(QFileInfo(path).isDir());
+#ifndef Q_OS_WIN
+	// Ours alone, also when it existed with an open mode.
+	const auto ownerOnly = QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner;
+	const auto everyone = QFileDevice::Permissions(0x7777);
+	QCOMPARE(QFileInfo(path).permissions() & everyone, QFileDevice::Permissions(ownerOnly | QFileDevice::ReadUser | QFileDevice::WriteUser | QFileDevice::ExeUser));
+	const auto open = dir.filePath(u"open"_s);
+	QVERIFY(QDir().mkpath(open));
+	QVERIFY(QFile::setPermissions(open, QFileDevice::Permissions(0x7777)));
+	base::platform::SetPrivateTempRoot(open);
+	QCOMPARE(base::platform::PrivateTempDirectory(), open);
+	QCOMPARE(QFileInfo(open).permissions() & QFileDevice::Permissions(0x0077), QFileDevice::Permissions());
+	// A link somebody put where our directory should be is not followed.
+	const auto target = dir.filePath(u"elsewhere"_s);
+	const auto link = dir.filePath(u"link"_s);
+	QVERIFY(QDir().mkpath(target));
+	QVERIFY(QFile::link(target, link));
+	base::platform::SetPrivateTempRoot(link);
+	const auto fallback = base::platform::PrivateTempDirectory();
+	QVERIFY(!fallback.isEmpty());
+	QVERIFY(fallback != link);
+	QVERIFY(QFileInfo(fallback).isDir() && !QFileInfo(fallback).isSymLink());
+	QCOMPARE(QFileInfo(fallback).permissions() & QFileDevice::Permissions(0x0077), QFileDevice::Permissions());
+	base::platform::SetPrivateTempRoot(root);
+#endif // !Q_OS_WIN
+	// Leftovers of an earlier run go, the directory stays.
+	{
+		auto file = QFile(QDir(path).filePath(u"voice.ogg"_s));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write("x");
+	}
+	QVERIFY(QDir(path).mkpath(u"eleza-paste/inner"_s));
+	base::platform::ClearPrivateTemp();
+	QVERIFY(QFileInfo(path).isDir());
+	QVERIFY(QDir(path).isEmpty());
+	base::platform::SetPrivateTempRoot(QString());
 }
 
 QTEST_GUILESS_MAIN(TestBase)

@@ -15,8 +15,8 @@ using namespace Json;
 User User::FromJson(const QJsonObject &json) {
 	auto result = User();
 	result.id = String(json, "id"_L1);
-	result.handle = String(json, "handle"_L1);
-	result.displayName = String(json, "display_name"_L1);
+	result.handle = Name(json, "handle"_L1);
+	result.displayName = Name(json, "display_name"_L1);
 	result.avatarId = String(json, "avatar_id"_L1);
 	result.verified = Bool(json, "verified"_L1);
 	result.deleted = Bool(json, "deleted"_L1);
@@ -112,7 +112,7 @@ Participant Participant::FromJson(const QJsonObject &json) {
 	result.ref = String(json, "ref"_L1);
 	result.role = String(json, "role"_L1);
 	result.masked = Bool(json, "masked"_L1);
-	result.maskName = String(json, "mask_name"_L1);
+	result.maskName = Name(json, "mask_name"_L1);
 	result.maskAvatar = Int(json, "mask_avatar"_L1);
 	result.userId = String(json, "user_id"_L1);
 	result.me = Bool(json, "me"_L1);

@@ -1,5 +1,7 @@
 #include "core/core_settings.h"
 
+#include "base/platform_file.h"
+
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -185,13 +187,14 @@ void Settings::flush() {
 		return;
 	}
 	_dirty = false;
-	QDir().mkpath(QFileInfo(_path).absolutePath());
-	auto file = QSaveFile(_path);
-	if (!file.open(QIODevice::WriteOnly)) {
-		return;
+	// For the user only: the last used folder and the recent emoji are
+	// nobody else's business on a shared machine.
+	if (!base::platform::WriteFileAtomic(
+			_path,
+			QJsonDocument(serialize()).toJson(QJsonDocument::Indented),
+			true)) {
+		qWarning("Settings: could not save the settings file.");
 	}
-	file.write(QJsonDocument(serialize()).toJson(QJsonDocument::Indented));
-	file.commit();
 }
 
 void Settings::setLanguage(Lang::Language language) {

@@ -34,7 +34,7 @@ QString KeyValue::string(const QString &key, const QString &fallback) const {
 
 qint64 KeyValue::integer(const QString &key, qint64 fallback) const {
 	const auto found = _data.value(key);
-	return found.isDouble() ? qint64(found.toDouble()) : fallback;
+	return found.isDouble() ? base::SafeInt64(found.toDouble()) : fallback;
 }
 
 bool KeyValue::boolean(const QString &key, bool fallback) const {
@@ -68,6 +68,19 @@ void KeyValue::removePrefix(const QString &prefix) {
 	auto changed = false;
 	for (const auto &key : _data.keys()) {
 		if (key.startsWith(prefix)) {
+			_data.remove(key);
+			changed = true;
+		}
+	}
+	if (changed) {
+		scheduleSave();
+	}
+}
+
+void KeyValue::removeSuffix(const QString &suffix) {
+	auto changed = false;
+	for (const auto &key : _data.keys()) {
+		if (key.endsWith(suffix)) {
 			_data.remove(key);
 			changed = true;
 		}

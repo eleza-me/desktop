@@ -29,6 +29,8 @@ public:
 	void remove(const QString &key);
 	// Removes every key that starts with `prefix`.
 	void removePrefix(const QString &prefix);
+	// Removes every key that ends with `suffix` ("<name>.<user id>").
+	void removeSuffix(const QString &suffix);
 
 	// Writes pending changes now.
 	void flush();

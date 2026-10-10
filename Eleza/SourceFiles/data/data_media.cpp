@@ -22,6 +22,31 @@ namespace {
 
 constexpr auto kDefaultMemoryLimit = qint64(64) << 20;
 constexpr auto kPruneTo = 0.8;
+// Remote pictures: the bytes are whatever the other side made them.
+constexpr auto kMaxImageBytes = qint64(64) << 20;
+constexpr auto kMaxImageSide = 16384;
+constexpr auto kMaxImagePixels = qint64(48) << 20;
+// Anything else the cache fetches (videos, files).
+constexpr auto kMaxFileBytes = qint64(4) << 30;
+
+// The formats the server produces, recognised by their first bytes. The
+// decoder is never chosen by Qt's own detection: with the image plugins that
+// may be installed that would also mean SVG (a document format with external
+// references, rendered by QtSvg), PDF, TIFF, ICO, TGA...
+[[nodiscard]] QByteArray SniffImageFormat(const QByteArray &head) {
+	const auto bytes = reinterpret_cast<const uchar*>(head.constData());
+	const auto size = head.size();
+	if (size >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
+		return "jpeg"_ba;
+	} else if (size >= 8 && head.startsWith("\x89PNG\r\n\x1a\n")) {
+		return "png"_ba;
+	} else if (size >= 6 && (head.startsWith("GIF87a") || head.startsWith("GIF89a"))) {
+		return "gif"_ba;
+	} else if (size >= 12 && head.startsWith("RIFF") && head.mid(8, 4) == "WEBP") {
+		return "webp"_ba;
+	}
+	return QByteArray();
+}
 
 [[nodiscard]] QString Encoded(const QString &segment) {
 	return QString::fromLatin1(QUrl::toPercentEncoding(segment));
@@ -306,6 +331,9 @@ void Media::download(const std::shared_ptr<Job> &job) {
 	if (!job->filePath.isEmpty()) {
 		builder.toFile(job->filePath);
 	}
+	// An endless or absurd body ends the download instead of filling the
+	// disk (or, without a disk cache, the memory).
+	builder.maxBytes(job->options.decode ? kMaxImageBytes : kMaxFileBytes);
 	const auto weak = std::weak_ptr<Job>(job);
 	job->download = builder
 		.guard(this)
@@ -339,22 +367,46 @@ void Media::download(const std::shared_ptr<Job> &job) {
 
 QImage Media::Decode(const QString &filePath, const QByteArray &bytes, QSize fit) {
 	auto buffer = QBuffer();
-	auto reader = QImageReader();
+	auto file = QFile();
+	auto device = static_cast<QIODevice*>(nullptr);
 	if (!filePath.isEmpty()) {
-		reader.setFileName(filePath);
+		file.setFileName(filePath);
+		if (!file.open(QIODevice::ReadOnly) || file.size() > kMaxImageBytes) {
+			return QImage();
+		}
+		device = &file;
 	} else {
+		if (bytes.size() > kMaxImageBytes) {
+			return QImage();
+		}
 		buffer.setData(bytes);
 		buffer.open(QIODevice::ReadOnly);
-		reader.setDevice(&buffer);
+		device = &buffer;
 	}
+	const auto format = SniffImageFormat(device->peek(16));
+	if (format.isEmpty()) {
+		return QImage();
+	}
+	// The format is forced: no plugin other than the four is ever asked.
+	auto reader = QImageReader(device, format);
+	reader.setAutoDetectImageFormat(false);
+	reader.setDecideFormatFromContent(false);
 	reader.setAutoTransform(true);
-	reader.setDecideFormatFromContent(true);
 	if (!reader.canRead()) {
 		return QImage();
 	}
+	// The header is checked before anything is allocated for the pixels.
+	const auto declared = reader.size();
+	if (!declared.isValid()
+		|| declared.isEmpty()
+		|| declared.width() > kMaxImageSide
+		|| declared.height() > kMaxImageSide
+		|| qint64(declared.width()) * declared.height() > kMaxImagePixels) {
+		return QImage();
+	}
 	if (fit.isValid() && !fit.isEmpty()) {
-		const auto size = reader.size();
-		if (size.isValid() && (size.width() > fit.width() || size.height() > fit.height())) {
+		const auto size = declared;
+		if (size.width() > fit.width() || size.height() > fit.height()) {
 			// Scaled by the decoder where the format can (JPEG): cheaper than a full decode.
 			auto bounds = fit;
 			if (reader.transformation() & QImageIOHandler::TransformationRotate90) {
@@ -371,11 +423,11 @@ QImage Media::Decode(const QString &filePath, const QByteArray &bytes, QSize fit
 		&& (image.width() > fit.width() || image.height() > fit.height())) {
 		image = image.scaled(fit, Qt::KeepAspectRatio, Qt::SmoothTransformation);
 	}
-	const auto format = image.hasAlphaChannel()
+	const auto pixelFormat = image.hasAlphaChannel()
 		? QImage::Format_ARGB32_Premultiplied
 		: QImage::Format_RGB32;
-	if (image.format() != format) {
-		image = image.convertToFormat(format);
+	if (image.format() != pixelFormat) {
+		image = image.convertToFormat(pixelFormat);
 	}
 	return image;
 }

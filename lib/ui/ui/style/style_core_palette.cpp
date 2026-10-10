@@ -111,7 +111,9 @@ void EnsureWatcher() {
 // Native child controls (text cursors, selections of the inner editors) read
 // the application palette, keep it in sync with ours.
 void ApplyApplicationPalette() {
-	if (!qobject_cast<QApplication*>(qApp)) {
+	// Not `qApp`: with <QApplication> that macro is itself a static cast to
+	// QApplication, which the tests (a QGuiApplication) must not go through.
+	if (!qobject_cast<QApplication*>(QCoreApplication::instance())) {
 		return;
 	}
 	const auto find = [](const char *name, const QColor &fallback) {

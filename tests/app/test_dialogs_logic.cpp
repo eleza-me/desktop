@@ -257,6 +257,17 @@ private Q_SLOTS:
 		QVERIFY(!preview.thumbnail);
 		QVERIFY(preview.text.contains(QStringLiteral("plan.pdf")));
 		QVERIFY(preview.text.startsWith(tr::lng_media_file(tr::now)));
+		// The sender's direction override does not disguise the extension
+		// ("invoice<RLO>fdp.exe" would read "invoiceexe.pdf"), nor reorder
+		// the words of ours around a text.
+		chat.lastMessage->text = QStringLiteral("invoice") + QChar(0x202E) + QStringLiteral("fdp.exe");
+		preview = Dialogs::PreviewFor(chat);
+		QVERIFY(preview.text.endsWith(QStringLiteral("invoicefdp.exe")));
+		QVERIFY(!preview.text.contains(QChar(0x202E)));
+		chat.lastMessage = Text("hello");
+		chat.lastMessage->text = QChar(0x202E) + QStringLiteral("olleh") + QChar(0x2069) + QChar(0x2066);
+		preview = Dialogs::PreviewFor(chat);
+		QCOMPARE(preview.text, QStringLiteral("olleh"));
 
 		// A draft wins over the last message, typing wins over both.
 		auto draft = Data::Draft();

@@ -1,5 +1,6 @@
 #include "crypto/crypto_primitives.h"
 
+#include <openssl/crypto.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 #include <openssl/rand.h>
@@ -144,12 +145,13 @@ HkdfOutput NoiseHkdf(
 		const QByteArray &inputKeyMaterial,
 		int outputs) {
 	auto result = HkdfOutput();
-	const auto tempKey = HmacSha256(chainingKey, inputKeyMaterial);
+	auto tempKey = HmacSha256(chainingKey, inputKeyMaterial);
 	result.first = HmacSha256(tempKey, QByteArray(1, char(1)));
 	result.second = HmacSha256(tempKey, result.first + QByteArray(1, char(2)));
 	if (outputs >= 3) {
 		result.third = HmacSha256(tempKey, result.second + QByteArray(1, char(3)));
 	}
+	OPENSSL_cleanse(tempKey.data(), size_t(tempKey.size()));
 	return result;
 }
 

@@ -2,6 +2,7 @@
 
 #include "api/api_auth.h"
 #include "api/api_client_config.h"
+#include "base/platform_file.h"
 #include "core/core_debug.h"
 #include "core/core_modules.h"
 #include "gallery/gallery_widget.h"
@@ -18,6 +19,7 @@
 #include "ui/widgets/tooltip.h"
 #include "window/window_main_window.h"
 #include "window/window_registry.h"
+#include "window/window_routes.h"
 #include "window/window_session_controller.h"
 
 #include <QtCore/QDir>
@@ -46,6 +48,20 @@ Application::Application(Launcher *launcher)
 	if (arguments.ephemeral() && arguments.workDir.isEmpty()) {
 		// A screenshot run must not touch the real data directory.
 		_temporaryDir = std::make_unique<QTemporaryDir>();
+	}
+	// Recordings, pasted images and the like never go to the shared
+	// temporary directory: the data directory is ours alone.
+	if (arguments.workDir.isEmpty()) {
+		// The default location is the app's own: closed to other users (a
+		// directory named with --workdir keeps the mode its owner gave it;
+		// everything secret inside is 0700 / 0600 on its own).
+		base::platform::EnsureDirectory(workDir(), true);
+	}
+	base::platform::SetPrivateTempRoot(
+		QDir(workDir()).filePath(QStringLiteral("temp")));
+	if (!arguments.noSingleInstance) {
+		// Nobody else runs on this directory: what is left there is stale.
+		base::platform::ClearPrivateTemp();
 	}
 	_settings = std::make_unique<Settings>(arguments.ephemeral()
 		? QString()
@@ -434,9 +450,15 @@ void Application::handleActivation(const QString &message) {
 	if (_window) {
 		_window->activateAndShow();
 	}
+	// The message comes from another process: only a place of the app may be
+	// opened through it - never a "debug/..." hook (those end the session or
+	// load files by path) and nothing that is not a canonical route.
 	const auto prefix = QStringLiteral("route:");
 	if (message.startsWith(prefix)) {
-		openRoute(message.mid(prefix.size()));
+		const auto route = Window::ParseRoute(message.mid(prefix.size()));
+		if (route.valid()) {
+			openRoute(route.toString());
+		}
 	}
 }
 

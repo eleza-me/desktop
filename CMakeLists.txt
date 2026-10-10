@@ -29,3 +29,7 @@ if (ELEZA_BUILD_TESTS)
 	enable_testing()
 	add_subdirectory(tests)
 endif()
+
+if (ELEZA_BUILD_FUZZERS)
+	add_subdirectory(tests/fuzz)
+endif()

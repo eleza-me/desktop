@@ -18,6 +18,13 @@ Q_LOGGING_CATEGORY(Log, "eleza.rt.client", QtWarningMsg)
 constexpr auto kWatchdogEveryMs = 5000;
 constexpr auto kTooManyDelay = 30.;
 constexpr auto kAuthFailuresDelay = 15.;
+// Close codes that ask for a reconnect "at once" (resync, re-auth, a rotated
+// key) are only authenticated by TLS, or not tied to any progress at all: a
+// peer that keeps sending them must not turn the client into a tight loop of
+// handshakes, token refreshes and /v2/keys requests.
+constexpr auto kQuickWindowMs = qint64(10000);
+constexpr auto kQuickReconnects = 3;
+constexpr auto kQuickPenalty = 2.;
 
 [[nodiscard]] QByteArray EncodeBody(const char *message, const QJsonObject &object) {
 	return Proto::Encode(QLatin1StringView(message), object).value_or(QByteArray());
@@ -372,6 +379,16 @@ void Client::scheduleReconnect(int generation, double seconds) {
 	}
 	_pausedGeneration = generation;
 	if (seconds <= 0.) {
+		const auto now = base::unixtime::nowMs();
+		if (now - _quickWindowStart > kQuickWindowMs || now < _quickWindowStart) {
+			_quickWindowStart = now;
+			_quickReconnects = 0;
+		}
+		if (++_quickReconnects > kQuickReconnects) {
+			seconds = std::max(_backoff.next(), kQuickPenalty);
+		}
+	}
+	if (seconds <= 0.) {
 		// "Now" still goes through the event loop: never reconnect from
 		// inside a closing session's callbacks.
 		_connecting = true;
@@ -424,7 +441,7 @@ void Client::onHello(const Hello &hello) {
 
 void Client::onUpdate(const QJsonObject &update) {
 	auto frame = Frame();
-	frame.pts = qint64(update.value("pts"_L1).toDouble());
+	frame.pts = base::SafeInt64(update.value("pts"_L1).toDouble());
 	frame.kind = update.value("kind"_L1).toString();
 	if (update.contains("chat"_L1)
 		|| update.contains("message"_L1)
@@ -456,13 +473,13 @@ void Client::onSignal(const QString &type, const QJsonObject &body) {
 		if (frame.kind.isEmpty()) {
 			frame.kind = u"typing"_s;
 		}
-		const auto ttl = int(body.value("ttl_s"_L1).toDouble());
+		const auto ttl = base::SafeInt(body.value("ttl_s"_L1).toDouble());
 		frame.ttl = (ttl > 0) ? ttl : 6;
 	} else if (type == u"presence") {
 		frame.type = Frame::Type::Presence;
 		frame.user = body.value("user"_L1).toString();
 		frame.status = body.value("status"_L1).toString();
-		frame.lastSeenAt = qint64(body.value("last_seen_at"_L1).toDouble());
+		frame.lastSeenAt = base::SafeInt64(body.value("last_seen_at"_L1).toDouble());
 		frame.reset = body.value("reset"_L1).toBool();
 	} else if (type == u"presence_reset") {
 		frame.type = Frame::Type::Presence;
@@ -475,8 +492,8 @@ void Client::onSignal(const QString &type, const QJsonObject &body) {
 		frame.category = body.value("category"_L1).toString();
 	} else if (type == u"feed_new") {
 		frame.type = Frame::Type::FeedNew;
-		frame.count = int(body.value("count"_L1).toDouble());
-		frame.since = qint64(body.value("since"_L1).toDouble());
+		frame.count = base::SafeInt(body.value("count"_L1).toDouble());
+		frame.since = base::SafeInt64(body.value("since"_L1).toDouble());
 	} else if (type == u"live_location") {
 		frame.type = Frame::Type::LiveLocation;
 		frame.data = body;

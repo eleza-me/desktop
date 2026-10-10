@@ -78,7 +78,7 @@ QString ClientConfig::string(const QString &dotted, const QString &fallback) con
 	if (found.isString()) {
 		return found.toString();
 	} else if (found.isDouble()) {
-		return QString::number(qint64(found.toDouble()));
+		return QString::number(base::SafeInt64(found.toDouble()));
 	}
 	return fallback;
 }
@@ -86,7 +86,7 @@ QString ClientConfig::string(const QString &dotted, const QString &fallback) con
 qint64 ClientConfig::integer(const QString &dotted, qint64 fallback) const {
 	const auto found = value(dotted);
 	if (found.isDouble()) {
-		return qint64(found.toDouble());
+		return base::SafeInt64(found.toDouble());
 	} else if (found.isString()) {
 		auto ok = false;
 		const auto result = found.toString().toLongLong(&ok);
@@ -114,7 +114,7 @@ QStringList ClientConfig::strings(const QString &dotted) const {
 		if (item.isString()) {
 			result.push_back(item.toString());
 		} else if (item.isDouble()) {
-			result.push_back(QString::number(qint64(item.toDouble())));
+			result.push_back(QString::number(base::SafeInt64(item.toDouble())));
 		}
 	}
 	return result;
@@ -168,7 +168,7 @@ qint64 ClientConfig::seconds(const QString &dotted, qint64 fallback) const {
 	} else if (found.isDouble()) {
 		const auto number = found.toDouble();
 		// A Go duration serialized as a number is nanoseconds.
-		return (number >= 1e9) ? qint64(number / 1e9) : qint64(number);
+		return (number >= 1e9) ? base::SafeInt64(number / 1e9) : base::SafeInt64(number);
 	}
 	return fallback;
 }

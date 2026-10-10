@@ -1,5 +1,6 @@
 #include "history/history_downloads.h"
 
+#include "base/platform_file.h"
 #include "data/data_session.h"
 #include "main/main_session.h"
 #include "storage/storage_database.h"
@@ -40,18 +41,30 @@ const auto kSavedKey = u"history.downloads"_s;
 	return fallback;
 }
 
-[[nodiscard]] QString CleanName(QString name) {
-	static const auto kBad = u"\\/:*?\"<>|"_s;
-	for (auto &ch : name) {
-		if (kBad.contains(ch) || ch.unicode() < 0x20) {
-			ch = u'_';
-		}
+// The name is the sender's: see base::platform::SafeFileName for what is
+// taken out of it (separators, direction overrides, trailing dots, device
+// names).
+[[nodiscard]] QString CleanName(const QString &name) {
+	return base::platform::SafeFileName(name, u"file"_s);
+}
+
+// Files that came from a chat are marked as downloaded from the Internet, so
+// Windows (SmartScreen, Office protected view) treats them accordingly.
+void MarkAsDownloaded(const QString &path) {
+#ifdef Q_OS_WIN
+	auto stream = QFile(path + u":Zone.Identifier"_s);
+	if (stream.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+		stream.write("[ZoneTransfer]\r\nZoneId=3\r\n");
 	}
-	name = name.trimmed();
-	while (name.startsWith(u'.')) {
-		name.remove(0, 1);
-	}
-	return name.isEmpty() ? u"file"_s : name.left(180);
+#else // Q_OS_WIN
+	// Never executable, whatever the mode of the cached copy was.
+	QFile::setPermissions(
+		path,
+		QFileDevice::ReadOwner
+			| QFileDevice::WriteOwner
+			| QFileDevice::ReadGroup
+			| QFileDevice::ReadOther);
+#endif // Q_OS_WIN
 }
 
 [[nodiscard]] QString UniquePath(const QString &directory, const QString &name) {
@@ -146,13 +159,7 @@ QString Downloads::SuggestedName(const Data::Message &message) {
 }
 
 bool Downloads::IsExecutable(const QString &path) {
-	static const auto kExtensions = QStringList{
-		u"exe"_s, u"bat"_s, u"cmd"_s, u"com"_s, u"scr"_s, u"msi"_s,
-		u"ps1"_s, u"vbs"_s, u"js"_s, u"jar"_s, u"lnk"_s, u"reg"_s,
-		u"sh"_s, u"run"_s, u"desktop"_s, u"appimage"_s, u"deb"_s,
-		u"rpm"_s, u"py"_s, u"pl"_s, u"hta"_s, u"cpl"_s, u"pif"_s,
-	};
-	return kExtensions.contains(QFileInfo(path).suffix().toLower());
+	return base::platform::OpensAsProgram(path);
 }
 
 View::DownloadState Downloads::state(const Data::Message &message) const {
@@ -288,7 +295,7 @@ void Downloads::finished(const QString &key, const QString &chat, qint64 seq) {
 	// Copy on a worker thread: files may be large.
 	auto directory = copy
 		? QStandardPaths::writableLocation(QStandardPaths::DownloadLocation)
-		: QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+		: base::platform::PrivateTempDirectory();
 	if (directory.isEmpty()) {
 		directory = QDir::homePath();
 	}
@@ -303,9 +310,13 @@ void Downloads::finished(const QString &key, const QString &chat, qint64 seq) {
 		if (!cached.isEmpty()) {
 			ok = QFile::copy(cached, target);
 		} else {
+			// NewOnly: never through a link somebody put at that name.
 			auto file = QFile(target);
-			ok = file.open(QIODevice::WriteOnly)
+			ok = file.open(QIODevice::WriteOnly | QIODevice::NewOnly)
 				&& (file.write(bytes) == bytes.size());
+		}
+		if (ok) {
+			MarkAsDownloaded(target);
 		}
 		QMetaObject::invokeMethod(qApp, [=] {
 			if (!weak) {

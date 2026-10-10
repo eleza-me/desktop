@@ -11,15 +11,52 @@ QString String(const QJsonObject &object, QLatin1StringView key) {
 	} else if (value.isDouble()) {
 		const auto number = value.toDouble();
 		return (number == std::trunc(number))
-			? QString::number(qint64(number))
+			? QString::number(base::SafeInt64(number))
 			: QString::number(number);
 	}
 	return QString();
 }
 
+QString CleanName(const QString &name) {
+	const auto invisible = [](char16_t code) {
+		switch (code) {
+		case 0x200B: case 0xFEFF: case 0x200E: case 0x200F:
+		case 0x202A: case 0x202B: case 0x202C: case 0x202D: case 0x202E:
+		case 0x2066: case 0x2067: case 0x2068: case 0x2069: case 0x00AD:
+		case 0x061C: case 0x2028: case 0x2029: case 0x2060:
+			return true;
+		}
+		return false;
+	};
+	auto clean = true;
+	for (const auto ch : name) {
+		if (invisible(ch.unicode()) || ch.category() == QChar::Other_Control) {
+			clean = false;
+			break;
+		}
+	}
+	if (clean) {
+		return name;
+	}
+	auto result = QString();
+	result.reserve(name.size());
+	for (const auto ch : name) {
+		if (ch.category() == QChar::Other_Control) {
+			result.append(u' ');
+		} else if (!invisible(ch.unicode())) {
+			result.append(ch);
+		}
+	}
+	return result.simplified();
+}
+
+QString Name(const QJsonObject &object, QLatin1StringView key) {
+	return CleanName(String(object, key));
+}
+
 qint64 Int64(const QJsonValue &value, qint64 fallback) {
 	if (value.isDouble()) {
-		return qint64(value.toDouble());
+		return base::SafeInt64(value.toDouble());
 	} else if (value.isString()) {
 		auto ok = false;
 		const auto text = value.toString();
@@ -28,7 +65,7 @@ qint64 Int64(const QJsonValue &value, qint64 fallback) {
 			return result;
 		}
 		const auto real = text.toDouble(&ok);
-		return ok ? qint64(real) : fallback;
+		return ok ? base::SafeInt64(real) : fallback;
 	} else if (value.isBool()) {
 		return value.toBool() ? 1 : 0;
 	}
@@ -40,7 +77,7 @@ qint64 Int64(const QJsonObject &object, QLatin1StringView key, qint64 fallback) 
 }
 
 int Int(const QJsonObject &object, QLatin1StringView key, int fallback) {
-	return int(Int64(object.value(key), fallback));
+	return base::SafeInt(Int64(object.value(key), fallback));
 }
 
 double Double(const QJsonObject &object, QLatin1StringView key, double fallback) {

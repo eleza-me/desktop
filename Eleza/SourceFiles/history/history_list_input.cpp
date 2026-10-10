@@ -82,9 +82,13 @@ constexpr auto kMaxInlineGifs = 2;
 void ShowInFileManager(const QString &path) {
 	const auto info = QFileInfo(path);
 #ifdef Q_OS_WIN
-	QProcess::startDetached(
-		u"explorer.exe"_s,
-		{ u"/select,"_s, QDir::toNativeSeparators(info.absoluteFilePath()) });
+	// The path is always quoted: QProcess quotes an argument only when it has
+	// spaces, and Explorer splits an unquoted one at commas ("a,b.pdf").
+	auto explorer = QProcess();
+	explorer.setProgram(u"explorer.exe"_s);
+	explorer.setNativeArguments(u"/select,\"%1\""_s.arg(
+		QDir::toNativeSeparators(info.absoluteFilePath())));
+	explorer.startDetached();
 #else // Q_OS_WIN
 	QDesktopServices::openUrl(QUrl::fromLocalFile(info.absolutePath()));
 #endif // Q_OS_WIN

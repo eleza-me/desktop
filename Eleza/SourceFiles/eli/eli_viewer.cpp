@@ -3,6 +3,7 @@
 // behind it — blurred and dimmed, never a solid background.
 #include "eli/eli_actions.h"
 
+#include "base/platform_file.h"
 #include "data/data_feed.h"
 #include "data/data_media.h"
 #include "data/data_session.h"
@@ -43,7 +44,10 @@ QString LocalMediaFile(const Data::MediaHandlePtr &handle, const QString &suffix
 	if (handle->bytes().isEmpty()) {
 		return QString();
 	}
-	const auto directory = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+	const auto directory = base::platform::PrivateTempDirectory();
+	if (directory.isEmpty()) {
+		return QString();
+	}
 	const auto name = u"eleza-"_s
 		+ QString::number(qHash(handle->ref().cacheKey(handle->variant())), 16)
 		+ suffix;

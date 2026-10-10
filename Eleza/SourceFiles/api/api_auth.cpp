@@ -13,7 +13,7 @@ namespace {
 
 [[nodiscard]] int IntOr(const QJsonObject &object, const QString &key, int fallback) {
 	const auto value = object.value(key);
-	return value.isDouble() ? int(value.toDouble()) : fallback;
+	return value.isDouble() ? base::SafeInt(value.toDouble()) : fallback;
 }
 
 [[nodiscard]] QString Encoded(const QString &segment) {

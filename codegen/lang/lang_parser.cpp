@@ -60,9 +60,9 @@ QStringList ExtractTags(const QString &value) {
 			if (!result.contains(tag)) {
 				result.push_back(tag);
 			}
-			from = close + 1;
+			from = int(close + 1);
 		} else {
-			from = open + 1;
+			from = int(open + 1);
 		}
 	}
 	return result;
@@ -107,7 +107,7 @@ bool ParseContent(
 					return fail(QStringLiteral("unterminated comment"), line);
 				}
 				line += content.mid(pos, end - pos).count(QLatin1Char('\n'));
-				pos = end + 2;
+				pos = int(end + 2);
 			} else {
 				break;
 			}
@@ -197,7 +197,7 @@ bool ParseContent(
 
 		auto index = result.indexByKey.value(key, -1);
 		if (index < 0) {
-			index = result.entries.size();
+			index = int(result.entries.size());
 			result.indexByKey.insert(key, index);
 			auto entry = Entry();
 			entry.key = key;

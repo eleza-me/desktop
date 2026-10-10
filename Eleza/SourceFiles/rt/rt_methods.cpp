@@ -21,7 +21,7 @@ using Schema::Kind;
 	case QJsonValue::Double: {
 		const auto number = value.toDouble();
 		return (number == std::trunc(number) && std::abs(number) < 9e15)
-			? QString::number(qint64(number))
+			? QString::number(base::SafeInt64(number))
 			: QString::number(number, 'g', 17);
 	}
 	case QJsonValue::Array:

@@ -7,6 +7,7 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QUrlQuery>
+#include <QtNetwork/QHostAddress>
 #include <QtNetwork/QNetworkReply>
 #include <QtNetwork/QNetworkRequest>
 
@@ -16,6 +17,25 @@ namespace {
 constexpr auto kMaxRedirects = 5;
 constexpr auto kMaxOverloadRetries = 2;
 constexpr auto kMaxOverloadWait = 5.;
+// A JSON answer larger than this is not an answer of ours (the realtime
+// transport caps an envelope at 256 KiB; HTTP pages are a few hundred KiB).
+constexpr auto kMaxJsonResponse = qint64(32) << 20;
+// What a download may take when the caller set no limit of its own.
+constexpr auto kMaxDownloadDefault = qint64(4) << 30;
+// What is kept of the body of an error / redirect answer to a download or an
+// upload (a problem document), and how much of one is tolerated at all: the
+// network reply buffers whatever nobody reads, without a limit of its own.
+constexpr auto kKeptErrorBody = qint64(64) << 10;
+constexpr auto kMaxErrorBody = qint64(1) << 20;
+
+[[nodiscard]] bool LoopbackHost(const QString &host) {
+	if (host.compare(u"localhost", Qt::CaseInsensitive) == 0) {
+		return true;
+	}
+	// A literal address only: "127.0.0.1.evil.example" is a name.
+	auto address = QHostAddress();
+	return address.setAddress(host) && address.isLoopback();
+}
 
 // A window of a file as an upload body.
 class FileSlice final : public QIODevice {
@@ -90,6 +110,7 @@ struct Client::Call {
 	QPointer<QNetworkReply> reply;
 	std::unique_ptr<base::Timer> retryTimer;
 	bool retriedAuth = false;
+	bool oversized = false;
 	int overload = 0;
 };
 
@@ -100,6 +121,8 @@ struct Client::Download {
 	QPointer<QNetworkReply> reply;
 	std::unique_ptr<QFile> file;
 	QByteArray bytes;
+	QByteArray errorBody;
+	qint64 errorReceived = 0;
 	qint64 received = 0;
 	int redirects = 0;
 	bool retriedAuth = false;
@@ -109,6 +132,7 @@ struct Client::Download {
 struct Client::Upload {
 	UploadSpec spec;
 	QPointer<QNetworkReply> reply;
+	qint64 answered = 0;
 };
 
 RequestBuilder::RequestBuilder(Client *client, Method method, const QString &path)
@@ -447,6 +471,52 @@ bool Client::sameOriginAsBase(const QUrl &url) const {
 		&& url.port(-1) == base.port(-1);
 }
 
+bool Client::IsAcceptableBase(const QString &base, bool allowInsecure) {
+	const auto url = QUrl(base, QUrl::StrictMode);
+	if (!url.isValid() || url.host().isEmpty() || !url.userInfo().isEmpty()) {
+		return false;
+	}
+	const auto scheme = url.scheme().toLower();
+	if (scheme == u"https") {
+		return true;
+	}
+	// Clear text carries the tokens: a local test server only.
+	return (scheme == u"http") && (allowInsecure || LoopbackHost(url.host()));
+}
+
+bool Client::acceptableRemote(const QUrl &url) const {
+	// Addresses come from the server (media, presigned uploads, redirects):
+	// nothing but the web may be reached through them - never "file:",
+	// "qrc:", "data:" or "ftp:", which the network manager would serve too -
+	// and never in clear text unless the API itself is a clear-text test server.
+	if (!url.isValid() || url.host().isEmpty()) {
+		return false;
+	}
+	const auto scheme = url.scheme().toLower();
+	return (scheme == u"https")
+		|| (scheme == u"http" && QUrl(_base).scheme().toLower() == u"http");
+}
+
+void Client::abortAuthenticated() {
+	auto ids = QVector<RequestId>();
+	for (const auto &[id, call] : _calls) {
+		if (call->spec.authenticated) {
+			ids.push_back(id);
+		}
+	}
+	for (const auto &[id, download] : _downloads) {
+		if (download->spec.authenticated) {
+			ids.push_back(id);
+		}
+	}
+	for (const auto &[id, upload] : _uploads) {
+		ids.push_back(id);
+	}
+	for (const auto id : ids) {
+		cancel(id);
+	}
+}
+
 void Client::cancel(RequestId id) {
 	if (const auto i = _calls.find(id); i != end(_calls)) {
 		const auto call = std::move(i->second);
@@ -583,6 +653,17 @@ void Client::perform(RequestId id) {
 		? _manager.sendCustomRequest(request, verb, call->spec.body)
 		: _manager.sendCustomRequest(request, verb);
 	call->reply = reply;
+	connect(reply, &QNetworkReply::downloadProgress, this, [=, this](qint64 received, qint64) {
+		const auto i = _calls.find(id);
+		if (received > kMaxJsonResponse
+			&& i != end(_calls)
+			&& i->second->reply == reply
+			&& !i->second->oversized) {
+			// Never buffer an endless body: finished() reports it.
+			i->second->oversized = true;
+			reply->abort();
+		}
+	});
 	connect(reply, &QNetworkReply::finished, this, [=, this] {
 		finished(id);
 	});
@@ -602,8 +683,14 @@ void Client::finished(RequestId id) {
 	reply->deleteLater();
 
 	const auto status = StatusOf(reply);
-	const auto body = reply->isOpen() ? reply->readAll() : QByteArray();
 	const auto &spec = call->spec;
+	if (std::exchange(call->oversized, false)) {
+		auto error = Error::Local(status, u"decoding"_s, u"the response is too large"_s);
+		error.requestId = spec.requestId;
+		failCall(id, error);
+		return;
+	}
+	const auto body = reply->isOpen() ? reply->readAll() : QByteArray();
 	if (status == 0) {
 		// No HTTP answer at all: DNS, refused, reset, timeout, TLS.
 		setReachable(false);
@@ -744,11 +831,20 @@ void Client::performDownload(RequestId id) {
 		return;
 	}
 	download->bytes.clear();
+	download->errorBody.clear();
+	download->errorReceived = 0;
 	download->received = 0;
 	download->tooLarge = false;
 	if (download->file) {
 		download->file->remove();
 		download->file = nullptr;
+	}
+	if (!acceptableRemote(download->current)) {
+		// Asynchronous like every other outcome.
+		QMetaObject::invokeMethod(this, [=, this] {
+			failDownload(id, Error::Local(0, u"url"_s, u"the address is not allowed"_s));
+		}, Qt::QueuedConnection);
+		return;
 	}
 	auto request = QNetworkRequest(download->current);
 	if (sameOriginAsBase(download->current)) {
@@ -769,11 +865,26 @@ void Client::performDownload(RequestId id) {
 		const auto download = i->second.get();
 		const auto status = StatusOf(reply);
 		if (status < 200 || status >= 300) {
-			return; // error and redirect bodies are read when finished
+			// The body of an error or a redirect: the beginning is kept for
+			// the problem document, the rest is dropped as it arrives, and a
+			// body that does not end is cut off.
+			const auto chunk = reply->readAll();
+			download->errorReceived += chunk.size();
+			if (download->errorBody.size() < kKeptErrorBody) {
+				download->errorBody.append(
+					chunk.left(kKeptErrorBody - download->errorBody.size()));
+			}
+			if (download->errorReceived > kMaxErrorBody) {
+				reply->abort();
+			}
+			return;
 		}
 		const auto chunk = reply->readAll();
 		download->received += chunk.size();
-		if (download->spec.maxBytes > 0 && download->received > download->spec.maxBytes) {
+		const auto limit = (download->spec.maxBytes > 0)
+			? download->spec.maxBytes
+			: kMaxDownloadDefault;
+		if (download->received > limit) {
 			download->tooLarge = true;
 			reply->abort();
 			return;
@@ -834,7 +945,14 @@ void Client::downloadFinished(RequestId id) {
 			failDownload(id, Error::Local(status, u"redirect"_s, u"bad redirect"_s));
 			return;
 		}
-		download->current = download->current.resolved(location);
+		const auto next = download->current.resolved(location);
+		if (!acceptableRemote(next)
+			|| (download->current.scheme() == u"https" && next.scheme() != u"https")) {
+			// A redirect never leaves the web and never drops TLS.
+			failDownload(id, Error::Local(status, u"redirect"_s, u"bad redirect"_s));
+			return;
+		}
+		download->current = next;
 		performDownload(id);
 		return;
 	}
@@ -843,9 +961,13 @@ void Client::downloadFinished(RequestId id) {
 			failDownload(id, Error::Offline(reply->errorString()));
 			return;
 		}
+		if (reply->isOpen() && download->errorBody.size() < kKeptErrorBody) {
+			download->errorBody.append(
+				reply->read(kKeptErrorBody - download->errorBody.size()));
+		}
 		const auto error = Error::FromResponse(
 			status,
-			reply->isOpen() ? reply->readAll() : QByteArray(),
+			download->errorBody,
 			reply->rawHeader("Retry-After"_ba),
 			ReasonOf(reply),
 			QString());
@@ -961,6 +1083,11 @@ void Client::performUpload(RequestId id) {
 		_uploads.erase(i);
 		return;
 	}
+	if (!acceptableRemote(upload->spec.url)) {
+		// A presigned address that is not a web address: the file stays here.
+		fail(Error::Local(0, u"url"_s, u"the address is not allowed"_s));
+		return;
+	}
 	auto request = QNetworkRequest(upload->spec.url);
 	if (!upload->spec.contentType.isEmpty()) {
 		request.setHeader(QNetworkRequest::ContentTypeHeader, upload->spec.contentType);
@@ -989,6 +1116,18 @@ void Client::performUpload(RequestId id) {
 		reply = _manager.sendCustomRequest(request, verb, upload->spec.data);
 	}
 	upload->reply = reply;
+	connect(reply, &QNetworkReply::readyRead, this, [=, this] {
+		// Nothing in the answer of the storage is used: it is not kept, and
+		// one that does not end is cut off.
+		const auto i = _uploads.find(id);
+		if (i == end(_uploads) || i->second->reply != reply) {
+			return;
+		}
+		i->second->answered += reply->readAll().size();
+		if (i->second->answered > kMaxErrorBody) {
+			reply->abort();
+		}
+	});
 	connect(reply, &QNetworkReply::uploadProgress, this, [=, this](qint64 sent, qint64 total) {
 		const auto i = _uploads.find(id);
 		if (i == end(_uploads) || total <= 0) {

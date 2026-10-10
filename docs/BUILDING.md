@@ -145,7 +145,15 @@ ctest --preset windows-msvc-release
 
 The executable is `build\windows-msvc-release\Eleza\Eleza.exe`; it starts from there as long
 as Qt's `bin` directory is in `PATH` (the OpenSSL DLLs are copied next to it by the vcpkg
-toolchain).
+toolchain). The build itself and `ctest` do not need Qt in `PATH`: the code generators and
+the tests are started with Qt's `bin` directory prepended (CMake 3.25+ for the generators,
+3.22+ for the tests; with an older CMake keep the `set PATH` line above).
+
+`ELEZA_DEBUG_TOOLS` (scripted mouse and keyboard input for `--debug-actions`, see
+`docs/DEVELOPING.md`) is off by default in MSVC builds other than Debug: it calls two
+functions QtGui exports for QtTest only, declared by hand in `core/core_debug.cpp`. Turn it
+on with `-DELEZA_DEBUG_TOOLS=ON`; `--debug-grab`, `--debug-route` and the `wait`, `grab`,
+`route` and `resize` steps work either way.
 
 ### Deploying (a folder that runs anywhere)
 
@@ -200,8 +208,19 @@ icon and "start when I sign in", and registers an uninstaller. User data lives i
 * **Image formats.** `imageformats\qwebp.dll` (stickers), `qjpeg.dll`, `qgif.dll`,
   `qsvg.dll` (the icons are SVG: without it the window is full of empty squares). `qwebp`
   only exists when the *Qt Image Formats* module was installed.
-* **Running tests.** The tests are plain executables that need the Qt DLLs: keep Qt's `bin`
-  in `PATH`. GUI tests set `QT_QPA_PLATFORM=offscreen` themselves.
+* **Running tests.** The tests are plain executables that need the Qt DLLs: `ctest` adds
+  Qt's `bin` to `PATH` for them; to start one by hand keep it in `PATH` yourself. GUI tests
+  set `QT_QPA_PLATFORM=offscreen` themselves.
+* **The offscreen platform in a deployed folder.** `windeployqt` copies only
+  `platforms\qwindows.dll`. To run the deployed `Eleza.exe` with
+  `QT_QPA_PLATFORM=offscreen` (the CI smoke test does) point
+  `QT_QPA_PLATFORM_PLUGIN_PATH` at `<Qt>\plugins\platforms`.
+* **Line endings.** `.gitattributes` keeps LF in the working tree on Windows too; the test
+  data is compared byte by byte. Do not override it with a global `core.autocrlf` rewrite
+  of an existing checkout.
+* **A new `.rc` file or compiler option.** Options added with `add_compile_options` /
+  `target_compile_options` also reach `rc.exe` for targets that have a `.rc` file; wrap
+  MSVC options in `$<$<COMPILE_LANGUAGE:C,CXX>:…>` as `cmake/eleza_options.cmake` does.
 * **Debug builds.** The preset is Release with the release runtime (`/MD`). For a Debug
   build configure your own preset with `CMAKE_BUILD_TYPE=Debug` and
   `CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDebugDLL` (see `CMakeUserPresets.json`, which is

@@ -30,9 +30,9 @@ constexpr auto kLargeUserpic = 120;
 	auto height = 32;
 	if (aspect.width() > 0 && aspect.height() > 0) {
 		if (aspect.width() >= aspect.height()) {
-			height = std::max(32 * aspect.height() / aspect.width(), 4);
+			height = std::max(int(qint64(32) * aspect.height() / aspect.width()), 4);
 		} else {
-			width = std::max(32 * aspect.width() / aspect.height(), 4);
+			width = std::max(int(qint64(32) * aspect.width() / aspect.height()), 4);
 		}
 	}
 	return Data::BlurhashImage(hash, width, height);

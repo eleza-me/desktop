@@ -46,6 +46,8 @@ private Q_SLOTS:
 	void unwrapConventions();
 	void updateFrameShapes();
 	void httpBridge();
+	void hostileBytes();
+	void repeatedFieldsAreLinearAndBudgeted();
 
 };
 
@@ -364,6 +366,112 @@ void TestProto::httpBridge() {
 		QVERIFY2(bridged.has_value(), method.name);
 		QVERIFY2(!bridged->path.contains(u'{'), method.name);
 	}
+}
+
+void TestProto::hostileBytes() {
+	const auto decode = [](const char *message, const char *hex) {
+		return Proto::Decode(QLatin1StringView(message), QByteArray::fromHex(hex));
+	};
+	// Field numbers are 1 .. 2^29 - 1: zero and anything above is not protobuf
+	// (and must never alias a real field after a narrowing cast).
+	QVERIFY(!decode("Close", "0005"));                    // field 0
+	QVERIFY(!decode("Close", "88808080800105"));          // field 2^32 + 1: must not alias field 1
+	QVERIFY(!decode("Close", "808080801005"));            // field 2^29
+	QVERIFY(decode("Close", "f8ffffff0f05"));             // field 2^29 - 1: unknown, skipped
+	// Varints: eleven bytes, or cut in the middle.
+	QVERIFY(!decode("Close", "08ffffffffffffffffffff01"));
+	QVERIFY(!decode("Close", "08ff"));
+	// Lengths past the end of the buffer, including 2^64 - 1.
+	QVERIFY(!decode("Close", "12ffffffffffffffffff01"));
+	QVERIFY(!decode("Close", "1205616263"));
+	// Groups (wire types 3 and 4) and the unused 6 / 7.
+	for (const auto hex : { "0b", "0c", "0e", "0f" }) {
+		QVERIFY2(!decode("Close", hex), hex);
+	}
+	// An int64 at the edges survives the trip through a JSON number without
+	// leaving the range of qint64 (2^63 - 1 is not a double).
+	const auto edge = decode("Hello", "20ffffffffffffffff7f");
+	QVERIFY(edge.has_value());
+	// Invalid UTF-8 in a string field becomes replacement characters.
+	const auto text = decode("Close", "1204ff41c328");
+	QVERIFY(text.has_value());
+	QVERIFY(text->value(QLatin1StringView("reason")).toString().contains(QChar(0xFFFD)));
+	// Nesting deeper than the limit: Envelope.batch.items[0].batch.items[0]...
+	auto nested = QByteArray();
+	const auto envelope = Schema::FindMessage(QLatin1StringView("Envelope"));
+	QVERIFY(envelope);
+	auto deep = QJsonObject{ { u"ping"_s, QJsonObject{ { u"nonce"_s, 1 } } } };
+	for (auto i = 0; i != 40; ++i) {
+		deep = QJsonObject{ { u"batch"_s, QJsonObject{ { u"items"_s, QJsonArray{ deep } } } } };
+	}
+	nested = Proto::Encode(*envelope, deep);
+	QVERIFY(!Proto::Decode(*envelope, nested));
+}
+
+void TestProto::repeatedFieldsAreLinearAndBudgeted() {
+	// The largest envelope the framing lets through, filled with as many
+	// elements of one repeated field as fit: the decode must take time linear
+	// in the input (it used to copy the growing list for every element: tens
+	// of seconds on the GUI thread for one frame) and must not turn two-byte
+	// elements into an unbounded amount of JSON.
+	const auto varint = [](quint64 value) {
+		auto result = QByteArray();
+		while (value >= 0x80) {
+			result.append(char((value & 0x7F) | 0x80));
+			value >>= 7;
+		}
+		result.append(char(value));
+		return result;
+	};
+	constexpr auto kFrame = 256 << 10;
+	auto slowest = qint64(0);
+	auto slowestName = QByteArray();
+	auto checked = 0;
+	auto refused = 0;
+	for (auto i = 0; i != Schema::MessagesCount(); ++i) {
+		const auto &message = Schema::Messages()[i];
+		for (auto j = 0; j != message.count; ++j) {
+			const auto &field = message.fields[j];
+			const auto map = (field.kind == Schema::Kind::Map);
+			if (!field.repeated() && !map) {
+				continue;
+			}
+			// Length-delimited and empty (an empty message, string or map
+			// entry), or a one-byte varint for the packed kinds sent unpacked.
+			const auto delimited = map
+				|| field.kind == Schema::Kind::Message
+				|| field.kind == Schema::Kind::String
+				|| field.kind == Schema::Kind::Bytes;
+			if (!delimited && field.kind == Schema::Kind::Double) {
+				continue;
+			}
+			const auto item = varint((quint64(field.number) << 3) | (delimited ? 2 : 0))
+				+ QByteArray(1, char(delimited ? 0 : 1));
+			auto bytes = QByteArray();
+			bytes.reserve(kFrame);
+			while (bytes.size() + item.size() <= kFrame) {
+				bytes.append(item);
+			}
+			auto timer = QElapsedTimer();
+			timer.start();
+			const auto decoded = Proto::Decode(message, bytes);
+			const auto took = timer.elapsed();
+			++checked;
+			if (!decoded) {
+				++refused;
+			}
+			if (took > slowest) {
+				slowest = took;
+				slowestName = QByteArray(message.name) + '.' + field.json;
+			}
+		}
+	}
+	qInfo("%d repeated fields, %d refused by the budget, slowest %s: %lld ms",
+		checked, refused, slowestName.constData(), qlonglong(slowest));
+	QVERIFY(checked > 20);
+	// Generous for an unoptimized build under a sanitizer; the quadratic
+	// version needed minutes there.
+	QVERIFY2(slowest < 8000, slowestName.constData());
 }
 
 QTEST_GUILESS_MAIN(TestProto)

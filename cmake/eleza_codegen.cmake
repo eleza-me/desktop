@@ -19,13 +19,40 @@ define_property(GLOBAL PROPERTY ELEZA_STYLE_ALL_FILES
 	BRIEF_DOCS "Every .style file known to the build"
 	FULL_DOCS "Every .style file known to the build")
 
+# eleza_host_tool_command(<variable> <tool target>)
+#   The command line prefix that runs a host tool during the build. The tools link
+#   QtCore dynamically: on Windows Qt's bin directory has to be in PATH for them to
+#   start (a build from an IDE or a plain prompt has no Qt in PATH; the failure is a
+#   silent exit code 0xC0000135 from the custom command).
+function(eleza_host_tool_command variable tool)
+	if (CMAKE_HOST_WIN32 AND NOT CMAKE_VERSION VERSION_LESS 3.25)
+		set(${variable}
+			"${CMAKE_COMMAND}" -E env
+			--modify "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+			"$<TARGET_FILE:${tool}>"
+			PARENT_SCOPE)
+	elseif (CMAKE_HOST_WIN32)
+		# CMake < 3.25 has no --modify: PATH as it was when CMake configured.
+		string(REPLACE ";" "\\;" path "$ENV{PATH}")
+		set(${variable}
+			"${CMAKE_COMMAND}" -E env
+			"PATH=$<SHELL_PATH:$<TARGET_FILE_DIR:Qt6::Core>>\\;${path}"
+			"$<TARGET_FILE:${tool}>"
+			PARENT_SCOPE)
+	else()
+		set(${variable} "$<TARGET_FILE:${tool}>" PARENT_SCOPE)
+	endif()
+endfunction()
+
 function(eleza_generate_palette target palette_file)
 	get_filename_component(palette_abs "${palette_file}" ABSOLUTE)
 	set(gen_dir "${CMAKE_CURRENT_BINARY_DIR}/gen")
 	set(outputs "${gen_dir}/styles/palette.h" "${gen_dir}/styles/palette.cpp")
+	eleza_host_tool_command(codegen_style_command codegen_style)
 	add_custom_command(
 		OUTPUT ${outputs}
-		COMMAND codegen_style --palette "${palette_abs}" --palette-only -o "${gen_dir}/styles"
+		COMMAND ${codegen_style_command}
+			--palette "${palette_abs}" --palette-only -o "${gen_dir}/styles"
 		DEPENDS codegen_style "${palette_abs}"
 		COMMENT "Generating palette (${target})"
 		VERBATIM)
@@ -53,12 +80,13 @@ function(eleza_generate_styles target)
 	foreach(dir ${include_dirs})
 		list(APPEND include_args "-I" "${dir}")
 	endforeach()
+	eleza_host_tool_command(codegen_style_command codegen_style)
 	foreach(file ${files})
 		get_filename_component(name "${file}" NAME_WE)
 		set(outputs "${gen_dir}/styles/style_${name}.h" "${gen_dir}/styles/style_${name}.cpp")
 		add_custom_command(
 			OUTPUT ${outputs}
-			COMMAND codegen_style
+			COMMAND ${codegen_style_command}
 				--palette "${ELEZA_PALETTE_FILE}"
 				${include_args}
 				-o "${gen_dir}/styles"
@@ -77,9 +105,10 @@ function(eleza_generate_lang target strings_fa strings_en)
 	get_filename_component(en_abs "${strings_en}" ABSOLUTE)
 	set(gen_dir "${CMAKE_CURRENT_BINARY_DIR}/gen")
 	set(outputs "${gen_dir}/lang_auto.h" "${gen_dir}/lang_auto.cpp")
+	eleza_host_tool_command(codegen_lang_command codegen_lang)
 	add_custom_command(
 		OUTPUT ${outputs}
-		COMMAND codegen_lang -o "${gen_dir}" "${fa_abs}" "${en_abs}"
+		COMMAND ${codegen_lang_command} -o "${gen_dir}" "${fa_abs}" "${en_abs}"
 		DEPENDS codegen_lang "${fa_abs}" "${en_abs}"
 		COMMENT "Generating lang_auto (${target})"
 		VERBATIM)

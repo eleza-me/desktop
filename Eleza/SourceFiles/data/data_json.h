@@ -13,6 +13,14 @@
 namespace Data::Json {
 
 [[nodiscard]] QString String(const QJsonObject &object, QLatin1StringView key);
+// A one-line name written by somebody else (display name, handle, mask
+// name): without control characters, direction embeddings / overrides /
+// isolates and invisible marks, the way the server's own sanitizer leaves
+// them (the zero-width joiners stay: Persian and emoji need them). A name that
+// carries an override could otherwise read as another name, or reorder the
+// interface text around it.
+[[nodiscard]] QString Name(const QJsonObject &object, QLatin1StringView key);
+[[nodiscard]] QString CleanName(const QString &name);
 [[nodiscard]] qint64 Int64(const QJsonValue &value, qint64 fallback = 0);
 [[nodiscard]] qint64 Int64(const QJsonObject &object, QLatin1StringView key, qint64 fallback = 0);
 [[nodiscard]] int Int(const QJsonObject &object, QLatin1StringView key, int fallback = 0);

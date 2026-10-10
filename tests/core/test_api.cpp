@@ -6,6 +6,7 @@
 #include "api/api_client.h"
 #include "api/api_client_config.h"
 #include "base/bytes.h"
+#include "base/platform_file.h"
 #include "base/unixtime.h"
 #include "crypto/crypto_device_key.h"
 #include "main/main_account.h"
@@ -102,6 +103,10 @@ private Q_SLOTS:
 	void refreshReissuesNonceOnce();
 	void refreshFailuresKeepOrEndTheSession();
 	void logoutWipes();
+	void onlyWebAddressesAreReached();
+	void oversizedJsonIsRefused();
+	void abortAuthenticatedStopsRetries();
+	void errorBodiesAreBounded();
 
 private:
 	[[nodiscard]] Main::Account::Config accountConfig(const HttpServer &server, const QString &name) {
@@ -993,8 +998,17 @@ void TestApi::refreshFailuresKeepOrEndTheSession() {
 
 	// Ended on purpose elsewhere: the local data is wiped.
 	base::unixtime::setTestShiftMs(0);
+	// What an earlier, different user left behind (an expired session keeps
+	// its cache) does not outlive the next sign-in of somebody else.
+	const auto stranger = QFileInfo(userDir).absolutePath() + u"/user-someone_else"_s;
+	QVERIFY(QDir().mkpath(stranger + u"/media"_s));
+	QVERIFY(base::platform::WriteFileAtomic(stranger + u"/cache.db"_s, "their messages", true));
+	account.settings().set(u"eli.draft.someone_else"_s, QJsonObject{ { u"text"_s, u"theirs"_s } });
 	QVERIFY(signIn(account));
 	QVERIFY(Test::WaitFor([&] { return account.session()->isReady(); }));
+	QVERIFY(!QFileInfo::exists(stranger));
+	QVERIFY(!account.settings().contains(u"eli.draft.someone_else"_s));
+	QVERIFY(QFileInfo(userDir).isDir());
 	mode = "auth.session_revoked";
 	QVERIFY(!refresh(account));
 	QCOMPARE(ended.value(1), Main::SessionEndReason::Revoked);
@@ -1030,6 +1044,14 @@ void TestApi::logoutWipes() {
 	const auto userDir = account.session()->userDir();
 	QVERIFY(Test::WaitFor([&] { return account.session()->isReady(); }));
 	const auto publicKey = account.deviceKey().publicKeyBase64();
+	// What the screens keep per user next to the account goes with the user.
+	const auto userId = account.session()->userId();
+	account.settings().set(u"eli.draft."_s + userId, QJsonObject{ { u"text"_s, u"an unpublished post"_s } });
+	account.settings().set(u"dialogs.pinned_order."_s + userId, QJsonArray{ u"c1"_s });
+	account.settings().set(u"eli.draft.someone_else"_s, QJsonObject{ { u"text"_s, u"kept"_s } });
+	account.settings().flush();
+	const auto settingsPath = QFileInfo(userDir).absolutePath() + u"/settings.json"_s;
+	QVERIFY(base::platform::ReadFile(settingsPath).value_or(QByteArray()).contains("an unpublished post"));
 	auto ended = QVector<Main::SessionEndReason>();
 	auto order = QStringList();
 	connect(&account, &Main::Account::sessionChanged, this, [&] { order.push_back(account.session() ? u"session"_s : u"no session"_s); });
@@ -1046,6 +1068,13 @@ void TestApi::logoutWipes() {
 	QCOMPARE(order, (QStringList{ u"no session"_s, u"ended"_s }));
 	QVERIFY(!account.signedIn());
 	QVERIFY(!QFileInfo::exists(userDir));
+	QVERIFY(!account.settings().contains(u"eli.draft."_s + userId));
+	QVERIFY(!account.settings().contains(u"dialogs.pinned_order."_s + userId));
+	QVERIFY(account.settings().contains(u"eli.draft.someone_else"_s));
+	// Already on disk: not after the next turn of the event loop.
+	const auto stored = base::platform::ReadFile(settingsPath).value_or(QByteArray());
+	QVERIFY(!stored.contains("an unpublished post"));
+	QVERIFY(!stored.contains(userId.toUtf8()));
 	// The device identity stays; a fresh sign-in may ask for a new key.
 	QCOMPARE(account.deviceKey().publicKeyBase64(), publicKey);
 	account.resetDeviceKey();
@@ -1055,6 +1084,203 @@ void TestApi::logoutWipes() {
 	account.logout(this, [&] { done = true; });
 	QVERIFY(Test::WaitFor([&] { return done; }));
 	QCOMPARE(server.count("/v1/auth/logout"), 1);
+}
+
+void TestApi::onlyWebAddressesAreReached() {
+	// Where the tokens may go at all.
+	QVERIFY(Api::Client::IsAcceptableBase(u"https://api.eleza.me"_s));
+	QVERIFY(Api::Client::IsAcceptableBase(u"http://127.0.0.1:8000"_s));
+	QVERIFY(Api::Client::IsAcceptableBase(u"http://localhost:8000/"_s));
+	QVERIFY(Api::Client::IsAcceptableBase(u"http://[::1]:8000"_s));
+	QVERIFY(!Api::Client::IsAcceptableBase(u"http://api.eleza.me"_s));
+	QVERIFY(!Api::Client::IsAcceptableBase(u"http://192.168.1.10:8000"_s));
+	QVERIFY(!Api::Client::IsAcceptableBase(u"http://127.0.0.1.evil.example"_s));
+	QVERIFY(!Api::Client::IsAcceptableBase(u"http://localhost.evil.example"_s));
+	QVERIFY(!Api::Client::IsAcceptableBase(u"https://user:pass@api.eleza.me"_s));
+	QVERIFY(!Api::Client::IsAcceptableBase(u"file:///tmp/api"_s));
+	QVERIFY(!Api::Client::IsAcceptableBase(u"ftp://api.eleza.me"_s));
+	QVERIFY(!Api::Client::IsAcceptableBase(u"api.eleza.me"_s));
+	QVERIFY(!Api::Client::IsAcceptableBase(QString()));
+	QVERIFY(Api::Client::IsAcceptableBase(u"http://192.168.1.10:8000"_s, true));
+	QVERIFY(!Api::Client::IsAcceptableBase(u"file:///tmp/api"_s, true));
+
+	// A local file the network manager would happily "download".
+	const auto secret = _dir.path() + u"/secret.txt"_s;
+	{
+		auto file = QFile(secret);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write("top secret");
+	}
+	const auto secretUrl = QUrl::fromLocalFile(secret).toString();
+	auto server = HttpServer();
+	server.handler = [&](const HttpServer::Request &request) {
+		if (request.path == "/v1/to-file") {
+			return HttpServer::Response::Redirect(secretUrl.toLatin1());
+		} else if (request.path == "/v1/to-qrc") {
+			return HttpServer::Response::Redirect("qrc:/anything");
+		} else if (request.path == "/v1/to-ftp") {
+			return HttpServer::Response::Redirect("ftp://127.0.0.1/x");
+		} else if (request.path == "/v1/to-data") {
+			return HttpServer::Response::Redirect("data:text/plain,hello");
+		}
+		return HttpServer::Response::Ok();
+	};
+	auto client = Api::Client(server.base(), u"1"_s);
+	auto tokens = Tokens();
+	client.setTokenProvider(&tokens);
+
+	auto errors = QVector<Api::Error>();
+	auto results = 0;
+	const auto fail = [&](const Api::Error &error) { errors.push_back(error); };
+	const auto done = [&](const Api::DownloadResult &) { ++results; };
+	const auto targets = QStringList{
+		secretUrl,
+		u"qrc:/anything"_s,
+		u"data:text/plain,hello"_s,
+		u"ftp://127.0.0.1/x"_s,
+		u"javascript:alert(1)"_s,
+		u"https:///no-host"_s,
+		u"nonsense"_s,
+	};
+	for (const auto &target : targets) {
+		client.download(target).unauthenticated().done(done).fail(fail).send();
+	}
+	QVERIFY(Test::WaitFor([&] { return errors.size() == targets.size(); }));
+	for (const auto &error : errors) {
+		QCOMPARE(error.code, u"url"_s);
+	}
+	errors.clear();
+	const auto redirects = QStringList{ u"/v1/to-file"_s, u"/v1/to-qrc"_s, u"/v1/to-ftp"_s, u"/v1/to-data"_s };
+	for (const auto &target : redirects) {
+		client.download(target).done(done).fail(fail).send();
+	}
+	QVERIFY(Test::WaitFor([&] { return errors.size() == redirects.size(); }));
+	for (const auto &error : errors) {
+		QCOMPARE(error.code, u"redirect"_s);
+	}
+	QCOMPARE(results, 0);
+
+	// A "presigned" address that would overwrite a local file.
+	const auto victim = _dir.path() + u"/victim.txt"_s;
+	errors.clear();
+	auto uploaded = false;
+	client.upload(QUrl::fromLocalFile(victim))
+		.data("overwritten")
+		.done([&] { uploaded = true; })
+		.fail(fail)
+		.send();
+	client.upload(QUrl(u"ftp://127.0.0.1/x"_s)).data("x").done([&] { uploaded = true; }).fail(fail).send();
+	QVERIFY(Test::WaitFor([&] { return errors.size() == 2; }));
+	QCOMPARE(errors[0].code, u"url"_s);
+	QCOMPARE(errors[1].code, u"url"_s);
+	QVERIFY(!uploaded);
+	QVERIFY(!QFileInfo::exists(victim));
+}
+
+void TestApi::oversizedJsonIsRefused() {
+	auto server = HttpServer();
+	// 33 MiB of valid JSON: more than any answer of ours, cut off on the way.
+	const auto huge = "{\"x\":\"" + QByteArray(33 << 20, 'a') + "\"}";
+	server.handler = [&](const HttpServer::Request &request) {
+		return (request.path == "/v1/huge")
+			? HttpServer::Response::Bytes(huge, "application/json")
+			: HttpServer::Response::Ok(QJsonObject{ { u"fine"_s, true } });
+	};
+	auto client = Api::Client(server.base(), u"1"_s);
+	auto tokens = Tokens();
+	client.setTokenProvider(&tokens);
+	const auto outcome = Send(client.request(Api::Get, u"/v1/huge"_s));
+	QVERIFY(Test::WaitFor([&] { return outcome->finished(); }, 30000));
+	QVERIFY(outcome->failed);
+	QCOMPARE(outcome->error.code, u"decoding"_s);
+	// The client goes on working.
+	const auto next = Send(client.request(Api::Get, u"/v1/fine"_s));
+	QVERIFY(Test::WaitFor([&] { return next->finished(); }));
+	QVERIFY(next->done);
+	QVERIFY(next->json.value(u"fine"_s).toBool());
+}
+
+void TestApi::abortAuthenticatedStopsRetries() {
+	// A request of the user who signs out that waits for a retry (or for a
+	// refreshed token) must not go out again with the next user's token.
+	auto server = HttpServer();
+	server.handler = [&](const HttpServer::Request &request) {
+		if (request.path == "/v1/busy") {
+			auto response = HttpServer::Response::Problem(503, "server.overloaded");
+			response.headers.push_back({ "Retry-After", "1" });
+			return response;
+		} else if (request.path == "/v1/hang") {
+			auto response = HttpServer::Response();
+			response.hang = true;
+			return response;
+		}
+		return HttpServer::Response::Ok(QJsonObject{ { u"ok"_s, true } });
+	};
+	auto client = Api::Client(server.base(), u"1"_s);
+	auto tokens = Tokens();
+	tokens.token = u"token-A"_s;
+	client.setTokenProvider(&tokens);
+
+	const auto busy = Send(client.request(Api::Post, u"/v1/busy"_s).body(QJsonObject{ { u"text"_s, u"from A"_s } }));
+	const auto hanging = Send(client.request(Api::Post, u"/v1/hang"_s));
+	auto downloaded = false;
+	client.download(u"/v1/hang"_s).done([&](const Api::DownloadResult &) { downloaded = true; }).send();
+	const auto open = Send(client.request(Api::Get, u"/v1/public"_s).unauthenticated());
+	QVERIFY(Test::WaitFor([&] { return server.count("/v1/busy") == 1 && server.count("/v1/hang") == 2; }));
+
+	client.abortAuthenticated();
+	tokens.token = u"token-B"_s; // the next user
+	QTest::qWait(1600); // past Retry-After
+	QCOMPARE(server.count("/v1/busy"), 1);
+	QVERIFY(!busy->finished());
+	QVERIFY(!hanging->finished());
+	QVERIFY(!downloaded);
+	for (const auto &request : server.requests) {
+		QVERIFY(request.header("Authorization") != "Bearer token-B");
+	}
+	// Requests that carry no token are not touched, and new ones use the new token.
+	QVERIFY(Test::WaitFor([&] { return open->finished(); }));
+	QVERIFY(open->done);
+	const auto fresh = Send(client.request(Api::Get, u"/v1/me"_s));
+	QVERIFY(Test::WaitFor([&] { return fresh->finished(); }));
+	QCOMPARE(server.to("/v1/me").value(0).header("Authorization"), QByteArray("Bearer token-B"));
+}
+
+void TestApi::errorBodiesAreBounded() {
+	// The body of an error answer to a download is not ours to buffer without
+	// a limit: the problem document at its start is used, the rest dropped.
+	auto server = HttpServer();
+	server.handler = [&](const HttpServer::Request &request) {
+		auto response = HttpServer::Response();
+		if (request.path == "/v1/problem") {
+			response = HttpServer::Response::Problem(404, "media.not_found");
+		} else if (request.path == "/v1/flood") {
+			response.status = 500;
+			response.contentType = "text/html";
+			response.body = QByteArray(6 << 20, 'x');
+		} else if (request.path == "/put-flood") {
+			response.status = 403;
+			response.contentType = "application/xml";
+			response.body = QByteArray(6 << 20, 'y');
+		}
+		return response;
+	};
+	auto client = Api::Client(server.base(), u"1"_s);
+	auto tokens = Tokens();
+	client.setTokenProvider(&tokens);
+	auto errors = QVector<Api::Error>();
+	const auto fail = [&](const Api::Error &error) { errors.push_back(error); };
+	client.download(u"/v1/problem"_s).fail(fail).send();
+	QVERIFY(Test::WaitFor([&] { return errors.size() == 1; }));
+	QCOMPARE(errors[0].status, 404);
+	QCOMPARE(errors[0].code, u"media.not_found"_s);
+	client.download(u"/v1/flood"_s).fail(fail).send();
+	QVERIFY(Test::WaitFor([&] { return errors.size() == 2; }, 20000));
+	QCOMPARE(errors[1].status, 500);
+	client.upload(QUrl(server.base() + u"/put-flood"_s)).data("part").fail(fail).send();
+	QVERIFY(Test::WaitFor([&] { return errors.size() == 3; }, 20000));
+	QCOMPARE(errors[2].status, 403);
+	QCOMPARE(errors[2].code, u"upload.part"_s);
 }
 
 QTEST_GUILESS_MAIN(TestApi)

@@ -1,5 +1,6 @@
 #include "support/file_dialogs.h"
 
+#include "base/platform_file.h"
 #include "core/core_application.h"
 #include "lang_auto.h"
 
@@ -234,11 +235,11 @@ void AskSavePath(
 		}, Qt::QueuedConnection);
 		return;
 	}
-	// A name from the network must stay a plain file name.
-	auto name = QFileInfo(suggestedName).fileName();
-	if (name.isEmpty()) {
-		name = QStringLiteral("file");
-	}
+	// A name from the network must stay a plain file name, valid on every
+	// file system (Windows: no <>:"|?*, no device names, no trailing dots).
+	const auto name = base::platform::SafeFileName(
+		QFileInfo(suggestedName).fileName(),
+		QStringLiteral("file"));
 	const auto dialog = new QFileDialog(
 		parent ? parent->window() : nullptr,
 		title.isEmpty() ? tr::lng_support_save_as(tr::now) : title,
@@ -357,7 +358,7 @@ void SaveImageToTemp(
 		}
 		return;
 	}
-	const auto directory = QDir(QDir::tempPath()).filePath(
+	const auto directory = QDir(base::platform::PrivateTempDirectory()).filePath(
 		QStringLiteral("eleza-paste"));
 	InBackground(guard, [=] {
 		QDir().mkpath(directory);

@@ -1,5 +1,6 @@
 #include "media/media_audio_player.h"
 
+#include "base/platform_file.h"
 #include "core/core_application.h"
 #include "data/data_session.h"
 #include "main/main_session.h"
@@ -134,7 +135,7 @@ void AudioPlayer::play(const AudioTrack &track, Main::Session *session) {
 		auto path = _handle->filePath();
 		if (path.isEmpty() && !_handle->bytes().isEmpty()) {
 			// No disk cache: the player needs a file.
-			path = QDir(QDir::tempPath()).filePath(
+			path = QDir(base::platform::PrivateTempDirectory()).filePath(
 				QStringLiteral("eleza-audio-")
 					+ QUuid::createUuid().toString(QUuid::WithoutBraces));
 			auto file = QFile(path);

@@ -12,6 +12,7 @@
 
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
+#include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QRegularExpression>
 
@@ -31,7 +32,7 @@ const auto kLanguageKey = u"language"_s;
 // (milli)seconds; without it assume nine minutes.
 [[nodiscard]] qint64 ParseExpiry(const QJsonValue &value) {
 	const auto normalize = [](double number) {
-		return qint64((number > 1e12) ? (number / 1000.) : number);
+		return base::SafeInt64((number > 1e12) ? (number / 1000.) : number);
 	};
 	if (value.isDouble()) {
 		return normalize(value.toDouble());
@@ -55,7 +56,7 @@ const auto kLanguageKey = u"language"_s;
 Tokens Tokens::FromJson(const QJsonObject &json) {
 	auto result = Tokens();
 	result.access = json.value(u"access"_s).toString();
-	result.accessExpiresAt = qint64(json.value(u"access_expires_at"_s).toDouble());
+	result.accessExpiresAt = base::SafeInt64(json.value(u"access_expires_at"_s).toDouble());
 	result.refresh = json.value(u"refresh"_s).toString();
 	result.nonce = json.value(u"nonce"_s).toString();
 	result.userId = json.value(u"user_id"_s).toString();
@@ -216,7 +217,9 @@ void Account::storeTokens(const QJsonObject &tokens) {
 		return;
 	}
 	if (_session && previousUser != _tokens.userId) {
-		// Another account signed in over the old one.
+		// Another account signed in over the old one. Nothing the old one
+		// still has in flight may be retried with the new token.
+		_api->abortAuthenticated();
 		destroySession(false);
 	}
 	if (!_session) {
@@ -226,6 +229,20 @@ void Account::storeTokens(const QJsonObject &tokens) {
 }
 
 void Account::createSession() {
+	// A session that merely expired keeps its cache for the same user's next
+	// sign-in. Once somebody else signs in here, the messages and media of
+	// the earlier user are not left on the disk behind their back.
+	const auto own = QFileInfo(userDir(_tokens.userId)).fileName();
+	const auto prefix = u"user-"_s;
+	const auto stale = QDir(accountDir()).entryList(
+		{ prefix + u'*' },
+		QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden);
+	for (const auto &name : stale) {
+		if (name != own) {
+			base::platform::RemoveRecursively(QDir(accountDir()).filePath(name));
+			_settings->removeSuffix(u'.' + name.mid(prefix.size()));
+		}
+	}
 	_session = std::make_unique<Session>(this, _tokens.userId);
 }
 
@@ -251,12 +268,22 @@ void Account::endSession(SessionEndReason reason) {
 	const auto userId = _tokens.userId;
 	_tokens = Tokens();
 	_tokensBlob->remove();
+	// Requests of this user that are in flight, wait for a retry or for a
+	// token would otherwise be sent again with whoever signs in next.
+	_api->abortAuthenticated();
 	finishRefresh(false);
 	const auto wipe = (reason != SessionEndReason::Expired);
 	if (_session) {
 		destroySession(wipe);
 	} else if (wipe && !userId.isEmpty()) {
 		base::platform::RemoveRecursively(userDir(userId));
+	}
+	if (wipe && !userId.isEmpty()) {
+		// What the screens keep per user next to the account ("<name>.<user
+		// id>": an unpublished post, the order of pinned chats) goes with the
+		// user's directory, and the file is rewritten right away.
+		_settings->removeSuffix(u'.' + userId);
+		_settings->flush();
 	}
 	Q_EMIT sessionEnded(reason);
 }

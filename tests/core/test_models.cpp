@@ -57,6 +57,39 @@ void TestModels::jsonHelpers() {
 	Json::Put(out, "d"_L1, u"x"_s);
 	Json::Put(out, "e"_L1, true);
 	QCOMPARE(out, Test::Json(R"({"d":"x","e":true})"));
+
+	// Numbers that do not fit saturate (a plain cast is undefined behaviour
+	// and gave INT64_MIN / wrapped ints for sizes, counts and dimensions).
+	const auto wild = Test::Json(R"({"huge":1e30,"low":-1e30,"edge":9223372036854775808,"text":"1e30","w":4294967297,"neg":-4294967297,"frac":2.9})");
+	QCOMPARE(Json::Int64(wild, "huge"_L1), std::numeric_limits<qint64>::max());
+	QCOMPARE(Json::Int64(wild, "low"_L1), std::numeric_limits<qint64>::min());
+	QCOMPARE(Json::Int64(wild, "edge"_L1), std::numeric_limits<qint64>::max());
+	QCOMPARE(Json::Int64(wild, "text"_L1), std::numeric_limits<qint64>::max());
+	QCOMPARE(Json::Int(wild, "huge"_L1), std::numeric_limits<int>::max());
+	QCOMPARE(Json::Int(wild, "w"_L1), std::numeric_limits<int>::max()); // not 1
+	QCOMPARE(Json::Int(wild, "neg"_L1), std::numeric_limits<int>::min()); // not -1
+	QCOMPARE(Json::Int(wild, "frac"_L1), 2);
+	QCOMPARE(Json::String(wild, "huge"_L1), QString::number(std::numeric_limits<qint64>::max()));
+
+	// Names lose direction overrides, isolates, invisible marks and control
+	// characters; the joiners Persian and emoji need stay.
+	const auto rlo = QChar(0x202E);
+	QCOMPARE(Json::CleanName(u"Sara"_s), u"Sara"_s);
+	QCOMPARE(Json::CleanName(rlo + u"troppuS AZELE"_s), u"troppuS AZELE"_s);
+	QCOMPARE(
+		Json::CleanName(QString(QChar(0x2069)) + u"a"_s + QChar(0x2066) + QChar(0x200B) + u"b\nc\td"_s + QChar(0) + QChar(0xFEFF)),
+		u"ab c d"_s);
+	const auto persian = u"می"_s + QChar(0x200C) + u"روم"_s;
+	QCOMPARE(Json::CleanName(persian), persian);
+	const auto family = QString::fromUcs4(U"\U0001F468\u200D\U0001F469");
+	QCOMPARE(Json::CleanName(family), family);
+	const auto user = User::FromJson(QJsonObject{
+		{ u"id"_s, u"u1"_s },
+		{ u"handle"_s, u"evil"_s + rlo + u"x"_s },
+		{ u"display_name"_s, rlo + u"troppuS"_s },
+	});
+	QCOMPARE(user.handle, u"evilx"_s);
+	QCOMPARE(user.displayName, u"troppuS"_s);
 }
 
 void TestModels::userAndProfile() {

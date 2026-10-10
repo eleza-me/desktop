@@ -9,6 +9,9 @@
 
 #include <QtTest/QtTest>
 
+#include <algorithm>
+#include <cstdlib>
+
 using namespace Profile;
 
 class TestProfileLogic : public QObject {

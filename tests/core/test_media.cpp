@@ -137,6 +137,68 @@ void TestMedia::decode() {
 	QVERIFY(Media::Decode(QString(), "not an image at all", QSize()).isNull());
 	QVERIFY(Media::Decode(QString(), QByteArray(), QSize()).isNull());
 	QVERIFY(Media::Decode(dir.filePath(u"missing"_s), QByteArray(), QSize()).isNull());
+
+	// Remote bytes are decoded as JPEG / PNG / GIF / WebP only, recognised by
+	// their first bytes. An SVG is a document (external references, text
+	// layout) and whatever other image plugin is installed is attack surface:
+	// none of them is ever tried.
+	const auto svg = QByteArray(
+		"<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'>"
+		"<rect width='64' height='64' fill='red'/></svg>");
+	QVERIFY(Media::Decode(QString(), svg, QSize()).isNull());
+	QVERIFY(Media::Decode(QString(), "<?xml version='1.0'?>" + svg, QSize(32, 32)).isNull());
+	const auto svgPath = dir.filePath(u"picture.svg"_s);
+	{
+		auto file = QFile(svgPath);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(svg);
+	}
+	QVERIFY(Media::Decode(svgPath, QByteArray(), QSize()).isNull());
+	for (const auto format : { "BMP", "PPM", "XPM" }) {
+		const auto other = Picture(16, 16, format);
+		if (!other.isEmpty()) {
+			QVERIFY2(Media::Decode(QString(), other, QSize()).isNull(), format);
+		}
+	}
+	for (const auto format : { "GIF", "WEBP" }) {
+		const auto known = Picture(16, 8, format);
+		if (!known.isEmpty()) {
+			QCOMPARE(Media::Decode(QString(), known, QSize()).size(), QSize(16, 8));
+		}
+	}
+
+	// The header is read before any pixel is allocated: a picture that
+	// claims 20000 x 20000 (1.6 GB decoded) or 2^31 - 1 a side is refused,
+	// also when a small box was asked for.
+	const auto header = [](quint32 width, quint32 height) {
+		auto ihdr = QByteArray::fromHex("49484452") + QByteArray(13, char(0));
+		for (auto i = 0; i != 4; ++i) {
+			ihdr[4 + i] = char((width >> (8 * (3 - i))) & 0xFF);
+			ihdr[8 + i] = char((height >> (8 * (3 - i))) & 0xFF);
+		}
+		ihdr[12] = 8;
+		ihdr[13] = 6;
+		// The decoder checks the CRC of the header chunk.
+		auto crc = quint32(0xFFFFFFFF);
+		for (const auto ch : ihdr) {
+			crc ^= uchar(ch);
+			for (auto bit = 0; bit != 8; ++bit) {
+				crc = (crc >> 1) ^ ((crc & 1) ? 0xEDB88320U : 0U);
+			}
+		}
+		crc = ~crc;
+		auto sum = QByteArray(4, char(0));
+		for (auto i = 0; i != 4; ++i) {
+			sum[i] = char((crc >> (8 * (3 - i))) & 0xFF);
+		}
+		return QByteArray::fromHex("89504e470d0a1a0a0000000d") + ihdr + sum
+			+ QByteArray::fromHex("0000000049454e44ae426082");
+	};
+	QVERIFY(Media::Decode(QString(), header(20000, 20000), QSize()).isNull());
+	QVERIFY(Media::Decode(QString(), header(20000, 20000), QSize(64, 64)).isNull());
+	QVERIFY(Media::Decode(QString(), header(0x7FFFFFFF, 0x7FFFFFFF), QSize(64, 64)).isNull());
+	QVERIFY(Media::Decode(QString(), header(17000, 1), QSize()).isNull());
+	QVERIFY(Media::Decode(QString(), header(0, 0), QSize()).isNull());
 }
 
 void TestMedia::downloadThroughRedirect() {

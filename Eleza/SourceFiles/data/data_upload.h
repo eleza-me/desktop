@@ -21,6 +21,7 @@
 
 #include <QtCore/QThreadPool>
 
+#include <atomic>
 #include <map>
 
 namespace Data {

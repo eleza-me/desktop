@@ -15,6 +15,13 @@ using Schema::Kind;
 using Schema::Message;
 
 constexpr auto kMaxDepth = 48;
+// Field numbers are 1 .. 2^29 - 1 (anything else is not protobuf).
+constexpr auto kMaxFieldNumber = quint64(0x1FFFFFFF);
+// JSON values one top-level Decode() may produce. An envelope is at most
+// 256 KiB, but a two-byte empty sub-message expands to an object with every
+// "always" key of its type: without a budget a small frame of a hostile peer
+// becomes hundreds of megabytes of JSON.
+constexpr auto kMaxValues = 400000;
 
 enum Wire : int {
 	kVarint = 0,
@@ -199,7 +206,7 @@ private:
 	case QJsonValue::Double: {
 		const auto number = value.toDouble();
 		return (number == std::trunc(number) && std::abs(number) < 9e15)
-			? QString::number(qint64(number))
+			? QString::number(base::SafeInt64(number))
 			: QString::number(number, 'g', 17);
 	}
 	case QJsonValue::Bool: return value.toBool() ? u"true"_s : u"false"_s;
@@ -425,6 +432,7 @@ void EncodeMessage(Writer &to, const Message &message, const QJsonObject &object
 	const Message &message,
 	const QByteArray &bytes,
 	int depth,
+	int &budget,
 	QJsonObject &result);
 
 [[nodiscard]] const Field *FindField(const Message &message, quint32 number) {
@@ -444,12 +452,19 @@ void EncodeMessage(Writer &to, const Message &message, const QJsonObject &object
 	return QJsonValue(object);
 }
 
+// Repeated fields and maps are taken out of `result`, extended and put back:
+// appending to a copy that `result` still shares would copy the whole
+// container for every element (quadratic in the number of elements).
 [[nodiscard]] bool DecodeField(
 		const Field &field,
 		int wire,
 		Reader &from,
 		int depth,
+		int &budget,
 		QJsonObject &result) {
+	if (--budget < 0) {
+		return false;
+	}
 	const auto key = Key(field);
 	if (field.kind == Kind::Map) {
 		if (wire != kLengthDelimited) {
@@ -469,7 +484,7 @@ void EncodeMessage(Writer &to, const Message &message, const QJsonObject &object
 			if (entry.failed()) {
 				return false;
 			}
-			const auto number = quint32(tag >> 3);
+			const auto number = quint32(qMin(tag >> 3, kMaxFieldNumber + 1));
 			const auto entryWire = int(tag & 7);
 			if (number == 1) {
 				entryKey = ToString(DecodeScalar(field.mapKey, entryWire, entry));
@@ -481,7 +496,7 @@ void EncodeMessage(Writer &to, const Message &message, const QJsonObject &object
 						auto sub = QJsonObject();
 						const auto subBytes = entry.bytes();
 						if (entry.failed()
-							|| !DecodeMessage(*nested, subBytes, depth + 1, sub)) {
+							|| !DecodeMessage(*nested, subBytes, depth + 1, budget, sub)) {
 							return false;
 						}
 						entryValue = sub;
@@ -501,7 +516,7 @@ void EncodeMessage(Writer &to, const Message &message, const QJsonObject &object
 				? QJsonValue(QJsonObject())
 				: DefaultValue(field.mapValue);
 		}
-		auto map = result.value(key).toObject();
+		auto map = result.take(key).toObject();
 		map.insert(entryKey, entryValue);
 		result.insert(key, map);
 		return true;
@@ -514,11 +529,11 @@ void EncodeMessage(Writer &to, const Message &message, const QJsonObject &object
 		}
 		const auto subBytes = from.bytes();
 		auto sub = QJsonObject();
-		if (from.failed() || !DecodeMessage(*nested, subBytes, depth + 1, sub)) {
+		if (from.failed() || !DecodeMessage(*nested, subBytes, depth + 1, budget, sub)) {
 			return false;
 		}
 		if (field.repeated()) {
-			auto list = result.value(key).toArray();
+			auto list = result.take(key).toArray();
 			list.append(RowValue(*nested, sub));
 			result.insert(key, list);
 		} else {
@@ -527,7 +542,7 @@ void EncodeMessage(Writer &to, const Message &message, const QJsonObject &object
 		return true;
 	}
 	if (field.repeated()) {
-		auto list = result.value(key).toArray();
+		auto list = result.take(key).toArray();
 		if (field.kind == Kind::String || field.kind == Kind::Bytes) {
 			list.append(DecodeScalar(field.kind, wire, from));
 		} else if (wire == kLengthDelimited) {
@@ -539,7 +554,7 @@ void EncodeMessage(Writer &to, const Message &message, const QJsonObject &object
 			const auto itemWire = (field.kind == Kind::Double) ? kFixed64 : kVarint;
 			while (!packed.atEnd()) {
 				list.append(DecodeScalar(field.kind, itemWire, packed));
-				if (packed.failed()) {
+				if (packed.failed() || --budget < 0) {
 					return false;
 				}
 			}
@@ -557,6 +572,7 @@ bool DecodeMessage(
 		const Message &message,
 		const QByteArray &bytes,
 		int depth,
+		int &budget,
 		QJsonObject &result) {
 	if (depth > kMaxDepth) {
 		return false;
@@ -567,10 +583,13 @@ bool DecodeMessage(
 		if (from.failed()) {
 			return false;
 		}
+		if ((tag >> 3) == 0 || (tag >> 3) > kMaxFieldNumber) {
+			return false;
+		}
 		const auto number = quint32(tag >> 3);
 		const auto wire = int(tag & 7);
 		if (const auto field = FindField(message, number)) {
-			if (!DecodeField(*field, wire, from, depth, result)) {
+			if (!DecodeField(*field, wire, from, depth, budget, result)) {
 				return false;
 			}
 		} else {
@@ -586,12 +605,15 @@ bool DecodeMessage(
 		if (!field.always() || result.contains(key)) {
 			continue;
 		}
+		if (--budget < 0) {
+			return false;
+		}
 		if (field.repeated()) {
 			result.insert(key, QJsonArray());
 		} else if (field.kind == Kind::Message) {
 			auto sub = QJsonObject();
 			const auto nested = Schema::MessageAt(field.message);
-			if (nested && !DecodeMessage(*nested, QByteArray(), depth + 1, sub)) {
+			if (nested && !DecodeMessage(*nested, QByteArray(), depth + 1, budget, sub)) {
 				return false;
 			}
 			result.insert(key, sub);
@@ -630,7 +652,8 @@ std::optional<QJsonObject> Decode(QLatin1StringView message, const QByteArray &b
 
 std::optional<QJsonObject> Decode(const Schema::Message &message, const QByteArray &bytes) {
 	auto result = QJsonObject();
-	if (!DecodeMessage(message, bytes, 0, result)) {
+	auto budget = int(kMaxValues);
+	if (!DecodeMessage(message, bytes, 0, budget, result)) {
 		return std::nullopt;
 	}
 	return result;

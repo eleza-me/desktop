@@ -1,5 +1,7 @@
 #include "history/history_voice_recorder.h"
 
+#include "base/platform_file.h"
+
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
@@ -77,7 +79,9 @@ bool VoiceRecorder::start() {
 	_recorder->setAudioBitRate(32000);
 	_recorder->setQuality(QMediaRecorder::NormalQuality);
 
-	auto directory = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+	// Not the shared temporary directory: a recording is readable there by
+	// every user of the machine for as long as it exists.
+	auto directory = base::platform::PrivateTempDirectory();
 	if (directory.isEmpty()) {
 		directory = QDir::tempPath();
 	}

@@ -14,6 +14,8 @@ namespace {
 
 Q_LOGGING_CATEGORY(Log, "eleza.rt", QtWarningMsg)
 
+constexpr auto kMaxIncomingMessage = quint64(Noise::kMaxMessage) + 1024;
+
 [[nodiscard]] const char *SignalBody(const QString &type) {
 	if (type == u"typing") {
 		return "TypingSignal";
@@ -38,8 +40,8 @@ Q_LOGGING_CATEGORY(Log, "eleza.rt", QtWarningMsg)
 	result.code = error.value("code"_L1).toString();
 	result.title = error.value("title"_L1).toString();
 	result.retryable = error.value("retryable"_L1).toBool();
-	result.retryAfter = int(error.value("retry_after_s"_L1).toDouble());
-	result.httpStatus = int(error.value("http_status"_L1).toDouble());
+	result.retryAfter = base::SafeInt(error.value("retry_after_s"_L1).toDouble());
+	result.httpStatus = base::SafeInt(error.value("http_status"_L1).toDouble());
 	return result;
 }
 
@@ -73,6 +75,10 @@ void Session::connectToServer(int keyId, const QByteArray &serverKey, const Auth
 	}
 	_socket = std::make_unique<QWebSocket>(QString(), QWebSocketProtocol::VersionLatest);
 	const auto socket = _socket.get();
+	// One message is one Noise record: nothing larger is ever buffered (the
+	// defaults would let the other side make us hold 64 MiB per message).
+	socket->setMaxAllowedIncomingFrameSize(kMaxIncomingMessage);
+	socket->setMaxAllowedIncomingMessageSize(kMaxIncomingMessage);
 	connect(socket, &QWebSocket::connected, this, [=, this] {
 		start(keyId, serverKey, auth);
 	});
@@ -143,11 +149,18 @@ void Session::receive(const QByteArray &record) {
 		return;
 	}
 	_lastReceivedAt = base::unixtime::nowMs();
+	if (record.size() > Noise::kMaxMessage) {
+		fail(u"oversized record"_s);
+		return;
+	}
 	if (!_noise) {
 		// Message 2, or a clear-text Close (unknown key id): 0xFF + Close.
+		// The clear-text form is not authenticated by Noise (only by TLS
+		// around the socket): all it may do is make the client re-read
+		// /v2/keys, which Rt::Client rate-limits. Any other code is an error.
 		if (!record.isEmpty() && uchar(record[0]) == 0xFF && record.size() < 48) {
 			const auto close = Proto::Decode("Close"_L1, record.mid(1));
-			const auto code = close ? int(close->value("code"_L1).toDouble()) : 0;
+			const auto code = close ? base::SafeInt(close->value("code"_L1).toDouble()) : 0;
 			if (code != kCloseKeyRotation) {
 				fail(u"clear-text close %1"_s.arg(code));
 				return;
@@ -212,13 +225,13 @@ void Session::dispatch(const QJsonObject &envelope, int depth) {
 		}
 	} else if (const auto hello = envelope.value("hello"_L1); hello.isObject()) {
 		const auto h = hello.toObject();
-		_hello.version = int(h.value("v"_L1).toDouble());
+		_hello.version = base::SafeInt(h.value("v"_L1).toDouble());
 		_hello.connection = h.value("conn"_L1).toString();
-		_hello.pingInterval = int(h.value("ping_interval_s"_L1).toDouble());
-		_hello.reconnectSpread = int(h.value("reconnect_spread_s"_L1).toDouble());
-		_hello.pts = qint64(h.value("pts"_L1).toDouble());
+		_hello.pingInterval = base::SafeInt(h.value("ping_interval_s"_L1).toDouble());
+		_hello.reconnectSpread = base::SafeInt(h.value("reconnect_spread_s"_L1).toDouble());
+		_hello.pts = base::SafeInt64(h.value("pts"_L1).toDouble());
 		_hello.resumed = h.value("resumed"_L1).toBool();
-		_hello.serverTimeMs = qint64(h.value("server_time_ms"_L1).toDouble());
+		_hello.serverTimeMs = base::SafeInt64(h.value("server_time_ms"_L1).toDouble());
 		Q_EMIT helloReceived(_hello);
 	} else if (const auto response = envelope.value("res"_L1); response.isObject()) {
 		onResponse(response.toObject());
@@ -244,13 +257,14 @@ void Session::dispatch(const QJsonObject &envelope, int depth) {
 		});
 	} else if (const auto close = envelope.value("close"_L1); close.isObject()) {
 		const auto c = close.toObject();
-		Q_EMIT serverClose(int(c.value("code"_L1).toDouble()), c.value("reason"_L1).toString());
+		Q_EMIT serverClose(base::SafeInt(c.value("code"_L1).toDouble()), c.value("reason"_L1).toString());
 	}
 	// pong, ack: nothing to do (any record refreshes lastReceivedAt).
 }
 
 void Session::onResponse(const QJsonObject &response) {
-	const auto id = quint32(response.value("id"_L1).toDouble());
+	const auto wideId = base::SafeInt64(response.value("id"_L1).toDouble());
+	const auto id = (wideId > 0 && wideId <= qint64(0xFFFFFFFFLL)) ? quint32(wideId) : quint32(0);
 	const auto ok = response.value("ok"_L1).toBool();
 	const auto error = ParseError(response.value("error"_L1).toObject());
 	const auto body = BytesOf(response, "body"_L1);
