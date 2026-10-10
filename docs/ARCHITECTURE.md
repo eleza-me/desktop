@@ -1,8 +1,8 @@
 # Eleza Desktop — architecture
 
-Native desktop client for Eleza (Windows + Linux). Same recipe as Telegram Desktop, written from
-scratch (no third-party client code): **C++20, Qt 6 Widgets (no QML, no web view), CMake**, a
-custom-painted UI library, and a small style language (`.style` files) compiled to C++ at build time.
+Native desktop client for Eleza (Windows + Linux), written from scratch: **C++20, Qt 6 Widgets
+(no QML, no web view), CMake**, Eleza's own custom-painted UI library, and a small style language
+(`.style` files) compiled to C++ at build time.
 
 The reference client for behaviour and wire shapes is the web app (`eleza-me/pwa`, TypeScript); the
 server contract is `eleza-backend`. Where docs and code disagree, the code wins.
@@ -52,7 +52,7 @@ Targets: `ElezaBase`, `ElezaUi` (static libs), `codegen_style`, `codegen_lang` (
 `ElezaCore` (static: everything under SourceFiles without widgets: crypto, api, rt, storage, data,
 main, lang), `Eleza` (the executable: core/, window/ and all feature folders), `eleza_tests`.
 
-## Conventions (Telegram Desktop style)
+## Conventions
 
 * Namespaces follow folders: `Ui::`, `style::` / `st::`, `Api::`, `Rt::`, `Data::`, `Main::`,
   `Window::`, `Intro::`, `Dialogs::`, `History::`, `Eli::`, `Conversation::`, `Settings::`…

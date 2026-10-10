@@ -22,7 +22,7 @@ void FillChatMenu(
 	const Data::Chat &chat,
 	Folder folder);
 
-// Telegram-style: «چت با … حذف شود؟» with the «برای … هم پاک شود» checkbox
+// «چت با … حذف شود؟» with the «برای … هم پاک شود» checkbox
 // where both sides can be cleared.
 void ShowDeleteChatBox(
 	Window::SessionController *controller,

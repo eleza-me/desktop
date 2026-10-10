@@ -7,7 +7,7 @@
 // the height stays, and everything is rebuilt when the row is needed again.
 //
 // Sides are physical on purpose: my messages hug the right edge and the
-// peer's the left one in both interface directions, as in Telegram.
+// peer's the left one in both interface directions.
 #pragma once
 
 #include "data/data_types.h"

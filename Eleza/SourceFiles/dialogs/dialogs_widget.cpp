@@ -384,7 +384,7 @@ void Widget::showFolder(Folder folder) {
 }
 
 void Widget::refreshTitle() {
-	// The main list swaps its title for «در حال اتصال…» like Telegram; a
+	// The main list swaps its title for «در حال اتصال…»; a
 	// folder keeps its name and tells the state in the subtitle.
 	const auto folder = _inner->folder();
 	const auto state = (_connection && !_connection->online())
@@ -438,7 +438,7 @@ void Widget::openChat(const QString &id) {
 	}
 	const auto route = Window::Routes::Chat(id);
 	if (!_search->text().isEmpty()) {
-		// Like Telegram: the search ends once a result was opened.
+		// The search ends once a result was opened.
 		_search->clear();
 	}
 	controller()->openRoute(route);

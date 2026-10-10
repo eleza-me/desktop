@@ -271,7 +271,7 @@ void ListWidget::mouseDoubleClickEvent(QMouseEvent *e) {
 	const auto element = _rows[target.index].element.get();
 	const auto zone = target.hit.zone;
 	if ((zone == Zone::Text || zone == Zone::Link) && target.hit.uponSymbol) {
-		// Telegram: a double click on text selects the word.
+		// A double click on text selects the word.
 		_selectType = Ui::Text::SelectType::Words;
 		const auto word = element->adjustSelection(
 			{ target.hit.symbol, target.hit.symbol + 1 },
@@ -408,7 +408,7 @@ void ListWidget::activate(const MouseTarget &target, Qt::MouseButton button) {
 		}
 		break;
 	case Zone::Side:
-		// Like Telegram: a plain click next to a message does nothing (a
+		// A plain click next to a message does nothing (a
 		// drag or Ctrl+click selects, a double click replies).
 		Q_EMIT focusRequested();
 		break;
@@ -1152,7 +1152,7 @@ void ListWidget::requestPin(const Data::Message &message, bool pin) {
 		_controller->showToast(tr::lng_history_unpinned(tr::now));
 		return;
 	}
-	// Telegram: «also pin for …» in chats with somebody else.
+	// «Also pin for …» in chats with somebody else.
 	const auto withPeer = chat && !chat->saved && !chat->peerDeleted;
 	const auto both = std::make_shared<bool>(withPeer);
 	const auto session = QPointer<Main::Session>(_session);

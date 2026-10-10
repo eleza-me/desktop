@@ -460,7 +460,7 @@ std::optional<Data::Message> ListWidget::lastEditable() const {
 		if (message.mine && CanEdit(message, now, window)) {
 			return message;
 		} else if (message.mine && message.seq > 0) {
-			// Telegram edits the last own message only.
+			// Only the last own message is edited this way.
 			if (!IsService(message)) {
 				return std::nullopt;
 			}

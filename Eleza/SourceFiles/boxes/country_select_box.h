@@ -1,5 +1,5 @@
 // The country list of the phone step (and of «change number»): a searchable list
-// of calling codes, like Telegram's.
+// of calling codes.
 //
 //   window->show(Ui::Box<Boxes::CountrySelectBox>(currentIso, [=](const Lang::Country &country) {
 //       phone->setCountryCode(country.code);

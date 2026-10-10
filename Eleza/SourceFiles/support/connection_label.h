@@ -1,4 +1,4 @@
-// The connection state as the user should see it, and the Telegram-like title
+// The connection state as the user should see it, and the title
 // substitute: «در حال اتصال…» / «در حال به‌روزرسانی…» / «در انتظار شبکه…».
 //
 //   // a section's top bar: the title is replaced while the app is not online

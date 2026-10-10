@@ -1,4 +1,4 @@
-// ListWidget: the message context menu (Telegram's: a strip of reactions on
+// ListWidget: the message context menu (a strip of reactions on
 // top, then reply / edit / pin / copy / media actions / forward / select /
 // delete; with text selected inside the message — «copy selected» and
 // «quote»).
