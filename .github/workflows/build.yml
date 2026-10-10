@@ -81,8 +81,31 @@ jobs:
       - name: Configure
         run: cmake --preset windows-msvc-release
 
+      # Keeps going after the first failure and repeats the compiler's error lines
+      # as annotations, so one run shows everything that has to be fixed.
       - name: Build
-        run: cmake --build --preset windows-msvc-release
+        shell: pwsh
+        run: |
+          cmake --build --preset windows-msvc-release -- -k 0 2>&1 | Tee-Object -FilePath build.log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            $root = [regex]::Escape("$env:GITHUB_WORKSPACE\")
+            $lines = Select-String -Path build.log -Pattern '(: (fatal )?error |: error:|^FAILED:|CMake Error|LINK : |unresolved external)' |
+              ForEach-Object { ($_.Line -replace $root, '').Trim() } | Select-Object -Unique
+            $chunks = @(); $current = ''
+            foreach ($line in $lines) {
+              if ($line.Length -gt 600) { $line = $line.Substring(0, 600) }
+              if ($current.Length + $line.Length -gt 3500) { $chunks += $current; $current = '' }
+              $current += $line + '%0A'
+            }
+            if ($current) { $chunks += $current }
+            $levels = 'error', 'warning', 'notice'
+            for ($i = 0; $i -lt $chunks.Count -and $i -lt 30; $i++) {
+              $level = $levels[[math]::Floor($i / 10)]
+              Write-Output "::$level title=Build errors $($i + 1) of $($chunks.Count)::$($chunks[$i])"
+            }
+            exit $code
+          }
 
       # GUI tests run on the offscreen platform (set per test by CMake); the
       # realtime interop test skips itself without the web client sources.
