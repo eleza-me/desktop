@@ -27,6 +27,12 @@ C++ و Qt نوشته شده و همهٔ رابط کاربری آن را موتو
 - ارسال با کشیدن و رها کردن یا چسباندن از کلیپ‌بورد، صف ارسال در حالت آفلاین
 - سنجاق، بی‌صدا و بایگانی گفتگوها، درخواست‌های پیام، جستجو
 
+**تماس صوتی**
+- تماس دونفره با کاربران الزا روی اندروید، آیفون و دسکتاپ، از بالای گفتگو یا از نمایه
+- زنگ تماس ورودی حتی وقتی پنجره بسته است؛ پاسخ با Enter و رد با Esc
+- حذف نویز و پژواک، انتخاب میکروفون و بلندگو، بی‌صدا کردن و اتصال دوبارهٔ خودکار
+- ثبت تماس‌ها در گفتگو و تماس دوباره با یک کلیک
+
 **گفتگوی ناشناس**
 - موضوع‌های باز با دسته‌بندی و زمان باقی‌مانده
 - شروع گفتگوی تازه یا پیوستن به‌عنوان شنونده، با هویت پوشیده یا آشکار
@@ -55,6 +61,9 @@ C++ و Qt نوشته شده و همهٔ رابط کاربری آن را موتو
   (Noise) دارد تا محتوای آن در میانهٔ مسیر خوانده نشود.
 - **نگهداری امن**: اطلاعات ورود روی ویندوز با DPAPI محافظت می‌شود و با خروج از حساب، دادهٔ
   محلی پاک می‌شود.
+- **تماس صوتی**: صدا رمزگذاری‌شده به سرور الزا می‌رسد و از همان‌جا به طرف مقابل؛ هیچ اتصال
+  مستقیمی بین دو کاربر ساخته نمی‌شود و نشانی اینترنتی تو به طرف مقابل نمی‌رسد. تماس‌ها رمزنگاری
+  سرتاسری ندارند و برنامه همین را در صفحهٔ تماس می‌گوید.
 - **محتوای دریافتی**: تصویرها فقط در قالب‌های مجاز و با سقف اندازه باز می‌شوند، نام فایل‌ها
   پاک‌سازی می‌شود و پیوندهای بیرونی پیش از باز شدن تأیید می‌خواهند.
 
@@ -66,6 +75,7 @@ C++ و Qt نوشته شده و همهٔ رابط کاربری آن را موتو
 | رابط کاربری | کتابخانهٔ رابط اختصاصی الزا؛ ویجت‌های خودنقاش، راست‌به‌چپ، HiDPI |
 | استایل و متن‌ها | زبان استایل (`.style`) و فایل‌های ترجمه که هنگام بیلد به C++ تبدیل می‌شوند |
 | ارتباط | اتصال پایدار روی WebSocket با protobuf و همگام‌سازی افزایشی؛ HTTP به‌عنوان پشتیبان |
+| تماس صوتی | WebRTC از طریق کتابخانهٔ LiveKit؛ پردازش صدا (حذف نویز و پژواک) روی دستگاه |
 | ذخیره‌سازی | SQLite برای کش آفلاین، کش رسانه با سقف حجم |
 | آزمون | آزمون‌های واحد، آزمون سازگاری پروتکل و فازینگ ورودی‌ها |
 
@@ -113,6 +123,9 @@ smoothly. It speaks Persian (right-to-left) and English, in light and dark.
 
 - **Messenger** — text, media, voice, files, stickers; replies and quotes, edits, reactions,
   forwarding, pins, spoilers, link previews, synced drafts, offline send queue.
+- **Voice calls** — one-to-one calls with Eleza users on Android, iPhone and desktop: an
+  incoming-call window that rings even when Eleza is closed to the tray, noise and echo removal,
+  device selection, automatic reconnection, call history in the chat.
 - **Anonymous conversations** — browse open topics, start one or join as a listener.
 - **Eli** — For You and Following feeds, posts with media, polls and threads, notifications, topics.
 - **Security** — device-bound sessions, an independently encrypted persistent connection on top

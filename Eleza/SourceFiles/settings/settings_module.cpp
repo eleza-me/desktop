@@ -26,7 +26,7 @@ void ApplyMediaCacheLimit() {
 
 bool OpenSection(Window::SessionController *controller, const QString &id) {
 	const auto section = SectionFromId(id);
-	if (!section) {
+	if (!section || (*section == Section::Calls && !HasCallsPage())) {
 		controller->showTab(Window::Tab::Settings);
 		return true;
 	}

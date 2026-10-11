@@ -47,7 +47,7 @@ QString MessageKindLabel(const Data::Message &message) {
 		return tr::lng_media_live_location(tr::now);
 	case Data::MessageKind::ForwardedPost:
 		return tr::lng_media_eli_post(tr::now);
-	case Data::MessageKind::Call: return tr::lng_media_call(tr::now);
+	case Data::MessageKind::Call: return tr::lng_calls_voice_call(tr::now);
 	case Data::MessageKind::Text:
 	case Data::MessageKind::System:
 	case Data::MessageKind::Unknown:
@@ -57,6 +57,10 @@ QString MessageKindLabel(const Data::Message &message) {
 }
 
 QString MessagePreview(const Data::Message &message) {
+	if (message.call) {
+		// A call record, whatever its outcome (the chat shows the details).
+		return tr::lng_calls_voice_call(tr::now);
+	}
 	if (message.kind == Data::MessageKind::System) {
 		switch (message.serviceEvent()) {
 		case Data::ServiceEvent::Text: return message.text;

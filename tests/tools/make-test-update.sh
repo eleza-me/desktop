@@ -3,7 +3,7 @@
 #
 #   tests/tools/make-test-update.sh <version> <package dir> <base url> <output dir> [key.pem]
 #
-#   <version>      the version the package is ("0.2.0")
+#   <version>      the version the package is ("0.3.0")
 #   <package dir>  a portable build of that version
 #                  (packaging/linux/make-portable.sh, or a deployed Windows folder)
 #   <base url>     where <output dir> will be served ("http://127.0.0.1:8765")

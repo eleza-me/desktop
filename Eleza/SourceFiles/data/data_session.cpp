@@ -1,6 +1,7 @@
 #include "data/data_session.h"
 
 #include "api/api_client_config.h"
+#include "data/data_calls.h"
 #include "data/data_chats.h"
 #include "data/data_conversations.h"
 #include "data/data_feed.h"
@@ -36,6 +37,7 @@ Session::Session(Config config, QObject *parent)
 	_stickers = new Stickers(this);
 	_feed = new Feed(this);
 	_graph = new Graph(this);
+	_calls = new Calls(this);
 
 	// A card that arrives or changes renames the rows that show it.
 	connect(_users, &Users::changed, _chats, [this](const QStringList &ids) {

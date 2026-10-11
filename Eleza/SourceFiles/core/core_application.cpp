@@ -43,6 +43,8 @@ namespace Core {
 namespace {
 
 constexpr auto kBackgroundDelay = 5000;
+// How long quitting (or signing out) waits for the exit tasks.
+constexpr auto kExitTasksTimeout = 1500;
 const auto kNeedsProfileKey = QStringLiteral("intro.needs_profile");
 
 Application *InstanceValue = nullptr;
@@ -436,6 +438,13 @@ void Application::restartToUpdate() {
 		|| _updater->state() != Updater::State::Ready) {
 		return;
 	}
+	// Not in the middle of something that a restart would cut off (a call).
+	for (const auto &blocker : _restartBlockers) {
+		if (const auto why = blocker(); !why.isEmpty()) {
+			_window->showToast(why);
+			return;
+		}
+	}
 	// Messages that are still being sent or uploaded would wait for the next
 	// start: that is the user's call.
 	const auto session = this->session();
@@ -462,6 +471,11 @@ void Application::restartToUpdateNow() {
 		|| !_installTarget
 		|| _updater->state() != Updater::State::Ready) {
 		return;
+	}
+	for (const auto &blocker : _restartBlockers) {
+		if (!blocker().isEmpty()) {
+			return; // restartToUpdate() said why
+		}
 	}
 	auto request = Updater::InstallRequest();
 	request.version = _updater->info().version;
@@ -760,11 +774,76 @@ void Application::handleActivation(const QString &message) {
 }
 
 void Application::quit() {
+	if (_quitting) {
+		return;
+	}
 	_quitting = true;
 	if (_settings) {
 		_settings->flush();
 	}
-	QCoreApplication::quit();
+	if (_window && !_exitTasks.empty()) {
+		// Nothing to look at while the last requests go out.
+		_window->hide();
+	}
+	finishExitTasks([] { QCoreApplication::quit(); });
+}
+
+void Application::registerExitTask(ExitTask task) {
+	if (task) {
+		_exitTasks.push_back(std::move(task));
+	}
+}
+
+void Application::finishExitTasks(std::function<void()> then) {
+	if (_exitTasks.empty()) {
+		then();
+		return;
+	}
+	struct State {
+		int left = 0;
+		bool finished = false;
+		std::function<void()> then;
+	};
+	const auto state = std::make_shared<State>();
+	state->left = int(_exitTasks.size());
+	state->then = std::move(then);
+	const auto finish = [state] {
+		if (!std::exchange(state->finished, true)) {
+			const auto then = std::move(state->then);
+			then();
+		}
+	};
+	// A server that does not answer must not keep the app from closing.
+	QTimer::singleShot(kExitTasksTimeout, this, finish);
+	const auto tasks = _exitTasks;
+	for (const auto &task : tasks) {
+		task([state, finish] {
+			if (--state->left <= 0) {
+				finish();
+			}
+		});
+	}
+}
+
+void Application::registerRestartBlocker(std::function<QString()> blocker) {
+	if (blocker) {
+		_restartBlockers.push_back(std::move(blocker));
+	}
+}
+
+void Application::registerCloseGuard(std::function<bool()> guard) {
+	if (guard) {
+		_closeGuards.push_back(std::move(guard));
+	}
+}
+
+bool Application::closeGuarded() const {
+	for (const auto &guard : _closeGuards) {
+		if (guard()) {
+			return true;
+		}
+	}
+	return false;
 }
 
 // ---- debug hooks

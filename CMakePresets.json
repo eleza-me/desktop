@@ -12,7 +12,8 @@
 			"generator": "Ninja",
 			"binaryDir": "${sourceDir}/build/${presetName}",
 			"cacheVariables": {
-				"ELEZA_BUILD_TESTS": "ON"
+				"ELEZA_BUILD_TESTS": "ON",
+				"ELEZA_ENABLE_CALLS": "ON"
 			}
 		},
 		{

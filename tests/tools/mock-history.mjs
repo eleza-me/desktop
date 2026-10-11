@@ -281,8 +281,14 @@ direct('rich', 'u_reza');
 	const withLink = 'خبر انتشار هم اینجاست https://eleza.me/blog/desktop-beta';
 	add('rich', R, 'text', { text: withLink, link_preview: { url: 'https://eleza.me/blog/desktop-beta', site_name: 'Eleza', title: 'نسخهٔ آزمایشی الزا برای دسکتاپ', description: 'الزا حالا روی ویندوز و لینوکس: پیام‌رسان، گفت‌وگوی ناشناس و الی در یک پنجره.', image_url: `${SELF}/_img/preview.png`, image_width: 1200, image_height: 630 } }, t - 15 * MIN);
 	add('rich', R, 'text', { text: 'جلسهٔ فردا ساعت ۱۰ صبح برگزار می‌شود. لطفاً همه سر وقت باشند.', forwarded: true }, t - 12 * MIN);
-	add('rich', M, 'call', { call: { outcome: 'answered', duration_s: 312 } }, t - 10 * MIN);
-	add('rich', R, 'call', { call: { outcome: 'missed' } }, t - 9 * MIN);
+	// Call records as the backend writes them: a system message sent by the caller.
+	const call = (sender, outcome, duration, at) => add('rich', sender, 'system', { system: `call:${outcome}:${duration}`, call: { outcome, duration_s: duration } }, at);
+	call(M, 'completed', 312, t - 11 * MIN);
+	call(R, 'completed', 47, t - 10 * MIN - 40 * 1000);
+	call(M, 'declined', 0, t - 10 * MIN - 20 * 1000);
+	call(M, 'missed', 0, t - 10 * MIN);
+	call(R, 'declined', 0, t - 9 * MIN - 30 * 1000);
+	call(R, 'missed', 0, t - 9 * MIN);
 	add('rich', R, 'text', { text: 'gif از ربات', via_bot: { id: 'u_bot', handle: 'stickerbot', name: 'ربات استیکر' } }, t - 8 * MIN);
 	add('rich', M, 'system', { system: 'message.pinned:4' }, t - 7 * MIN);
 	add('rich', R, 'hologram_v9', { text: 'این نوع پیام در این نسخه پشتیبانی نمی‌شود.' }, t - 6 * MIN);

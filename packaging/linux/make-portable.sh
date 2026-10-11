@@ -3,7 +3,9 @@
 #
 #   packaging/linux/make-portable.sh <build dir> <output dir> [archive.zip]
 #
-# <output dir> (created empty) gets the binary, the icon and a short README;
+# <output dir> (created empty) gets the binary, the media library of voice
+# calls with its licence notices (when the build has calls: both lie next to
+# the built binary, cmake/eleza_livekit.cmake), the icon and a short README;
 # with a third argument it is packed right away (packaging/make-package.py,
 # which also writes eleza-files.list — the marker of a copy that updates
 # itself). The archive is at once the download and the update package.
@@ -31,6 +33,17 @@ mkdir -p "$output"
 install -m 755 "$binary" "$output/Eleza"
 if [ "${ELEZA_PORTABLE_STRIP:-1}" != "0" ]; then
 	strip "$output/Eleza"
+fi
+# Voice calls: the app loads the library from its own directory. It is
+# shipped as released (its hash is the pinned one), not stripped again.
+if grep -q '^ELEZA_ENABLE_CALLS:BOOL=ON$' "$build/CMakeCache.txt" 2>/dev/null; then
+	for name in liblivekit_ffi.so livekit_ffi-LICENSE.md; do
+		if [ ! -f "$build/Eleza/$name" ]; then
+			echo "make-portable: the build has calls but no $build/Eleza/$name" >&2
+			exit 1
+		fi
+		install -m 644 "$build/Eleza/$name" "$output/$name"
+	done
 fi
 install -m 644 "$root/Eleza/Resources/art/icon256.png" "$output/eleza.png"
 install -m 644 "$root/packaging/linux/portable-readme.txt" "$output/README.txt"

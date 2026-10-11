@@ -139,6 +139,7 @@ to answer every "open" dialog at once and `ELEZA_DEBUG_SAVE=/path/out.bin` for "
 | `debug/crop`, `debug/about`, `debug/peers`, `debug/peers-multi` | the shared boxes |
 | `debug/logout`, `debug/link`, `debug/error`, `debug/upgrade` | sign-out confirmation, external link confirmation, an error toast, the "update required" screen |
 | `debug/session-expired` | ends the session as the server would |
+| `debug/calls/<state>` | a voice call in a given state: the bar, the call view, the incoming window (section 12) |
 
 Add your own in your module's route handler (`route.startsWith(u"debug/…")`), inside
 `#ifdef ELEZA_DEBUG_TOOLS`.
@@ -356,6 +357,8 @@ without including each other's headers:
 * **Chat menu fillers** — `Window::RegisterChatMenuFiller(fn)`; the chat list's row menu and
   the chat's «…» menu call `Window::FillChatMenu(menu, controller, chatId)` so the owner of a
   kind of chat adds its actions in both («پایان گفتگو», «مسدود کردن» of a conversation).
+* **Calls** — `window/window_calls.h`: `Window::CallsSupported()` and
+  `Window::StartCall(controller, userId)`; the calls module registers behind them (section 12).
 * **Reports** — one form for posts, replies, accounts and conversation topics:
   `Boxes::ShowReportBox(controller, args)` (`boxes/report_box.h`).
 
@@ -628,7 +631,8 @@ Errors: `Api::Error { status, code, message, retryable, retryAfter, requestId }`
 
 ## 8. Threading
 
-Everything runs on the GUI thread. Never block it: no `waitFor…`, no nested event loops
+Everything runs on the GUI thread (the audio of a voice call is the one long-lived exception:
+section 12). Never block it: no `waitFor…`, no nested event loops
 (`exec()` of a dialog included — use `Support::PickFiles` and boxes), no synchronous file
 reads of user files, no image decoding of anything larger than an icon. For heavy work use
 `QThreadPool::globalInstance()->start(…)` and come back with
@@ -683,3 +687,81 @@ Don't
 * no polling timers for server data, no blocking calls;
 * no `QDesktopServices::openUrl` on addresses from the network — `Support::OpenLink`;
 * no stubs / TODOs left behind; no third-party client code; authorship is `eleza`.
+
+## 12. Voice calls (`calls/`)
+
+One-to-one voice calls with the mobile apps. The server decides everything about a call
+(`/v1/calls…`, the `call.*` signals of the realtime connection, `privacy.calls`); the audio
+goes through an SFU room of two that the server names in the join payload. The module is
+compiled with `ELEZA_ENABLE_CALLS` (ON by default; `docs/BUILDING.md`, "Voice calls: the
+media library") and nothing outside it includes its headers.
+
+| File | What |
+| --- | --- |
+| `data/data_calls.*` (core) | the wire: `Data::CallsApi` (start, accept, reject, cancel, hangup, ringing, connected, rejoin, qos, get, incoming, active), `Data::CallSignal`, call records (`ClassifyCallRecord`), `CallAvailabilityFor(chat)` — when the top bar shows, disables or hides the call button |
+| `calls_call.*` | `Calls::Call`: one call's state machine (Calling → Ringing / Incoming → Connecting → InCall ↔ Reconnecting → Ended) between the API, the signals and the media. Its header lists the rules it shares with the mobile apps (who reports what, polling, the reconnect budget). No widgets |
+| `calls_instance.*` | `Calls::Instance`: which call there is — one at a time, glare (both call each other), a call that rings while the start is on its way, calls found after a restart (`calls/active`) or without the realtime connection (`calls/incoming`), "no microphone" |
+| `calls_media.h` | `Calls::Media`, the interface the call talks to: join / leave / mute / devices / stats. Everything behind it can be replaced without touching the rest |
+| `calls_media_livekit.cpp`, `calls_ffi.*`, `calls_ffi_proto.h`, `calls_audio_io.*` | the implementation: the LiveKit library loaded at run time (four C functions exchanging protobuf messages), the microphone and the loudspeaker through Qt Multimedia, the library's audio processing (echo, noise, gain). All of it lives on one thread ("Calls media"); the GUI thread only posts to it |
+| `calls_service.*` | `Calls::Service`, one per signed-in session: owns the instance, the sounds, the incoming-call window, the settings on their way to a running call |
+| `calls_panel.*`, `calls_view.*`, `calls_incoming_window.*`, `calls_settings.*`, `calls_widgets.*`, `calls_text.*`, `calls_sounds.*` | what the user sees and hears: the bar on top of the window (`MainWindow::setTopStrip`), the expanded view, the always-on-top incoming window, Settings → «تماس‌ها», the phrases of every state |
+| `calls_module.cpp` | `Calls::Register()`: the hooks below |
+
+How it is plugged in (all of these are general hooks, calls are their first user):
+
+* `window/window_calls.h` — `Window::CallsSupported()` / `Window::StartCall(controller, userId)`:
+  what the chat top bar, the profile and a call record in the history use.
+* `Settings::RegisterCallsPage(factory)` — the «تماس‌ها» section exists only when somebody
+  registered it.
+* `Core::Application::registerExitTask` (hang up before the process ends or the user signs
+  out; bounded to 1.5 s), `registerRestartBlocker` (no restart into an update during a
+  call), `registerCloseGuard` (closing the window with no tray to stay in asks first).
+
+The sounds (`Resources/sounds/call_*.wav`) are generated: `python3
+codegen/scripts/gen_call_sounds.py` writes the same bytes every time.
+
+### Testing calls
+
+* **Unit tests** — `test_calls_call` drives `Call` and `Instance` with a fake server and a
+  fake media (accept against cancel against timeout, glare, signals that arrive before the
+  HTTP answer, duplicates, restart recovery, the reconnect budget); `test_calls_audio` and
+  `test_calls_ffi_proto` cover the audio helpers and the wire codec;
+  `test_calls_media_library` loads the real library and asks it for a processing module
+  (skipped where there is no library for the platform).
+* **Two apps calling each other** — `tests/tools/calls-e2e.sh <build dir>` (Linux, a Debug
+  build): a real `livekit-server` (the pinned release, downloaded and verified, or
+  `LIVEKIT_SERVER=<binary>`), `tests/tools/mock-calls.mjs` playing the backend's call API
+  and signals for two users, two copies of Eleza that send a test tone instead of the
+  microphone and record what they would play. It checks answered / declined / cancelled /
+  busy / not allowed / no answer, audio in both directions with its delay, mute, a media
+  drop with rejoin, a killed and restarted app, a call without the realtime connection and
+  quitting during a call; it skips itself when the server binary cannot be had. The header
+  of the script lists everything.
+* **By hand, two windows on one machine** —
+
+  ```sh
+  livekit-server --dev --bind 127.0.0.1 &
+  node tests/tools/mock-calls.mjs &        # A on :8600, B on :8601; its header has the controls
+  Eleza --api=http://127.0.0.1:8600 --workdir=/tmp/wd-calls-a --no-single-instance --debug-login=+989121234567:123456
+  Eleza --api=http://127.0.0.1:8601 --workdir=/tmp/wd-calls-b --no-single-instance --debug-login=+989121234568:123456
+  ```
+
+  Each of the two sees the other as سارا in the first chat. `curl -X POST
+  :8600/control/kick -d '{"user":"a"}'` cuts A's audio connection, `/control/privacy`,
+  `/control/busy` and `/control/signals` play the other refusals and a dead realtime
+  connection.
+* **The media layer alone** — `build/tests/calls_media_probe --url=ws://… --token=$(python3
+  tests/tools/livekit-token.py --room r --identity a) --input=tone:440 --output=a.wav`
+  joins a room without the app; `tests/tools/calls-audio-check.py a.wav --expect 880` says
+  what was heard and how late.
+
+Debug hooks of the module (`ELEZA_DEBUG_TOOLS` only):
+
+| Hook | Does |
+| --- | --- |
+| route `debug/calls/<state>[?user=<id>]` | a call in that state without a server, for grabs: `calling`, `ringing`, `connecting`, `connected`, `muted`, `reconnecting`, `ended`, `declined`, `no-answer`, `busy`, `failed`, `lost`, `not-allowed` (the bar; add `-expanded` for the call view), `incoming` (the window), `missed` (the notification). Run it after the chats are loaded (`wait:700;route:debug/calls/connected`) |
+| `ELEZA_DEBUG_CALL_INPUT=tone:<Hz>` | a tone instead of the microphone (on during the first half of every second of the clock, so a recording shows the delay); also makes "no microphone" pass |
+| `ELEZA_DEBUG_CALL_OUTPUT=<file.wav>` | records what would be played (48 kHz mono) and writes `<file.wav>.json` with the time of its first sample |
+| `ELEZA_DEBUG_CALL_CONTROL=<folder>` | drives the calls from a script: a line in `<folder>/command` (`start <user id>`, `answer`, `hangup`, `mute`, `dismiss`, `input <device id>`, `quit`), the call's state in `<folder>/state`, every change in `<folder>/events` |
+| `ELEZA_DEBUG_CALL_INCOMING_INTERVAL_MS=<n>` | how often a copy without the realtime connection asks whether a call rings (a minute otherwise) |
+| `ELEZA_LIVEKIT_FFI=<file>` | another build of the media library |

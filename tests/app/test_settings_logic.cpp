@@ -25,6 +25,7 @@ private Q_SLOTS:
 			Settings::Section::Privacy,
 			Settings::Section::Notifications,
 			Settings::Section::Messages,
+			Settings::Section::Calls,
 			Settings::Section::Filters,
 			Settings::Section::Region,
 			Settings::Section::Appearance,

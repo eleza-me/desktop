@@ -43,6 +43,24 @@ struct NotificationSettings {
 	}
 };
 
+// Voice calls on this computer (settings -> «تماس‌ها»).
+struct CallSettings {
+	// QAudioDevice::id() of the chosen devices; empty = the system's default.
+	QByteArray inputDevice;
+	QByteArray outputDevice;
+	bool echoCancellation = true;
+	bool noiseSuppression = true;
+	double ringtoneVolume = 0.7; // 0..1; 0: an incoming call rings silently
+
+	friend bool operator==(const CallSettings &a, const CallSettings &b) {
+		return (a.inputDevice == b.inputDevice)
+			&& (a.outputDevice == b.outputDevice)
+			&& (a.echoCancellation == b.echoCancellation)
+			&& (a.noiseSuppression == b.noiseSuppression)
+			&& (a.ringtoneVolume == b.ringtoneVolume);
+	}
+};
+
 struct WindowGeometry {
 	QRect rect; // null = never saved
 	bool maximized = false;
@@ -141,6 +159,11 @@ public:
 	}
 	void setAutoUpdate(bool enabled);
 
+	[[nodiscard]] const CallSettings &calls() const {
+		return _calls;
+	}
+	void setCalls(const CallSettings &settings);
+
 	// Writes pending changes right now (on quit).
 	void flush();
 
@@ -171,6 +194,7 @@ private:
 	qint64 _mediaCacheLimit = 0;
 	QStringList _recentEmoji;
 	bool _autoUpdate = true;
+	CallSettings _calls;
 
 };
 

@@ -1,0 +1,227 @@
+// Voice calls: the bar of a call at the top of the window, the expanded call
+// view, the incoming call window, the «تماس‌ها» page of the settings.
+//
+// A call is drawn on the "night" surface of the palette in both themes (the
+// call screens of the mobile apps are the same), with mint for what is alive
+// and the lamp colour for what needs attention.
+using "ui/basic.style";
+using "ui/widgets/widgets.style";
+
+callsNightRipple: RippleAnimation(defaultRipple) {
+	color: rippleOnBrandFg;
+}
+
+// ---- round buttons on the night surface (calls_widgets.h)
+CallButton {
+	size: pixels;
+	bg: color;
+	bgOver: color;
+	icon: icon;
+	// The "on" look of a toggle (muted): a light disc with a dark icon.
+	bgActive: color;
+	iconActive: icon;
+	ripple: RippleAnimation;
+}
+
+callsButtonBg: onNightTint;
+callsButtonBgOver: onBrandTint;
+callsEndBg: accentHeart;
+callsEndBgOver: statusError;
+callsAcceptBg: brandPrimary;
+callsAcceptBgOver: brandPressed;
+
+// ---- the bar
+callsBarHeight: 52px;
+callsBarBg: bgNight;
+callsBarBgOver: bgNight;
+callsBarLineFg: chromeHairline;
+callsBarPadding: margins(14px, 0px, 12px, 0px);
+callsBarUserpic: 34px;
+callsBarUserpicSkip: 10px;
+callsBarNameFont: font(14px semibold);
+callsBarNameFg: textOnNight;
+callsBarNameTop: 8px;
+callsBarStateFont: font(13px);
+callsBarStateFg: brandMint;
+callsBarWarnFg: accentLamp;
+callsBarStateTop: 27px;
+callsBarButtonSkip: 8px;
+callsBarLevelSize: 6px;
+callsBarLevelSkip: 6px;
+
+callsBarMute: CallButton {
+	size: 34px;
+	bg: callsButtonBg;
+	bgOver: callsButtonBgOver;
+	icon: icon {{ "mic", textOnNight, 20px }};
+	bgActive: textOnNight;
+	iconActive: icon {{ "mic-off", bgNight, 20px }};
+	ripple: callsNightRipple;
+}
+callsBarEnd: CallButton(callsBarMute) {
+	bg: callsEndBg;
+	bgOver: callsEndBgOver;
+	icon: icon {{ "call-end", staticWhite, 20px }};
+	bgActive: callsEndBg;
+	iconActive: icon {{ "call-end", staticWhite, 20px }};
+}
+callsBarClose: CallButton(callsBarMute) {
+	icon: icon {{ "close", textOnNight, 20px }};
+	bgActive: callsButtonBg;
+	iconActive: icon {{ "close", textOnNight, 20px }};
+}
+callsBarAgain: RoundButton(smallRoundButton) {
+	textFg: bgNight;
+	textFgOver: bgNight;
+	textBg: textOnNight;
+	textBgOver: brandMint;
+	height: 32px;
+	radius: 16px;
+	ripple: defaultRipple;
+}
+callsBarAgainIcon: icon {{ "call", bgNight, 16px }};
+
+// ---- the expanded view (covers the body of the window)
+callsViewBg: bgNight;
+callsViewMinHeight: 420px;
+callsViewUserpic: 132px;
+// The voice ring around the picture: a hairline at rest, grows with the level.
+callsViewRingGap: 7px;
+callsViewRingMin: 2px;
+callsViewRingMax: 14px;
+callsViewRingFg: brandMint;
+callsViewRingIdleFg: onNightTint;
+callsViewNameFont: font(24px semibold);
+callsViewNameFg: textOnNight;
+callsViewNameTop: 26px;
+callsViewStateFont: bodyFontL;
+callsViewStateFg: brandMint;
+callsViewDurationFont: numericFontM;
+callsViewDurationFg: textOnNight;
+callsViewWarnFg: accentLamp;
+callsViewStateTop: 10px;
+callsViewHintFont: font(13px);
+callsViewHintTop: 10px;
+callsViewControlsBottom: 86px;
+callsViewControlsSkip: 34px;
+callsViewLabelFont: font(12px);
+callsViewLabelFg: textOnNight;
+callsViewLabelTop: 8px;
+callsViewNoteFont: font(12px);
+callsViewNoteFg: textOnNight;
+callsViewNoteBottom: 22px;
+callsViewNotePadding: 24px;
+callsViewTopSkip: 12px;
+
+callsViewMute: CallButton {
+	size: 60px;
+	bg: callsButtonBg;
+	bgOver: callsButtonBgOver;
+	icon: icon {{ "mic", textOnNight, 26px }};
+	bgActive: textOnNight;
+	iconActive: icon {{ "mic-off", bgNight, 26px }};
+	ripple: callsNightRipple;
+}
+callsViewDevices: CallButton(callsViewMute) {
+	icon: icon {{ "volume", textOnNight, 26px }};
+	bgActive: callsButtonBgOver;
+	iconActive: icon {{ "volume", textOnNight, 26px }};
+}
+callsViewEnd: CallButton(callsViewMute) {
+	bg: callsEndBg;
+	bgOver: callsEndBgOver;
+	icon: icon {{ "call-end", staticWhite, 28px }};
+	bgActive: callsEndBg;
+	iconActive: icon {{ "call-end", staticWhite, 28px }};
+}
+callsViewAgain: CallButton(callsViewMute) {
+	bg: callsAcceptBg;
+	bgOver: callsAcceptBgOver;
+	icon: icon {{ "call", staticWhite, 26px }};
+	bgActive: callsAcceptBg;
+	iconActive: icon {{ "call", staticWhite, 26px }};
+}
+callsViewClose: CallButton(callsViewMute) {
+	icon: icon {{ "close", textOnNight, 26px }};
+	bgActive: callsButtonBg;
+	iconActive: icon {{ "close", textOnNight, 26px }};
+}
+callsViewCollapse: IconButton(defaultIconButton) {
+	icon: icon {{ "chevron-down", textOnNight }};
+	iconOver: icon {{ "chevron-down", textOnNight }};
+	bgOver: callsButtonBg;
+	ripple: callsNightRipple;
+}
+
+// ---- the incoming call window (a top-level window above everything)
+callsIncomingWidth: 344px;
+callsIncomingRadius: 16px;
+callsIncomingBg: bgRaised;
+callsIncomingBorder: borderSubtle;
+callsIncomingPadding: margins(16px, 16px, 16px, 16px);
+callsIncomingUserpic: 52px;
+callsIncomingUserpicSkip: 12px;
+callsIncomingNameFont: titleFontS;
+callsIncomingNameFg: textPrimary;
+callsIncomingNameTop: 4px;
+callsIncomingTextFont: font(13px);
+callsIncomingTextFg: brandText;
+callsIncomingTextTop: 28px;
+callsIncomingAppFont: microFont;
+callsIncomingAppFg: textTertiary;
+callsIncomingButtonsTop: 16px;
+callsIncomingButtonSkip: 10px;
+callsIncomingScreenMargin: 20px;
+callsIncomingShadow: Shadow(defaultShadow) {
+	blur: 16px;
+	offset: point(0px, 5px);
+	extend: margins(20px, 15px, 20px, 25px);
+}
+callsIncomingAccept: RoundButton(defaultRoundButton) {
+	height: 38px;
+	radius: 19px;
+	padding: 14px;
+	minWidth: 0px;
+}
+callsIncomingDecline: RoundButton(callsIncomingAccept) {
+	textFg: statusError;
+	textFgOver: statusError;
+	textBg: statusErrorSoft;
+	textBgOver: statusErrorSoft;
+	ripple: dangerRipple;
+}
+callsIncomingAcceptIcon: icon {{ "call", textOnBrand, 18px }};
+callsIncomingDeclineIcon: icon {{ "call-end", statusError, 18px }};
+// The pulse behind the picture while it rings.
+callsIncomingPulseFg: brandSoft;
+callsIncomingPulse: 8px;
+
+// ---- the chat header and menus
+callsMenuIcon: icon {{ "call", menuIconFg, 20px }};
+callsTopBarButton: IconButton(topBarCallButton) {
+}
+callsTopBarDisabledFg: textTertiary;
+
+// ---- the settings page
+callsSettingsIcon: icon {{ "call", textSecondary }};
+callsSettingsMicIcon: icon {{ "mic", textSecondary }};
+callsSettingsSpeakerIcon: icon {{ "volume", textSecondary }};
+callsSettingsVolumeIcon: icon {{ "volume", textSecondary }};
+callsSettingsMeterHeight: 56px;
+callsSettingsMeterPadding: margins(20px, 0px, 20px, 0px);
+callsSettingsMeterLine: 6px;
+callsSettingsMeterBg: borderStrong;
+callsSettingsMeterFg: brandPrimary;
+callsSettingsMeterLabelFont: font(13px);
+callsSettingsMeterLabelFg: textSecondary;
+callsSettingsMeterButton: RoundButton(smallLightButton) {
+}
+callsSettingsSliderHeight: 48px;
+callsSettingsSliderLine: 4px;
+callsSettingsSliderKnob: 18px;
+callsSettingsSliderBg: borderStrong;
+callsSettingsSliderFg: brandPrimary;
+callsSettingsSliderIconSkip: 40px;
+callsSettingsSliderValueFont: font(13px);
+callsSettingsSliderValueFg: textTertiary;
+callsSettingsSliderValueWidth: 44px;

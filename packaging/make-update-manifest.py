@@ -2,10 +2,10 @@
 """Writes update.json, the manifest the app checks for new versions
 (Eleza/SourceFiles/updater/updater_manifest.h describes the format).
 
-    python3 packaging/make-update-manifest.py --version 0.2.0 \
+    python3 packaging/make-update-manifest.py --version 0.3.0 \
         --packages dist --output dist/update.json
 
-  --version       the version being released ("0.2.0")
+  --version       the version being released ("0.3.0")
   --packages      the directory with the package of every platform, named as
                   packaging/update-config.json says
                   (Eleza-<version>-windows-x64.zip, Eleza-<version>-linux-x86_64.zip)

@@ -71,6 +71,14 @@ QString ErrorPhrase(const QString &code) {
 		return tr::lng_chat_upload_failed(tr::now);
 	} else if (code == u"too_large" || code == u"upload.too_large") {
 		return tr::lng_chat_file_too_large(tr::now);
+	} else if (code == u"call.not_allowed") {
+		return tr::lng_calls_ended_not_allowed(tr::now);
+	} else if (code == u"call.busy") {
+		return tr::lng_calls_error_busy(tr::now);
+	} else if (code == u"call.capacity") {
+		return tr::lng_calls_error_capacity(tr::now);
+	} else if (code == u"call.answered_elsewhere") {
+		return tr::lng_calls_answered_elsewhere(tr::now);
 	} else if (code == u"server.overloaded") {
 		return tr::lng_support_error_rate_limited(tr::now);
 	}

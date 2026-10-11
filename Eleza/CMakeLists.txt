@@ -31,6 +31,11 @@ if (ELEZA_DEBUG_TOOLS)
 	# The widget gallery (--gallery) is a development tool.
 	list(APPEND eleza_gui_modules gallery)
 endif()
+if (ELEZA_ENABLE_CALLS)
+	# Voice calls. Without the module nothing registers the hooks of
+	# window/window_calls.h and the app has no call buttons.
+	list(APPEND eleza_gui_modules calls)
+endif()
 set(eleza_sources)
 set(eleza_styles)
 foreach(module ${eleza_gui_modules})
@@ -66,6 +71,9 @@ target_link_libraries(Eleza PRIVATE
 eleza_target_defaults(Eleza)
 target_compile_definitions(Eleza PRIVATE
 	ELEZA_VERSION_STRING="${PROJECT_VERSION}")
+if (ELEZA_ENABLE_CALLS)
+	target_compile_definitions(Eleza PRIVATE ELEZA_ENABLE_CALLS)
+endif()
 
 if (eleza_styles)
 	eleza_generate_styles(Eleza
@@ -82,6 +90,21 @@ eleza_add_resources(Eleza
 		"${CMAKE_CURRENT_SOURCE_DIR}/Resources/art/icon256.png"
 		"${CMAKE_CURRENT_SOURCE_DIR}/Resources/art/icon64.png"
 		"${CMAKE_CURRENT_SOURCE_DIR}/Resources/sounds/notify.wav")
+
+if (ELEZA_ENABLE_CALLS)
+	# The sounds of a call (codegen/scripts/gen_call_sounds.py).
+	eleza_add_resources(Eleza
+		"${CMAKE_CURRENT_SOURCE_DIR}/Resources/qrc/calls.qrc"
+		DEPENDS
+			"${CMAKE_CURRENT_SOURCE_DIR}/Resources/sounds/call_ringtone.wav"
+			"${CMAKE_CURRENT_SOURCE_DIR}/Resources/sounds/call_ringback.wav"
+			"${CMAKE_CURRENT_SOURCE_DIR}/Resources/sounds/call_connect.wav"
+			"${CMAKE_CURRENT_SOURCE_DIR}/Resources/sounds/call_end.wav"
+			"${CMAKE_CURRENT_SOURCE_DIR}/Resources/sounds/call_busy.wav")
+	# The media library is loaded at run time from next to the executable
+	# (cmake/eleza_livekit.cmake): it is copied there after every build.
+	eleza_livekit_deploy(Eleza)
+endif()
 
 if (WIN32)
 	set(ELEZA_RC_VERSION_COMMA
@@ -103,6 +126,25 @@ endif()
 # ---- install
 include(GNUInstallDirs)
 install(TARGETS Eleza RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+if (ELEZA_ENABLE_CALLS AND ELEZA_LIVEKIT_FFI_LIBRARY)
+	if (WIN32)
+		install(FILES "${ELEZA_LIVEKIT_FFI_LIBRARY}"
+			DESTINATION "${CMAKE_INSTALL_BINDIR}")
+		set(_eleza_livekit_notice_dir "${CMAKE_INSTALL_BINDIR}")
+	else()
+		# Where the app looks for it in an installed copy: <prefix>/lib/eleza
+		# (calls/calls_ffi.cpp), next to nothing that could shadow it.
+		install(FILES "${ELEZA_LIVEKIT_FFI_LIBRARY}"
+			DESTINATION "lib/eleza"
+			PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
+		set(_eleza_livekit_notice_dir "lib/eleza")
+	endif()
+	if (ELEZA_LIVEKIT_FFI_LICENSE)
+		install(FILES "${ELEZA_LIVEKIT_FFI_LICENSE}"
+			DESTINATION "${_eleza_livekit_notice_dir}"
+			RENAME "livekit_ffi-LICENSE.md")
+	endif()
+endif()
 if (UNIX AND NOT APPLE)
 	install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/Resources/linux/me.eleza.desktop.desktop"
 		DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")

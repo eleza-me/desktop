@@ -1,13 +1,14 @@
 ; Eleza Desktop — the Windows installer (Inno Setup 6.3 or newer).
 ;
 ; Packs a deployed build directory: Eleza.exe with the Qt libraries and plugins
-; that windeployqt put next to it, the OpenSSL DLLs, the C++ runtime, Updater.exe
+; that windeployqt put next to it, the OpenSSL DLLs, the C++ runtime, the media
+; library of voice calls (livekit_ffi.dll with its notices), Updater.exe
 ; and eleza-files.list (see docs/BUILDING.md, "Deploying", and the Windows job of
 ; .github/workflows/build.yml). Run packaging\make-package.py on the directory
 ; first: it writes eleza-files.list, without which the installed copy would not
 ; update itself.
 ;
-;   iscc /DAppVersion=0.2.0 /DSourceDir=C:\src\eleza\dist\Eleza /DOutputDir=C:\src\eleza\dist\installer packaging\windows\eleza.iss
+;   iscc /DAppVersion=0.3.0 /DSourceDir=C:\src\eleza\dist\Eleza /DOutputDir=C:\src\eleza\dist\installer packaging\windows\eleza.iss
 ;
 ; Installs for the current user, into %LOCALAPPDATA%\Programs\Eleza, without
 ; administrator rights: the app updates itself there (docs/RELEASING.md) and
@@ -17,7 +18,7 @@
 ; never touched, neither by an upgrade nor by the uninstaller.
 
 #ifndef AppVersion
-  #define AppVersion "0.2.0"
+  #define AppVersion "0.3.0"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\..\dist\Eleza"

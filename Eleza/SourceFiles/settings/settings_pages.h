@@ -9,6 +9,12 @@ namespace Settings {
 // The page of a section; null for an unknown one.
 [[nodiscard]] Window::SectionFactory PageFactory(Section section);
 
+// «تماس‌ها» belongs to the calls module (calls/calls_settings.cpp), which
+// registers its page at startup. In a build without calls nobody does: the
+// section is not listed and its route opens nothing.
+void RegisterCallsPage(Window::SectionFactory factory);
+[[nodiscard]] bool HasCallsPage();
+
 // settings_account.cpp
 [[nodiscard]] Window::SectionFactory AccountPageFactory();
 [[nodiscard]] Window::SectionFactory DevicesPageFactory();

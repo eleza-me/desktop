@@ -1,0 +1,9 @@
+<RCC>
+	<qresource prefix="/calls">
+		<file alias="sounds/call_ringtone.wav">../sounds/call_ringtone.wav</file>
+		<file alias="sounds/call_ringback.wav">../sounds/call_ringback.wav</file>
+		<file alias="sounds/call_connect.wav">../sounds/call_connect.wav</file>
+		<file alias="sounds/call_end.wav">../sounds/call_end.wav</file>
+		<file alias="sounds/call_busy.wav">../sounds/call_busy.wav</file>
+	</qresource>
+</RCC>

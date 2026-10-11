@@ -15,6 +15,11 @@ background, checked against Eleza's signature and installed when you choose
 that the directory must stay writable by you. A copy installed from the .deb
 package is updated by the system's package manager instead.
 
+Voice calls use liblivekit_ffi.so, which lies next to the program (the LiveKit
+client library; the notices of what it contains are in livekit_ffi-LICENSE.md).
+Without that file Eleza works as before and says that calls are unavailable.
+Sound goes through your system's audio server (PipeWire or PulseAudio).
+
 Your data lives in ~/.local/share/eleza/Eleza and is not touched by updates.
 
 https://eleza.me

@@ -151,6 +151,69 @@ if (WIN32 AND TARGET Updater)
 	endif()
 endif()
 
+# ---- voice calls
+if (ELEZA_ENABLE_CALLS)
+	find_package(Qt6 6.4 REQUIRED COMPONENTS Multimedia)
+	set(_eleza_calls_media_sources
+		"${_eleza_app_src}/calls/calls_audio_io.cpp"
+		"${_eleza_app_src}/calls/calls_audio_io.h"
+		"${_eleza_app_src}/calls/calls_ffi.cpp"
+		"${_eleza_app_src}/calls/calls_media.cpp"
+		"${_eleza_app_src}/calls/calls_media.h"
+		"${_eleza_app_src}/calls/calls_media_livekit.cpp")
+	# A room participant on the command line: the media layer alone
+	# (tests/tools/calls-e2e.sh, or by hand against a real SFU).
+	add_executable(calls_media_probe tools/calls_media_probe.cpp
+		${_eleza_calls_media_sources})
+	target_include_directories(calls_media_probe PRIVATE "${_eleza_app_src}")
+	target_link_libraries(calls_media_probe PRIVATE Qt6::Core Qt6::Multimedia)
+	target_compile_definitions(calls_media_probe PRIVATE
+		ELEZA_VERSION_STRING="${PROJECT_VERSION}")
+	eleza_target_defaults(calls_media_probe)
+	eleza_livekit_deploy(calls_media_probe)
+	# The pinned library loads on this platform and speaks the interface
+	# calls_media_livekit.cpp was written against.
+	add_test(NAME test_calls_media_library COMMAND calls_media_probe --self-check)
+	set_tests_properties(test_calls_media_library PROPERTIES
+		SKIP_RETURN_CODE 77
+		TIMEOUT 60)
+	eleza_test_runtime_path(test_calls_media_library)
+
+	# The wire codec of the library's messages (a header).
+	eleza_add_test(test_calls_ffi_proto app/test_calls_ffi_proto.cpp)
+	target_include_directories(test_calls_ffi_proto PRIVATE "${_eleza_app_src}")
+	# Sample formats, the resampler, the playout queue, levels, the join
+	# payload and the quality estimate: no device, no library.
+	eleza_add_test(test_calls_audio app/test_calls_audio.cpp LIBS Qt6::Multimedia)
+	target_sources(test_calls_audio PRIVATE
+		"${_eleza_app_src}/calls/calls_audio_io.cpp"
+		"${_eleza_app_src}/calls/calls_audio_io.h"
+		"${_eleza_app_src}/calls/calls_ffi.cpp"
+		"${_eleza_app_src}/calls/calls_media.cpp"
+		"${_eleza_app_src}/calls/calls_media.h")
+	target_include_directories(test_calls_audio PRIVATE "${_eleza_app_src}")
+	target_compile_definitions(test_calls_audio PRIVATE
+		ELEZA_VERSION_STRING="${PROJECT_VERSION}")
+
+	if (TARGET ElezaCore)
+		# The call state machine and the "which call" rules against a fake
+		# server and a fake media (no library, no audio).
+		eleza_add_test(test_calls_call app/test_calls_call.cpp LIBS ElezaCore)
+		target_sources(test_calls_call PRIVATE
+			"${_eleza_app_src}/calls/calls_call.cpp"
+			"${_eleza_app_src}/calls/calls_call.h"
+			"${_eleza_app_src}/calls/calls_instance.cpp"
+			"${_eleza_app_src}/calls/calls_instance.h"
+			"${_eleza_app_src}/calls/calls_ffi.cpp"
+			"${_eleza_app_src}/calls/calls_media.cpp"
+			"${_eleza_app_src}/calls/calls_media.h")
+		target_include_directories(test_calls_call PRIVATE "${_eleza_app_src}")
+		target_compile_definitions(test_calls_call PRIVATE
+			ELEZA_VERSION_STRING="${PROJECT_VERSION}")
+		set_tests_properties(test_calls_call PROPERTIES TIMEOUT 120)
+	endif()
+endif()
+
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/core/CMakeLists.txt")
 	add_subdirectory(core)
 endif()

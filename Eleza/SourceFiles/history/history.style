@@ -152,9 +152,11 @@ historyFileCancelIcon: icon {{ "close", textOnBrand, 20px }};
 historyFileMusicIcon: icon {{ "music", textOnBrand, 22px }};
 historyFileImageIcon: icon {{ "image", textOnBrand, 22px }};
 historyFileVideoIcon: icon {{ "video", textOnBrand, 22px }};
+historyTopBarCallDisabledFg: borderStrong;
 historyCallIcon: icon {{ "call", textOnBrand, 22px }};
 historyCallMissedIcon: icon {{ "call-end", staticWhite, 22px }};
 historyCallMissedBg: statusError;
+historyCallMissedFg: statusError;
 
 // stickers, locations, shared posts
 historyStickerSize: 168px;

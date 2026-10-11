@@ -176,6 +176,7 @@ profileStateTextStyle: TextStyle(defaultTextStyle) {
 
 // ---- menus
 profileMenuBellIcon: icon {{ "notifications", menuIconFg, 20px }};
+profileMenuCallIcon: icon {{ "call", menuIconFg, 20px }};
 profileMenuRemoveIcon: icon {{ "close-circle", menuIconFg, 20px }};
 profileMenuProfileIcon: icon {{ "me", menuIconFg, 20px }};
 profileMenuFollowIcon: icon {{ "follow", menuIconFg, 20px }};

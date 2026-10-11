@@ -21,6 +21,32 @@ Please fix this file when something differs on a real machine.
 What `docs/DEVELOPING.md` covers and this file does not: running against the mock API, the
 debug flags, screenshots, how to add a module.
 
+## Voice calls: the media library
+
+Voice calls need one thing that is neither in the repository nor a system package: LiveKit's
+`livekit_ffi` (the room client with its WebRTC stack; `third_party/livekit/README.md` says
+what it contains and under which licences). `cmake/eleza_livekit.cmake` handles it:
+
+* at configure time it downloads the prebuilt binary of the pinned release for the platform
+  (`ffi-windows-x86_64.zip`, `ffi-linux-x86_64.zip` or `ffi-linux-arm64.zip`, 10–11 MB, from
+  the project's GitHub releases), checks its SHA-256 and unpacks it under
+  `<build>/_deps/`; a later configure finds it there and downloads nothing;
+* after every build it copies `liblivekit_ffi.so` / `livekit_ffi.dll` (24–27 MB) and its
+  notices (`livekit_ffi-LICENSE.md`) next to the executable. Nothing links against the
+  library: the app loads it when the first call needs it, from its own directory or from
+  `../lib/eleza` (an installed package), and without the file it runs as before and says that
+  calls are unavailable.
+
+| | |
+|---|---|
+| No network at configure time | download the archive elsewhere and pass `-DELEZA_LIVEKIT_FFI_ARCHIVE=<file>` (the hash is checked all the same) |
+| No calls at all | `-DELEZA_ENABLE_CALLS=OFF`: nothing is downloaded, `Eleza/SourceFiles/calls` is not compiled, the app has no call buttons and no «تماس‌ها» settings |
+| Another platform | the app is built with the call screens and reports calls as unavailable at run time (a CMake warning says so) |
+
+The Linux binary needs glibc 2.28 or newer and the usual `libstdc++` / `libgcc_s`; the Windows
+one imports system DLLs only (no C++ runtime DLLs). Sound devices are Qt Multimedia's: the
+audio server of the system (PipeWire / PulseAudio, WASAPI).
+
 ## Linux
 
 ### Packages (Ubuntu 24.04)
@@ -110,15 +136,17 @@ cmake --build build
 sudo cmake --install build --strip
 ```
 
-installs `bin/Eleza`, `share/applications/me.eleza.desktop.desktop` and the icons under
-`share/icons/hicolor`. For packages:
+installs `bin/Eleza`, `share/applications/me.eleza.desktop.desktop`, the icons under
+`share/icons/hicolor` and the media library of voice calls with its notices under
+`lib/eleza`. For packages:
 
 ```sh
 packaging/linux/build-deb.sh            # -> build/package/dist/
 ```
 
 makes a Release build and writes `Eleza-<version>-linux-<arch>.zip` (the portable build: the
-binary, an icon and a README in a directory of their own, see below) and, when `dpkg-deb` is
+binary, the media library of voice calls with its notices, an icon and a README in a
+directory of their own, see below) and, when `dpkg-deb` is
 available, `eleza-desktop_<version>_<arch>.deb`. The `.deb` is described by
 `packaging/linux/cpack-deb.cmake`; it can also be made from any configured build directory:
 
@@ -213,6 +241,8 @@ title bar of the system (`docs/DEVELOPING.md`, "The window frame").
 mkdir dist\Eleza
 copy build\windows-msvc-release\Eleza\Eleza.exe dist\Eleza\
 copy build\windows-msvc-release\Eleza\Updater.exe dist\Eleza\
+copy build\windows-msvc-release\Eleza\livekit_ffi.dll dist\Eleza\
+copy build\windows-msvc-release\Eleza\livekit_ffi-LICENSE.md dist\Eleza\
 windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw --no-compiler-runtime dist\Eleza\Eleza.exe
 copy build\windows-msvc-release\vcpkg_installed\x64-windows\bin\libcrypto-3-x64.dll dist\Eleza\
 copy build\windows-msvc-release\vcpkg_installed\x64-windows\bin\libssl-3-x64.dll dist\Eleza\
@@ -220,10 +250,12 @@ copy "%VCToolsRedistDir%x64\Microsoft.VC143.CRT\*.dll" dist\Eleza\
 ```
 
 `Updater.exe` is the small program that swaps the files when the app updates itself
-(`lib/install`, no Qt, static C++ runtime: it must not need the DLLs it replaces). Then:
+(`lib/install`, no Qt, static C++ runtime: it must not need the DLLs it replaces).
+`livekit_ffi.dll` is the media library of voice calls ("Voice calls: the media library"
+above); a folder without it works, with calls reported as unavailable. Then:
 
 ```bat
-python packaging\make-package.py dist\Eleza dist\Eleza-0.2.0-windows-x64.zip
+python packaging\make-package.py dist\Eleza dist\Eleza-0.3.0-windows-x64.zip
 ```
 
 writes `dist\Eleza\eleza-files.list` (without it and `Updater.exe` a copy does not update
@@ -232,7 +264,7 @@ installer is made from the same folder with
 [Inno Setup](https://jrsoftware.org/isinfo.php) 6.3 or newer:
 
 ```bat
-iscc /DAppVersion=0.2.0 /DSourceDir=%CD%\dist\Eleza /DOutputDir=%CD%\dist\installer packaging\windows\eleza.iss
+iscc /DAppVersion=0.3.0 /DSourceDir=%CD%\dist\Eleza /DOutputDir=%CD%\dist\installer packaging\windows\eleza.iss
 ```
 
 It installs per user into `%LOCALAPPDATA%\Programs\Eleza` (no administrator rights, so the
@@ -294,7 +326,9 @@ and registers an uninstaller. User data lives in
 
 `.github/workflows/build.yml` builds both platforms on every push to `main` and on pull
 requests (and for a `v*` tag as a part of `release.yml`, which then signs the update
-manifest and publishes the release: `docs/RELEASING.md`), runs `ctest`, starts the built binary once (`--version`; on
+manifest and publishes the release: `docs/RELEASING.md`), runs `ctest` (which also loads the
+media library of voice calls on that platform: `test_calls_media_library`), checks that the
+packages carry that library, starts the built binary once (`--version`; on
 Linux also a few seconds on the offscreen platform) and uploads the packages. Both jobs
 build Release with `ELEZA_DEBUG_TOOLS` off — the tests do not need the debug flags — so the
 artifacts have no debug hooks; the Linux job checks that:

@@ -1,5 +1,6 @@
 #include "history/history_top_bar.h"
 
+#include "data/data_calls.h"
 #include "data/data_chats.h"
 #include "data/data_session.h"
 #include "data/data_users.h"
@@ -13,6 +14,7 @@
 #include "ui/ui_utility.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/tooltip.h"
+#include "window/window_calls.h"
 #include "window/window_session_controller.h"
 #include "styles/palette.h"
 #include "styles/style_history.h"
@@ -62,6 +64,7 @@ TopBar::TopBar(
 	_session,
 	QString(),
 	st::historyTopBarUserpic))
+, _call(Ui::CreateChild<Ui::IconButton>(this, st::topBarCallButton))
 , _search(Ui::CreateChild<Ui::IconButton>(this, st::topBarSearchButton))
 , _mute(Ui::CreateChild<Ui::IconButton>(this, st::historyTopBarMuteButton))
 , _more(Ui::CreateChild<Ui::IconButton>(this, st::topBarMoreButton))
@@ -76,6 +79,13 @@ TopBar::TopBar(
 	setMouseTracking(true);
 	_back->setClickedCallback([this] { Q_EMIT backRequested(); });
 	_search->setClickedCallback([this] { Q_EMIT searchRequested(); });
+	_call->setClickedCallback([this] {
+		// It just calls: the person can still hang up.
+		const auto chat = _session->data().chats().chat(_chatId);
+		if (chat && _callEnabled) {
+			Window::StartCall(_controller, chat->peerUserId);
+		}
+	});
 	_more->setClickedCallback([this] { Q_EMIT moreRequested(); });
 	_userpic->setClickedCallback([this] {
 		if (titleClickable()) {
@@ -92,6 +102,11 @@ TopBar::TopBar(
 
 	Ui::InstallTooltip(_back, [] { return tr::lng_back(tr::now); });
 	Ui::InstallTooltip(_search, [] { return tr::lng_history_search(tr::now); });
+	Ui::InstallTooltip(_call, [this] {
+		return _callEnabled
+			? tr::lng_calls_voice_call(tr::now)
+			: tr::lng_calls_not_possible_here(tr::now);
+	});
 	Ui::InstallTooltip(_more, [] { return tr::lng_more(tr::now); });
 	Ui::InstallTooltip(_mute, [this] {
 		return _muted ? tr::lng_chat_unmute(tr::now) : tr::lng_chat_mute(tr::now);
@@ -206,6 +221,15 @@ void TopBar::refresh() {
 			_userpic->setUserId(chat->peerUserId);
 		}
 	}
+	const auto availability = Window::CallsSupported()
+		? Data::CallAvailabilityFor(*chat)
+		: Data::CallAvailability::Hidden;
+	_callShown = (availability != Data::CallAvailability::Hidden);
+	_callEnabled = (availability == Data::CallAvailability::Available);
+	_call->setIconColorOverride(_callEnabled
+		? std::nullopt
+		: std::make_optional(st::historyTopBarCallDisabledFg->c));
+	_call->setPointerCursor(_callEnabled);
 	const auto watch = (!chat->anonymous
 		&& !chat->saved
 		&& !chat->isBot
@@ -291,6 +315,7 @@ void TopBar::updateControls() {
 	const auto top = (height() - _back->height()) / 2;
 	_back->setVisible(_backShown && !selecting);
 	_userpic->setVisible(!selecting);
+	_call->setVisible(!selecting && _callShown);
 	_search->setVisible(!selecting);
 	_mute->setVisible(!selecting);
 	_more->setVisible(!selecting);
@@ -323,7 +348,10 @@ void TopBar::updateControls() {
 			}
 		}
 	} else {
-		for (const auto button : { _more, _mute, _search }) {
+		for (const auto button : { _more, _mute, _search, _call }) {
+			if (button->isHidden()) {
+				continue;
+			}
 			button->moveToRight(right, top, width());
 			right += button->width();
 		}
@@ -338,6 +366,7 @@ QRect TopBar::titleRect() const {
 		+ _more->width()
 		+ _mute->width()
 		+ _search->width()
+		+ (_callShown ? _call->width() : 0)
 		+ 8;
 	return QRect(left, 0, std::max(width() - left - right, 0), height());
 }

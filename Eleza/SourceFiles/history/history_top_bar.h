@@ -1,6 +1,12 @@
 // The header of a chat: back, userpic, name (+ the verified tick), the status
-// line (typing / presence / connection), search, mute and «…». With messages
-// selected it turns into the selection bar: count, copy, forward, delete.
+// line (typing / presence / connection), call, search, mute and «…». With
+// messages selected it turns into the selection bar: count, copy, forward,
+// delete.
+//
+// The call button is there in a direct chat of two people (never for a
+// conversation, a bot, saved messages or a deleted account) and is dimmed
+// while the server would refuse the call (a message request, a block):
+// Data::CallAvailabilityFor. A build without calls has no button.
 #pragma once
 
 #include "ui/effects/animations.h"
@@ -81,6 +87,7 @@ private:
 
 	Ui::IconButton *_back = nullptr;
 	Support::UserpicButton *_userpic = nullptr;
+	Ui::IconButton *_call = nullptr;
 	Ui::IconButton *_search = nullptr;
 	Ui::IconButton *_mute = nullptr;
 	Ui::IconButton *_more = nullptr;
@@ -100,6 +107,8 @@ private:
 	bool _backShown = false;
 	bool _titleOver = false;
 	bool _titlePressed = false;
+	bool _callShown = false;
+	bool _callEnabled = false;
 	int _selected = 0;
 	bool _selectedForward = true;
 	QString _watched;

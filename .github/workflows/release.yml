@@ -123,8 +123,8 @@ jobs:
           import os, sys, zipfile
           version = os.environ["VERSION"]
           expected = {
-              "dist/Eleza-%s-windows-x64.zip" % version: ["Eleza.exe", "Updater.exe", "eleza-files.list"],
-              "dist/Eleza-%s-linux-x86_64.zip" % version: ["Eleza", "eleza-files.list"],
+              "dist/Eleza-%s-windows-x64.zip" % version: ["Eleza.exe", "Updater.exe", "livekit_ffi.dll", "livekit_ffi-LICENSE.md", "eleza-files.list"],
+              "dist/Eleza-%s-linux-x86_64.zip" % version: ["Eleza", "liblivekit_ffi.so", "livekit_ffi-LICENSE.md", "eleza-files.list"],
           }
           for path, names in expected.items():
               with zipfile.ZipFile(path) as archive:

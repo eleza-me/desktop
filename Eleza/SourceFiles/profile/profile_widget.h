@@ -76,6 +76,8 @@ protected:
 private:
 	[[nodiscard]] bool isMe() const;
 	[[nodiscard]] ViewerState viewerState() const;
+	// The user id to call from here, or "" when «تماس صوتی» is not offered.
+	[[nodiscard]] QString callableUserId() const;
 	void load();
 	void loaded(const Data::Profile &profile);
 	void failed(const Api::Error &error);
