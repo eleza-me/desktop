@@ -63,6 +63,9 @@ struct PeerListRow {
 	// The userpic: this user's picture, or a special one when empty.
 	QString userId;
 	Ui::UserpicKind special = Ui::UserpicKind::User;
+	// A group: its photo (or the initial of its title when it has none).
+	QString groupId;
+	QString groupPhoto;
 	bool verified = false;
 	bool disabled = false; // shown but cannot be chosen
 
@@ -126,6 +129,11 @@ public:
 		return 0;
 	}
 	[[nodiscard]] virtual QString submitText() const;
+	// Multi-select: the submit button also works with nobody chosen (a new
+	// group may start with its creator alone).
+	[[nodiscard]] virtual bool submitWithoutSelection() const {
+		return false;
+	}
 	virtual void submit(const QStringList &ids) {
 		Q_UNUSED(ids);
 	}

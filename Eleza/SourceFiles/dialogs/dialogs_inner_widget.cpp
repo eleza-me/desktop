@@ -1,5 +1,7 @@
 #include "dialogs/dialogs_inner_widget.h"
 
+#include "data/data_group_rules.h"
+
 #include "api/api_client_config.h"
 #include "data/data_chats.h"
 #include "data/data_session.h"
@@ -86,8 +88,18 @@ InnerWidget::InnerWidget(
 			const QStringList &ids) {
 		auto changed = false;
 		for (auto &row : _rows) {
-			if (row.type == Row::Type::Chat
-				&& ids.contains(row.chat.peerUserId)) {
+			if (row.type != Row::Type::Chat) {
+				continue;
+			}
+			// A group row names the sender of its last message and the
+			// people of a note.
+			const auto named = row.chat.isGroup
+				&& row.chat.lastMessage
+				&& (ids.contains(row.chat.lastMessage->sender)
+					|| (row.chat.lastMessage->kind == Data::MessageKind::System
+						&& ids.contains(Data::GroupRules::NoteUser(
+							row.chat.lastMessage->system))));
+			if (named || ids.contains(row.chat.peerUserId)) {
 				row.prepared = false;
 				changed = true;
 			}
@@ -408,7 +420,22 @@ void InnerWidget::prepare(Row &row) {
 	const auto &chat = row.chat;
 	row.title = Support::ChatTitle(&session, chat);
 	const auto activity = session.data().chats().activity(chat.id);
-	row.preview = PreviewFor(chat, activity ? activity->kind : QString());
+	auto senderName = QString();
+	auto noteText = QString();
+	if (chat.isGroup && chat.lastMessage) {
+		const auto &last = *chat.lastMessage;
+		if (last.kind == Data::MessageKind::System) {
+			noteText = Support::MessagePreview(&session, last);
+		} else if (!chat.lastMine && !last.sender.isEmpty()) {
+			senderName = Data::GroupRules::FirstName(
+				Support::MemberName(&session, last.sender));
+		}
+	}
+	row.preview = PreviewFor(
+		chat,
+		activity ? activity->kind : QString(),
+		senderName,
+		noteText);
 	if (!row.preview.text.isEmpty()) {
 		// For painting: "@sara" / "#tag" keep their direction inside the
 		// line, and the line reads in the direction of its own text (a
@@ -429,6 +456,7 @@ void InnerWidget::prepare(Row &row) {
 			? (Lang::Num(chat.unread) + QLatin1Char('+'))
 			: Ui::BadgeText(chat.unread, 999))
 		: QString();
+	row.mention = chat.isGroup && (chat.unreadMentions > 0);
 }
 
 int InnerWidget::resizeGetHeight(int newWidth) {
@@ -558,7 +586,14 @@ void InnerWidget::paintUserpic(
 		return;
 	}
 	const auto &chat = row.chat;
-	if (chat.saved) {
+	if (chat.isGroup) {
+		_userpics.paintGroup(
+			p,
+			rect,
+			chat.id,
+			chat.group ? chat.group->photo : QString(),
+			row.title);
+	} else if (chat.saved) {
 		_userpics.paintSpecial(p, rect, Ui::UserpicKind::Saved, chat.id);
 	} else if (chat.peerDeleted) {
 		_userpics.paintSpecial(p, rect, Ui::UserpicKind::Deleted, chat.id);
@@ -743,6 +778,19 @@ void InnerWidget::paintRow(
 			st::dialogsBadge,
 			mutedBadge);
 		textRight -= badgeWidth + st::dialogsBadgeSkip;
+		if (isChat && row.mention) {
+			// «@»: somebody mentioned me or replied to me in there. Never
+			// dimmed: this is what a muted group still wants me to see.
+			const auto mentionWidth = Ui::PaintBadge(
+				p,
+				u"@"_s,
+				padding.right() + badgeWidth + st::dialogsMentionSkip,
+				st::dialogsBadgeTop,
+				outer,
+				st::dialogsBadge,
+				false);
+			textRight -= mentionWidth + st::dialogsMentionSkip;
+		}
 	} else if (isChat && chat.pinned && !searching()) {
 		const auto &icon = st::dialogsPinIcon;
 		icon.paint(

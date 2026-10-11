@@ -959,6 +959,8 @@ void Feed::reportReasons(
 			reasons.reply = Json::Strings(result.value("reply"_L1));
 			reasons.account = Json::Strings(result.value("account"_L1));
 			reasons.conversation = Json::Strings(result.value("conversation"_L1));
+			reasons.group = Json::Strings(result.value("group"_L1));
+			reasons.groupMessage = Json::Strings(result.value("group_message"_L1));
 			if (done) {
 				done(reasons);
 			}
@@ -974,13 +976,18 @@ void Feed::sendReport(
 		const QString &note,
 		base::Guard guard,
 		Fn<void()> done,
-		FailCallback fail) {
+		FailCallback fail,
+		qint64 messageSeq) {
 	auto body = QJsonObject{
 		{ u"target_kind"_s, targetKind },
 		{ u"target"_s, target },
 		{ u"reason"_s, reason },
 	};
 	Json::Put(body, "note"_L1, note);
+	if (messageSeq > 0) {
+		// A message of a group: the target is the group.
+		body.insert(u"message_seq"_s, messageSeq);
+	}
 	_session->api().request(Api::Post, u"/v1/reports"_s)
 		.body(body)
 		.guard(this)

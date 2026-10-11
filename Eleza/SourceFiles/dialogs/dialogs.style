@@ -69,6 +69,7 @@ dialogsBadge: Badge(defaultBadge) {
 }
 dialogsBadgeTop: 36px;
 dialogsBadgeSkip: 8px;
+dialogsMentionSkip: 4px;
 
 // ---- the «درخواست‌ها» / «بایگانی» entries
 dialogsFolderBg: bgSunken;

@@ -5,6 +5,10 @@
 #include "core/core_application.h"
 #include "core/core_settings.h"
 #include "data/data_chats.h"
+#include "data/data_group_rules.h"
+#include "data/data_groups.h"
+#include "data/data_users.h"
+#include "history/history_mentions.h"
 #include "data/data_messages.h"
 #include "data/data_outbox.h"
 #include "data/data_session.h"
@@ -37,6 +41,7 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QHash>
 #include <QtGui/QClipboard>
+#include <QtGui/QContextMenuEvent>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QKeyEvent>
 #include <QtGui/QMouseEvent>
@@ -133,6 +138,14 @@ ComposeControls::ComposeControls(
 	if (const auto chat = _session->data().chats().chat(_chatId)) {
 		_conversation = chat->isConversation;
 	}
+	_panelParent = panelParent;
+	_group = Data::IsGroupId(_chatId);
+	if (_group) {
+		_mentionsBox = Ui::CreateChild<MentionsDropdown>(panelParent, _session);
+		_mentionsBox->setChosenCallback([this](const Data::User &user) {
+			pickMention(user);
+		});
+	}
 	LiveComposers().push_back(this);
 	_panel->hide();
 	_barClose->hide();
@@ -198,6 +211,12 @@ void ComposeControls::setupField() {
 			_changeHint = position;
 		});
 	connect(_field, &Ui::InputField::changed, this, [this] { fieldChanged(); });
+	if (_group) {
+		// The caret moved into or out of an «@word».
+		connect(raw, &QTextEdit::cursorPositionChanged, this, [this] {
+			updateMentions();
+		});
+	}
 	connect(_field, &Ui::InputField::submitted, this, [this] { submit(); });
 	connect(_field, &Ui::RpWidget::heightChanged, this, [this] {
 		resizeToWidth(width());
@@ -211,6 +230,8 @@ void ComposeControls::setupButtons() {
 	_attach->setClickedCallback([this] { showAttachMenu(); });
 	_emoji->setClickedCallback([this] { _panel->toggle(_emoji); });
 	_send->setClickedCallback([this] { submit(); });
+	// The context menu of the send button: «ارسال بی‌صدا».
+	_send->installEventFilter(this);
 	_mic->setClickedCallback([this] { startRecording(); });
 	_barClose->setClickedCallback([this] { cancelMode(); });
 	_previewClose->setClickedCallback([this] { dismissPreview(); });
@@ -361,6 +382,8 @@ void ComposeControls::setFieldText(
 		const QVector<Data::Entity> &entities) {
 	_settingText = true;
 	_spoilers = NormalizeEntities(text, entities);
+	_mentions.clear();
+	hideMentions();
 	_text = text;
 	_field->setText(text);
 	_text = _field->text();
@@ -375,11 +398,14 @@ void ComposeControls::fieldChanged() {
 	const auto now = _field->text();
 	if (!_settingText) {
 		_spoilers = AdjustEntities(_spoilers, _text, now, _changeHint);
+		_mentions = AdjustEntities(_mentions, _text, now, _changeHint);
 	}
 	const auto was = _text;
 	_text = now;
 	_changeHint = -1;
+	checkMentions();
 	applySpoilerMarks();
+	updateMentions();
 	updateControls();
 	if (_settingText || was == now) {
 		return;
@@ -410,7 +436,191 @@ void ComposeControls::applySpoilerMarks() {
 		selection.format.setBackground(st::historyComposeSpoilerBg->c);
 		selections.push_back(selection);
 	}
+	for (const auto &entity : std::as_const(_mentions)) {
+		// A picked member reads like the link it will be.
+		const auto from = std::clamp(entity.offset, 0, length);
+		const auto till = std::clamp(entity.offset + entity.length, from, length);
+		if (till <= from) {
+			continue;
+		}
+		auto selection = QTextEdit::ExtraSelection();
+		selection.cursor = QTextCursor(raw->document());
+		selection.cursor.setPosition(from);
+		selection.cursor.setPosition(till, QTextCursor::KeepAnchor);
+		selection.format.setForeground(st::historyMentionFg->c);
+		selections.push_back(selection);
+	}
 	raw->setExtraSelections(selections);
+}
+
+// ---- mentions
+
+// A mention stays one only while its range still reads as the name that was
+// picked (typing inside it, or cutting a part of it, makes it plain text).
+void ComposeControls::checkMentions() {
+	if (_mentions.isEmpty()) {
+		return;
+	}
+	auto kept = QVector<Data::Entity>();
+	for (const auto &entity : std::as_const(_mentions)) {
+		if (entity.offset >= 0
+			&& entity.length > 0
+			&& entity.offset + entity.length <= _text.size()
+			&& QStringView(_text).mid(entity.offset, entity.length) == entity.url) {
+			kept.push_back(entity);
+		}
+	}
+	_mentions = kept;
+}
+
+void ComposeControls::hideMentions() {
+	++_mentionRequest;
+	_mentionShownFor = QString();
+	if (_mentionsBox) {
+		_mentionsBox->hideFast();
+	}
+}
+
+void ComposeControls::updateMentions() {
+	if (!_mentionsBox) {
+		return;
+	}
+	auto &groups = _session->data().groups();
+	const auto cursor = _field->rawTextEdit()->textCursor();
+	if (_settingText
+		|| _mode == Mode::Edit
+		|| recording()
+		|| cursor.hasSelection()
+		|| !groups.administration()) {
+		hideMentions();
+		return;
+	}
+	const auto query = Data::MentionRules::QueryAt(_text, cursor.position());
+	if (!query) {
+		hideMentions();
+		return;
+	}
+	const auto key = QString::number(query->at) + u':' + query->text;
+	if (_mentionShownFor == key) {
+		return;
+	}
+	_mentionShownFor = key;
+	const auto request = ++_mentionRequest;
+	const auto session = _session;
+	if (query->text.isEmpty()) {
+		// Just «@»: the first members of the list.
+		groups.loadMembers(_chatId, u"all"_s, QString(), this, [=, this](
+				const Data::GroupMembersPage &page) {
+			if (request != _mentionRequest) {
+				return;
+			}
+			auto ids = QStringList();
+			for (const auto &member : page.members) {
+				ids.push_back(member.user);
+			}
+			session->data().users().ensure(ids, this, [=, this] {
+				auto users = QVector<Data::User>();
+				for (const auto &id : ids) {
+					const auto user = session->data().users().peek(id);
+					if (user.valid()) {
+						users.push_back(user);
+					}
+				}
+				showMentions(request, users);
+			});
+		}, [=, this](const Api::Error &) {
+			showMentions(request, {});
+		});
+	} else {
+		groups.searchMembers(_chatId, query->text, this, [=, this](
+				const QVector<Data::User> &users) {
+			showMentions(request, users);
+		});
+	}
+}
+
+void ComposeControls::showMentions(
+		int request,
+		const QVector<Data::User> &users) {
+	if (request != _mentionRequest || !_mentionsBox) {
+		return;
+	}
+	const auto me = _session->data().users().myId();
+	auto shown = QVector<Data::User>();
+	for (const auto &user : users) {
+		if (user.id != me && !user.deleted && user.valid()) {
+			shown.push_back(user);
+		}
+	}
+	placeMentions();
+	_mentionsBox->showFor(shown);
+}
+
+void ComposeControls::placeMentions() {
+	if (!_mentionsBox || !_panelParent) {
+		return;
+	}
+	const auto content = contentRect();
+	const auto &padding = st::historyComposePadding;
+	_mentionsBox->placeAbove(QRect(
+		mapTo(_panelParent, QPoint(content.x() + padding.left(), 0)),
+		QSize(content.width() - padding.left() - padding.right(), height())));
+}
+
+void ComposeControls::pickMention(const Data::User &user) {
+	const auto raw = _field->rawTextEdit();
+	auto cursor = raw->textCursor();
+	const auto query = Data::MentionRules::QueryAt(_text, cursor.position());
+	if (!query) {
+		hideMentions();
+		return;
+	}
+	auto mentioned = QStringList();
+	for (const auto &entity : std::as_const(_mentions)) {
+		mentioned.push_back(entity.user);
+	}
+	const auto max = _session->data().groups().maxMentionsPerMessage();
+	if (!Data::MentionRules::Room(mentioned, user.id, max)) {
+		hideMentions();
+		showToast(tr::lng_groups_mention_limit(tr::now, lt_count, max));
+		return;
+	}
+	const auto label = Data::MentionRules::Label(
+		user.displayName,
+		user.handle,
+		tr::lng_groups_someone(tr::now));
+	const auto at = query->at;
+	hideMentions();
+	// One edit: «@wor» becomes the name and a space after it.
+	cursor.setPosition(at);
+	cursor.setPosition(
+		std::min(at + 1 + int(query->text.size()), int(_text.size())),
+		QTextCursor::KeepAnchor);
+	cursor.insertText(label + u' ');
+	raw->setTextCursor(cursor);
+	// fieldChanged() ran for the insert; the range of the name is known now.
+	if (QStringView(_text).mid(at, label.size()) == label) {
+		auto entity = Data::Entity();
+		entity.type = u"mention"_s;
+		entity.offset = at;
+		entity.length = int(label.size());
+		entity.user = user.id;
+		entity.url = label;
+		_mentions.push_back(entity);
+		applySpoilerMarks();
+	}
+	hideMentions();
+	_field->setFocusFast();
+}
+
+QVector<Data::Entity> ComposeControls::entitiesToSend() const {
+	auto result = _spoilers;
+	for (auto entity : _mentions) {
+		// The name was only kept to notice edits.
+		entity.url = QString();
+		result.push_back(entity);
+	}
+	return result;
 }
 
 void ComposeControls::toggleSpoiler() {
@@ -451,6 +661,9 @@ bool ComposeControls::eventFilter(QObject *object, QEvent *event) {
 		if (fieldKeyPress(static_cast<QKeyEvent*>(event))) {
 			return true;
 		}
+	} else if (object == _send && event->type() == QEvent::ContextMenu) {
+		showSendMenu(static_cast<QContextMenuEvent*>(event)->globalPos());
+		return true;
 	}
 	return RpWidget::eventFilter(object, event);
 }
@@ -459,6 +672,22 @@ bool ComposeControls::fieldKeyPress(QKeyEvent *e) {
 	const auto key = e->key();
 	const auto modifiers = e->modifiers()
 		& (Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier | Qt::MetaModifier);
+	if (_mentionsBox && _mentionsBox->shown() && !modifiers) {
+		// The list of members is open: the arrows walk it, Enter and Tab
+		// pick, Esc closes it — the field keeps the caret all along.
+		if (key == Qt::Key_Up || key == Qt::Key_Down) {
+			_mentionsBox->selectSkip((key == Qt::Key_Up) ? -1 : 1);
+			return true;
+		} else if (key == Qt::Key_Return || key == Qt::Key_Enter || key == Qt::Key_Tab) {
+			if (const auto user = _mentionsBox->selected()) {
+				pickMention(*user);
+				return true;
+			}
+		} else if (key == Qt::Key_Escape) {
+			hideMentions();
+			return true;
+		}
+	}
 	if (key == Qt::Key_P && modifiers == (Qt::ControlModifier | Qt::ShiftModifier)) {
 		toggleSpoiler();
 		return true;
@@ -580,8 +809,16 @@ void ComposeControls::cancelMode() {
 	_field->setFocusFast();
 }
 
+void ComposeControls::hideEvent(QHideEvent *e) {
+	hideMentions();
+	RpWidget::hideEvent(e);
+}
+
 bool ComposeControls::cancelCurrent() {
-	if (recording()) {
+	if (_mentionsBox && _mentionsBox->shown()) {
+		hideMentions();
+		return true;
+	} else if (recording()) {
 		stopRecording(false);
 		return true;
 	} else if (_panel->shown()) {
@@ -659,11 +896,29 @@ void ComposeControls::submit() {
 	}
 }
 
-void ComposeControls::send() {
+void ComposeControls::showSendMenu(QPoint globalPosition) {
+	if (_sendMenu) {
+		_sendMenu->hideMenu();
+		return;
+	} else if (_mode == Mode::Edit
+		|| recording()
+		|| (_text.trimmed().isEmpty() && _forwards.isEmpty())) {
+		// Nothing a silent send would apply to.
+		return;
+	}
+	_sendMenu = new Ui::PopupMenu(this);
+	_sendMenu->addAction(
+		tr::lng_history_send_silent(tr::now),
+		[this] { send(true); },
+		&st::menuIconMute);
+	_sendMenu->popup(globalPosition);
+}
+
+void ComposeControls::send(bool silent) {
 	const auto config = _session->data().clientConfig();
 	const auto prepared = PrepareForSend(
 		_text,
-		_spoilers,
+		entitiesToSend(),
 		config ? config->maxEntities() : 0);
 	if (prepared.empty() && _forwards.isEmpty()) {
 		return;
@@ -680,6 +935,7 @@ void ComposeControls::send() {
 		for (const auto &part : parts) {
 			auto options = Data::SendTextOptions();
 			options.entities = part.entities;
+			options.silent = silent;
 			if (first) {
 				if (_mode == Mode::Reply) {
 					options.replyToSeq = _target.seq;
@@ -1218,6 +1474,7 @@ void ComposeControls::resizeEvent(QResizeEvent *e) {
 
 void ComposeControls::updatePanelPosition() {
 	_panel->updatePosition();
+	placeMentions();
 }
 
 void ComposeControls::updateFieldGeometry() {

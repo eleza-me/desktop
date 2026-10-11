@@ -6,7 +6,9 @@
 // The call button is there in a direct chat of two people (never for a
 // conversation, a bot, saved messages or a deleted account) and is dimmed
 // while the server would refuse the call (a message request, a block):
-// Data::CallAvailabilityFor. A build without calls has no button.
+// Data::CallAvailabilityFor. A build without calls has no button. Where the
+// server has video calls (`feature.video_calls`) a video call button stands
+// next to it, under the same rules.
 #pragma once
 
 #include "ui/effects/animations.h"
@@ -50,7 +52,8 @@ public:
 	[[nodiscard]] Ui::IconButton *moreButton() const {
 		return _more;
 	}
-	// The peer's user id when the title leads to a profile ("" otherwise).
+	// The peer's user id when the title leads to a profile ("" otherwise:
+	// also for a group, whose title leads to the group's info).
 	[[nodiscard]] QString profileUserId() const;
 
 Q_SIGNALS:
@@ -88,6 +91,7 @@ private:
 	Ui::IconButton *_back = nullptr;
 	Support::UserpicButton *_userpic = nullptr;
 	Ui::IconButton *_call = nullptr;
+	Ui::IconButton *_videoCall = nullptr;
 	Ui::IconButton *_search = nullptr;
 	Ui::IconButton *_mute = nullptr;
 	Ui::IconButton *_more = nullptr;
@@ -103,12 +107,14 @@ private:
 	bool _typing = false;
 	bool _verified = false;
 	bool _topic = false;
+	bool _group = false;
 	bool _muted = false;
 	bool _backShown = false;
 	bool _titleOver = false;
 	bool _titlePressed = false;
 	bool _callShown = false;
 	bool _callEnabled = false;
+	bool _videoCallShown = false;
 	int _selected = 0;
 	bool _selectedForward = true;
 	QString _watched;

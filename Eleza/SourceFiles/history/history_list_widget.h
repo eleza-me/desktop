@@ -38,6 +38,10 @@ class PopupMenu;
 class ScrollArea;
 } // namespace Ui
 
+namespace Support {
+class UserpicPainter;
+} // namespace Support
+
 namespace Window {
 class SessionController;
 } // namespace Window
@@ -191,6 +195,10 @@ private:
 	View::PlaybackState elementPlayback(const Data::Message &message) override;
 	bool elementRevealed(const QString &key) override;
 	bool elementButtonLoading(const Data::Message &message, int row, int column) override;
+	bool elementGroup() override;
+	View::SenderInfo elementSender(const Data::Message &message) override;
+	void elementPaintUserpic(Painter &p, const QRect &rect, const QString &userId) override;
+	QString elementServiceText(const Data::Message &message) override;
 
 	// ---- rows
 	[[nodiscard]] const Data::History &history() const;
@@ -285,6 +293,14 @@ private:
 	QString _chatId;
 	QPointer<Ui::ScrollArea> _scroll;
 	Downloads *_downloads = nullptr;
+
+	// ---- a group
+	void loadRoles();
+	bool _group = false;
+	std::unique_ptr<Support::UserpicPainter> _userpics; // the senders' pictures
+	QHash<QString, QString> _roles;                     // user id -> «مالک» / «مدیر» / a title
+	bool _rolesLoading = false;
+	bool _rolesAgain = false;
 
 	std::vector<Row> _rows;
 	QHash<QString, int> _indexByKey;

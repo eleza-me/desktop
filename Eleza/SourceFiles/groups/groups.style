@@ -1,0 +1,105 @@
+// Groups: the info screen (cover, rows, members), the boxes of creating a
+// group, invite links, join requests, administration.
+using "ui/basic.style";
+using "ui/widgets/widgets.style";
+using "ui/layers/layers.style";
+
+groupsColumnWidth: 620px;
+groupsBottomSkip: 24px;
+
+// ---- the cover
+groupsCoverPadding: margins(24px, 22px, 24px, 14px);
+groupsCoverUserpic: 96px;
+groupsCoverNameSkip: 14px;
+groupsCoverNameStyle: TextStyle(defaultTextStyle) {
+	font: font(20px bold);
+	lineHeight: 28px;
+}
+groupsCoverCountFont: font(14px);
+groupsCoverCountSkip: 4px;
+groupsAboutLabel: FlatLabel(defaultFlatLabel) {
+	textFg: textPrimary;
+}
+groupsAboutPadding: margins(24px, 4px, 24px, 12px);
+groupsSectionTitle: FlatLabel(defaultFlatLabel) {
+	style: semiboldTextStyle;
+	textFg: brandText;
+}
+groupsSectionTitlePadding: margins(24px, 14px, 24px, 6px);
+groupsFootnote: FlatLabel(defaultFlatLabel) {
+	style: smallTextStyle;
+	textFg: textTertiary;
+}
+groupsFootnotePadding: margins(24px, 6px, 24px, 10px);
+groupsDividerHeight: 9px;
+
+// ---- rows
+groupsButton: SettingsButton(defaultSettingsButton) {
+	height: 48px;
+	padding: margins(24px, 0px, 24px, 0px);
+	iconSkip: 40px;
+}
+groupsDangerButton: SettingsButton(groupsButton) {
+	textFg: statusError;
+	textFgOver: statusError;
+	ripple: dangerRipple;
+}
+groupsIconInfo: icon {{ "info", textSecondary }};
+groupsIconGroup: icon {{ "group", textSecondary }};
+groupsIconNotify: icon {{ "notifications", textSecondary }};
+groupsIconAdd: icon {{ "follow", textSecondary }};
+groupsIconLink: icon {{ "link", textSecondary }};
+groupsIconRequests: icon {{ "request", textSecondary }};
+groupsIconPermissions: icon {{ "lock", textSecondary }};
+groupsIconAdmins: icon {{ "star", textSecondary }};
+groupsIconRestricted: icon {{ "mute", textSecondary }};
+groupsIconBanned: icon {{ "block", textSecondary }};
+groupsIconEdit: icon {{ "edit", textSecondary }};
+groupsIconChat: icon {{ "message", textSecondary }};
+groupsIconClear: icon {{ "refresh", textSecondary }};
+groupsIconReport: icon {{ "report", textSecondary }};
+groupsIconLeaveDanger: icon {{ "logout:mirror-rtl", statusError }};
+groupsIconDeleteDanger: icon {{ "trash", statusError }};
+groupsMenuGroup: icon {{ "group", menuIconFg, 20px }};
+groupsMenuLeave: icon {{ "logout:mirror-rtl", menuIconFg, 20px }};
+groupsMenuClear: icon {{ "refresh", menuIconFg, 20px }};
+groupsMenuUser: icon {{ "me", menuIconFg, 20px }};
+groupsMenuAdmin: icon {{ "star", menuIconFg, 20px }};
+groupsMenuRestrict: icon {{ "mute", menuIconFg, 20px }};
+groupsMenuApprove: icon {{ "check", menuIconFg, 20px }};
+groupsMenuDecline: icon {{ "close", menuIconFg, 20px }};
+
+// ---- members
+groupsMemberHeight: 58px;
+groupsMemberPadding: margins(24px, 0px, 24px, 0px);
+groupsMemberUserpic: 40px;
+groupsMemberUserpicSkip: 12px;
+groupsMemberNameFont: font(15px medium);
+groupsMemberNameTop: 9px;
+groupsMemberStatusFont: font(13px);
+groupsMemberStatusTop: 31px;
+groupsMemberTagFont: font(12px);
+groupsMemberTagSkip: 10px;
+groupsMemberRadius: 10px;
+groupsMemberMargin: 8px;
+
+// ---- boxes
+groupsInviteUserpic: 88px;
+groupsInvitePadding: margins(24px, 8px, 24px, 12px);
+groupsInviteTitle: FlatLabel(defaultFlatLabel) {
+	style: groupsCoverNameStyle;
+	align: align(top);
+}
+groupsInviteCount: FlatLabel(defaultFlatLabel) {
+	textFg: textSecondary;
+	align: align(top);
+}
+groupsInviteNote: FlatLabel(defaultFlatLabel) {
+	style: smallTextStyle;
+	textFg: textTertiary;
+	align: align(top);
+}
+groupsBoxCaption: FlatLabel(defaultFlatLabel) {
+	style: smallTextStyle;
+	textFg: textTertiary;
+}

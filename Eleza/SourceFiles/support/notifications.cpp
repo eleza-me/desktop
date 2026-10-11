@@ -4,6 +4,7 @@
 
 #include "core/core_application.h"
 #include "data/data_chats.h"
+#include "data/data_groups.h"
 #include "data/data_session.h"
 #include "data/data_sync.h"
 #include "data/data_users.h"
@@ -84,9 +85,48 @@ std::optional<NotificationData> NotificationFor(
 		}
 	}
 	result.text = missedCall
-		? tr::lng_calls_record_missed(tr::now) // nothing of a message in it
+		? (message.call->video // nothing of a message in it
+			? tr::lng_calls_record_video_missed(tr::now)
+			: tr::lng_calls_record_missed(tr::now))
 		: settings.showPreview
 		? MessagePreview(message)
+		: tr::lng_support_notify_new_message(tr::now);
+	return result;
+}
+
+std::optional<NotificationData> GroupNotificationFor(
+		Main::Session *session,
+		const Data::Message &message,
+		bool addressesMe) {
+	if (!session
+		|| message.mine
+		|| !message.visible()
+		|| message.underReview
+		|| message.kind == Data::MessageKind::System) {
+		return std::nullopt;
+	}
+	auto &data = session->data();
+	const auto chat = data.chats().chat(message.chat);
+	if (!chat || !chat->isGroup || chat->archived) {
+		return std::nullopt;
+	}
+	const auto &settings = Core::App().settings().notifications();
+	auto result = NotificationData();
+	result.key = message.chat;
+	result.route = Window::Routes::Chat(message.chat);
+	if (settings.showSender) {
+		const auto name = MemberName(session, message.sender);
+		const auto group = ChatTitle(session, *chat);
+		result.userId = message.sender;
+		result.title = addressesMe
+			? tr::lng_groups_notify_mentioned(tr::now, lt_name, name, lt_group, group)
+			: tr::lng_groups_notify_title(tr::now, lt_name, name, lt_group, group);
+	} else {
+		result.title = tr::lng_app_name(tr::now);
+		result.anonymous = true;
+	}
+	result.text = settings.showPreview
+		? MessagePreview(session, message)
 		: tr::lng_support_notify_new_message(tr::now);
 	return result;
 }
@@ -383,6 +423,13 @@ NotificationsManager::NotificationsManager(
 		&Data::Sync::messageReceived,
 		this,
 		[this](const Data::Message &message) { messageReceived(message); });
+	QObject::connect(
+		&data.groups(),
+		&Data::Groups::messageReceived,
+		this,
+		[this](const Data::Message &message, bool addressesMe) {
+			groupMessageReceived(message, addressesMe);
+		});
 	// A chat that was read (here or on another device) needs no toast.
 	QObject::connect(
 		&data.chats(),
@@ -437,7 +484,26 @@ void NotificationsManager::messageReceived(const Data::Message &message) {
 	if (!data) {
 		return;
 	}
-	show(*data);
+	alert(*data);
+}
+
+void NotificationsManager::groupMessageReceived(
+		const Data::Message &message,
+		bool addressesMe) {
+	if (!shouldShow(message)) {
+		return;
+	}
+	const auto data = GroupNotificationFor(
+		&_controller->session(),
+		message,
+		addressesMe);
+	if (data) {
+		alert(*data);
+	}
+}
+
+void NotificationsManager::alert(const NotificationData &data) {
+	show(data);
 	const auto &settings = Core::App().settings().notifications();
 	if (settings.soundEnabled) {
 		playSound();

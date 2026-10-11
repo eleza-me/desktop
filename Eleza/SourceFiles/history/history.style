@@ -95,6 +95,14 @@ historyReplyNameHeight: 17px;
 historyReplyBarFg: brandPrimary;
 historyQuoteLines: 3;
 historyQuoteIcon: icon {{ "quote", brandPrimary, 14px }};
+// A group: who wrote an incoming message.
+historyGroupUserpic: 32px;
+historyGroupUserpicSkip: 6px;
+historyGroupUserpicShift: 2px;  // the picture sits a little into the side skip
+historyGroupNameFont: font(12px semibold);
+historyGroupNameHeight: 19px;
+historyGroupTagFont: font(11px);
+historyGroupTagSkip: 10px;
 historyForwardedFont: font(12px semibold);
 historyForwardedHeight: 19px;
 historyForwardedIcon: icon {{ "forward:mirror-ltr", brandText, 14px }};
@@ -247,6 +255,10 @@ historyLoadingSize: 28px;
 // ---- top bar
 historyTopBarHeight: 56px;
 historyTopBarPadding: margins(8px, 0px, 6px, 0px);
+historyTopBarVideoCallButton: IconButton(defaultIconButton) {
+	icon: icon {{ "videocam", iconButtonFg }};
+	iconOver: icon {{ "videocam", iconButtonFgOver }};
+}
 historyTopBarUserpic: 40px;
 historyTopBarUserpicSkip: 12px;
 historyTopBarNameStyle: TextStyle(defaultTextStyle) {
@@ -565,3 +577,16 @@ historySelectionDelete: IconButton(defaultIconButton) {
 	bgOver: rippleDangerFg;
 	ripple: dangerRipple;
 }
+
+// ---- «@» suggestions in a group (history_mentions.cpp)
+historyMentionsMaxWidth: 360px;
+historyMentionsPadding: margins(4px, 4px, 4px, 4px);
+historyMentionsRadius: 12px;
+historyMentionsSkip: 6px;
+historyMentionRowHeight: 42px;
+historyMentionRowSkip: 8px;
+historyMentionUserpic: 30px;
+historyMentionNameFont: font(14px semibold);
+historyMentionHandleFont: font(12px);
+historyMentionSelectedBg: inputBgSunken;
+historyMentionFg: brandText;

@@ -1,4 +1,8 @@
 #include "history/history_list_widget.h"
+#include "support/media_image.h"
+#include "data/data_json.h"
+#include "data/data_groups.h"
+#include "data/data_group_rules.h"
 
 #include "api/api_client_config.h"
 #include "data/data_chats.h"
@@ -64,6 +68,7 @@ ListWidget::ListWidget(
 , _chatId(chatId)
 , _scroll(scroll)
 , _downloads(Downloads::For(_session))
+, _group(Data::IsGroupId(chatId))
 , _topLoader([this] {
 	update(0, _visibleTop, width(), 60);
 }) {
@@ -71,6 +76,21 @@ ListWidget::ListWidget(
 	setAttribute(Qt::WA_OpaquePaintEvent);
 
 	auto &data = _session->data();
+	if (_group) {
+		_userpics = std::make_unique<Support::UserpicPainter>(
+			_session,
+			[this](const QString &) { update(); });
+		connect(
+			&data.groups(),
+			&Data::Groups::membersChanged,
+			this,
+			[this](const QString &group) {
+				if (group == _chatId) {
+					loadRoles();
+				}
+			});
+		loadRoles();
+	}
 	connect(
 		&data.messages(),
 		&Data::Messages::historyChanged,
@@ -100,8 +120,26 @@ ListWidget::ListWidget(
 			}
 		}
 	});
-	connect(&data.users(), &Data::Users::changed, this, [this](const QStringList &) {
-		// Names in reply headers and shared posts.
+	connect(&data.users(), &Data::Users::changed, this, [this](const QStringList &ids) {
+		// Names in reply headers and shared posts; in a group also above
+		// the bubbles and in the notes.
+		if (_group) {
+			auto changed = false;
+			for (auto &row : _rows) {
+				const auto &message = row.element->data();
+				if (ids.contains(message.sender)
+					|| (message.kind == Data::MessageKind::System
+						&& ids.contains(Data::GroupRules::NoteUser(message.system)))) {
+					row.element->unloadHeavy();
+					row.element->invalidate();
+					row.exact = false;
+					changed = true;
+				}
+			}
+			if (changed) {
+				relayoutKeepingAnchor();
+			}
+		}
 		invalidateAll();
 	});
 	connect(&data.feed(), &Data::Feed::postChanged, this, [this](const QString &id) {
@@ -245,11 +283,90 @@ QString ListWidget::elementSenderName(const Data::Message &message) {
 	return senderName(message);
 }
 
+bool ListWidget::elementGroup() {
+	return _group;
+}
+
+View::SenderInfo ListWidget::elementSender(const Data::Message &message) {
+	auto result = View::SenderInfo();
+	if (!_group || message.sender.isEmpty()) {
+		return result;
+	}
+	result.userId = message.sender;
+	result.name = Support::MemberName(_session, message.sender);
+	result.tag = _roles.value(message.sender);
+	result.colorIndex = Data::GroupRules::NameColorIndex(message.sender, 8);
+	return result;
+}
+
+void ListWidget::elementPaintUserpic(
+		Painter &p,
+		const QRect &rect,
+		const QString &userId) {
+	if (_userpics) {
+		_userpics->paint(p, rect, userId);
+	}
+}
+
+QString ListWidget::elementServiceText(const Data::Message &message) {
+	return _group ? Support::MessagePreview(_session, message) : QString();
+}
+
+// Who is the owner and who an admin (with a title of their own or without):
+// the tag next to a name. One page of admins is all a chat screen needs.
+void ListWidget::loadRoles() {
+	auto &groups = _session->data().groups();
+	if (!_group || !groups.enabled()) {
+		return;
+	} else if (_rolesLoading) {
+		_rolesAgain = true;
+		return;
+	}
+	_rolesLoading = true;
+	const auto filter = groups.administration() ? u"admins"_s : u"all"_s;
+	const auto finish = [this] {
+		_rolesLoading = false;
+		if (std::exchange(_rolesAgain, false)) {
+			loadRoles();
+		}
+	};
+	groups.loadMembers(_chatId, filter, QString(), this, [=, this](
+			const Data::GroupMembersPage &page) {
+		auto roles = QHash<QString, QString>();
+		for (const auto &member : page.members) {
+			if (member.role == u"owner") {
+				roles.insert(member.user, tr::lng_groups_role_owner(tr::now));
+			} else if (member.role == u"admin") {
+				roles.insert(member.user, member.adminTitle.trimmed().isEmpty()
+					? tr::lng_groups_role_admin(tr::now)
+					: Data::Json::CleanName(member.adminTitle.simplified()));
+			}
+		}
+		if (roles != _roles) {
+			_roles = roles;
+			for (auto &row : _rows) {
+				if (!row.element->data().mine && !row.element->isService()) {
+					row.element->unloadHeavy();
+					row.element->invalidate();
+					row.exact = false;
+				}
+			}
+			relayoutKeepingAnchor();
+			update();
+		}
+		finish();
+	}, [=](const Api::Error &) {
+		finish();
+	});
+}
+
 QString ListWidget::senderName(const Data::Message &message) {
 	auto &data = _session->data();
 	if (message.mine) {
 		const auto &me = data.users().me();
 		return me.displayName.isEmpty() ? tr::lng_you(tr::now) : me.displayName;
+	} else if (_group) {
+		return Support::MemberName(_session, message.sender);
 	}
 	if (const auto chat = data.chats().chat(_chatId)) {
 		return Support::ChatTitle(_session, *chat);

@@ -1,4 +1,6 @@
 #include "history/history_widget.h"
+#include "data/data_groups.h"
+#include "data/data_group_rules.h"
 
 #include "api/api_client_config.h"
 #include "core/core_application.h"
@@ -36,6 +38,7 @@
 #include "styles/palette.h"
 #include "styles/style_history.h"
 
+#include <QtCore/QDateTime>
 #include <QtGui/QDragEnterEvent>
 #include <QtGui/QKeyEvent>
 #include <QtGui/QPainterPath>
@@ -308,7 +311,8 @@ Widget::Widget(
 : SectionWidget(parent, controller)
 , _session(&controller->session())
 , _chatId(chatId)
-, _aroundSeq(aroundSeq) {
+, _aroundSeq(aroundSeq)
+, _group(Data::IsGroupId(chatId)) {
 	setAcceptDrops(true);
 	setFocusPolicy(Qt::StrongFocus);
 	setupList();
@@ -362,6 +366,28 @@ Widget::Widget(
 		refreshActive();
 	});
 
+	if (_group) {
+		_groupTimer.setSingleShot(false);
+		connect(&_groupTimer, &QTimer::timeout, this, [this] { refreshBottom(); });
+		// Removed, banned, left on another device, or the group is gone: say
+		// why before the screen closes (chatRemoved above closes it).
+		connect(&data.groups(), &Data::Groups::groupRemoved, this, [this](
+				const QString &group,
+				const QString &status) {
+			if (group != _chatId) {
+				return;
+			}
+			this->controller()->showToast((status == u"banned")
+				? tr::lng_groups_gone_banned(tr::now)
+				: (status == u"deleted")
+				? tr::lng_groups_gone_deleted(tr::now)
+				: (status == u"kicked")
+				? tr::lng_groups_gone_kicked(tr::now)
+				: (status == u"left")
+				? tr::lng_groups_left_toast(tr::now)
+				: tr::lng_groups_gone_member(tr::now));
+		});
+	}
 	if (!data.chats().chat(_chatId)) {
 		_headerRequested = true;
 		data.chats().loadHeader(_chatId, this, [this](const Data::ChatInfo &) {
@@ -442,7 +468,9 @@ void Widget::setupTopBar() {
 	});
 	connect(_topBar, &TopBar::profileRequested, this, [this] {
 		const auto userId = _topBar->profileUserId();
-		if (!userId.isEmpty()) {
+		if (_group) {
+			controller()->openRoute(Window::Routes::Group(_chatId));
+		} else if (!userId.isEmpty()) {
 			controller()->openRoute(Window::Routes::User(userId));
 		}
 	});
@@ -536,6 +564,27 @@ void Widget::refreshBottom() {
 	auto bottom = Bottom::None;
 	if (!chat) {
 		bottom = Bottom::None;
+	} else if (chat->isGroup) {
+		// What the header says I may do; slow mode makes me wait between
+		// two messages of mine.
+		const auto now = QDateTime::currentMSecsSinceEpoch();
+		const auto group = chat->group ? *chat->group : Data::Group();
+		const auto until = _session->data().groups().slowModeUntil(_chatId);
+		switch (Data::GroupRules::ComposerFor(
+			group.canSend,
+			group.sendBlocked,
+			until,
+			now)) {
+		case Data::GroupRules::Composer::Compose:
+			bottom = Bottom::Compose;
+			break;
+		case Data::GroupRules::Composer::Restricted:
+			bottom = Bottom::GroupRestricted;
+			break;
+		case Data::GroupRules::Composer::Wait:
+			bottom = Bottom::GroupWait;
+			break;
+		}
 	} else if (chat->peerDeleted) {
 		bottom = Bottom::Deleted;
 	} else if (chat->request == u"incoming") {
@@ -554,10 +603,48 @@ void Widget::refreshBottom() {
 	const auto changed = (_bottom != bottom);
 	_bottom = bottom;
 	const auto writable = (bottom == Bottom::Compose);
+	const auto groupNotice = (bottom == Bottom::GroupRestricted)
+		|| (bottom == Bottom::GroupWait);
 	_list->setCanWrite(writable);
-	_list->setCanReact(writable);
-	if (!changed && bottom != Bottom::Request) {
-		return;
+	// Someone who waits or is restricted in a group still reacts.
+	_list->setCanReact(writable || groupNotice);
+	if (groupNotice) {
+		// The words count down: a restriction by the minute, slow mode by
+		// the second.
+		const auto now = QDateTime::currentMSecsSinceEpoch();
+		auto text = QString();
+		if (bottom == Bottom::GroupWait) {
+			const auto left = Data::GroupRules::WaitSeconds(
+				_session->data().groups().slowModeUntil(_chatId),
+				now);
+			text = tr::lng_groups_slow_wait(
+				tr::now,
+				lt_time,
+				tr::lng_groups_time_seconds(tr::now, lt_count, int(left)));
+			_groupTimer.start(1000);
+		} else {
+			const auto left = (chat->group && chat->group->restrictedUntil > 0)
+				? Support::GroupTimeLeft(chat->group->restrictedUntil, now)
+				: QString();
+			text = left.isEmpty()
+				? tr::lng_groups_cannot_send(tr::now)
+				: tr::lng_groups_restricted_for(tr::now, lt_time, left);
+			if (left.isEmpty()) {
+				_groupTimer.stop();
+			} else {
+				_groupTimer.start(20 * 1000);
+			}
+		}
+		if (!changed && _groupNotice == text) {
+			return;
+		}
+		_groupNotice = text;
+	} else {
+		_groupTimer.stop();
+		_groupNotice = QString();
+		if (!changed && bottom != Bottom::Request) {
+			return;
+		}
 	}
 	const auto session = _session;
 	const auto chatId = _chatId;
@@ -621,6 +708,10 @@ void Widget::refreshBottom() {
 		break;
 	case Bottom::Readonly:
 		_notice->setContent(QString(), tr::lng_chat_cant_message_chat(tr::now), {});
+		break;
+	case Bottom::GroupRestricted:
+	case Bottom::GroupWait:
+		_notice->setContent(QString(), _groupNotice, {});
 		break;
 	case Bottom::Compose:
 	case Bottom::None:
@@ -828,15 +919,20 @@ void Widget::showMoreMenu() {
 			[=] { session->data().chats().setPinned(chatId, !pinned); },
 			pinned ? &st::menuIconUnpin : &st::menuIconPin);
 	}
-	if (!chat->isConversation && !chat->saved && !chat->peerDeleted && !chat->isRequest()) {
+	if (!chat->isConversation
+		&& !chat->saved
+		&& !chat->peerDeleted
+		&& !chat->isRequest()
+		&& !chat->isGroup) {
 		menu->addAction(tr::lng_history_change_theme(tr::now), [this] {
 			showThemeBox();
 		}, &st::menuIconTheme);
 	}
 	menu->addSeparator();
-	if (chat->isConversation) {
-		// The conversation module owns these («پایان گفتگو», «مسدود کردن»);
-		// the chat list's row menu gets the same ones.
+	if (chat->isConversation || chat->isGroup) {
+		// The module of this kind of chat owns these («پایان گفتگو»,
+		// «مسدود کردن»; «اطلاعات گروه», «ترک گروه»); the chat list's row
+		// menu gets the same ones.
 		Window::FillChatMenu(menu, window, chatId);
 	} else if (!chat->saved && !chat->peerDeleted && !chat->peerUserId.isEmpty()) {
 		if (_blockedByYou) {
@@ -1020,7 +1116,13 @@ void Widget::keyPressEvent(QKeyEvent *e) {
 // ---- drag and drop
 
 bool Widget::canAttach() const {
-	return (_bottom == Bottom::Compose);
+	if (_bottom != Bottom::Compose) {
+		return false;
+	} else if (_group) {
+		const auto chat = _session->data().chats().chat(_chatId);
+		return chat && chat->group && chat->group->can(u"send_media");
+	}
+	return true;
 }
 
 void Widget::dragEnterEvent(QDragEnterEvent *e) {

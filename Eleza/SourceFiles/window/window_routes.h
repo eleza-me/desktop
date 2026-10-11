@@ -14,6 +14,11 @@
 //   settings[/<section>]       settings (account, privacy, notifications, …)
 //   conversation/topics        the open conversations list
 //   conversation/<id>          an anonymous conversation (its sheet / chat)
+//   group/new                  «گروه تازه»: pick people, then name the group
+//   group/<groupId>            the info of a group (members, settings, administration)
+//   g/<token>                  an invite link of a group (https://eleza.me/g/<token>)
+//
+// The chat of a group is a chat route like any other: chat/<groupId>.
 //
 // Build them with the Window::Routes helpers, open them with
 // controller->openRoute(route). A feature module registers the handler of its
@@ -47,6 +52,9 @@ enum class RouteType {
 	Settings, // id = section ("" for the root)
 	ConversationTopics,
 	Conversation, // id = conversation id
+	NewGroup,
+	Group, // id = group id
+	GroupInvite, // id = the token of an invite link
 };
 
 struct Route {
@@ -74,7 +82,8 @@ struct Route {
 [[nodiscard]] Route ParseRoute(const QString &route);
 
 // A link to the web app (https://eleza.me/chats/c1, /u/sara, /@sara,
-// /eli/post/p1, /p/p1, /s/<share slug>, /eli/topic/x…) as a route; nullopt for
+// /eli/post/p1, /p/p1, /s/<share slug>, /g/<invite token>, /eli/topic/x…) as a
+// route; nullopt for
 // a path the desktop app has no screen for (the caller opens the browser then).
 [[nodiscard]] std::optional<Route> RouteFromWebPath(
 	const QString &path,
@@ -96,6 +105,9 @@ namespace Routes {
 [[nodiscard]] QString Settings(const QString &section = QString());
 [[nodiscard]] QString ConversationTopics();
 [[nodiscard]] QString Conversation(const QString &id);
+[[nodiscard]] QString NewGroup();
+[[nodiscard]] QString Group(const QString &groupId);
+[[nodiscard]] QString GroupInvite(const QString &token);
 
 } // namespace Routes
 } // namespace Window

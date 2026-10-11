@@ -166,8 +166,13 @@ void FillChatMenu(
 		}, &st::menuIconBlock);
 	}
 	menu->addSeparator();
-	// What the owner of this kind of chat adds («پایان گفتگو»…).
+	// What the owner of this kind of chat adds («پایان گفتگو», «اطلاعات
+	// گروه», «ترک گروه»…).
 	Window::FillChatMenu(menu, controller, id);
+	if (chat.isGroup) {
+		// A group is left, not deleted: its module offers that.
+		return;
+	}
 	const auto copy = chat;
 	menu->addItem(DangerItem(tr::lng_chat_delete_chat(tr::now), [=] {
 		ShowDeleteChatBox(controller, copy);

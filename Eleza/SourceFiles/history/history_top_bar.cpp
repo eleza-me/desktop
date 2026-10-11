@@ -1,11 +1,13 @@
 #include "history/history_top_bar.h"
 
+#include "api/api_client_config.h"
 #include "data/data_calls.h"
 #include "data/data_chats.h"
 #include "data/data_session.h"
 #include "data/data_users.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
+#include "main/main_account.h"
 #include "main/main_session.h"
 #include "support/chat_text.h"
 #include "support/connection_label.h"
@@ -65,6 +67,7 @@ TopBar::TopBar(
 	QString(),
 	st::historyTopBarUserpic))
 , _call(Ui::CreateChild<Ui::IconButton>(this, st::topBarCallButton))
+, _videoCall(Ui::CreateChild<Ui::IconButton>(this, st::historyTopBarVideoCallButton))
 , _search(Ui::CreateChild<Ui::IconButton>(this, st::topBarSearchButton))
 , _mute(Ui::CreateChild<Ui::IconButton>(this, st::historyTopBarMuteButton))
 , _more(Ui::CreateChild<Ui::IconButton>(this, st::topBarMoreButton))
@@ -86,6 +89,23 @@ TopBar::TopBar(
 			Window::StartCall(_controller, chat->peerUserId);
 		}
 	});
+	_videoCall->setClickedCallback([this] {
+		const auto chat = _session->data().chats().chat(_chatId);
+		if (chat && _callEnabled) {
+			Window::StartCall(_controller, chat->peerUserId, true);
+		}
+	});
+	Ui::InstallTooltip(_videoCall, [this] {
+		return _callEnabled
+			? tr::lng_calls_video_call(tr::now)
+			: tr::lng_calls_not_possible_here(tr::now);
+	});
+	// Video calls may be switched on or off while the chat is open.
+	connect(
+		&_session->account().clientConfig(),
+		&Api::ClientConfig::changed,
+		this,
+		[this] { refresh(); });
 	_more->setClickedCallback([this] { Q_EMIT moreRequested(); });
 	_userpic->setClickedCallback([this] {
 		if (titleClickable()) {
@@ -170,7 +190,8 @@ QString TopBar::profileUserId() const {
 }
 
 bool TopBar::titleClickable() const {
-	return !_selected && !profileUserId().isEmpty();
+	// A person's title leads to the profile, a group's to its info.
+	return !_selected && (_group || !profileUserId().isEmpty());
 }
 
 void TopBar::refresh() {
@@ -198,8 +219,11 @@ void TopBar::refresh() {
 	_mute->setIconOverride(
 		_muted ? nullptr : &st::historyTopBarUnmuteIcon,
 		_muted ? nullptr : &st::historyTopBarUnmuteIconOver);
-	// The picture: the peer's, or a special one.
-	const auto pictureKey = chat->saved
+	_group = chat->isGroup;
+	// The picture: the peer's, the group's, or a special one.
+	const auto pictureKey = chat->isGroup
+		? (u"group:"_s + chat->id + u':' + (chat->group ? chat->group->photo : QString()) + name)
+		: chat->saved
 		? u"saved"_s
 		: chat->anonymous
 		? (u"anon:"_s + chat->peerRef + name)
@@ -208,7 +232,12 @@ void TopBar::refresh() {
 		: (u"user:"_s + chat->peerUserId);
 	if (_userpicFor != pictureKey) {
 		_userpicFor = pictureKey;
-		if (chat->saved) {
+		if (chat->isGroup) {
+			_userpic->setGroup(
+				chat->id,
+				chat->group ? chat->group->photo : QString(),
+				name);
+		} else if (chat->saved) {
 			_userpic->setSpecial(Ui::UserpicKind::Saved);
 		} else if (chat->anonymous) {
 			_userpic->setSpecial(Ui::UserpicKind::Anonymous, name, chat->peerRef);
@@ -230,6 +259,11 @@ void TopBar::refresh() {
 		? std::nullopt
 		: std::make_optional(st::historyTopBarCallDisabledFg->c));
 	_call->setPointerCursor(_callEnabled);
+	_videoCallShown = _callShown && Window::VideoCallsOffered(_controller);
+	_videoCall->setIconColorOverride(_callEnabled
+		? std::nullopt
+		: std::make_optional(st::historyTopBarCallDisabledFg->c));
+	_videoCall->setPointerCursor(_callEnabled);
 	const auto watch = (!chat->anonymous
 		&& !chat->saved
 		&& !chat->isBot
@@ -255,6 +289,11 @@ void TopBar::refreshStatus() {
 		status = WithoutEllipsis(ActivityText(activity->kind));
 		active = true;
 		typing = true;
+	} else if (chat->isGroup) {
+		const auto count = chat->group ? chat->group->memberCount : 0;
+		status = (count > 0)
+			? tr::lng_groups_members(tr::now, lt_count, count)
+			: tr::lng_groups_group(tr::now);
 	} else if (chat->saved || chat->peerDeleted) {
 		status = QString();
 	} else if (chat->isBot) {
@@ -316,6 +355,7 @@ void TopBar::updateControls() {
 	_back->setVisible(_backShown && !selecting);
 	_userpic->setVisible(!selecting);
 	_call->setVisible(!selecting && _callShown);
+	_videoCall->setVisible(!selecting && _videoCallShown);
 	_search->setVisible(!selecting);
 	_mute->setVisible(!selecting);
 	_more->setVisible(!selecting);
@@ -348,7 +388,7 @@ void TopBar::updateControls() {
 			}
 		}
 	} else {
-		for (const auto button : { _more, _mute, _search, _call }) {
+		for (const auto button : { _more, _mute, _search, _call, _videoCall }) {
 			if (button->isHidden()) {
 				continue;
 			}
@@ -367,6 +407,7 @@ QRect TopBar::titleRect() const {
 		+ _mute->width()
 		+ _search->width()
 		+ (_callShown ? _call->width() : 0)
+		+ (_videoCallShown ? _videoCall->width() : 0)
 		+ 8;
 	return QRect(left, 0, std::max(width() - left - right, 0), height());
 }

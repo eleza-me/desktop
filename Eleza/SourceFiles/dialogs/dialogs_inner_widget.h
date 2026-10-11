@@ -102,6 +102,7 @@ private:
 		int dateWidth = 0;
 		Tick tick = Tick::None;
 		QString badge;
+		bool mention = false; // a group: an unread mention of me / reply to me
 		QString titleElided;
 		int titleElidedFor = -1;
 		int titleElidedWidth = 0;

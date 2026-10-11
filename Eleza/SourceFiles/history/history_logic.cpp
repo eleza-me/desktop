@@ -18,7 +18,8 @@ namespace {
 		if (a[i].type != b[i].type
 			|| a[i].offset != b[i].offset
 			|| a[i].length != b[i].length
-			|| a[i].url != b[i].url) {
+			|| a[i].url != b[i].url
+			|| a[i].user != b[i].user) {
 			return false;
 		}
 	}
@@ -278,6 +279,7 @@ bool SameLayout(const Data::Message &a, const Data::Message &b) {
 		&& (a.forwardedPost == b.forwardedPost)
 		&& (a.system == b.system)
 		&& (a.mediaSpoiler == b.mediaSpoiler)
+		&& (a.underReview == b.underReview)
 		&& (a.createdAt == b.createdAt)
 		&& (failedA == failedB)
 		&& (uploadingA == uploadingB)
@@ -328,6 +330,13 @@ Ui::Text::Entities ConvertEntities(
 		converted.offset = entity.offset;
 		converted.length = entity.length;
 		converted.data = entity.url;
+		if (converted.type == Ui::Text::EntityType::Mention
+			&& !entity.user.isEmpty()) {
+			// A member of a group picked by name: the text is whatever the
+			// sender's app wrote, the person is the id.
+			converted.type = Ui::Text::EntityType::MentionName;
+			converted.data = entity.user;
+		}
 		result.push_back(std::move(converted));
 	}
 	return Ui::Text::NormalizeEntities(text, std::move(result));

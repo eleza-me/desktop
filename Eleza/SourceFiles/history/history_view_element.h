@@ -57,6 +57,7 @@ enum class Zone {
 	Button,        // an inline keyboard button: `row`, `column`
 	Retry,         // the «!» of a failed message
 	ViaBot,
+	Sender,        // a group: the name above a bubble or the picture next to it
 	Date,          // the day pill / a service message
 };
 
@@ -96,6 +97,14 @@ struct PlaybackState {
 	double speed = 1.;
 };
 
+// Who wrote an incoming message of a group.
+struct SenderInfo {
+	QString userId;
+	QString name;       // empty: no name line (a group that hides nothing still may have no card yet)
+	QString tag;        // «مالک», «مدیر» or an admin's own title; empty for a member
+	int colorIndex = 0; // Data::GroupRules::NameColorIndex: the same person, the same colour
+};
+
 class Delegate {
 public:
 	[[nodiscard]] virtual Main::Session *elementSession() = 0;
@@ -125,6 +134,34 @@ public:
 		const Data::Message &message,
 		int row,
 		int column) = 0;
+
+	// ---- groups (a chat of two answers none of these)
+	// Incoming messages name their sender above the first bubble of a run
+	// and show the sender's picture next to the last one.
+	[[nodiscard]] virtual bool elementGroup() {
+		return false;
+	}
+	[[nodiscard]] virtual SenderInfo elementSender(
+			const Data::Message &message) {
+		Q_UNUSED(message);
+		return SenderInfo();
+	}
+	virtual void elementPaintUserpic(
+			Painter &p,
+			const QRect &rect,
+			const QString &userId) {
+		Q_UNUSED(p);
+		Q_UNUSED(rect);
+		Q_UNUSED(userId);
+	}
+	// The words of a service message when the delegate knows more than the
+	// message says (the names of the people in a note of a group); empty:
+	// the common wording.
+	[[nodiscard]] virtual QString elementServiceText(
+			const Data::Message &message) {
+		Q_UNUSED(message);
+		return QString();
+	}
 
 protected:
 	~Delegate() = default;
@@ -275,6 +312,9 @@ private:
 	void paintMeta(Painter &p, const ChatColors &colors) const;
 	void paintKeyboard(Painter &p, const PaintContext &context) const;
 	void paintRetry(Painter &p) const;
+	void paintSender(Painter &p, const ChatColors &colors) const;
+	[[nodiscard]] bool showsSenderName() const;
+	[[nodiscard]] int userpicSpace() const;
 
 	Delegate *_delegate = nullptr;
 	Data::Message _data;
@@ -299,7 +339,12 @@ private:
 	QString _forwardedText;
 	QString _viaText;
 	QString _serviceText;
+	QString _serviceShown; // elided for the current width
 	QString _dateText;
+	bool _group = false;       // an incoming message of a group
+	SenderInfo _sender;
+	QString _senderName;       // elided for the laid out width
+	QString _senderTag;
 
 	// ---- layout (physical coordinates inside the row)
 	int _dateTop = 0;
@@ -308,6 +353,8 @@ private:
 	int _contentTop = 0;
 	QRect _bubble;
 	QRect _serviceRect;
+	QRect _senderRect;         // the name line (inside the bubble)
+	QRect _userpicRect;        // the sender's picture (beside the bubble)
 	QRect _forwardedRect;
 	QRect _viaRect;
 	QRect _replyRect;

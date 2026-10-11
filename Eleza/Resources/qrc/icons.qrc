@@ -47,6 +47,7 @@
 		<file alias="forward.svg">../icons/forward.svg</file>
 		<file alias="gif.svg">../icons/gif.svg</file>
 		<file alias="globe.svg">../icons/globe.svg</file>
+		<file alias="group.svg">../icons/group.svg</file>
 		<file alias="hashtag.svg">../icons/hashtag.svg</file>
 		<file alias="help.svg">../icons/help.svg</file>
 		<file alias="image.svg">../icons/image.svg</file>
@@ -110,6 +111,8 @@
 		<file alias="video.svg">../icons/video.svg</file>
 		<file alias="video-note.svg">../icons/video-note.svg</file>
 		<file alias="video-note_active.svg">../icons/video-note_active.svg</file>
+		<file alias="videocam.svg">../icons/videocam.svg</file>
+		<file alias="videocam-off.svg">../icons/videocam-off.svg</file>
 		<file alias="volume.svg">../icons/volume.svg</file>
 		<file alias="warning.svg">../icons/warning.svg</file>
 	</qresource>

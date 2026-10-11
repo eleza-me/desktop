@@ -3,8 +3,11 @@
 // delete; with text selected inside the message — «copy selected» and
 // «quote»).
 #include "history/history_list_widget.h"
+#include "window/window_routes.h"
+#include "data/data_groups.h"
 
 #include "api/api_client_config.h"
+#include "boxes/report_box.h"
 #include "data/data_chats.h"
 #include "data/data_outbox.h"
 #include "data/data_session.h"
@@ -188,7 +191,18 @@ void ListWidget::showContextMenu(
 			Q_EMIT editRequested(message);
 		}, &st::menuIconEdit);
 	}
-	if (!_anonymousPeer) {
+	const auto groupRow = _group
+		? _session->data().chats().chat(_chatId)
+		: nullptr;
+	const auto groupHeader = (groupRow && groupRow->group)
+		? &*groupRow->group
+		: nullptr;
+	// In a group pinning is a permission (the server has the last word).
+	const auto mayPin = !_group
+		|| (groupHeader
+			&& _session->data().groups().administration()
+			&& groupHeader->can(u"pin_messages"));
+	if (!_anonymousPeer && mayPin && !message.underReview) {
 		const auto pinned = isPinned(message.seq);
 		menu->addAction(
 			pinned ? tr::lng_unpin(tr::now) : tr::lng_pin(tr::now),
@@ -282,10 +296,26 @@ void ListWidget::showContextMenu(
 		break;
 	}
 
-	if (CanForward(message) && !_anonymousPeer) {
+	if (CanForward(message) && !_anonymousPeer && !message.underReview) {
 		menu->addAction(tr::lng_forward(tr::now), [=, this] {
 			Q_EMIT forwardRequested({ message });
 		}, &st::menuIconForward);
+	}
+	if (_group && !message.mine && !message.sender.isEmpty()) {
+		const auto sender = message.sender;
+		menu->addAction(tr::lng_groups_sender_profile(tr::now), [=, this] {
+			_controller->openRoute(Window::Routes::User(sender));
+		}, &st::menuIconUser);
+		if (_session->data().groups().administration() && message.seq > 0) {
+			const auto seq = message.seq;
+			menu->addAction(tr::lng_groups_report_message(tr::now), [=, this] {
+				auto args = Boxes::ReportArgs();
+				args.kind = u"group_message"_s;
+				args.id = _chatId;
+				args.messageSeq = seq;
+				Boxes::ShowReportBox(_controller, std::move(args));
+			}, &st::menuIconReport);
+		}
 	}
 	menu->addAction(tr::lng_select(tr::now), [=, this] {
 		toggleSelected(key);
