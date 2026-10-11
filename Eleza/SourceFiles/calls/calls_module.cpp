@@ -90,9 +90,10 @@ void Register() {
 	Window::RegisterCallHooks({
 		.start = [](
 				Window::SessionController *controller,
-				const QString &userId) {
+				const QString &userId,
+				bool video) {
 			if (const auto service = Service::For(&controller->session())) {
-				service->start(userId);
+				service->start(userId, video);
 			}
 		},
 	});

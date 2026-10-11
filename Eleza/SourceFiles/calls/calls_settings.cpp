@@ -7,6 +7,7 @@
 #include "calls/calls_audio_io.h"
 #include "calls/calls_media.h"
 #include "calls/calls_service.h"
+#include "calls/calls_video.h"
 #include "calls/calls_sounds.h"
 #include "core/core_application.h"
 #include "lang/lang_format.h"
@@ -399,8 +400,43 @@ private:
 			}));
 	}
 
+	void pickCamera() {
+		const auto current = Core::App().settings().calls().cameraDevice;
+		auto options = std::vector<Settings::Option>();
+		options.push_back({ QString(), tr::lng_calls_device_default(tr::now) });
+		auto known = current.isEmpty();
+		for (const auto &camera : Video::Cameras()) {
+			known = known || (camera.id == current);
+			options.push_back({ DeviceValue(camera.id), camera.name });
+		}
+		const auto session = &controller()->session();
+		Settings::ShowPickerBox(
+			controller(),
+			tr::lng_calls_settings_camera(tr::now),
+			options,
+			known ? DeviceValue(current) : QString(),
+			Settings::Guarded(this, [=, this](const QString &value) {
+				if (const auto service = Service::For(session)) {
+					service->setCameraDevice(DeviceId(value));
+				}
+				refreshDevices();
+			}));
+	}
+
 	void refreshDevices() {
 		const auto &settings = Core::App().settings().calls();
+		if (_camera) {
+			const auto cameras = Video::Cameras();
+			auto title = cameras.isEmpty()
+				? tr::lng_calls_no_cameras(tr::now)
+				: tr::lng_calls_device_default(tr::now);
+			for (const auto &camera : cameras) {
+				if (camera.id == settings.cameraDevice) {
+					title = camera.name;
+				}
+			}
+			_camera->setValueText(title);
+		}
 		if (_microphone) {
 			_microphone->setValueText(DeviceTitle(
 				QMediaDevices::audioInputs(),
@@ -432,6 +468,18 @@ private:
 			tr::lng_calls_speaker(tr::now),
 			&st::callsSettingsSpeakerIcon,
 			[this] { pickDevice(false); });
+		const auto service = Service::For(&controller()->session());
+		if (service && service->videoOffered()) {
+			// (Only where the server has video calls.)
+			_camera = Settings::AddLinkButton(
+				content(),
+				tr::lng_calls_settings_camera(tr::now),
+				&st::callsSettingsCameraIcon,
+				[this] { pickCamera(); });
+			connect(&_devices, &QMediaDevices::videoInputsChanged, this, [this] {
+				refreshDevices();
+			});
+		}
 		content()->add(Ui::object_ptr<MicMeter>(
 			content(),
 			&controller()->session()));
@@ -520,6 +568,7 @@ private:
 	QMediaDevices _devices;
 	QPointer<Ui::SettingsButton> _microphone;
 	QPointer<Ui::SettingsButton> _speaker;
+	QPointer<Ui::SettingsButton> _camera;
 
 };
 

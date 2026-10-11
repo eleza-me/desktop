@@ -2,6 +2,7 @@
 
 #include "calls/calls_service.h"
 #include "calls/calls_text.h"
+#include "calls/calls_video.h"
 #include "calls/calls_widgets.h"
 #include "core/core_application.h"
 #include "data/data_session.h"
@@ -18,6 +19,8 @@
 
 #include <QtCore/QDateTime>
 #include <QtGui/QKeyEvent>
+#include <QtGui/QLinearGradient>
+#include <QtGui/QPainterPath>
 #include <QtMultimedia/QAudioDevice>
 #include <QtMultimedia/QMediaDevices>
 
@@ -75,6 +78,38 @@ void FillDevicesMenu(Ui::PopupMenu *menu, Service *service) {
 		QMediaDevices::audioOutputs(),
 		settings.outputDevice,
 		false);
+	if (!service->videoOffered()) {
+		return;
+	}
+	// The camera of video calls.
+	menu->addSeparator();
+	auto heading = Ui::MenuItem();
+	heading.text = tr::lng_calls_camera(tr::now);
+	heading.disabled = true;
+	menu->addItem(std::move(heading));
+	const auto cameras = Video::Cameras();
+	const auto camera = [&](const QString &text, const QByteArray &id) {
+		auto result = Ui::MenuItem();
+		result.text = text;
+		result.checked = (settings.cameraDevice == id);
+		result.callback = [=] {
+			if (weak) {
+				weak->setCameraDevice(id);
+			}
+		};
+		menu->addItem(std::move(result));
+	};
+	if (cameras.isEmpty()) {
+		auto none = Ui::MenuItem();
+		none.text = tr::lng_calls_no_cameras(tr::now);
+		none.disabled = true;
+		menu->addItem(std::move(none));
+		return;
+	}
+	camera(tr::lng_calls_device_default(tr::now), QByteArray());
+	for (const auto &device : cameras) {
+		camera(device.name, device.id);
+	}
 }
 
 View::View(QWidget *parent, Service *service)
@@ -90,6 +125,10 @@ View::View(QWidget *parent, Service *service)
 	this,
 	st::callsViewDevices,
 	tr::lng_calls_devices(tr::now)))
+, _camera(Ui::CreateChild<LabeledButton>(
+	this,
+	st::callsViewCamera,
+	tr::lng_calls_camera_on(tr::now)))
 , _mute(Ui::CreateChild<LabeledButton>(
 	this,
 	st::callsViewMute,
@@ -135,6 +174,7 @@ View::View(QWidget *parent, Service *service)
 
 	_collapse->setClickedCallback([this] { _service->setExpanded(false); });
 	_devices->setClickedCallback([this] { showDevicesMenu(); });
+	_camera->setClickedCallback([this] { _service->toggleCamera(); });
 	_mute->setClickedCallback([this] { _service->toggleMuted(); });
 	_end->setClickedCallback([this] { _service->hangup(); });
 	_again->setClickedCallback([this] { _service->callAgain(); });
@@ -152,6 +192,14 @@ View::View(QWidget *parent, Service *service)
 				refresh();
 			}
 		});
+	connect(service, &Service::videoFrameChanged, this, [this] {
+		// A camera that came or went changes what the view is made of.
+		const auto userpic = !showsRemoteVideo() && !showsLocalVideo();
+		if (_userpic->isHidden() == userpic) {
+			updateControls();
+		}
+		update();
+	});
 	connect(service, &Service::levelsChanged, this, [this] {
 		if (Ui::AnimationsDisabled()) {
 			_outputRing = _service->outputLevel();
@@ -178,6 +226,10 @@ void View::refresh() {
 	_mute->setLabel(call->muted()
 		? tr::lng_calls_unmute(tr::now)
 		: tr::lng_calls_mute(tr::now));
+	_camera->button()->setActive(call->cameraEnabled());
+	_camera->setLabel(call->cameraEnabled()
+		? tr::lng_calls_camera_off(tr::now)
+		: tr::lng_calls_camera_on(tr::now));
 	if (call->state() == State::InCall && !call->ended()) {
 		if (!_clock.isActive()) {
 			_clock.start();
@@ -206,6 +258,8 @@ void View::updateControls() {
 	const auto ended = call && call->ended();
 	const auto again = ended && CanCallAgain(*call);
 	_devices->setVisible(!ended);
+	// (No camera control where the server has no video calls.)
+	_camera->setVisible(!ended && _service->videoOffered());
 	_mute->setVisible(!ended);
 	_end->setVisible(!ended);
 	_again->setVisible(again);
@@ -215,7 +269,7 @@ void View::updateControls() {
 	_collapse->moveToLeft(st::callsViewTopSkip, st::callsViewTopSkip, width());
 
 	auto shown = std::vector<LabeledButton*>();
-	for (const auto button : { _devices, _mute, _end, _again, _close }) {
+	for (const auto button : { _devices, _camera, _mute, _end, _again, _close }) {
 		if (!button->isHidden()) {
 			shown.push_back(button);
 		}
@@ -236,14 +290,72 @@ void View::updateControls() {
 		button->moveToLeft(left, top, width());
 		left += button->width() + skip;
 	}
+	// The userpic gives way to a camera.
+	_userpic->setVisible(!showsRemoteVideo() && !showsLocalVideo());
 	const auto picture = int(st::callsViewUserpic);
 	_userpic->move((width() - picture) / 2, contentTop());
+}
+
+bool View::showsRemoteVideo() const {
+	const auto call = _service->call();
+	return call
+		&& !call->ended()
+		&& call->remoteVideo()
+		&& !_service->remoteFrame().isNull();
+}
+
+bool View::showsLocalVideo() const {
+	const auto call = _service->call();
+	return call
+		&& !call->ended()
+		&& call->cameraEnabled()
+		&& !_service->localFrame().isNull();
+}
+
+// My own camera, large (theirs is off): as tall as the space above the
+// buttons allows, never taller than the style says.
+QSize View::previewSize() const {
+	const auto frame = _service->localFrame().size();
+	if (frame.isEmpty()) {
+		return QSize();
+	}
+	const auto controlsTop = height()
+		- st::callsViewControlsBottom
+		- _mute->height();
+	const auto text = st::callsViewNameTop
+		+ st::callsViewNameFont->height
+		+ st::callsViewStateTop
+		+ st::callsViewDurationFont->height
+		+ st::callsViewHintTop
+		+ st::callsViewHintFont->height;
+	const auto maxHeight = std::clamp(
+		controlsTop - text - 2 * int(st::callsViewTopSkip) - _collapse->height(),
+		80,
+		int(st::callsVideoPreviewMaxHeight));
+	const auto maxWidth = std::max(width() - 2 * int(st::callsViewNotePadding), 80);
+	return frame.scaled(QSize(maxWidth, maxHeight), Qt::KeepAspectRatio);
+}
+
+// Where the picture of the block is: the userpic, or my camera's preview.
+QRect View::pictureRect() const {
+	if (!showsLocalVideo() || showsRemoteVideo()) {
+		return _userpic->geometry();
+	}
+	const auto size = previewSize();
+	return QRect(
+		(width() - size.width()) / 2,
+		contentTop(),
+		size.width(),
+		size.height());
 }
 
 int View::contentTop() const {
 	// The picture, the name and the state line as one block, centred in the
 	// space above the buttons.
-	const auto block = st::callsViewUserpic
+	const auto preview = (showsLocalVideo() && !showsRemoteVideo())
+		? previewSize().height()
+		: 0;
+	const auto block = (preview ? preview : int(st::callsViewUserpic))
 		+ st::callsViewNameTop
 		+ st::callsViewNameFont->height
 		+ st::callsViewStateTop
@@ -252,7 +364,80 @@ int View::contentTop() const {
 		- st::callsViewControlsBottom
 		- _mute->height();
 	const auto ring = st::callsViewRingGap + st::callsViewRingMax;
-	return std::max((controlsTop - block) / 2, int(st::callsViewTopSkip) + ring);
+	return std::max(
+		(controlsTop - block) / 2,
+		int(st::callsViewTopSkip) + (preview ? _collapse->height() : ring));
+}
+
+void View::paintRemoteVideo(Painter &p) {
+	// Their camera: the whole view, the picture kept whole.
+	const auto &frame = _service->remoteFrame();
+	p.fillRect(rect(), st::callsVideoBg);
+	const auto fitted = frame.size().scaled(size(), Qt::KeepAspectRatio);
+	const auto target = QRect(
+		(width() - fitted.width()) / 2,
+		(height() - fitted.height()) / 2,
+		fitted.width(),
+		fitted.height());
+	{
+		auto hq = PainterHighQualityEnabler(p);
+		p.drawImage(target, frame);
+	}
+	// What is written over the picture stays readable on any picture.
+	const auto shade = QColor(0, 0, 0, 120);
+	const auto clear = QColor(0, 0, 0, 0);
+	const auto controlsTop = height()
+		- st::callsViewControlsBottom
+		- _mute->height()
+		- int(st::callsViewTopSkip);
+	auto bottom = QLinearGradient(0, controlsTop - 40, 0, height());
+	bottom.setColorAt(0., clear);
+	bottom.setColorAt(0.35, shade);
+	bottom.setColorAt(1., shade);
+	p.fillRect(0, controlsTop - 40, width(), height() - controlsTop + 40, bottom);
+	const auto &padding = st::callsVideoInfoPadding;
+	const auto topHeight = _collapse->y()
+		+ _collapse->height()
+		+ padding.top()
+		+ st::callsBarNameFont->height
+		+ st::callsBarStateFont->height
+		+ padding.bottom();
+	auto top = QLinearGradient(0, 0, 0, topHeight);
+	top.setColorAt(0., shade);
+	top.setColorAt(1., clear);
+	p.fillRect(0, 0, width(), topHeight, top);
+}
+
+void View::paintLocalCorner(Painter &p) {
+	// My camera, small and mirrored, at the bottom trailing corner above
+	// the buttons.
+	const auto &frame = _service->localFrame();
+	const auto corner = frame.size().scaled(
+		QSize(st::callsVideoLocalWidth, st::callsVideoLocalWidth),
+		Qt::KeepAspectRatio);
+	const auto margin = int(st::callsVideoLocalMargin);
+	const auto controlsTop = height()
+		- st::callsViewControlsBottom
+		- _mute->height();
+	const auto target = style::rtlrect(
+		width() - margin - corner.width(),
+		controlsTop - margin - corner.height(),
+		corner.width(),
+		corner.height(),
+		width());
+	auto hq = PainterHighQualityEnabler(p);
+	auto path = QPainterPath();
+	path.addRoundedRect(
+		QRectF(target),
+		st::callsVideoLocalRadius,
+		st::callsVideoLocalRadius);
+	p.save();
+	p.setClipPath(path);
+	p.drawImage(target, frame.mirrored(true, false));
+	p.restore();
+	p.setPen(QPen(st::callsVideoLocalBorder->c, 1.));
+	p.setBrush(Qt::NoBrush);
+	p.drawPath(path);
 }
 
 void View::paintEvent(QPaintEvent *e) {
@@ -263,8 +448,62 @@ void View::paintEvent(QPaintEvent *e) {
 	if (!call) {
 		return;
 	}
-	const auto picture = _userpic->geometry();
-	{
+	const auto remote = showsRemoteVideo();
+	const auto local = showsLocalVideo();
+	if (remote) {
+		paintRemoteVideo(p);
+		if (local) {
+			paintLocalCorner(p);
+		}
+		// The name and the state at the top leading corner, like the bar.
+		const auto &padding = st::callsVideoInfoPadding;
+		// (Logical coordinates: the button is at the leading side.)
+		const auto button = style::RightToLeft()
+			? (width() - _collapse->x())
+			: (_collapse->x() + _collapse->width());
+		const auto left = button + padding.left();
+		const auto available = std::max(width() - left - padding.right(), 1);
+		const auto top = _collapse->y()
+			+ (_collapse->height()
+				- st::callsBarNameFont->height
+				- st::callsBarStateFont->height) / 2;
+		const auto name = _name.isEmpty()
+			? tr::lng_calls_video_call(tr::now)
+			: _name;
+		p.setFont(st::callsBarNameFont);
+		p.setPen(st::callsViewNameFg);
+		p.drawTextLeft(
+			left,
+			top,
+			width(),
+			st::callsBarNameFont->elided(name, available));
+		p.setFont(st::callsBarStateFont);
+		p.setPen(StateIsWarning(*call)
+			? st::callsViewWarnFg
+			: st::callsViewNameFg);
+		p.drawTextLeft(
+			left,
+			top + st::callsBarNameFont->height,
+			width(),
+			st::callsBarStateFont->elided(
+				StateText(*call, QDateTime::currentMSecsSinceEpoch()),
+				available));
+		return;
+	}
+	const auto picture = pictureRect();
+	if (local) {
+		// Only my camera is on: I see what I send, mirrored.
+		auto hq = PainterHighQualityEnabler(p);
+		auto path = QPainterPath();
+		path.addRoundedRect(
+			QRectF(picture),
+			st::callsVideoPreviewRadius,
+			st::callsVideoPreviewRadius);
+		p.save();
+		p.setClipPath(path);
+		p.drawImage(picture, _service->localFrame().mirrored(true, false));
+		p.restore();
+	} else {
 		// The voice rings: the other side's outside, the microphone's inside.
 		auto hq = PainterHighQualityEnabler(p);
 		const auto gap = double(st::callsViewRingGap);
@@ -299,9 +538,11 @@ void View::paintEvent(QPaintEvent *e) {
 	const auto padding = int(st::callsViewNotePadding);
 	const auto available = width() - 2 * padding;
 	auto top = picture.y() + picture.height() + st::callsViewNameTop;
-	const auto name = _name.isEmpty()
-		? tr::lng_calls_voice_call(tr::now)
-		: _name;
+	const auto name = !_name.isEmpty()
+		? _name
+		: call->video()
+		? tr::lng_calls_video_call(tr::now)
+		: tr::lng_calls_voice_call(tr::now);
 	p.setFont(st::callsViewNameFont);
 	p.setPen(st::callsViewNameFg);
 	p.drawTextCentered(

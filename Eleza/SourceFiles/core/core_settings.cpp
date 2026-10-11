@@ -119,6 +119,8 @@ void Settings::read() {
 		calls.value(QStringLiteral("input_device")).toString().toLatin1());
 	_calls.outputDevice = QByteArray::fromBase64(
 		calls.value(QStringLiteral("output_device")).toString().toLatin1());
+	_calls.cameraDevice = QByteArray::fromBase64(
+		calls.value(QStringLiteral("camera_device")).toString().toLatin1());
 	_calls.echoCancellation = calls.value(
 		QStringLiteral("echo_cancellation")).toBool(true);
 	_calls.noiseSuppression = calls.value(
@@ -199,6 +201,11 @@ QJsonObject Settings::serialize() const {
 			calls.insert(
 				QStringLiteral("output_device"),
 				QString::fromLatin1(_calls.outputDevice.toBase64()));
+		}
+		if (!_calls.cameraDevice.isEmpty()) {
+			calls.insert(
+				QStringLiteral("camera_device"),
+				QString::fromLatin1(_calls.cameraDevice.toBase64()));
 		}
 		calls.insert(
 			QStringLiteral("echo_cancellation"),

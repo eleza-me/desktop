@@ -160,13 +160,15 @@ if (ELEZA_ENABLE_CALLS)
 		"${_eleza_app_src}/calls/calls_ffi.cpp"
 		"${_eleza_app_src}/calls/calls_media.cpp"
 		"${_eleza_app_src}/calls/calls_media.h"
-		"${_eleza_app_src}/calls/calls_media_livekit.cpp")
+		"${_eleza_app_src}/calls/calls_media_livekit.cpp"
+		"${_eleza_app_src}/calls/calls_video.cpp"
+		"${_eleza_app_src}/calls/calls_video.h")
 	# A room participant on the command line: the media layer alone
 	# (tests/tools/calls-e2e.sh, or by hand against a real SFU).
 	add_executable(calls_media_probe tools/calls_media_probe.cpp
 		${_eleza_calls_media_sources})
 	target_include_directories(calls_media_probe PRIVATE "${_eleza_app_src}")
-	target_link_libraries(calls_media_probe PRIVATE Qt6::Core Qt6::Multimedia)
+	target_link_libraries(calls_media_probe PRIVATE Qt6::Core Qt6::Gui Qt6::Multimedia)
 	target_compile_definitions(calls_media_probe PRIVATE
 		ELEZA_VERSION_STRING="${PROJECT_VERSION}")
 	eleza_target_defaults(calls_media_probe)
@@ -190,7 +192,9 @@ if (ELEZA_ENABLE_CALLS)
 		"${_eleza_app_src}/calls/calls_audio_io.h"
 		"${_eleza_app_src}/calls/calls_ffi.cpp"
 		"${_eleza_app_src}/calls/calls_media.cpp"
-		"${_eleza_app_src}/calls/calls_media.h")
+		"${_eleza_app_src}/calls/calls_media.h"
+		"${_eleza_app_src}/calls/calls_video.cpp"
+		"${_eleza_app_src}/calls/calls_video.h")
 	target_include_directories(test_calls_audio PRIVATE "${_eleza_app_src}")
 	target_compile_definitions(test_calls_audio PRIVATE
 		ELEZA_VERSION_STRING="${PROJECT_VERSION}")

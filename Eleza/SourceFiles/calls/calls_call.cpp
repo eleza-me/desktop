@@ -111,6 +111,8 @@ void Call::setState(State state) {
 		if (_media) {
 			_media->leave();
 		}
+		_cameraWanted = false;
+		_remoteVideo = false;
 	}
 	Q_EMIT stateChanged(state);
 }
@@ -138,12 +140,27 @@ void Call::start() {
 	_started = true;
 	_outgoing = true;
 	_state = State::Calling;
+	_video = _args.video;
+	// A video call starts with my camera (it shows me my own picture while
+	// it rings there).
+	_cameraWanted = _video;
+	sendStart();
+}
+
+void Call::setVideo(bool video) {
+	if (_video != video) {
+		_video = video;
+		Q_EMIT videoChanged(video);
+	}
+}
+
+void Call::sendStart() {
 	// The answer is handled also when this object is gone by then: a call
 	// that was created after End was pressed has to be cancelled.
 	const auto api = _args.api;
 	const auto weak = QPointer<Call>(this);
 	const auto pending = _pendingStart;
-	api->invite(_args.peerId, base::Guard(), [=](const Data::CallJoin &join) {
+	api->invite(_args.peerId, _video, base::Guard(), [=](const Data::CallJoin &join) {
 		pending->answered = true;
 		if (pending->abandoned) {
 			// Without the cancel their device would ring until the
@@ -189,6 +206,9 @@ void Call::started(const Data::CallJoin &join) {
 		return;
 	}
 	_id = join.call;
+	if (join.video) {
+		setVideo(true);
+	}
 	Q_EMIT idAssigned(_id);
 	joinMedia(join);
 	if (_state == State::Ended) {
@@ -211,16 +231,33 @@ void Call::startFailed(const Api::Error &error) {
 	if (_state == State::Ended) {
 		return;
 	}
+	if (_video
+		&& !_videoFallbackTried
+		&& (error.code == u"call.video_disabled")) {
+		// Video calls were switched off since client-config was read: the
+		// person is called all the same, with audio.
+		_videoFallbackTried = true;
+		_told = false;
+		setVideo(false);
+		if (_cameraWanted) {
+			_cameraWanted = false;
+			Q_EMIT cameraChanged(false);
+		}
+		_pendingStart = std::make_shared<PendingStart>();
+		sendStart();
+		return;
+	}
 	_startError = error;
 	end(EndReasonFromStartError(error));
 }
 
-void Call::ring(const QString &call) {
+void Call::ring(const QString &call, bool video) {
 	if (_started) {
 		return;
 	}
 	_started = true;
 	_outgoing = false;
+	_video = video;
 	_id = call;
 	_state = State::Incoming;
 	// The owner learned about the call before it knew what it is.
@@ -239,6 +276,7 @@ void Call::resume(const Data::ActiveCall &call) {
 	}
 	_started = true;
 	_outgoing = call.caller;
+	_video = call.video;
 	_id = call.call;
 	_accepted = true;
 	_state = State::Reconnecting;
@@ -250,9 +288,13 @@ void Call::resume(const Data::ActiveCall &call) {
 
 // ---- the user's actions
 
-void Call::answer() {
+void Call::answer(bool withCamera) {
 	if (_state != State::Incoming) {
 		return;
+	}
+	if (withCamera && !_cameraWanted) {
+		_cameraWanted = true;
+		Q_EMIT cameraChanged(true);
 	}
 	_ringTimer.cancel();
 	setState(State::Connecting);
@@ -261,6 +303,9 @@ void Call::answer() {
 			return;
 		}
 		_accepted = true;
+		if (join.video) {
+			setVideo(true);
+		}
 		joinMedia(join);
 	}, [this](const Api::Error &error) {
 		// Refused: there is nothing of mine to end on the server.
@@ -309,6 +354,33 @@ void Call::setMuted(bool muted) {
 		_media->setMuted(muted);
 	}
 	Q_EMIT mutedChanged(muted);
+}
+
+void Call::setCameraEnabled(bool enabled) {
+	if (_state == State::Ended || _cameraWanted == enabled) {
+		return;
+	}
+	_cameraWanted = enabled;
+	if (_media) {
+		// cameraChanged() comes from the media (or cameraFailed()).
+		const auto was = _media->cameraEnabled();
+		_media->setCameraEnabled(enabled);
+		if (!enabled && !was) {
+			// It was only wanted so far.
+			Q_EMIT cameraChanged(false);
+		}
+	} else {
+		// Applied when the audio room is joined.
+		Q_EMIT cameraChanged(enabled);
+	}
+}
+
+void Call::setCameraDevice(const QByteArray &id) {
+	_cameraDevice = id;
+	_cameraDeviceSet = true;
+	if (_media) {
+		_media->setCameraDevice(id);
+	}
 }
 
 void Call::tellServer(State was, Fn<void()> done) {
@@ -425,6 +497,10 @@ void Call::handleSignal(const Data::CallSignal &signal) {
 	if (signal.call != _id) {
 		return;
 	}
+	if (signal.video) {
+		// Every signal of a video call says so (never `false`).
+		setVideo(true);
+	}
 	switch (signal.type) {
 	case Data::CallSignal::Type::Ended:
 		applyServerState(u"ended"_s, signal.reason, -1);
@@ -491,6 +567,9 @@ void Call::poll() {
 		if (_state == State::Ended) {
 			return;
 		}
+		if (info.video) {
+			setVideo(true);
+		}
 		applyServerState(info.state, info.endReason, info.durationS);
 		if (info.delivered && _state == State::Calling) {
 			setState(State::Ringing);
@@ -537,6 +616,48 @@ void Call::joinMedia(const Data::CallJoin &join) {
 			this,
 			&Call::deviceFallback);
 		connect(_media.get(), &Media::inputFailed, this, &Call::inputFailed);
+		connect(_media.get(), &Media::cameraChanged, this, [this](bool enabled) {
+			if (_state == State::Ended) {
+				return;
+			} else if (!enabled && _cameraWanted) {
+				// It went off by itself (unplugged).
+				_cameraWanted = false;
+			}
+			Q_EMIT cameraChanged(enabled);
+		});
+		connect(_media.get(), &Media::cameraFailed, this, [this](bool noDevice) {
+			if (_state == State::Ended) {
+				return;
+			}
+			// The call goes on with audio.
+			_cameraWanted = false;
+			Q_EMIT cameraChanged(false);
+			Q_EMIT cameraFailed(noDevice);
+		});
+		connect(_media.get(), &Media::remoteVideoChanged, this, [this](bool shown) {
+			if (_state != State::Ended && _remoteVideo != shown) {
+				_remoteVideo = shown;
+				Q_EMIT remoteVideoChanged(shown);
+			}
+		});
+		connect(
+			_media.get(),
+			&Media::localVideoFrame,
+			this,
+			&Call::localVideoFrame);
+		connect(
+			_media.get(),
+			&Media::remoteVideoFrame,
+			this,
+			&Call::remoteVideoFrame);
+		if (_cameraDeviceSet) {
+			_media->setCameraDevice(_cameraDevice);
+		}
+		if (_cameraWanted) {
+			// Asked for before there was a media (a video call I started, an
+			// answer with the camera).
+			_media->setCameraEnabled(true);
+		}
 	}
 	const auto media = MediaJoin::FromJson(join.media);
 	if (!media.valid()) {

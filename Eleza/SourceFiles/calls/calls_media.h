@@ -16,15 +16,21 @@
 // means the connection is gone and the library gave up: the call asks the
 // server for fresh credentials (rejoin) and joins again, or ends.
 //
+// Video: the camera is one more track either side publishes or stops at any
+// time, in a call of either kind (the server is not told). setCameraEnabled()
+// opens the camera (calls_video.h), publishes its frames and hands them to
+// localVideoFrame() for the preview; the other side's camera arrives as
+// remoteVideoFrame(), and remoteVideoChanged() says when there is one to
+// show. A camera that cannot be opened leaves the call as it is, with audio.
+//
 // Nothing here blocks: the implementation works on a thread of its own and
-// reports through signals on the thread of the object. Only audio is
-// carried; a video track would be one more pair of source / stream next to
-// the audio ones in calls_media_livekit.cpp.
+// reports through signals on the thread of the object.
 #pragma once
 
 #include <QtCore/QJsonObject>
 #include <QtCore/QObject>
 #include <QtCore/QStringList>
+#include <QtGui/QImage>
 
 #include <memory>
 
@@ -56,7 +62,12 @@ struct MediaSettings {
 	bool echoCancellation = true;
 	bool noiseSuppression = true;
 	bool autoGainControl = true;
+	// QCameraDevice::id(); empty = the default camera of the system.
+	QByteArray cameraDeviceId;
 #ifdef ELEZA_DEBUG_TOOLS
+	// Video without a camera: "pattern" - generated frames (a moving bar and
+	// a frame counter) instead of the camera.
+	QString debugCamera;
 	// Audio without sound hardware (tests/tools/calls-e2e.sh):
 	//   debugInput   "tone:<Hz>" - a generated signal instead of the microphone
 	//   debugOutput  a .wav file that records what would be played
@@ -124,6 +135,21 @@ public:
 	// statsReady() follows (with valid = false when there is nothing yet).
 	virtual void requestStats() = 0;
 
+	// ---- video
+	// Opens the camera and publishes it (now, or as soon as the room is
+	// joined); `false` stops both. cameraChanged() follows; cameraFailed()
+	// instead when there is no camera or it cannot be opened.
+	virtual void setCameraEnabled(bool enabled) {
+		Q_UNUSED(enabled);
+	}
+	[[nodiscard]] virtual bool cameraEnabled() const {
+		return false;
+	}
+	// A device id of Calls::Video::Cameras(); empty = the system's default.
+	virtual void setCameraDevice(const QByteArray &id) {
+		Q_UNUSED(id);
+	}
+
 Q_SIGNALS:
 	void stateChanged(Calls::Media::State state);
 	// 0..1, a few times per second while connected: the microphone after
@@ -135,6 +161,16 @@ Q_SIGNALS:
 	// No microphone can be opened (none, or the system refuses): the call
 	// goes on, the other side hears nothing.
 	void inputFailed();
+	// My camera is on (its frames follow) or off.
+	void cameraChanged(bool enabled);
+	// The camera could not be turned on (`noDevice`: there is none at all):
+	// the call goes on with audio.
+	void cameraFailed(bool noDevice);
+	// What my camera sends (not mirrored), a few times per second.
+	void localVideoFrame(const QImage &frame);
+	// The other side has a camera track that is not muted / has none.
+	void remoteVideoChanged(bool shown);
+	void remoteVideoFrame(const QImage &frame);
 
 };
 

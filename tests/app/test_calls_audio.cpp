@@ -3,6 +3,7 @@
 // loudspeaker, the level meter, the join payload and the quality estimate.
 #include "calls/calls_audio_io.h"
 #include "calls/calls_media.h"
+#include "calls/calls_video.h"
 
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
@@ -56,6 +57,7 @@ private Q_SLOTS:
 	void queueDropsOldAudioWhenTheReaderStalls();
 	void level();
 	void pickDevice();
+	void videoFrameSizes();
 	void joinPayload();
 	void joinPayloadWithoutTurn();
 	void mos();
@@ -403,6 +405,39 @@ void TestCallsAudio::mos() {
 	}
 	// The line the quality report draws: 5% loss is clearly worse than none.
 	QVERIFY(EstimateMos(60., 5., 0.) - EstimateMos(60., 5., 5.) > 0.3);
+}
+
+// What a camera's picture becomes before it is sent.
+void TestCallsAudio::videoFrameSizes() {
+	using namespace Calls::Video;
+	const auto max = QSize(640, 480);
+	// Small pictures go out as they are, with even sides.
+	QCOMPARE(OutputSize(QSize(320, 240), max), QSize(320, 240));
+	QCOMPARE(OutputSize(QSize(321, 241), max), QSize(320, 240));
+	// Large ones are scaled into the box, the proportions kept.
+	QCOMPARE(OutputSize(QSize(1280, 720), max), QSize(640, 360));
+	QCOMPARE(OutputSize(QSize(1920, 1080), max), QSize(640, 360));
+	QCOMPARE(OutputSize(QSize(720, 1280), max), QSize(270, 480));
+	QCOMPARE(OutputSize(QSize(641, 480), max), QSize(640, 478));
+	// Never a side of zero; nothing for no picture.
+	QCOMPARE(OutputSize(QSize(4000, 3), max), QSize(640, 2));
+	QCOMPARE(OutputSize(QSize(1, 1), max), QSize(2, 2));
+	QVERIFY(OutputSize(QSize(), max).isEmpty());
+	QVERIFY(OutputSize(QSize(0, 100), max).isEmpty());
+
+	auto source = QImage(1280, 720, QImage::Format_RGB32);
+	source.fill(QColor(10, 200, 30));
+	const auto frame = PrepareFrame(source, max);
+	QCOMPARE(frame.size(), QSize(640, 360));
+	QCOMPARE(frame.format(), QImage::Format_RGBA8888);
+	// The bytes are what the media library is told they are: R, G, B, A.
+	const auto pixel = frame.constScanLine(100) + 4 * 100;
+	QCOMPARE(int(pixel[0]), 10);
+	QCOMPARE(int(pixel[1]), 200);
+	QCOMPARE(int(pixel[2]), 30);
+	QCOMPARE(int(pixel[3]), 255);
+	QVERIFY(frame.bytesPerLine() >= frame.width() * 4);
+	QVERIFY(PrepareFrame(QImage(), max).isNull());
 }
 
 QTEST_APPLESS_MAIN(TestCallsAudio)

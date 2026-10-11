@@ -146,6 +146,21 @@ callsViewClose: CallButton(callsViewMute) {
 	bgActive: callsButtonBg;
 	iconActive: icon {{ "close", textOnNight, 26px }};
 }
+callsViewCamera: CallButton(callsViewMute) {
+	// Off: the dim disc with the crossed camera; on: the light disc.
+	icon: icon {{ "videocam-off", textOnNight, 26px }};
+	bgActive: textOnNight;
+	iconActive: icon {{ "videocam", bgNight, 26px }};
+}
+// The pictures of a video call.
+callsVideoBg: bgNight;
+callsVideoLocalWidth: 168px;
+callsVideoLocalMargin: 16px;
+callsVideoLocalRadius: 12px;
+callsVideoLocalBorder: onNightTint;
+callsVideoPreviewMaxHeight: 300px;
+callsVideoPreviewRadius: 16px;
+callsVideoInfoPadding: margins(16px, 12px, 16px, 12px);
 callsViewCollapse: IconButton(defaultIconButton) {
 	icon: icon {{ "chevron-down", textOnNight }};
 	iconOver: icon {{ "chevron-down", textOnNight }};
@@ -192,12 +207,15 @@ callsIncomingDecline: RoundButton(callsIncomingAccept) {
 }
 callsIncomingAcceptIcon: icon {{ "call", textOnBrand, 18px }};
 callsIncomingDeclineIcon: icon {{ "call-end", statusError, 18px }};
+callsIncomingVideoIcon: icon {{ "videocam", textOnBrand, 18px }};
 // The pulse behind the picture while it rings.
 callsIncomingPulseFg: brandSoft;
 callsIncomingPulse: 8px;
 
 // ---- the chat header and menus
 callsMenuIcon: icon {{ "call", menuIconFg, 20px }};
+callsMenuVideoIcon: icon {{ "videocam", menuIconFg, 20px }};
+callsSettingsCameraIcon: icon {{ "videocam", textSecondary }};
 callsTopBarButton: IconButton(topBarCallButton) {
 }
 callsTopBarDisabledFg: textTertiary;

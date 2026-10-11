@@ -48,6 +48,8 @@ struct CallSettings {
 	// QAudioDevice::id() of the chosen devices; empty = the system's default.
 	QByteArray inputDevice;
 	QByteArray outputDevice;
+	// QCameraDevice::id() of the camera for video calls; empty = the default.
+	QByteArray cameraDevice;
 	bool echoCancellation = true;
 	bool noiseSuppression = true;
 	double ringtoneVolume = 0.7; // 0..1; 0: an incoming call rings silently
@@ -55,6 +57,7 @@ struct CallSettings {
 	friend bool operator==(const CallSettings &a, const CallSettings &b) {
 		return (a.inputDevice == b.inputDevice)
 			&& (a.outputDevice == b.outputDevice)
+			&& (a.cameraDevice == b.cameraDevice)
 			&& (a.echoCancellation == b.echoCancellation)
 			&& (a.noiseSuppression == b.noiseSuppression)
 			&& (a.ringtoneVolume == b.ringtoneVolume);

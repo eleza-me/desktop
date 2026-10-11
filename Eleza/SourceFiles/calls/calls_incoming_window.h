@@ -39,13 +39,22 @@ public:
 	IncomingWindow(
 		Main::Session *session,
 		const QString &callId,
-		const QString &peerId);
+		const QString &peerId,
+		bool video = false);
 	~IncomingWindow();
 
 	[[nodiscard]] QString callId() const {
 		return _callId;
 	}
-	void setAcceptCallback(std::function<void()> callback);
+	// `withCamera`: «تصویری» of a video call; «پاسخ» / «فقط صدا» and the
+	// Enter key answer with the microphone only.
+	void setAcceptCallback(std::function<void(bool withCamera)> callback);
+	// The intent became known after the window was shown (the signal that
+	// rang did not say; the first poll did).
+	void setVideo(bool video);
+	[[nodiscard]] bool video() const {
+		return _video;
+	}
 	void setDeclineCallback(std::function<void()> callback);
 
 	void showAtCorner();
@@ -69,7 +78,9 @@ private:
 	Support::UserpicButton *_userpic = nullptr;
 	Ui::RoundButton *_accept = nullptr;
 	Ui::RoundButton *_decline = nullptr;
-	std::function<void()> _acceptCallback;
+	Ui::RoundButton *_acceptVideo = nullptr; // a video call: «تصویری»
+	bool _video = false;
+	std::function<void(bool withCamera)> _acceptCallback;
 	std::function<void()> _declineCallback;
 	Ui::Animations::Basic _pulse;
 	QPoint _dragStart;

@@ -9,20 +9,25 @@
 //       [--processing=aec,ns,agc | off]   what the processing module does (default: all)
 //       [--mute-at=<s>] [--unmute-at=<s>]
 //       [--rejoin-at=<s> --rejoin-token=<jwt>]   join again with another token
+//       [--camera=pattern]      publish generated video frames as the camera
+//       [--camera-off-at=<s>] [--camera-on-at=<s>]
 //
 // Prints one line per event:
 //
 //   state connecting | connected | reconnecting | failed | idle
 //   levels <input> <output>      (once a second)
 //   stats rtt_ms=… jitter_ms=… loss_pct=… mos=… relay_tcp=…
+//   camera on | off | failed
+//   video local=<frames sent this second> remote=<frames received> size=<WxH> shown=<0|1>
+//   remote-video on | off
 //
 // Exit code 0 when the room was joined at least once.
 //
 //   calls_media_probe --self-check
 //
 // loads the library that lies next to this program, starts it and asks it
-// for an audio processing module: the interface is what this build expects
-// (no network, no audio device). Exit code 0 = it answered, 77 = there is no
+// for an audio processing module and for a video source: the interface is
+// what this build expects (no network, no audio device, no camera). Exit code 0 = it answered, 77 = there is no
 // library for this platform (the test is skipped), 1 = it is there and does
 // not work. Runs as the test `test_calls_media_library`.
 #include "calls/calls_ffi.h"
@@ -30,6 +35,8 @@
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QTimer>
+#include <QtGui/QGuiApplication>
+#include <QtGui/QImage>
 
 #include <cstdio>
 
@@ -109,15 +116,68 @@ void Print(const QString &line) {
 		return 1;
 	}
 	library->dropHandle(handle);
+	// FfiRequest { new_video_source = 21 { type = 1, resolution = 2 { width = 1,
+	// height = 2 }, is_screencast = 3 } } ->
+	// FfiResponse { new_video_source = 21 { source = 1 { handle = 1 { id = 1 } } } }:
+	// what a camera of a video call is published through.
+	auto resolution = Writer();
+	resolution.varint(1, 640).varint(2, 480);
+	auto video = Writer();
+	video.varint(1, 0).message(2, resolution).boolean(3, false);
+	const auto videoResponse = library->request(21, video);
+	auto videoHandle = quint64(0);
+	auto videoReader = Reader(videoResponse);
+	while (videoReader.next()) {
+		if (videoReader.field() != 21) {
+			continue;
+		}
+		auto answer = videoReader.sub();
+		while (answer.next()) {
+			if (answer.field() != 1) {
+				continue;
+			}
+			auto owned = answer.sub();
+			while (owned.next()) {
+				if (owned.field() != 1) {
+					continue;
+				}
+				auto inner = owned.sub();
+				while (inner.next()) {
+					if (inner.field() == 1) {
+						videoHandle = inner.varint();
+					}
+				}
+			}
+		}
+	}
+	if (!videoReader.ok() || !videoHandle) {
+		std::fprintf(stderr, "the library gave no video source (%d bytes)\n", int(videoResponse.size()));
+		return 1;
+	}
+	library->dropHandle(videoHandle);
 	library->dispose();
-	Print(QStringLiteral("%1: loaded, a processing module was created and released").arg(Library::FileName()));
+	Print(QStringLiteral("%1: loaded; a processing module and a video source were created and released").arg(Library::FileName()));
 	return 0;
 }
 
 } // namespace
 
 int main(int argc, char *argv[]) {
-	auto application = QCoreApplication(argc, argv);
+	// The generated camera paints text: that takes the GUI application (on
+	// the offscreen platform when nothing else is asked for). Everything
+	// else runs without one.
+	auto withCamera = false;
+	for (auto i = 1; i < argc; ++i) {
+		withCamera = withCamera
+			|| QByteArray(argv[i]).startsWith("--camera=");
+	}
+	if (withCamera && qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
+		qputenv("QT_QPA_PLATFORM", "offscreen");
+	}
+	const auto owned = withCamera
+		? std::unique_ptr<QCoreApplication>(new QGuiApplication(argc, argv))
+		: std::make_unique<QCoreApplication>(argc, argv);
+	auto &application = *owned;
 	const auto arguments = application.arguments();
 	if (arguments.contains(QStringLiteral("--self-check"))) {
 		return SelfCheck();
@@ -137,6 +197,7 @@ int main(int argc, char *argv[]) {
 #ifdef ELEZA_DEBUG_TOOLS
 	settings.debugInput = Argument(arguments, QStringLiteral("input"));
 	settings.debugOutput = Argument(arguments, QStringLiteral("output"));
+	settings.debugCamera = Argument(arguments, QStringLiteral("camera"));
 #endif // ELEZA_DEBUG_TOOLS
 	// "--processing=aec,ns,agc" (any of them), "off"; all three by default.
 	const auto processing = Argument(arguments, QStringLiteral("processing"));
@@ -181,6 +242,33 @@ int main(int argc, char *argv[]) {
 	QObject::connect(media.get(), &Calls::Media::inputFailed, [] {
 		Print(QStringLiteral("input failed"));
 	});
+	// ---- video
+	auto localFrames = 0;
+	auto remoteFrames = 0;
+	auto remoteSize = QSize();
+	auto remoteShown = false;
+	QObject::connect(media.get(), &Calls::Media::cameraChanged, [](bool on) {
+		Print(on ? QStringLiteral("camera on") : QStringLiteral("camera off"));
+	});
+	QObject::connect(media.get(), &Calls::Media::cameraFailed, [](bool) {
+		Print(QStringLiteral("camera failed"));
+	});
+	QObject::connect(media.get(), &Calls::Media::localVideoFrame, [&](const QImage &) {
+		++localFrames;
+	});
+	QObject::connect(media.get(), &Calls::Media::remoteVideoFrame, [&](const QImage &frame) {
+		++remoteFrames;
+		remoteSize = frame.size();
+	});
+	QObject::connect(media.get(), &Calls::Media::remoteVideoChanged, [&](bool shown) {
+		remoteShown = shown;
+		Print(shown ? QStringLiteral("remote-video on") : QStringLiteral("remote-video off"));
+	});
+	const auto cameraOffAt = Argument(arguments, QStringLiteral("camera-off-at")).toInt();
+	const auto cameraOnAt = Argument(arguments, QStringLiteral("camera-on-at")).toInt();
+	if (withCamera) {
+		media->setCameraEnabled(true);
+	}
 	auto second = QTimer();
 	auto elapsed = 0;
 	const auto seconds = std::max(Argument(arguments, QStringLiteral("seconds")).toInt(), 0);
@@ -194,6 +282,20 @@ int main(int argc, char *argv[]) {
 		Print(QStringLiteral("levels %1 %2")
 			.arg(std::exchange(input, 0.f), 0, 'f', 2)
 			.arg(std::exchange(output, 0.f), 0, 'f', 2));
+		if (withCamera || remoteFrames || remoteShown) {
+			Print(QStringLiteral("video local=%1 remote=%2 size=%3x%4 shown=%5")
+				.arg(std::exchange(localFrames, 0))
+				.arg(std::exchange(remoteFrames, 0))
+				.arg(remoteSize.width())
+				.arg(remoteSize.height())
+				.arg(remoteShown ? 1 : 0));
+		}
+		if (cameraOffAt && elapsed == cameraOffAt) {
+			media->setCameraEnabled(false);
+		}
+		if (cameraOnAt && elapsed == cameraOnAt) {
+			media->setCameraEnabled(true);
+		}
 		if (muteAt && elapsed == muteAt) {
 			Print(QStringLiteral("mute"));
 			media->setMuted(true);

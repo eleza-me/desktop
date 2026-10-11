@@ -13,8 +13,9 @@ Instance::Instance(Args args, QObject *parent)
 
 Instance::~Instance() = default;
 
-Call::Args Instance::callArgs(const QString &peerId) const {
+Call::Args Instance::callArgs(const QString &peerId, bool video) const {
 	auto result = Call::Args();
+	result.video = video;
 	result.api = _args.api;
 	result.createMedia = _args.createMedia;
 	result.networkType = _args.networkType;
@@ -109,6 +110,12 @@ void Instance::watch(Call *call) {
 	connect(call, &Call::inputFailed, this, [this] {
 		Q_EMIT notice(Notice::MicrophoneFailed);
 	});
+	connect(call, &Call::videoChanged, this, &Instance::callUpdated);
+	connect(call, &Call::cameraChanged, this, &Instance::callUpdated);
+	connect(call, &Call::remoteVideoChanged, this, &Instance::callUpdated);
+	connect(call, &Call::cameraFailed, this, [this](bool noDevice) {
+		Q_EMIT notice(noDevice ? Notice::NoCamera : Notice::CameraFailed);
+	});
 	connect(call, &Call::deviceFallback, this, [this](bool input) {
 		Q_EMIT notice(input
 			? Notice::InputDeviceChanged
@@ -143,7 +150,7 @@ void Instance::callStateChanged(Call *call) {
 	const auto waiting = std::exchange(_waitingIncoming, std::nullopt);
 	if (waiting && call->outgoing() && call->id().isEmpty()) {
 		// Mine never came to exist; theirs is ringing here.
-		ring(waiting->call, waiting->from);
+		ring(waiting->call, waiting->from, waiting->video);
 		return;
 	}
 	if (call->quiet()) {
@@ -154,7 +161,7 @@ void Instance::callStateChanged(Call *call) {
 	}
 }
 
-bool Instance::start(const QString &peerId) {
+bool Instance::start(const QString &peerId, bool video) {
 	if (peerId.isEmpty()) {
 		return false;
 	}
@@ -174,14 +181,14 @@ bool Instance::start(const QString &peerId) {
 		return false;
 	}
 	_waitingIncoming = std::nullopt;
-	auto call = std::make_unique<Call>(callArgs(peerId));
+	auto call = std::make_unique<Call>(callArgs(peerId, video));
 	const auto raw = call.get();
 	setCall(std::move(call));
 	raw->start();
 	return true;
 }
 
-void Instance::answer() {
+void Instance::answer(bool withCamera) {
 	if (!_call || _call->state() != State::Incoming) {
 		return;
 	}
@@ -193,7 +200,7 @@ void Instance::answer() {
 		Q_EMIT notice(Notice::NoMicrophone);
 		return;
 	}
-	_call->answer();
+	_call->answer(withCamera);
 }
 
 void Instance::dismissEnded() {
@@ -202,20 +209,20 @@ void Instance::dismissEnded() {
 	}
 }
 
-void Instance::ring(const QString &call, const QString &from) {
+void Instance::ring(const QString &call, const QString &from, bool video) {
 	if (call.isEmpty() || from.isEmpty()) {
 		return;
 	}
 	auto created = std::make_unique<Call>(callArgs(from));
 	const auto raw = created.get();
 	setCall(std::move(created));
-	raw->ring(call);
+	raw->ring(call, video);
 }
 
 void Instance::handleSignal(const Data::CallSignal &signal) {
 	if (signal.type == Data::CallSignal::Type::Incoming) {
 		if (!live()) {
-			ring(signal.call, signal.from);
+			ring(signal.call, signal.from, signal.video);
 		} else if (_call->id() == signal.call) {
 			// A repeat of what rings already.
 		} else if (_call->outgoing() && _call->id().isEmpty()) {
@@ -274,7 +281,7 @@ void Instance::checkIncoming(bool force) {
 	_args.api->incoming(this, [this](const std::optional<Data::CallInfo> &info) {
 		_incomingCheckInFlight = false;
 		if (info && !live()) {
-			ring(info->call, info->peer);
+			ring(info->call, info->peer, info->video);
 		}
 	}, [this](const Api::Error &) {
 		// An older server without the route, or offline again: nothing rings.
