@@ -25,10 +25,16 @@ C++ و Qt نوشته شده و همهٔ رابط کاربری آن را موتو
 - پاسخ و نقل‌قول، ویرایش، حذف برای هر دو طرف، واکنش، هدایت، سنجاق پیام
 - اسپویلر برای متن و رسانه، پیش‌نمایش پیوند، پیش‌نویسِ همگام بین دستگاه‌ها
 - ارسال با کشیدن و رها کردن یا چسباندن از کلیپ‌بورد، صف ارسال در حالت آفلاین
-- سنجاق، بی‌صدا و بایگانی گفتگوها، درخواست‌های پیام، جستجو
+- ارسال بی‌صدا، سنجاق، بی‌صدا و بایگانی گفتگوها، درخواست‌های پیام، جستجو
 
-**تماس صوتی**
+**گروه‌ها**
+- ساختن گروه، عضویت با پیوند دعوت یا درخواست عضویت، اشاره (@) به اعضا، پاسخ و سنجاق پیام
+- نام و عکس فرستنده کنار هر پیام، سطح اعلان برای هر گروه (همه، فقط اشاره‌ها، هیچ)
+- مدیریت: مدیران و اختیاراتشان، محدود و محروم کردن، مجوزهای اعضا، پیوندهای دعوت، درخواست‌های عضویت
+
+**تماس صوتی و تصویری**
 - تماس دونفره با کاربران الزا روی اندروید، آیفون و دسکتاپ، از بالای گفتگو یا از نمایه
+- تماس تصویری: روشن و خاموش کردن دوربین در هر لحظه، پاسخ فقط با صدا
 - زنگ تماس ورودی حتی وقتی پنجره بسته است؛ پاسخ با Enter و رد با Esc
 - حذف نویز و پژواک، انتخاب میکروفون و بلندگو، بی‌صدا کردن و اتصال دوبارهٔ خودکار
 - ثبت تماس‌ها در گفتگو و تماس دوباره با یک کلیک
@@ -122,8 +128,10 @@ smoothly. It speaks Persian (right-to-left) and English, in light and dark.
 **Highlights**
 
 - **Messenger** — text, media, voice, files, stickers; replies and quotes, edits, reactions,
-  forwarding, pins, spoilers, link previews, synced drafts, offline send queue.
-- **Voice calls** — one-to-one calls with Eleza users on Android, iPhone and desktop: an
+  forwarding, pins, spoilers, link previews, synced drafts, offline send queue, silent send.
+- **Groups** — create a group, join by invite link, mentions, per-group notification level,
+  admins with rights, restrictions and bans, member permissions, invite links, join requests.
+- **Voice and video calls** — one-to-one calls with Eleza users on Android, iPhone and desktop: an
   incoming-call window that rings even when Eleza is closed to the tray, noise and echo removal,
   device selection, automatic reconnection, call history in the chat.
 - **Anonymous conversations** — browse open topics, start one or join as a listener.
