@@ -1,7 +1,7 @@
 // The outbox: a message is queued locally with a `client_message_id`, shown
-// at once as «sending», and sent over the connection (`chat.send`) or HTTP
-// with the same id - the server dedups, so a lost answer is never a
-// duplicate. Media is uploaded first (resumable). The queue survives a
+// at once as «sending», and sent over the connection (`chat.send`, or
+// `groups.send` when the destination is a group) or HTTP with the same id -
+// the server dedups, so a lost answer is never a duplicate. Media is uploaded first (resumable). The queue survives a
 // restart (the database's outbox table).
 //
 // Ordering: messages of one chat leave strictly in the order they were
@@ -33,6 +33,7 @@ struct SendTextOptions {
 	QVector<Entity> entities;
 	std::optional<Quote> quote;  // an excerpt of the replied-to message
 	QString linkPreview;         // the url returned by POST /v1/link-preview
+	bool silent = false;         // «send without sound»: nobody is alerted
 };
 struct SendFileOptions {
 	QString caption;
@@ -44,6 +45,7 @@ struct SendFileOptions {
 	QString fileName;
 	bool spoiler = false;
 	std::optional<AudioMeta> audio;     // title / performer of a music file
+	bool silent = false;                // «send without sound»
 };
 
 class Outbox final : public QObject {
@@ -85,6 +87,8 @@ public:
 	void retry(const QString &clientMessageId);
 	// Removes a queued / failed message (and stops its upload).
 	void discard(const QString &clientMessageId);
+	// Removes everything queued for a chat that is gone.
+	void discardChat(const QString &chat);
 	// Tries everything that is not Failed (called when the connection comes up).
 	void retryAll();
 

@@ -710,7 +710,7 @@ QString DataFieldOfKind(const QString &kind) {
 		return u"message"_s;
 	} else if (kind == u"read" || kind == u"reaction" || kind == u"played"
 		|| kind == u"cleared" || kind == u"member" || kind == u"state"
-		|| kind == u"draft" || kind == u"notif") {
+		|| kind == u"draft" || kind == u"notif" || kind == u"group") {
 		return kind;
 	} else if (kind == u"message_pinned" || kind == u"message_unpinned") {
 		return u"pin"_s;

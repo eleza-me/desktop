@@ -3,8 +3,9 @@
 // file so the previous answer is available before the first response, with
 // built-in defaults for a server that does not send a key.
 //
-// The document uses dotted keys ("conversation.topic_max_chars"); nested
-// objects are accepted as well.
+// The document is { "version": N, "values": { "<dotted key>": value } }. A
+// flat document with the dotted keys at its root and nested objects are
+// accepted as well (test servers).
 #pragma once
 
 #include "base/weak_guard.h"
@@ -56,6 +57,10 @@ public:
 	[[nodiscard]] bool userStickerPacksEnabled() const; // feature.user_sticker_packs
 	[[nodiscard]] bool soundsEnabled() const;           // feature.sounds
 	[[nodiscard]] bool videoHlsEnabled() const;         // feature.video_hls
+	[[nodiscard]] bool groupsEnabled() const;           // feature.groups (absent: off)
+	// The second release of groups (admins, invite links, pins, mentions).
+	[[nodiscard]] bool groupsAdministration() const;    // groups.max_admins is listed
+	[[nodiscard]] bool videoCallsEnabled() const;       // feature.video_calls (absent: off)
 	[[nodiscard]] bool deleteChatForBothEnabled() const;
 
 	// ---- sign-in and profile

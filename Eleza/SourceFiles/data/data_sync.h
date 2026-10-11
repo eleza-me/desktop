@@ -12,7 +12,12 @@
 //
 // Applied update kinds: message, edited, deleted, live_stopped, reaction,
 // read, played, draft, cleared, member, state, message_pinned,
-// message_unpinned, notif.
+// message_unpinned, notif, group.
+//
+// Groups are a second track with a counter per group (Data::Groups): this
+// store hands it the group frames of the connection, the user updates of
+// kind `group` (my own place in a group) and the moments to catch up (every
+// Hello, every fallback tick).
 #pragma once
 
 #include "base/timer.h"
@@ -68,6 +73,7 @@ private:
 	void applyItem(const QJsonObject &item, bool live);
 	void applyLive(const QString &kind, const QJsonObject &payload, qint64 framePts, bool live);
 	void applyMessage(Message message, bool live);
+	void applyCleared(const QString &chat, qint64 clearedTo, bool all);
 	void rememberInfo(const ChatInfo &info);
 	void reloadInboxSoon();
 	void scheduleFallback();

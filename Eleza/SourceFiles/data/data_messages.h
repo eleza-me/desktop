@@ -14,6 +14,10 @@
 // `loadNewer` walks forward and `loadLatest` returns to the end.
 //
 // Sending lives in Data::Outbox; this store applies what the server reports.
+//
+// A group (an id that starts with "j") has the same timeline; its pages and
+// actions go to the group routes (`groups.history`, `groups.read`, …), and
+// what changes in it arrives through Data::Groups.
 #pragma once
 
 #include "api/api_error.h"
@@ -72,6 +76,10 @@ public:
 	// valid until the chat is removed.
 	[[nodiscard]] const History &history(const QString &chat);
 	[[nodiscard]] const Message *find(const QString &chat, qint64 seq) const;
+	// The chat has a timeline in memory (shown now or earlier in this run).
+	[[nodiscard]] bool held(const QString &chat) const;
+	// …and it reaches the newest message: live changes extend it.
+	[[nodiscard]] bool live(const QString &chat) const;
 
 	// ---- loading
 	// The newest messages the database remembers.
@@ -178,6 +186,17 @@ public:
 	// Refetches one message of the window (a reaction changed).
 	void refresh(const QString &chat, qint64 seq);
 
+	// ---- used by Data::Groups (the changes of a group come as whole messages)
+	// Messages that are new or changed: the window takes what belongs to
+	// it; with `cache` the database replaces the rows it holds and adds the
+	// ones newer than everything it holds.
+	void applyChanges(const QString &chat, QVector<Message> changed, bool cache);
+	// Messages that are gone (deleted for everyone, hidden for me).
+	void dropMessages(const QString &chat, const QVector<qint64> &seqs, bool cache);
+	// The new counts of one message; false when it is not in the window.
+	bool applyReactions(const QString &chat, qint64 seq, const QMap<QString, qint64> &reactions);
+	void setMyReaction(const QString &chat, qint64 seq, const QString &emoji);
+
 Q_SIGNALS:
 	// The chat's items / flags changed.
 	void historyChanged(const QString &chat);
@@ -194,6 +213,7 @@ private:
 	struct Page {
 		QVector<Message> messages; // oldest first
 		ChatInfo info;
+		std::optional<Group> group; // the header of a group's page
 		bool hasMoreBefore = true;
 		bool hasMoreAfter = false;
 	};

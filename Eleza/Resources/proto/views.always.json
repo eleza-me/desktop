@@ -109,6 +109,165 @@
     "chat",
     "seq"
   ],
+  "GroupEntry": [
+    "group",
+    "last_activity_at"
+  ],
+  "GroupInvite": [
+    "created_at",
+    "created_by",
+    "link",
+    "url",
+    "uses"
+  ],
+  "GroupInvitePreview": [
+    "member_count",
+    "status",
+    "title"
+  ],
+  "GroupJoinRequest": [
+    "created_at",
+    "user"
+  ],
+  "GroupKnownIn": [
+    "group",
+    "pts"
+  ],
+  "GroupMember": [
+    "rights",
+    "role",
+    "status",
+    "user"
+  ],
+  "GroupNotAdded": [
+    "reason",
+    "user"
+  ],
+  "GroupPage": [
+    "group",
+    "messages"
+  ],
+  "GroupPin": [
+    "pinned_at",
+    "pinned_by",
+    "seq"
+  ],
+  "GroupSelfData": [
+    "group"
+  ],
+  "GroupSelfReaction": [
+    "emoji",
+    "seq"
+  ],
+  "GroupSelfSettings": [
+    "archived",
+    "cleared_before_seq",
+    "muted",
+    "notify",
+    "pinned"
+  ],
+  "GroupView": [
+    "can_send",
+    "created_at",
+    "default_permissions",
+    "group",
+    "history_visible",
+    "last_read_seq",
+    "last_seq",
+    "member_count",
+    "notify",
+    "permissions",
+    "pins",
+    "pts",
+    "rights",
+    "role",
+    "slow_mode_s",
+    "state",
+    "status",
+    "title",
+    "unread",
+    "unread_mentions"
+  ],
+  "GroupsAdminSetRequest": [
+    "rights"
+  ],
+  "GroupsCreateRequest": [
+    "title"
+  ],
+  "GroupsCreateResponse": [
+    "group",
+    "not_added"
+  ],
+  "GroupsDeleteManyRequest": [
+    "seqs"
+  ],
+  "GroupsDeleteManyResponse": [
+    "deleted"
+  ],
+  "GroupsDifferenceResponse": [
+    "messages",
+    "more",
+    "pts",
+    "too_long"
+  ],
+  "GroupsDraftSaveRequest": [
+    "text"
+  ],
+  "GroupsDraftSaveResponse": [
+    "updated_at"
+  ],
+  "GroupsEditRequest": [
+    "text"
+  ],
+  "GroupsInvitesResponse": [
+    "invites"
+  ],
+  "GroupsJoinRequestsResponse": [
+    "requests"
+  ],
+  "GroupsListResponse": [
+    "groups"
+  ],
+  "GroupsMembersAddRequest": [
+    "users"
+  ],
+  "GroupsMembersAddResponse": [
+    "added",
+    "not_added"
+  ],
+  "GroupsMembersResponse": [
+    "members"
+  ],
+  "GroupsMentionsResponse": [
+    "seqs"
+  ],
+  "GroupsPinsResponse": [
+    "pins"
+  ],
+  "GroupsRestrictRequest": [
+    "denied"
+  ],
+  "GroupsSendRequest": [
+    "client_message_id",
+    "kind"
+  ],
+  "GroupsSendResponse": [
+    "created_at",
+    "message_id",
+    "pts",
+    "seq"
+  ],
+  "GroupsSyncRequest": [
+    "known"
+  ],
+  "GroupsSyncResponse": [
+    "count",
+    "groups",
+    "removed"
+  ],
+  "GroupsTransferRequest": [
+    "user"
+  ],
   "InboxEntry": [
     "chat",
     "last_activity_at",

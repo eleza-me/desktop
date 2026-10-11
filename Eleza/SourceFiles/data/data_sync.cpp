@@ -3,6 +3,7 @@
 #include "api/api_client_config.h"
 #include "data/data_chats.h"
 #include "data/data_conversations.h"
+#include "data/data_groups.h"
 #include "data/data_json.h"
 #include "data/data_messages.h"
 #include "data/data_notifications.h"
@@ -46,6 +47,9 @@ Sync::Sync(Session *session)
 		return;
 	} else if (!_session->transport().connected()) {
 		catchUp();
+		// Groups have a sync track of their own; without the connection
+		// nothing else tells what changed in them.
+		_session->groups().requestSync();
 		scheduleFallback();
 	}
 })
@@ -154,6 +158,9 @@ void Sync::handle(const Rt::Frame &frame) {
 		// What waited for the connection goes out now.
 		_session->outbox().retryAll();
 		_session->chats().flushDrafts();
+		// Connected (first connect, reconnect, resume — every time): what
+		// the frames of the gap would have said about my groups.
+		_session->groups().requestSync();
 		break;
 	case Type::Resumed:
 		_replaying = false;
@@ -222,6 +229,10 @@ void Sync::handle(const Rt::Frame &frame) {
 		break;
 	case Type::Topics:
 		_session->conversations().notifyOpenListChanged(frame.category);
+		break;
+	case Type::Group:
+		// A change of a group: its own counter, its own rule.
+		_session->groups().handleFrame(frame.data);
 		break;
 	case Type::FeedNew:
 	case Type::LiveLocation:
@@ -294,9 +305,12 @@ void Sync::applyLive(
 		}
 	} else if (kind == u"cleared") {
 		if (!chat.isEmpty()) {
-			const auto before = Json::Int64(d, "cleared_before_seq"_L1);
-			messages.clear(chat, before ? std::make_optional(before) : std::nullopt);
+			applyCleared(chat, Json::Int64(d, "cleared_before_seq"_L1), true);
 		}
+	} else if (kind == u"group") {
+		// My own place in a group: membership, read mark, settings, my
+		// reaction, my draft.
+		_session->groups().applyUser(d);
 	} else if (kind == u"member") {
 		if (chat.isEmpty()) {
 			return;
@@ -312,8 +326,12 @@ void Sync::applyLive(
 				c.info.archived = c.archived;
 			}
 		});
-		if (const auto before = Json::Int64(d, "cleared_before_seq"_L1)) {
-			messages.clear(chat, before);
+		if (const auto cleared = Json::Int64(d, "cleared_before_seq"_L1)) {
+			applyCleared(chat, cleared, false);
+		}
+		if (const auto hidden = Json::Int64(d, "hidden_seq"_L1)) {
+			// I deleted one message for myself on another device.
+			messages.removeMessage(chat, Message::KeyForSeq(hidden));
 		}
 	} else if (kind == u"message_pinned" || kind == u"message_unpinned") {
 		const auto seq = Json::Int64(d, "seq"_L1);
@@ -363,6 +381,42 @@ void Sync::applyLive(
 		_session->notifications().applyUnread(
 			Json::Int64(d, "news"_L1),
 			Json::CountMap(d.value("kinds"_L1)));
+	}
+}
+
+// I cleared the history up to `clearedTo` (here or on another device): the
+// messages at or below it are gone for me. A chat whose whole history is
+// cleared leaves the list until something new is written in it, unless it
+// is pinned or has a draft — the same rule the server's inbox applies.
+void Sync::applyCleared(const QString &chat, qint64 clearedTo, bool all) {
+	auto &chats = _session->chats();
+	auto &messages = _session->messages();
+	if (clearedTo > 0) {
+		messages.clear(chat, clearedTo + 1);
+	} else if (all) {
+		messages.clear(chat);
+	} else {
+		return;
+	}
+	const auto row = chats.chat(chat);
+	if (!row) {
+		return;
+	}
+	const auto upTo = (clearedTo > 0) ? clearedTo : row->lastSeq;
+	const auto whole = (upTo >= row->lastSeq);
+	const auto kept = row->pinned || (row->draft && !row->draft->empty());
+	if (whole && !kept && !row->isGroup) {
+		chats.markCleared(chat, std::max(upTo, row->lastSeq));
+		chats.remove(chat);
+	} else if (row->lastMessage
+		&& row->lastMessage->seq > 0
+		&& row->lastMessage->seq <= upTo) {
+		chats.patch(chat, [&](Chat &c) {
+			c.lastMessage = std::nullopt;
+			c.lastMine = false;
+			c.unread = 0;
+			c.unreadCapped = false;
+		});
 	}
 }
 

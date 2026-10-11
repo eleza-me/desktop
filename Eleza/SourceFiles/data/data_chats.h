@@ -7,6 +7,9 @@
 //
 // The list is filled from the database at start (instant), then from the
 // server once (`loadInbox`), and after that kept current by Data::Sync.
+// Groups are rows of the same list (Chat::isGroup): the inbox does not carry
+// them, Data::Groups adds and updates them, and the actions below go to the
+// group routes for a row whose id is a group id.
 // Actions apply optimistically; a failure is reverted where that is
 // meaningful and reported through Data::Session::actionFailed.
 #pragma once
@@ -27,7 +30,7 @@ class Chats final : public QObject {
 
 public:
 	enum class Section {
-		Messages,      // direct chats that are neither archived nor requests
+		Messages,      // direct chats and groups that are neither archived nor requests
 		Conversations, // anonymous talker / listener conversations (not archived)
 		Requests,      // message requests
 		Archived,
@@ -117,6 +120,8 @@ public:
 	// row and the database, then on the server.
 	void saveDraft(const QString &chat, const Draft &draft);
 	void clearDraft(const QString &chat);
+	// A draft typed here that the server has not confirmed yet.
+	[[nodiscard]] bool hasLocalDraft(const QString &chat) const;
 
 	// ---- typing
 	// Tells the peer what I am doing ("typing", "recording_voice", ...,
@@ -173,6 +178,7 @@ private:
 		std::shared_ptr<QVector<InboxEntry>> into,
 		Fn<void(bool)> done);
 	void finishInbox(const QVector<InboxEntry> &entries);
+	[[nodiscard]] bool shown(const Chat &chat) const;
 	[[nodiscard]] bool isCleared(const Chat &chat);
 	void persistCleared();
 	void changed(const QString &id, bool reordered);

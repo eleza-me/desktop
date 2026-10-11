@@ -8,6 +8,7 @@
 #pragma once
 
 #include "base/basic_types.h"
+#include "data/data_group_types.h"
 
 #include <QtCore/QJsonObject>
 #include <QtCore/QMap>
@@ -115,6 +116,7 @@ struct Entity {
 	int length = 0;
 	QString url;
 	QString language;
+	QString user;     // a mention: the public id of the person it names
 
 	[[nodiscard]] static Entity FromJson(const QJsonObject &json);
 	[[nodiscard]] QJsonObject toJson() const;
@@ -241,6 +243,7 @@ struct AudioMeta {
 struct CallRecord {
 	QString outcome;
 	qint64 durationS = 0;
+	bool video = false; // the call was started as a video call
 
 	[[nodiscard]] static CallRecord FromJson(const QJsonObject &json);
 	[[nodiscard]] QJsonObject toJson() const;
@@ -329,6 +332,7 @@ enum class ServiceEvent {
 	Pinned,
 	ThemeChanged,
 	Continued,
+	Group,      // a note of a group (Data::GroupRules::NoteOf says which)
 };
 
 // One message: the wire view (MessageView) plus the local state the
@@ -384,7 +388,8 @@ struct Message {
 		return seq <= 0;
 	}
 	// Deleted and moderated messages leave the timeline; system codes
-	// nobody can word are dropped too.
+	// nobody can word are dropped too. In a group a message a moderator
+	// holds back stays as a placeholder (it may come back).
 	[[nodiscard]] bool visible() const;
 	[[nodiscard]] ServiceEvent serviceEvent() const;
 
@@ -459,6 +464,13 @@ struct Chat {
 	qint64 timeRingExpiresAt = 0;
 	ChatInfo info;
 
+	// ---- a group (Data::Groups keeps these)
+	bool isGroup = false;
+	std::optional<Group> group;  // the header as I see it
+	qint64 groupPts = -1;        // the last change of the group applied to this row
+	qint64 groupCachePts = -1;   // the pts its cached messages are current at (-1: none)
+	int unreadMentions = 0;      // unread messages that mention me or reply to me
+
 	[[nodiscard]] bool isRequest() const {
 		return section == u"request";
 	}
@@ -494,6 +506,8 @@ struct PinnedMessage {
 	Message message;
 	qint64 pinnedAt = 0;
 	QString scope;     // both | me
+	QString pinnedBy;  // groups: who pinned it
+	bool hidden = false; // groups: the viewer cannot see the message itself
 
 	[[nodiscard]] static PinnedMessage FromJson(const QJsonObject &json);
 };
