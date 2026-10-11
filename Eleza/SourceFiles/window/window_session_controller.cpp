@@ -14,6 +14,8 @@
 #include "window/window_main_window.h"
 #include "window/window_section_widget.h"
 
+#include <QtCore/QPointer>
+
 namespace Window {
 
 SessionController::SessionController(MainWindow *window, Main::Session *session)
@@ -82,9 +84,15 @@ void SessionController::requestLogout() {
 	const auto account = &_session->account();
 	args.confirmed = [account](std::function<void()> close) {
 		close();
-		// The request is best effort; the account ends the session either way
-		// and the application shows the intro.
-		account->logout();
+		// What must reach the server while the session still can (a call
+		// is ended for the other side), then the sign-out. The request is
+		// best effort; the account ends the session either way and the
+		// application shows the intro.
+		Core::App().finishExitTasks([weak = QPointer<Main::Account>(account)] {
+			if (weak) {
+				weak->logout();
+			}
+		});
 	};
 	show(Ui::MakeConfirmBox(std::move(args)));
 }

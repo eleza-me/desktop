@@ -12,6 +12,12 @@
 //   POST /control/rotate      a new static key with the next id; the old one is gone
 //   POST /control/pts         { pts }  moves the update log's head (missed updates to replay)
 //
+// ELEZA_RTPEER_GATEWAY=1 makes it the realtime half of a mock server instead of a
+// scripted world of its own: the connection, signals and pushed updates work as above,
+// every RPC method is answered "rt.method_unknown" (the client then asks the HTTP API
+// next to it, which owns the data) and nothing is replayed. tests/tools/mock-calls.mjs
+// puts one such peer per user behind the web client's mock API to deliver call.* signals.
+//
 // The access token picks the scenario:
 //   "expired…"   the auth answer is auth.proof_required with a nonce; a valid Proof signs in
 //   "revoked…"   the auth answer is an error, then Close 4001
@@ -39,6 +45,8 @@ function newKey(id: number): Key {
   const priv = new Uint8Array(randomBytes(32));
   return { id, priv, pub: x25519.getPublicKey(priv) };
 }
+
+const gateway = process.env.ELEZA_RTPEER_GATEWAY === '1';
 
 let key = newKey(7);
 let pts = 100;
@@ -146,7 +154,11 @@ class Connection {
   // Hello, then what the client missed.
   private welcome() {
     this.authed = true;
-    const resumed = this.authPts > 0 && this.authPts < pts;
+    if (gateway) {
+      // The data lives behind HTTP: the client is where it says it is.
+      pts = Math.max(pts, this.authPts);
+    }
+    const resumed = !gateway && this.authPts > 0 && this.authPts < pts;
     this.send({
       hello: {
         v: 2,
@@ -226,6 +238,10 @@ class Connection {
     }
     if (!this.authed) {
       this.refuse(id, 401, 'auth.required', 'sign in first');
+      return;
+    }
+    if (gateway && method !== 'auth') {
+      this.refuse(id, 404, 'rt.method_unknown', 'not served over this connection');
       return;
     }
     switch (method) {

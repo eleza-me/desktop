@@ -1,5 +1,8 @@
 #include "core/core_modules.h"
 
+#ifdef ELEZA_ENABLE_CALLS
+#include "calls/calls_module.h"
+#endif // ELEZA_ENABLE_CALLS
 #include "dialogs/dialogs_module.h"
 #include "history/history_module.h"
 #include "conversation/conversation_module.h"
@@ -28,6 +31,11 @@ void RegisterModules() {
 	Search::Register();
 	Profile::Register();
 	Settings::Register();
+#ifdef ELEZA_ENABLE_CALLS
+	// Voice calls: absent in a build with -DELEZA_ENABLE_CALLS=OFF (nothing
+	// then registers the hooks of window/window_calls.h: no call buttons).
+	Calls::Register();
+#endif // ELEZA_ENABLE_CALLS
 }
 
 } // namespace Core

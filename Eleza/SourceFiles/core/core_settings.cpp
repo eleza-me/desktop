@@ -113,6 +113,20 @@ void Settings::read() {
 		qint64(root.value(QStringLiteral("media_cache_limit")).toDouble(0.)),
 		qint64(0));
 	_autoUpdate = root.value(QStringLiteral("auto_update")).toBool(true);
+	const auto calls = root.value(QStringLiteral("calls")).toObject();
+	_calls = CallSettings();
+	_calls.inputDevice = QByteArray::fromBase64(
+		calls.value(QStringLiteral("input_device")).toString().toLatin1());
+	_calls.outputDevice = QByteArray::fromBase64(
+		calls.value(QStringLiteral("output_device")).toString().toLatin1());
+	_calls.echoCancellation = calls.value(
+		QStringLiteral("echo_cancellation")).toBool(true);
+	_calls.noiseSuppression = calls.value(
+		QStringLiteral("noise_suppression")).toBool(true);
+	_calls.ringtoneVolume = std::clamp(
+		calls.value(QStringLiteral("ringtone_volume")).toDouble(0.7),
+		0.,
+		1.);
 	_recentEmoji.clear();
 	for (const auto &item : root.value(QStringLiteral("recent_emoji")).toArray()) {
 		if (item.isString() && !item.toString().isEmpty()) {
@@ -174,6 +188,27 @@ QJsonObject Settings::serialize() const {
 			double(_mediaCacheLimit));
 	}
 	root.insert(QStringLiteral("auto_update"), _autoUpdate);
+	if (!(_calls == CallSettings())) {
+		auto calls = QJsonObject();
+		if (!_calls.inputDevice.isEmpty()) {
+			calls.insert(
+				QStringLiteral("input_device"),
+				QString::fromLatin1(_calls.inputDevice.toBase64()));
+		}
+		if (!_calls.outputDevice.isEmpty()) {
+			calls.insert(
+				QStringLiteral("output_device"),
+				QString::fromLatin1(_calls.outputDevice.toBase64()));
+		}
+		calls.insert(
+			QStringLiteral("echo_cancellation"),
+			_calls.echoCancellation);
+		calls.insert(
+			QStringLiteral("noise_suppression"),
+			_calls.noiseSuppression);
+		calls.insert(QStringLiteral("ringtone_volume"), _calls.ringtoneVolume);
+		root.insert(QStringLiteral("calls"), calls);
+	}
 	if (!_recentEmoji.isEmpty()) {
 		root.insert(
 			QStringLiteral("recent_emoji"),
@@ -308,6 +343,14 @@ void Settings::setMediaCacheLimit(qint64 bytes) {
 	bytes = std::max(bytes, qint64(0));
 	if (_mediaCacheLimit != bytes) {
 		_mediaCacheLimit = bytes;
+		scheduleWrite();
+	}
+}
+
+void Settings::setCalls(const CallSettings &settings) {
+	if (!(_calls == settings)) {
+		_calls = settings;
+		_calls.ringtoneVolume = std::clamp(_calls.ringtoneVolume, 0., 1.);
 		scheduleWrite();
 	}
 }

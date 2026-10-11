@@ -1,5 +1,6 @@
 #include "profile/profile_widget.h"
 
+#include "data/data_calls.h"
 #include "data/data_chats.h"
 #include "data/data_graph.h"
 #include "data/data_notifications.h"
@@ -28,6 +29,7 @@
 #include "ui/widgets/tab_bar.h"
 #include "ui/widgets/tooltip.h"
 #include "ui/widgets/top_bar.h"
+#include "window/window_calls.h"
 #include "window/window_main_window.h"
 #include "window/window_session_controller.h"
 #include "styles/style_profile.h"
@@ -660,6 +662,27 @@ bool Widget::isMe() const {
 			&& _profile.id == controller()->session().data().users().myId());
 }
 
+QString Widget::callableUserId() const {
+	if (!Window::CallsSupported()
+		|| !_loaded
+		|| isMe()
+		|| _blocked
+		|| _profile.deleted
+		|| _profile.isBot
+		|| _profile.id.isEmpty()) {
+		return QString();
+	}
+	const auto &chats = controller()->session().data().chats();
+	for (const auto &chat : chats.list(Data::Chats::Section::All)) {
+		if (chat.peerUserId == _profile.id
+			&& (Data::CallAvailabilityFor(chat)
+				== Data::CallAvailability::Available)) {
+			return _profile.id;
+		}
+	}
+	return QString();
+}
+
 ViewerState Widget::viewerState() const {
 	auto result = ViewerState();
 	result.loaded = _loaded;
@@ -1030,6 +1053,14 @@ void Widget::showMenu() {
 		item.destructive = destructive;
 		_menu->addItem(std::move(item));
 	};
+	// «تماس صوتی»: where the chat's header would offer it too (a direct
+	// chat of two exists and the server would not refuse the call).
+	if (const auto callee = callableUserId(); !callee.isEmpty()) {
+		add(
+			tr::lng_calls_voice_call(tr::now),
+			[=, this] { Window::StartCall(controller(), callee); },
+			&st::profileMenuCallIcon);
+	}
 	for (const auto entry : model.menu) {
 		switch (entry) {
 		case MenuEntry::PostNotificationsOn:

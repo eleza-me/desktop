@@ -1,6 +1,7 @@
 // ListWidget: the mouse, selection, and what a click on each part of a row does.
 #include "history/history_list_widget.h"
 
+#include "data/data_calls.h"
 #include "data/data_chats.h"
 #include "data/data_outbox.h"
 #include "data/data_session.h"
@@ -20,6 +21,7 @@
 #include "ui/ui_utility.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/scroll_area.h"
+#include "window/window_calls.h"
 #include "window/window_main_window.h"
 #include "window/window_routes.h"
 #include "window/window_session_controller.h"
@@ -624,6 +626,17 @@ void ListWidget::revealSpoiler(const QString &key) {
 }
 
 void ListWidget::openMedia(const Data::Message &message) {
+	if (message.call) {
+		// A call record: a click calls back, where a call is possible.
+		const auto chat = _session->data().chats().chat(message.chat);
+		if (chat
+			&& Window::CallsSupported()
+			&& (Data::CallAvailabilityFor(*chat)
+				== Data::CallAvailability::Available)) {
+			Window::StartCall(_controller, chat->peerUserId);
+		}
+		return;
+	}
 	switch (message.kind) {
 	case Data::MessageKind::Photo:
 		openPhoto(message);

@@ -16,6 +16,7 @@
 #include "window/window_title_frame.h"
 #include "styles/style_window.h"
 
+#include <QtCore/QScopeGuard>
 #include <QtGui/QCloseEvent>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QKeyEvent>
@@ -25,6 +26,8 @@
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QMenu>
 #include <QtWidgets/QSystemTrayIcon>
+
+#include <algorithm>
 
 namespace Window {
 namespace {
@@ -512,6 +515,12 @@ void MainWindow::closeEvent(QCloseEvent *e) {
 		hide();
 		return;
 	}
+	// Closing quits: not without a word while something would be cut off
+	// (a call asks first).
+	if (Core::App().closeGuarded()) {
+		e->ignore();
+		return;
+	}
 	e->accept();
 	Core::App().quit();
 }
@@ -607,10 +616,18 @@ void MainWindow::updateMinimumSize() {
 }
 
 void MainWindow::updateBodyGeometry() {
-	const auto top = titleHeight();
+	_inBodyGeometry = true;
+	const auto guard = qScopeGuard([this] { _inBodyGeometry = false; });
+	auto top = titleHeight();
 	if (top > 0) {
 		_title->setGeometry(0, 0, width(), top);
 		_title->raise();
+	}
+	if (_topStrip && !_topStrip->isHidden()) {
+		const auto stripHeight = std::min(_topStrip->height(), height() - top);
+		_topStrip->setGeometry(0, top, width(), stripHeight);
+		_topStrip->raise();
+		top += stripHeight;
 	}
 	_body->setGeometry(0, top, width(), height() - top);
 	if (_content) {
@@ -655,6 +672,21 @@ void MainWindow::updateTitleJoin() {
 	_title->setJoinedWidth((rail && !_upgrade && rail->isVisibleTo(_body))
 		? rail->width()
 		: 0);
+}
+
+void MainWindow::setTopStrip(QWidget *strip) {
+	if (_topStrip == strip) {
+		return;
+	}
+	if (_topStrip) {
+		_topStrip->removeEventFilter(this);
+	}
+	_topStrip = strip;
+	if (strip) {
+		strip->setParent(this);
+		strip->installEventFilter(this);
+	}
+	updateBodyGeometry();
 }
 
 void MainWindow::registerDarkOverlay(QWidget *overlay) {
@@ -749,6 +781,10 @@ bool MainWindow::eventFilter(QObject *object, QEvent *event) {
 	case QEvent::Resize:
 		if (object == _titleJoin.data()) {
 			updateTitleJoin();
+		} else if (object == _topStrip.data()) {
+			if (!_inBodyGeometry) {
+				updateBodyGeometry();
+			}
 		} else if (event->type() != QEvent::Resize) {
 			updateTitleDark();
 		}

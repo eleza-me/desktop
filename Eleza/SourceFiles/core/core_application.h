@@ -28,7 +28,9 @@
 #include <QtCore/QObject>
 #include <QtCore/QTimer>
 
+#include <functional>
 #include <memory>
+#include <vector>
 
 class QTemporaryDir;
 
@@ -140,7 +142,24 @@ public:
 
 	// A later launch of the app asked us to come to the front.
 	void handleActivation(const QString &message);
+	// Quits once the exit tasks are done (below), at the latest a moment later.
 	void quit();
+
+	// ---- hooks for what must not be cut off (a voice call)
+	// Work that has to reach the server before the app exits or the user
+	// signs out: the task calls `done` when it is finished. Tasks get a
+	// short while together; whatever is not done by then is left behind.
+	using ExitTask = std::function<void(std::function<void()> done)>;
+	void registerExitTask(ExitTask task);
+	// Runs the exit tasks, then `then`.
+	void finishExitTasks(std::function<void()> then);
+	// Asked before the app restarts into an update: a non-empty text says
+	// why not now (shown to the user).
+	void registerRestartBlocker(std::function<QString()> blocker);
+	// Asked when the window is closed and closing would quit the app: true
+	// = the guard takes care of it (asks the user) and the close is ignored.
+	void registerCloseGuard(std::function<bool()> guard);
+	[[nodiscard]] bool closeGuarded() const;
 
 Q_SIGNALS:
 	void languageChanged();
@@ -195,6 +214,9 @@ private:
 	QString _pendingRoute;
 	Content _content = Content::None;
 	QTimer _backgroundTimer;
+	std::vector<ExitTask> _exitTasks;
+	std::vector<std::function<QString()>> _restartBlockers;
+	std::vector<std::function<bool()>> _closeGuards;
 	bool _quitting = false;
 #ifdef ELEZA_DEBUG_TOOLS
 	std::unique_ptr<DebugActions> _debugActions;

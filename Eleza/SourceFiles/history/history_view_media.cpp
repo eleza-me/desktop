@@ -1,5 +1,7 @@
 #include "history/history_view_media.h"
 
+#include "data/data_calls.h"
+
 #include "base/platform_file.h"
 #include "data/data_feed.h"
 #include "data/data_image_decode.h"
@@ -1502,6 +1504,16 @@ private:
 };
 
 // ---- a call record
+//
+// Written by the server when a call ends; the sender is the caller, so each
+// side reads the direction from it:
+//
+//   تماس خروجی / تماس ورودی      ۵ دقیقه · ۰:۴۲        (it was answered)
+//   تماس خروجی                   بی‌پاسخ / رد شده
+//   تماس از دست رفته             برای تماس دوباره کلیک کن   (red)
+//   تماس ورودی                   تماس رد شد                 (red)
+//
+// A click calls back (the list does it: a record is the row's media).
 
 class CallMedia final : public Media {
 public:
@@ -1534,24 +1546,29 @@ public:
 			rect.y(),
 			size,
 			size);
+		const auto red = missed();
 		{
 			auto hq = PainterHighQualityEnabler(p);
 			p.setPen(Qt::NoPen);
-			if (missed()) {
+			if (red) {
 				p.setBrush(st::historyCallMissedBg);
 			} else {
 				p.setBrush(context.outgoing ? colors.accentOut : colors.accentIn);
 			}
 			p.drawEllipse(icon);
 		}
-		(missed()
+		(red
 			? st::historyCallMissedIcon
 			: st::historyCallIcon).paintInCenter(p, icon);
 		const auto textLeft = rtl ? rect.x() : (icon.right() + 1 + st::historyFileSkip);
 		const auto textWidth = rect.width() - size - st::historyFileSkip;
 		p.setPen(context.outgoing ? colors.textOut : colors.textIn);
 		DrawLine(p, st::historyFileNameFont, title(), textLeft, rect.y() + 1, textWidth);
-		p.setPen(context.outgoing ? colors.metaOut : colors.metaIn);
+		if (red) {
+			p.setPen(st::historyCallMissedFg);
+		} else {
+			p.setPen(context.outgoing ? colors.metaOut : colors.metaIn);
+		}
 		DrawLine(
 			p,
 			st::historyFileSizeFont,
@@ -1562,25 +1579,45 @@ public:
 	}
 
 private:
-	[[nodiscard]] bool missed() const {
+	[[nodiscard]] Data::CallRecordKind kind() const {
 		const auto &message = data();
-		return message.call
-			&& (message.call->outcome == u"missed"
-				|| message.call->outcome == u"declined");
+		return Data::ClassifyCallRecord(
+			message.call ? *message.call : Data::CallRecord(),
+			message.mine);
+	}
+	[[nodiscard]] bool missed() const {
+		return Data::CallRecordIsMissed(kind());
 	}
 	[[nodiscard]] QString title() const {
-		if (missed()) {
-			return tr::lng_chat_missed_call(tr::now);
+		switch (kind()) {
+		case Data::CallRecordKind::Missed:
+			return tr::lng_calls_record_missed(tr::now);
+		case Data::CallRecordKind::Incoming:
+		case Data::CallRecordKind::IncomingDeclined:
+			return tr::lng_calls_record_incoming(tr::now);
+		case Data::CallRecordKind::Outgoing:
+		case Data::CallRecordKind::OutgoingNoAnswer:
+		case Data::CallRecordKind::OutgoingDeclined:
+			break;
 		}
-		return data().mine
-			? tr::lng_history_call_outgoing(tr::now)
-			: tr::lng_history_call_incoming(tr::now);
+		return tr::lng_calls_record_outgoing(tr::now);
 	}
 	[[nodiscard]] QString subtitle() const {
-		const auto &message = data();
-		return (message.call && message.call->durationS > 0)
-			? Lang::Duration(int(message.call->durationS))
-			: QString();
+		switch (kind()) {
+		case Data::CallRecordKind::Missed:
+			return tr::lng_calls_record_call_back(tr::now);
+		case Data::CallRecordKind::OutgoingNoAnswer:
+			return tr::lng_calls_record_no_answer(tr::now);
+		case Data::CallRecordKind::OutgoingDeclined:
+			return tr::lng_calls_record_declined_out(tr::now);
+		case Data::CallRecordKind::IncomingDeclined:
+			return tr::lng_calls_record_declined_in(tr::now);
+		case Data::CallRecordKind::Outgoing:
+		case Data::CallRecordKind::Incoming:
+			break;
+		}
+		const auto seconds = data().call ? data().call->durationS : 0;
+		return Lang::Duration(int(std::max(seconds, qint64(0))));
 	}
 
 };

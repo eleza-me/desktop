@@ -1,5 +1,7 @@
 #include "support/notifications.h"
 
+#include "data/data_calls.h"
+
 #include "core/core_application.h"
 #include "data/data_chats.h"
 #include "data/data_session.h"
@@ -50,6 +52,14 @@ std::optional<NotificationData> NotificationFor(
 	if (!session || message.mine || !message.visible()) {
 		return std::nullopt;
 	}
+	// Of the call records only a call I missed is news: one I answered or
+	// declined myself is not.
+	const auto missedCall = message.call
+		&& (Data::ClassifyCallRecord(*message.call, message.mine)
+			== Data::CallRecordKind::Missed);
+	if (message.call && !missedCall) {
+		return std::nullopt;
+	}
 	auto &data = session->data();
 	const auto chat = data.chats().chat(message.chat);
 	if (chat && (chat->saved || chat->archived || MutedNow(*chat))) {
@@ -73,7 +83,9 @@ std::optional<NotificationData> NotificationFor(
 			result.anonymous = true;
 		}
 	}
-	result.text = settings.showPreview
+	result.text = missedCall
+		? tr::lng_calls_record_missed(tr::now) // nothing of a message in it
+		: settings.showPreview
 		? MessagePreview(message)
 		: tr::lng_support_notify_new_message(tr::now);
 	return result;

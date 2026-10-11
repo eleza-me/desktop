@@ -7,6 +7,7 @@
 #include "lang_auto.h"
 #include "main/main_session.h"
 #include "settings/settings_common.h"
+#include "settings/settings_pages.h"
 #include "core/core_application.h"
 #include "support/media_image.h"
 #include "ui/painter.h"
@@ -202,6 +203,9 @@ void Widget::build() {
 	addSection(Section::Privacy, &st::settingsIconPrivacy);
 	addSection(Section::Notifications, &st::settingsIconNotifications);
 	addSection(Section::Messages, &st::settingsIconMessages);
+	if (HasCallsPage()) {
+		addSection(Section::Calls, &st::settingsIconPhone);
+	}
 	addSection(Section::Filters, &st::settingsIconMuted);
 	addSection(Section::Region, &st::settingsIconRegion);
 	AddDivider(_content);

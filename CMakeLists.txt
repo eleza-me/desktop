@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(Eleza
-	VERSION 0.2.0
+	VERSION 0.3.0
 	DESCRIPTION "Eleza Desktop"
 	HOMEPAGE_URL "https://eleza.me"
 	LANGUAGES C CXX)
@@ -27,6 +27,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(eleza_options)
 include(eleza_target)
 include(eleza_codegen)
+include(eleza_livekit)
 
 find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets Svg Network)
 

@@ -1,7 +1,7 @@
 {
 	"$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
 	"name": "eleza-desktop",
-	"version-string": "0.2.0",
+	"version-string": "0.3.0",
 	"description": "Eleza Desktop: third-party dependencies that do not come with Qt.",
 	"dependencies": [
 		"openssl"

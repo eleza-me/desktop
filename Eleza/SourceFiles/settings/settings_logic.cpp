@@ -19,11 +19,12 @@ struct SectionInfo {
 	const char *id;
 };
 
-constexpr auto kSections = std::array<SectionInfo, 11>{ {
+constexpr auto kSections = std::array<SectionInfo, 12>{ {
 	{ Section::Account, "account" },
 	{ Section::Privacy, "privacy" },
 	{ Section::Notifications, "notifications" },
 	{ Section::Messages, "messages" },
+	{ Section::Calls, "calls" },
 	{ Section::Filters, "filters" },
 	{ Section::Region, "region" },
 	{ Section::Appearance, "appearance" },
@@ -103,6 +104,7 @@ QString SectionTitle(Section section) {
 		return tr::lng_settings_notifications(tr::now);
 	case Section::Messages:
 		return tr::lng_settings_messages_conversations(tr::now);
+	case Section::Calls: return tr::lng_calls_settings_title(tr::now);
 	case Section::Filters: return tr::lng_settings_muted_blocked(tr::now);
 	case Section::Region: return tr::lng_settings_eli_region(tr::now);
 	case Section::Appearance:

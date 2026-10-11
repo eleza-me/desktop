@@ -34,6 +34,11 @@
 namespace Settings {
 namespace {
 
+[[nodiscard]] Window::SectionFactory &CallsPageFactory() {
+	static auto result = Window::SectionFactory();
+	return result;
+}
+
 [[nodiscard]] Option Everyone() {
 	return { u"everyone"_s, tr::lng_settings_audience_everyone(tr::now) };
 }
@@ -664,12 +669,21 @@ template <typename PageType>
 
 } // namespace
 
+void RegisterCallsPage(Window::SectionFactory factory) {
+	CallsPageFactory() = std::move(factory);
+}
+
+bool HasCallsPage() {
+	return CallsPageFactory() != nullptr;
+}
+
 Window::SectionFactory PageFactory(Section section) {
 	switch (section) {
 	case Section::Account: return AccountPageFactory();
 	case Section::Privacy: return Make<PrivacyPage>();
 	case Section::Notifications: return Make<NotificationsPage>();
 	case Section::Messages: return Make<MessagesPage>();
+	case Section::Calls: return CallsPageFactory();
 	case Section::Filters: return FiltersPageFactory();
 	case Section::Region: return Make<RegionPage>();
 	case Section::Appearance: return Make<AppearancePage>();

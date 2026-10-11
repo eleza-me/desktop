@@ -19,6 +19,7 @@ enum class Section {
 	Privacy,
 	Notifications,
 	Messages,
+	Calls,
 	Filters,
 	Region,
 	Appearance,

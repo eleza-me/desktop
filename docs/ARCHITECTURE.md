@@ -18,6 +18,8 @@ codegen/
   scripts/                dev-time generators (python): rt schema from views.proto, icons from icons.json
 third_party/
   miniz/                  zip reading for the update packages (MIT), built from source
+  livekit/                notices of the media library of voice calls (a prebuilt binary that
+                          the build downloads and the app loads at run time; nothing is built)
 lib/
   base/                   no-GUI helpers (bytes, weak guards, timers, random, platform file helpers)
   install/                plain C++, no Qt: replacing an installed copy's files with a new
@@ -34,7 +36,7 @@ Eleza/
     crypto/               OpenSSL wrappers: x25519, chacha20-poly1305, sha256/hmac/hkdf, device key
     storage/              per-account SQLite cache + key/value, secure blob for tokens / device key
     data/                 typed models + stores: chats, messages, users, sync (pts), outbox, media,
-                          upload, feed, graph, conversations, notifications, stickers
+                          upload, feed, graph, conversations, notifications, stickers, calls
     lang/                 lang runtime (fa / en), number + date formatting (Persian digits, Jalali)
     updater/              in-app updates without widgets: signed manifest, package unpacker,
                           the checker (check -> download -> verify -> unpack), install glue
@@ -49,6 +51,8 @@ Eleza/
     settings/             settings sections
     boxes/                modal boxes shared by sections (peer list, photo crop, country list, about)
     media/                audio/voice player, video player widget, image viewer
+    calls/                voice calls (ELEZA_ENABLE_CALLS): the call state machine, the media
+                          layer over the LiveKit library, the call bar / view / incoming window
     support/              shared session helpers: media images / userpics, error texts, links,
                           connection label, desktop notifications, file dialogs
 tests/                    unit tests (noise vectors, proto codec, frames, style codegen)
@@ -93,7 +97,9 @@ through `window/window_update.*`, the settings page `settings/settings_update.cp
 ## Threads
 
 Everything runs on the main (GUI) thread except: SQLite writes (one worker thread behind
-`Storage::Database`), image decoding / scaling (`QThreadPool`), file hashing for uploads.
+`Storage::Database`), image decoding / scaling (`QThreadPool`), file hashing for uploads, and the
+audio of a call (one "Calls media" thread that owns the microphone, the loudspeaker and every
+call into the media library; `calls/calls_media_livekit.cpp`).
 
 ## Identity and platform string
 

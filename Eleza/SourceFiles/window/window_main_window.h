@@ -100,6 +100,13 @@ public:
 	// bar is dark while the widget is shown.
 	void registerDarkOverlay(QWidget *overlay);
 
+	// A strip between the title bar and the body (the bar of a call): the
+	// window gives it its own height at the full width and the body what is
+	// left below; showing, hiding or resizing the strip moves the body.
+	// Like the title bar it is not a part of the body: boxes and viewers
+	// never cover it. The window does not own it; null removes it.
+	void setTopStrip(QWidget *strip);
+
 #ifdef ELEZA_DEBUG_TOOLS
 	// Screenshot helpers (--debug-size / --debug-grab).
 	void setFixedDebugSize(QSize size);
@@ -165,6 +172,8 @@ private:
 	TitleBar *_title = nullptr;
 	std::unique_ptr<TitleFrame> _titleFrame;
 	QPointer<QWidget> _titleJoin;
+	QPointer<QWidget> _topStrip;
+	bool _inBodyGeometry = false;
 	std::vector<QPointer<QWidget>> _darkOverlays;
 	bool _titleLost = false;
 #ifdef ELEZA_DEBUG_TOOLS

@@ -3,6 +3,11 @@
 option(ELEZA_BUILD_TESTS "Build the unit tests (ctest)." ON)
 option(ELEZA_WARNINGS_AS_ERRORS "Treat compiler warnings as errors." OFF)
 option(ELEZA_BUILD_FUZZERS "Build the fuzz targets (tests/fuzz)." OFF)
+# Voice calls need a prebuilt media library that is downloaded while CMake
+# configures (cmake/eleza_livekit.cmake). OFF: no download, the calls module is
+# not compiled and the app shows no call buttons — the way out when the library
+# is a problem on some platform.
+option(ELEZA_ENABLE_CALLS "Voice calls (downloads the prebuilt LiveKit media library)." ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

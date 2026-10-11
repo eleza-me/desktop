@@ -30,6 +30,7 @@ namespace Data {
 
 class Transport;
 class Users;
+class Calls;
 class Chats;
 class Messages;
 class Sync;
@@ -126,6 +127,9 @@ public:
 	[[nodiscard]] Conversations &conversations() const {
 		return *_conversations;
 	}
+	[[nodiscard]] Calls &calls() const {
+		return *_calls;
+	}
 
 	// Reports a failed fire-and-forget action (see actionFailed).
 	void reportFailure(const QString &action, const QString &subject, const Api::Error &error);
@@ -150,6 +154,7 @@ private:
 	Stickers *_stickers = nullptr;
 	Feed *_feed = nullptr;
 	Graph *_graph = nullptr;
+	Calls *_calls = nullptr;
 	bool _started = false;
 
 };

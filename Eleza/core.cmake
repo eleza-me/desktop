@@ -34,6 +34,8 @@ set(_eleza_core_files
 	crypto/crypto_primitives.h
 	data/data_blurhash.cpp
 	data/data_blurhash.h
+	data/data_calls.cpp
+	data/data_calls.h
 	data/data_chats.cpp
 	data/data_chats.h
 	data/data_conversations.cpp
