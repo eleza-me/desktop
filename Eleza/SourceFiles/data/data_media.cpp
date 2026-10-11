@@ -1,6 +1,7 @@
 #include "data/data_media.h"
 
 #include "base/platform_file.h"
+#include "data/data_group_rules.h"
 #include "data/data_image_decode.h"
 #include "data/data_session.h"
 
@@ -22,6 +23,15 @@ namespace {
 
 constexpr auto kDefaultMemoryLimit = qint64(64) << 20;
 constexpr auto kPruneTo = 0.8;
+// People's and groups' pictures: a few hundred thumbnails, kept apart from
+// everything else so that a feed of large photos cannot push them out.
+constexpr auto kPicturesMemoryLimit = qint64(32) << 20;
+// One picture larger than this (decoded) is not a thumbnail: the shared cache.
+constexpr auto kPictureMaxDecoded = qint64(4) << 20;
+// A cached file up to this size is decoded on the spot by picture(): a
+// thumbnail takes well under a millisecond, cheaper than a frame with the
+// initial followed by a repaint.
+constexpr auto kPictureMaxFile = qint64(384) << 10;
 // Remote pictures: the bytes are whatever the other side made them (the same
 // bound the decoder has, data_image_decode.cpp).
 constexpr auto kMaxImageBytes = qint64(64) << 20;
@@ -121,6 +131,26 @@ MediaRef MediaRef::PostMedia(const QString &postId, const QString &mediaId) {
 	return result;
 }
 
+MediaRef MediaRef::GroupPhoto(const QString &groupId, const QString &photoId) {
+	auto result = MediaRef();
+	if (!groupId.isEmpty() && !photoId.isEmpty()) {
+		result.type = Type::GroupPhoto;
+		result.id = groupId;
+		result.version = photoId;
+	}
+	return result;
+}
+
+MediaRef MediaRef::InvitePhoto(const QString &token, const QString &photoId) {
+	auto result = MediaRef();
+	if (!token.isEmpty() && !photoId.isEmpty()) {
+		result.type = Type::InvitePhoto;
+		result.id = token;
+		result.version = photoId;
+	}
+	return result;
+}
+
 MediaRef MediaRef::Url(const QString &url) {
 	auto result = MediaRef();
 	if (url.startsWith(u"https://") || url.startsWith(u"http://") || url.startsWith(u'/')) {
@@ -140,9 +170,16 @@ QString MediaRef::location(MediaVariant variant) const {
 	case Type::Avatar:
 		return u"/v1/users/%1/avatar?variant=%2"_s.arg(Encoded(id), name);
 	case Type::Attachment:
-		return u"/v1/chats/%1/messages/%2/attachment?variant=%3"_s.arg(Encoded(id)).arg(seq).arg(name);
+		// A group's messages have their own route (members only).
+		return (IsGroupId(id)
+			? u"/v1/groups/%1/messages/%2/attachment?variant=%3"_s
+			: u"/v1/chats/%1/messages/%2/attachment?variant=%3"_s).arg(Encoded(id)).arg(seq).arg(name);
 	case Type::PostMedia:
 		return u"/v1/posts/%1/media/%2?variant=%3"_s.arg(Encoded(id), Encoded(version), name);
+	case Type::GroupPhoto:
+		return u"/v1/groups/%1/photo?variant=%2"_s.arg(Encoded(id), name);
+	case Type::InvitePhoto:
+		return u"/v1/group-invites/%1/photo?variant=%2"_s.arg(Encoded(id), name);
 	case Type::Url:
 		return id;
 	case Type::None:
@@ -157,6 +194,9 @@ QString MediaRef::cacheKey(MediaVariant variant) const {
 	case Type::Avatar: return u"avatar:%1:%2:%3"_s.arg(id, version, name);
 	case Type::Attachment: return u"attachment:%1:%2:%3"_s.arg(id).arg(seq).arg(name);
 	case Type::PostMedia: return u"post:%1:%2:%3"_s.arg(id, version, name);
+	// The same picture whether it is seen through the group or its link.
+	case Type::GroupPhoto: return u"group:%1:%2:%3"_s.arg(id, version, name);
+	case Type::InvitePhoto: return u"invite:%1:%2:%3"_s.arg(id, version, name);
 	case Type::Url: return u"url:"_s + id;
 	case Type::None: break;
 	}
@@ -168,6 +208,7 @@ Media::Media(Session *session)
 , _session(session)
 , _directory(session->config().cacheDir)
 , _memory(int(kDefaultMemoryLimit / 1024))
+, _pictures(int(kPicturesMemoryLimit / 1024))
 , _diskLimit(session->config().mediaCacheLimit) {
 	_pool.setMaxThreadCount(std::clamp(QThread::idealThreadCount(), 1, 4));
 	if (!_directory.isEmpty()) {
@@ -198,6 +239,52 @@ void Media::setDiskLimit(qint64 bytes) {
 
 void Media::clearMemory() {
 	_memory.clear();
+	_pictures.clear();
+}
+
+bool Media::IsPicture(const MediaRef &ref, MediaVariant variant) {
+	if (variant != MediaVariant::Thumb && variant != MediaVariant::Feed) {
+		return false;
+	}
+	switch (ref.type) {
+	case MediaRef::Type::Avatar:
+	case MediaRef::Type::GroupPhoto:
+	case MediaRef::Type::InvitePhoto:
+		return true;
+	default:
+		break;
+	}
+	return false;
+}
+
+QImage Media::picture(const MediaRef &ref, MediaVariant variant) {
+	if (!IsPicture(ref, variant)) {
+		return QImage();
+	}
+	const auto cacheKey = ref.cacheKey(variant);
+	if (const auto found = _pictures.object(cacheKey)) {
+		return *found;
+	}
+	const auto key = OptionsKey(cacheKey, Options());
+	auto image = QImage();
+	if (const auto found = _memory.object(key)) {
+		image = *found;
+	} else if (!_jobs.contains(key)) {
+		// Not being downloaded right now (its file would be half written).
+		const auto path = pathForKey(cacheKey);
+		if (path.isEmpty()) {
+			return QImage();
+		}
+		const auto info = QFileInfo(path);
+		if (!info.exists() || info.size() <= 0 || info.size() > kPictureMaxFile) {
+			return QImage();
+		}
+		image = Decode(path, QByteArray(), QSize());
+	}
+	if (!image.isNull() && image.sizeInBytes() <= kPictureMaxDecoded) {
+		_pictures.insert(cacheKey, new QImage(image), CacheCost(image));
+	}
+	return image;
 }
 
 QString Media::pathForKey(const QString &cacheKey) const {
@@ -224,6 +311,7 @@ QImage Media::cached(const MediaRef &ref, MediaVariant variant, QSize fit) const
 void Media::evict(const MediaRef &ref, MediaVariant variant) {
 	const auto cacheKey = ref.cacheKey(variant);
 	const auto prefix = cacheKey + u'|';
+	_pictures.remove(cacheKey);
 	for (const auto &key : _memory.keys()) {
 		if (key.startsWith(prefix)) {
 			_memory.remove(key);
@@ -269,7 +357,11 @@ MediaHandlePtr Media::request(const MediaRef &ref, MediaVariant variant, const O
 	}
 	const auto filePath = pathForKey(cacheKey);
 	if (!options.force && options.decode) {
-		if (const auto found = _memory.object(key)) {
+		auto found = _memory.object(key);
+		if (!found && !options.fit.isValid() && IsPicture(ref, variant)) {
+			found = _pictures.object(cacheKey);
+		}
+		if (found) {
 			handle->_image = *found;
 			handle->_filePath = filePath;
 			handle->_state = MediaHandle::State::Ready;
@@ -286,6 +378,7 @@ MediaHandlePtr Media::request(const MediaRef &ref, MediaVariant variant, const O
 	job->filePath = filePath;
 	job->options = options;
 	job->authenticated = (ref.type != MediaRef::Type::Url);
+	job->picture = options.decode && IsPicture(ref, variant);
 	job->handle = handle;
 	_jobs.insert(key, job);
 	startJob(job);
@@ -422,6 +515,10 @@ void Media::finish(
 		const QByteArray &bytes) {
 	_jobs.remove(job->key);
 	if (!image.isNull()) {
+		if (job->picture && !job->options.fit.isValid() && image.sizeInBytes() <= kPictureMaxDecoded) {
+			// The same pixels (implicitly shared) under a key nothing else evicts.
+			_pictures.insert(job->cacheKey, new QImage(image), CacheCost(image));
+		}
 		_memory.insert(job->key, new QImage(image), CacheCost(image));
 	}
 	if (const auto handle = job->handle.lock()) {

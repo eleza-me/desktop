@@ -57,7 +57,9 @@ public:
 	}
 
 	QImage request(QSize size) override {
-		if (_handle && _handle->isReady()) {
+		if (!_instant.isNull()) {
+			return _instant;
+		} else if (_handle && _handle->isReady()) {
 			// A much larger target than what was decoded: decode again.
 			const auto &image = _handle->image();
 			if (_options.original
@@ -83,7 +85,16 @@ public:
 			options.fit = _fit;
 		}
 		_failed = false;
-		_handle = _session->data().media().request(_ref, _variant, options);
+		auto &media = _session->data().media();
+		if (_options.original && _options.fit.isEmpty()) {
+			// A face that was seen before is painted in this very frame (from
+			// the pictures' store or its small file), not after the initial.
+			if (const auto ready = media.picture(_ref, _variant); !ready.isNull()) {
+				_instant = ready;
+				return ready;
+			}
+		}
+		_handle = media.request(_ref, _variant, options);
 		if (_handle->isReady()) {
 			return _handle->image();
 		}
@@ -112,6 +123,7 @@ private:
 	Data::MediaVariant _variant = Data::MediaVariant::Thumb;
 	ImageOptions _options;
 	Data::MediaHandlePtr _handle;
+	QImage _instant;
 	QSize _fit;
 	bool _failed = false;
 
@@ -181,6 +193,23 @@ std::shared_ptr<Ui::ImageSource> UserpicSource(
 		std::move(options));
 }
 
+std::shared_ptr<Ui::ImageSource> GroupPhotoSource(
+		Main::Session *session,
+		const QString &groupId,
+		const QString &photoId,
+		Data::MediaVariant variant) {
+	if (!session || groupId.isEmpty() || photoId.isEmpty()) {
+		return nullptr;
+	}
+	auto options = ImageOptions();
+	options.original = true;
+	return MakeImageSource(
+		session,
+		Data::MediaRef::GroupPhoto(groupId, photoId),
+		variant,
+		std::move(options));
+}
+
 Ui::UserpicKind UserpicKindFor(const Data::User &user) {
 	return user.deleted ? Ui::UserpicKind::Deleted : Ui::UserpicKind::User;
 }
@@ -240,6 +269,7 @@ void UserpicButton::setUserId(const QString &userId) {
 	watch(false);
 	_special = false;
 	_userId = userId;
+	_groupId = QString();
 	_avatarId = QString();
 	setSource(nullptr);
 	refresh();
@@ -254,10 +284,37 @@ void UserpicButton::setSpecial(
 	watch(false);
 	_special = true;
 	_userId = QString();
+	_groupId = QString();
 	_avatarId = QString();
 	setSource(nullptr);
 	setOnline(false);
 	setPlaceholder(id, name, kind);
+}
+
+void UserpicButton::setGroup(
+		const QString &groupId,
+		const QString &photoId,
+		const QString &title) {
+	const auto same = _special && !groupId.isEmpty() && (_groupId == groupId);
+	watch(false);
+	_special = true;
+	_userId = QString();
+	setOnline(false);
+	setPlaceholder(groupId, title, Ui::UserpicKind::User);
+	if (same && _avatarId == photoId) {
+		return;
+	}
+	_groupId = groupId;
+	_avatarId = photoId;
+	setSource(
+		GroupPhotoSource(
+			_session,
+			groupId,
+			photoId,
+			(_size > kLargeUserpic)
+				? Data::MediaVariant::Feed
+				: Data::MediaVariant::Thumb),
+		same);
 }
 
 void UserpicButton::setShowOnline(bool show) {
@@ -301,13 +358,17 @@ void UserpicButton::refresh() {
 	setPlaceholder(_userId, user.displayName, UserpicKindFor(user));
 	const auto avatarId = user.deleted ? QString() : user.avatarId;
 	if (avatarId != _avatarId || avatarId.isEmpty()) {
+		// A new photo of the same person: the old one stays until it is here.
+		const auto keep = !_avatarId.isEmpty() && !avatarId.isEmpty();
 		_avatarId = avatarId;
-		setSource(UserpicSource(
-			_session,
-			user,
-			(_size > kLargeUserpic)
-				? Data::MediaVariant::Feed
-				: Data::MediaVariant::Thumb));
+		setSource(
+			UserpicSource(
+				_session,
+				user,
+				(_size > kLargeUserpic)
+					? Data::MediaVariant::Feed
+					: Data::MediaVariant::Thumb),
+			keep);
 	}
 }
 
@@ -373,15 +434,65 @@ void UserpicPainter::paint(
 		placeholder();
 		return;
 	}
+	paintPicture(
+		p,
+		rect,
+		user.id,
+		user.avatarId,
+		Data::MediaRef::Avatar(user.id, user.avatarId),
+		placeholder);
+}
+
+void UserpicPainter::paintGroup(
+		QPainter &p,
+		const QRect &rect,
+		const QString &groupId,
+		const QString &photoId,
+		const QString &title) {
+	const auto placeholder = [&] {
+		Ui::PaintUserpicPlaceholder(
+			p,
+			rect,
+			groupId,
+			title,
+			Ui::UserpicKind::User);
+	};
+	if (!_session || groupId.isEmpty() || photoId.isEmpty()) {
+		placeholder();
+		return;
+	}
+	paintPicture(
+		p,
+		rect,
+		groupId,
+		photoId,
+		Data::MediaRef::GroupPhoto(groupId, photoId),
+		placeholder);
+}
+
+void UserpicPainter::paintPicture(
+		QPainter &p,
+		const QRect &rect,
+		const QString &id,
+		const QString &version,
+		const Data::MediaRef &ref,
+		const std::function<void()> &placeholder) {
 	const auto size = rect.width();
 	const auto ratio = p.device()->devicePixelRatioF();
-	auto i = _entries.find(user.id);
-	if (i == _entries.end() || i->avatarId != user.avatarId) {
+	auto i = _entries.find(id);
+	if (i == _entries.end()) {
 		if (_entries.size() >= kMaxUserpicEntries) {
 			_entries.clear();
 		}
-		i = _entries.insert(user.id, Entry());
-		i->avatarId = user.avatarId;
+		i = _entries.insert(id, Entry());
+		i->avatarId = version;
+	} else if (i->avatarId != version) {
+		// A new photo: what was painted so far stays until it is here.
+		auto was = std::exchange(*i, Entry());
+		i->avatarId = version;
+		if (was.size == size && was.ratio == ratio) {
+			i->previous = !was.prepared.isNull() ? was.prepared : was.previous;
+		}
 	}
 	auto &entry = *i;
 	if (!entry.prepared.isNull()
@@ -390,42 +501,52 @@ void UserpicPainter::paint(
 		p.drawImage(rect, entry.prepared);
 		return;
 	}
-	const auto ref = Data::MediaRef::Avatar(user.id, user.avatarId);
 	const auto variant = (size > kLargeUserpic)
 		? Data::MediaVariant::Feed
 		: Data::MediaVariant::Thumb;
 	auto &media = _session->data().media();
+	// Memory, the pictures' own store, then the small file on disk: all of
+	// them answer before this row is painted, so a list that was just created
+	// (another tab, a screen opened again) shows faces in its first frame.
 	auto image = (entry.handle && entry.handle->isReady())
 		? entry.handle->image()
-		: media.cached(ref, variant);
+		: (entry.handle || entry.missing)
+		? QImage()
+		: media.picture(ref, variant);
 	if (!image.isNull()) {
 		entry.prepared = Ui::PrepareUserpic(image, size, ratio);
+		entry.previous = QImage();
 		entry.size = size;
 		entry.ratio = ratio;
 		p.drawImage(rect, entry.prepared);
 		return;
 	}
-	placeholder();
-	if (entry.handle) {
+	if (!entry.previous.isNull()) {
+		p.drawImage(rect, entry.previous);
+	} else {
+		placeholder();
+	}
+	if (entry.handle || entry.failed) {
 		return;
 	}
+	entry.missing = true;
 	entry.handle = media.request(ref, variant);
-	const auto userId = user.id;
-	const auto avatarId = user.avatarId;
 	const auto raw = entry.handle.get();
 	QObject::connect(raw, &Data::MediaHandle::ready, this, [=, this] {
-		const auto found = _entries.find(userId);
-		if (found != _entries.end() && found->avatarId == avatarId) {
+		const auto found = _entries.find(id);
+		if (found != _entries.end() && found->avatarId == version) {
 			found->prepared = QImage();
 		}
 		if (_update) {
-			_update(userId);
+			_update(id);
 		}
 	});
 	QObject::connect(raw, &Data::MediaHandle::failed, this, [=, this] {
-		const auto found = _entries.find(userId);
-		if (found != _entries.end() && found->avatarId == avatarId) {
+		const auto found = _entries.find(id);
+		if (found != _entries.end() && found->avatarId == version) {
+			// Not asked again by every repaint; a later clear() retries.
 			found->failed = true;
+			found->handle = nullptr;
 		}
 	});
 }

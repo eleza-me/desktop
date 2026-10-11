@@ -13,10 +13,14 @@
 // Userpics inside a custom painted list (chat list, members, search results):
 //   Support::UserpicPainter _userpics{ &session, [=](const QString &userId) { updateRowsOf(userId); } };
 //   ... in paintRow:  _userpics.paint(p, rect, user);          // image, or the initial until it loads
+//                     _userpics.paintGroup(p, rect, group.id, group.photoId, group.title);
 //                     _userpics.paint(p, rect, chat.peerUserId);  // by id: the card comes from Data::Users
 //
-// Everything here keeps the Data::MediaHandle alive while the image is in use,
-// and survives the session ending (it just stops loading).
+// A picture that was fetched once is painted in the first frame of whatever
+// shows it next: Data::Media::picture() answers from memory or from its small
+// file synchronously, so nothing here falls back to the initial for a face it
+// already has. Everything keeps the Data::MediaHandle alive while an image is
+// loading, and survives the session ending (it just stops loading).
 #pragma once
 
 #include "data/data_media.h"
@@ -69,6 +73,13 @@ struct ImageOptions {
 	const Data::User &user,
 	Data::MediaVariant variant = Data::MediaVariant::Thumb);
 
+// A group's photo; null when it has none (the widget shows the initial).
+[[nodiscard]] std::shared_ptr<Ui::ImageSource> GroupPhotoSource(
+	Main::Session *session,
+	const QString &groupId,
+	const QString &photoId,
+	Data::MediaVariant variant = Data::MediaVariant::Thumb);
+
 // The placeholder kind for a card (deleted accounts get the neutral circle).
 [[nodiscard]] Ui::UserpicKind UserpicKindFor(const Data::User &user);
 
@@ -93,6 +104,12 @@ public:
 		const QString &name = QString(),
 		const QString &id = QString());
 
+	// A group: its photo, or the initial of its title in the group's color.
+	void setGroup(
+		const QString &groupId,
+		const QString &photoId,
+		const QString &title);
+
 	~UserpicButton();
 
 private:
@@ -102,6 +119,7 @@ private:
 
 	QPointer<Main::Session> _session;
 	QString _userId;
+	QString _groupId;
 	QString _avatarId;
 	int _size = 0;
 	bool _showOnline = false;
@@ -128,6 +146,13 @@ public:
 		const Data::User &user);
 	// Looks the card up in Data::Users (and asks for it when unknown).
 	void paint(QPainter &p, const QRect &rect, const QString &userId);
+	// A group's photo, or the initial of its title.
+	void paintGroup(
+		QPainter &p,
+		const QRect &rect,
+		const QString &groupId,
+		const QString &photoId,
+		const QString &title);
 	// The picture of somebody without a card: a mask, «Saved messages».
 	void paintSpecial(
 		QPainter &p,
@@ -144,10 +169,21 @@ private:
 		QString avatarId;
 		Data::MediaHandlePtr handle;
 		QImage prepared;
+		// The photo before this one, painted until the new one arrives.
+		QImage previous;
 		int size = 0;
 		double ratio = 0.;
+		bool missing = false; // not in any cache: requested
 		bool failed = false;
 	};
+
+	void paintPicture(
+		QPainter &p,
+		const QRect &rect,
+		const QString &id,
+		const QString &version,
+		const Data::MediaRef &ref,
+		const std::function<void()> &placeholder);
 
 	QPointer<Main::Session> _session;
 	std::function<void(const QString &userId)> _update;

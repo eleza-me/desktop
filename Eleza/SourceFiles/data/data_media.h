@@ -3,7 +3,9 @@
 // fetches the bytes (the token goes to the API only, never to the storage
 // host), keeps them in a size-capped disk cache keyed by the logical address
 // (avatar id / attachment / variant), decodes images off the main thread and
-// keeps the decoded ones in a small in-memory LRU.
+// keeps the decoded ones in a small in-memory LRU. People's and groups'
+// pictures have a store of their own next to it (see picture()), so a screen
+// that opens paints them at once instead of the initial first.
 //
 //   _avatar = media.request(Data::MediaRef::Avatar(userId, avatarId), Data::MediaVariant::Thumb);
 //   if (_avatar->isReady()) {
@@ -47,8 +49,10 @@ struct MediaRef {
 	enum class Type {
 		None,
 		Avatar,     // id = user id, version = avatar id
-		Attachment, // id = chat id, seq = message seq
+		Attachment, // id = chat or group id, seq = message seq
 		PostMedia,  // id = post id, version = media id
+		GroupPhoto, // id = group id, version = photo id
+		InvitePhoto, // id = an invite token, version = photo id (not a member yet)
 		Url,        // id = an absolute URL (stickers, link previews): fetched without the token
 	};
 	Type type = Type::None;
@@ -59,6 +63,8 @@ struct MediaRef {
 	[[nodiscard]] static MediaRef Avatar(const QString &userId, const QString &avatarId);
 	[[nodiscard]] static MediaRef Attachment(const QString &chat, qint64 seq);
 	[[nodiscard]] static MediaRef PostMedia(const QString &postId, const QString &mediaId);
+	[[nodiscard]] static MediaRef GroupPhoto(const QString &groupId, const QString &photoId);
+	[[nodiscard]] static MediaRef InvitePhoto(const QString &token, const QString &photoId);
 	[[nodiscard]] static MediaRef Url(const QString &url);
 
 	[[nodiscard]] bool valid() const;
@@ -163,6 +169,16 @@ public:
 	[[nodiscard]] MediaHandlePtr request(const MediaRef &ref, MediaVariant variant, const Options &options);
 	// The decoded image if it is in memory right now (no I/O).
 	[[nodiscard]] QImage cached(const MediaRef &ref, MediaVariant variant, QSize fit = QSize()) const;
+	// A person's or a group's picture, ready to paint right now: from the
+	// pictures' own store (which the photos and videos of the chats never push
+	// anything out of), or decoded here and now from its small file in the disk
+	// cache. Null only when the picture was never fetched (then request() it).
+	// The call that makes a screen opened for the second time, a list created
+	// for another tab, or the first screen after a restart show the faces in
+	// their first frame.
+	[[nodiscard]] QImage picture(const MediaRef &ref, MediaVariant variant = MediaVariant::Thumb);
+	// Whether picture() keeps this kind of media.
+	[[nodiscard]] static bool IsPicture(const MediaRef &ref, MediaVariant variant);
 	// Drops one item from memory and disk (the media changed or is broken).
 	void evict(const MediaRef &ref, MediaVariant variant);
 
@@ -206,6 +222,7 @@ private:
 		QString filePath;
 		Options options;
 		bool authenticated = true;
+		bool picture = false; // goes to the pictures' store too
 		std::weak_ptr<MediaHandle> handle;
 		Api::RequestId download = 0;
 	};
@@ -227,6 +244,8 @@ private:
 	QHash<QString, std::shared_ptr<Job>> _jobs;
 	QHash<QString, std::weak_ptr<MediaHandle>> _handles;
 	mutable QCache<QString, QImage> _memory;
+	// Decoded avatars and group photos by cache key (cost in KiB).
+	QCache<QString, QImage> _pictures;
 	qint64 _diskLimit = 0;
 	qint64 _diskUsage = 0;
 	qint64 _addedWhilePruning = 0;

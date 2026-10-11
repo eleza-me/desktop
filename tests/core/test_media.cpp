@@ -76,6 +76,9 @@ private Q_SLOTS:
 	void releasedHandleStopsTheDownload();
 	void urlsCarryNoToken();
 	void diskLimit();
+	void picturesOutliveTheSharedCache();
+	void picturesComeFromDiskAtOnce();
+	void picturesAreOnlyPictures();
 
 };
 
@@ -682,6 +685,127 @@ void TestMedia::diskLimit() {
 	QVERIFY(!QFile::exists(paths[1]));
 	QVERIFY(QFile::exists(paths[4]));
 	QCOMPARE(qint64(FilesIn(options.cacheDir)) * 4000, media.diskUsage());
+}
+
+// The profile picture that "disappears and loads again": once it was fetched,
+// whatever else went through the cache, the next screen gets it synchronously.
+void TestMedia::picturesOutliveTheSharedCache() {
+	auto harness = Harness();
+	const auto face = Picture(96, 96);
+	const auto photo = Picture(400, 300);
+	harness.http.handler = [&](const Request &request) {
+		return Response::Bytes((request.path.contains("/avatar") || request.path.contains("/photo")) ? face : photo, "image/png");
+	};
+	auto &media = harness.session->media();
+	const auto avatar = MediaRef::Avatar(u"u_sara"_s, u"av1"_s);
+	const auto group = MediaRef::GroupPhoto(u"j1team"_s, u"ph1"_s);
+	QVERIFY(media.picture(avatar).isNull()); // never fetched: nothing to show yet
+	QCOMPARE(harness.http.requests.size(), 0); // and asking does not fetch
+
+	// A budget that holds one chat photo and nothing more.
+	media.setMemoryLimit(600 << 10);
+	{
+		const auto first = media.request(avatar, MediaVariant::Thumb);
+		const auto second = media.request(group, MediaVariant::Thumb);
+		QVERIFY(Loaded(first) && Loaded(second));
+		QVERIFY(first->isReady() && second->isReady());
+	}
+	Test::Settle();
+	QCOMPARE(harness.http.count("/v1/users/u_sara/avatar"), 1);
+
+	// A feed of photos goes through the shared cache and pushes them out of it…
+	for (auto seq = 1; seq <= 4; ++seq) {
+		const auto handle = media.request(MediaRef::Attachment(u"c1"_s, seq), MediaVariant::Full);
+		QVERIFY(Loaded(handle));
+		QVERIFY(handle->isReady());
+	}
+	Test::Settle();
+	QVERIFY(media.cached(avatar, MediaVariant::Thumb).isNull());
+	QVERIFY(media.cached(group, MediaVariant::Thumb).isNull());
+
+	// …and the faces are still there for whoever paints next, without the
+	// network, the disk or a worker thread in between.
+	const auto before = harness.http.requests.size();
+	QCOMPARE(media.picture(avatar).size(), QSize(96, 96));
+	QCOMPARE(media.picture(group).size(), QSize(96, 96));
+	const auto again = media.request(avatar, MediaVariant::Thumb);
+	QVERIFY(again->isReady()); // a widget's handle is ready in the same call
+	QCOMPARE(again->image().size(), QSize(96, 96));
+	QCOMPARE(harness.http.requests.size(), before);
+
+	// A new picture of the same person is a new address.
+	QVERIFY(media.picture(MediaRef::Avatar(u"u_sara"_s, u"av2"_s)).isNull());
+
+	// Broken or replaced: gone from everywhere.
+	media.evict(avatar, MediaVariant::Thumb);
+	QVERIFY(media.picture(avatar).isNull());
+	QCOMPARE(media.picture(group).size(), QSize(96, 96));
+}
+
+void TestMedia::picturesComeFromDiskAtOnce() {
+	auto dir = QTemporaryDir();
+	const auto face = Picture(96, 96);
+	auto options = Harness::Options();
+	options.cacheDir = dir.filePath(u"media"_s);
+	const auto avatar = MediaRef::Avatar(u"u_sara"_s, u"av1"_s);
+	{
+		auto harness = Harness(options);
+		harness.http.handler = [&](const Request &) {
+			return Response::Bytes(face, "image/png");
+		};
+		auto &media = harness.session->media();
+		const auto handle = media.request(avatar, MediaVariant::Thumb);
+		// Being downloaded: its half written file is not looked at.
+		QVERIFY(media.picture(avatar).isNull());
+		QVERIFY(Loaded(handle));
+		QVERIFY(handle->isReady());
+		QCOMPARE(harness.http.count("/v1/users/u_sara/avatar"), 1);
+	}
+	{
+		// The next run: nothing in memory, the file is there.
+		auto harness = Harness(options);
+		auto &media = harness.session->media();
+		QVERIFY(media.cached(avatar, MediaVariant::Thumb).isNull());
+		QCOMPARE(media.picture(avatar).size(), QSize(96, 96));
+		// From now on a handle is ready at once too.
+		const auto handle = media.request(avatar, MediaVariant::Thumb);
+		QVERIFY(handle->isReady());
+		QCOMPARE(handle->image().size(), QSize(96, 96));
+		QCOMPARE(harness.http.requests.size(), 0);
+
+		// A file that is not a picture is no picture (and no crash).
+		const auto other = MediaRef::Avatar(u"u_ali"_s, u"av9"_s);
+		const auto path = media.filePathFor(other, MediaVariant::Thumb);
+		QVERIFY(QDir().mkpath(QFileInfo(path).absolutePath()));
+		auto file = QFile(path);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write("not an image at all");
+		file.close();
+		QVERIFY(media.picture(other).isNull());
+	}
+}
+
+void TestMedia::picturesAreOnlyPictures() {
+	QVERIFY(Media::IsPicture(MediaRef::Avatar(u"u1"_s, u"a"_s), MediaVariant::Thumb));
+	QVERIFY(Media::IsPicture(MediaRef::Avatar(u"u1"_s, u"a"_s), MediaVariant::Feed));
+	QVERIFY(Media::IsPicture(MediaRef::GroupPhoto(u"j1"_s, u"p"_s), MediaVariant::Thumb));
+	QVERIFY(Media::IsPicture(MediaRef::InvitePhoto(u"j1.t"_s, u"p"_s), MediaVariant::Thumb));
+	QVERIFY(!Media::IsPicture(MediaRef::Avatar(u"u1"_s, u"a"_s), MediaVariant::Full));
+	QVERIFY(!Media::IsPicture(MediaRef::Attachment(u"c1"_s, 3), MediaVariant::Thumb));
+	QVERIFY(!Media::IsPicture(MediaRef::PostMedia(u"p1"_s, u"m1"_s), MediaVariant::Feed));
+	QVERIFY(!Media::IsPicture(MediaRef(), MediaVariant::Thumb));
+
+	// A chat photo never lands in the pictures' store.
+	auto harness = Harness();
+	const auto png = Picture(40, 40);
+	harness.http.handler = [&](const Request &) {
+		return Response::Bytes(png, "image/png");
+	};
+	auto &media = harness.session->media();
+	const auto ref = MediaRef::Attachment(u"c1"_s, 6);
+	const auto handle = media.request(ref, MediaVariant::Thumb);
+	QVERIFY(Loaded(handle));
+	QVERIFY(media.picture(ref, MediaVariant::Thumb).isNull());
 }
 
 QTEST_GUILESS_MAIN(TestMedia)
