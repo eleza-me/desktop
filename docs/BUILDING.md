@@ -255,7 +255,7 @@ copy "%VCToolsRedistDir%x64\Microsoft.VC143.CRT\*.dll" dist\Eleza\
 above); a folder without it works, with calls reported as unavailable. Then:
 
 ```bat
-python packaging\make-package.py dist\Eleza dist\Eleza-0.3.0-windows-x64.zip
+python packaging\make-package.py dist\Eleza dist\Eleza-0.4.0-windows-x64.zip
 ```
 
 writes `dist\Eleza\eleza-files.list` (without it and `Updater.exe` a copy does not update
@@ -264,7 +264,7 @@ installer is made from the same folder with
 [Inno Setup](https://jrsoftware.org/isinfo.php) 6.3 or newer:
 
 ```bat
-iscc /DAppVersion=0.3.0 /DSourceDir=%CD%\dist\Eleza /DOutputDir=%CD%\dist\installer packaging\windows\eleza.iss
+iscc /DAppVersion=0.4.0 /DSourceDir=%CD%\dist\Eleza /DOutputDir=%CD%\dist\installer packaging\windows\eleza.iss
 ```
 
 It installs per user into `%LOCALAPPDATA%\Programs\Eleza` (no administrator rights, so the

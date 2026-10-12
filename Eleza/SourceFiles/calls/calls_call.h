@@ -28,6 +28,15 @@
 //    is ended for both sides.
 //  * It rings here for at most 60 s whatever the server says.
 //
+// Video. A call has a `video` intent, set by whoever starts it and repeated
+// by the server wherever a side learns about the call; it decides how the
+// call is worded and whether my camera starts with it. The camera itself is
+// a track: setCameraEnabled() turns mine on or off at any time in a call of
+// either kind, remoteVideo() tells whether theirs is to be shown. A camera
+// that cannot be opened, and a server that has video calls switched off
+// (`call.video_disabled`: the call is started again as a voice call), leave
+// a call with audio.
+//
 // No widgets: tests/app/test_calls_call.cpp drives it with a fake server and a
 // fake media.
 #pragma once
@@ -94,6 +103,9 @@ public:
 		// "wifi" | "ethernet" | "cellular" | "unknown" for the quality reports.
 		Fn<QString()> networkType;
 		QString peerId;
+		// I start it as a video call (start() only; a call that rings here
+		// or is resumed says so itself).
+		bool video = false;
 		Timings timings;
 	};
 
@@ -104,7 +116,8 @@ public:
 	// I call args.peerId.
 	void start();
 	// `call` rings here.
-	void ring(const QString &call);
+	// (`video`: it was started as a video call.)
+	void ring(const QString &call, bool video = false);
 	// A call this device was in before the app restarted (answered already).
 	void resume(const Data::ActiveCall &call);
 
@@ -134,6 +147,18 @@ public:
 	[[nodiscard]] bool muted() const {
 		return _muted;
 	}
+	// The call was started as a video call.
+	[[nodiscard]] bool video() const {
+		return _video;
+	}
+	// My camera is on (or will be as soon as the audio room is joined).
+	[[nodiscard]] bool cameraEnabled() const {
+		return _cameraWanted;
+	}
+	// The other side shows a camera right now.
+	[[nodiscard]] bool remoteVideo() const {
+		return _remoteVideo;
+	}
 	// When both sides started talking (ms since the epoch; 0 before).
 	[[nodiscard]] qint64 connectedAt() const {
 		return _connectedAt;
@@ -150,10 +175,16 @@ public:
 	}
 
 	// Accept (it rings here).
-	void answer();
+	// `withCamera`: also turn my camera on (offered for a video call;
+	// «فقط صدا» answers without it).
+	void answer(bool withCamera = false);
 	// End / decline / cancel.
 	void hangup();
 	void setMuted(bool muted);
+	// Never fails here: cameraChanged(false) and cameraFailed() follow when
+	// the camera could not be opened.
+	void setCameraEnabled(bool enabled);
+	void setCameraDevice(const QByteArray &id);
 
 	// From the session's realtime connection.
 	void handleSignal(const Data::CallSignal &signal);
@@ -180,6 +211,14 @@ Q_SIGNALS:
 	void levelsChanged(float input, float output);
 	void deviceFallback(bool input);
 	void inputFailed();
+	// The intent became known or changed (a video call the server would not
+	// start was started again as a voice call).
+	void videoChanged(bool video);
+	void cameraChanged(bool enabled);
+	void cameraFailed(bool noDevice);
+	void remoteVideoChanged(bool shown);
+	void localVideoFrame(const QImage &frame);
+	void remoteVideoFrame(const QImage &frame);
 
 private:
 	// Shared with the callbacks of the start request, which outlive the
@@ -194,6 +233,8 @@ private:
 	void end(EndReason reason, bool quiet = false);
 	void started(const Data::CallJoin &join);
 	void startFailed(const Api::Error &error);
+	void sendStart();
+	void setVideo(bool video);
 	void applyServerState(
 		const QString &state,
 		const QString &reason,
@@ -223,6 +264,12 @@ private:
 	bool _outgoing = false;
 	bool _quiet = false;
 	bool _muted = false;
+	bool _video = false;
+	bool _cameraWanted = false;
+	bool _remoteVideo = false;
+	bool _videoFallbackTried = false;
+	QByteArray _cameraDevice;
+	bool _cameraDeviceSet = false;
 	// The call was answered (by them, or by me on this device).
 	bool _accepted = false;
 	// The server already knows this side is done.

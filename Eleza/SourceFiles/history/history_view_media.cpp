@@ -1589,18 +1589,27 @@ private:
 		return Data::CallRecordIsMissed(kind());
 	}
 	[[nodiscard]] QString title() const {
+		// How the call started: a voice call in which somebody turned a
+		// camera on still reads as a voice call.
+		const auto video = data().call && data().call->video;
 		switch (kind()) {
 		case Data::CallRecordKind::Missed:
-			return tr::lng_calls_record_missed(tr::now);
+			return video
+				? tr::lng_calls_record_video_missed(tr::now)
+				: tr::lng_calls_record_missed(tr::now);
 		case Data::CallRecordKind::Incoming:
 		case Data::CallRecordKind::IncomingDeclined:
-			return tr::lng_calls_record_incoming(tr::now);
+			return video
+				? tr::lng_calls_record_video_incoming(tr::now)
+				: tr::lng_calls_record_incoming(tr::now);
 		case Data::CallRecordKind::Outgoing:
 		case Data::CallRecordKind::OutgoingNoAnswer:
 		case Data::CallRecordKind::OutgoingDeclined:
 			break;
 		}
-		return tr::lng_calls_record_outgoing(tr::now);
+		return video
+			? tr::lng_calls_record_video_outgoing(tr::now)
+			: tr::lng_calls_record_outgoing(tr::now);
 	}
 	[[nodiscard]] QString subtitle() const {
 		switch (kind()) {

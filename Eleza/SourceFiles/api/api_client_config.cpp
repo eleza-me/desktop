@@ -60,6 +60,14 @@ void ClientConfig::load(QObject *guard, Fn<void(bool)> done) {
 }
 
 QJsonValue ClientConfig::value(const QString &dotted) const {
+	// The server's document is { "version": N, "values": { "<key>": … } };
+	// a flat document (test servers) is read as well.
+	if (const auto values = _data.value("values"_L1); values.isObject()) {
+		const auto found = values.toObject().value(dotted);
+		if (!found.isUndefined()) {
+			return found;
+		}
+	}
 	if (const auto direct = _data.value(dotted); !direct.isUndefined()) {
 		return direct;
 	}
@@ -203,6 +211,23 @@ bool ClientConfig::soundsEnabled() const {
 
 bool ClientConfig::videoHlsEnabled() const {
 	return boolean(u"feature.video_hls"_s, false);
+}
+
+bool ClientConfig::groupsEnabled() const {
+	return boolean(u"feature.groups"_s, false);
+}
+
+bool ClientConfig::groupsAdministration() const {
+	// Defined by the second release of groups: a server that lists it has
+	// admins, invite links, pins, mentions and group drafts.
+	const auto found = value(u"groups.max_admins"_s);
+	return !found.isUndefined() && !found.isNull();
+}
+
+bool ClientConfig::videoCallsEnabled() const {
+	// Absent means a server older than video calls, which rejects the
+	// `video` field of a call: never send it then.
+	return boolean(u"feature.video_calls"_s, false);
 }
 
 bool ClientConfig::deleteChatForBothEnabled() const {

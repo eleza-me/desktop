@@ -3,6 +3,7 @@
 //
 //   auto &data = session.data();          // Main::Session::data()
 //   data.chats().list(Data::Chats::Section::Messages);
+//   data.groups().group(groupId);         // a group is a row of the same list
 //   data.messages().history(chatId).items;
 //   data.outbox().sendText(chatId, text);
 //   data.users().get(userId);
@@ -32,6 +33,7 @@ class Transport;
 class Users;
 class Calls;
 class Chats;
+class Groups;
 class Messages;
 class Sync;
 class Outbox;
@@ -100,6 +102,9 @@ public:
 	[[nodiscard]] Messages &messages() const {
 		return *_messages;
 	}
+	[[nodiscard]] Groups &groups() const {
+		return *_groups;
+	}
 	[[nodiscard]] Sync &sync() const {
 		return *_sync;
 	}
@@ -145,6 +150,7 @@ private:
 	Users *_users = nullptr;
 	Chats *_chats = nullptr;
 	Messages *_messages = nullptr;
+	Groups *_groups = nullptr;
 	Upload *_upload = nullptr;
 	Media *_media = nullptr;
 	Outbox *_outbox = nullptr;

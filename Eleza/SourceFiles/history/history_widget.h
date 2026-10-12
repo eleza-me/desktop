@@ -9,6 +9,7 @@
 #include "window/window_section_widget.h"
 
 #include <QtCore/QPointer>
+#include <QtCore/QTimer>
 
 namespace Main {
 class Session;
@@ -95,6 +96,8 @@ private:
 		Deleted,
 		Ended,
 		Readonly,
+		GroupRestricted, // a group: I may not send here (maybe until a time)
+		GroupWait,       // a group: slow mode, I still wait
 	};
 
 	void setupList();
@@ -143,6 +146,9 @@ private:
 	bool _headerRequested = false;
 	bool _requestBusy = false;
 	bool _leaving = false;
+	bool _group = false;
+	QTimer _groupTimer; // the countdown of slow mode / a restriction
+	QString _groupNotice;
 
 };
 

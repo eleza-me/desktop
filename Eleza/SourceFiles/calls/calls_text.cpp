@@ -26,7 +26,10 @@ QString StateText(const Call &call, qint64 nowMs) {
 	switch (call.state()) {
 	case State::Calling: return tr::lng_calls_state_calling(tr::now);
 	case State::Ringing: return tr::lng_calls_state_ringing(tr::now);
-	case State::Incoming: return tr::lng_calls_state_incoming(tr::now);
+	case State::Incoming:
+		return call.video()
+			? tr::lng_calls_state_incoming_video(tr::now)
+			: tr::lng_calls_state_incoming(tr::now);
 	case State::Connecting: return tr::lng_calls_state_connecting(tr::now);
 	case State::Reconnecting:
 		return tr::lng_calls_state_reconnecting(tr::now);
@@ -123,6 +126,8 @@ QString NoticeText(Notice notice) {
 		return tr::lng_calls_input_changed(tr::now);
 	case Notice::OutputDeviceChanged:
 		return tr::lng_calls_output_changed(tr::now);
+	case Notice::NoCamera: return tr::lng_calls_no_camera(tr::now);
+	case Notice::CameraFailed: return tr::lng_calls_camera_failed(tr::now);
 	}
 	return QString();
 }

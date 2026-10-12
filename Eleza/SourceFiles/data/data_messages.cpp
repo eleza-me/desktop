@@ -1,6 +1,8 @@
 #include "data/data_messages.h"
 
 #include "data/data_chats.h"
+#include "data/data_group_rules.h"
+#include "data/data_groups.h"
 #include "data/data_json.h"
 #include "data/data_session.h"
 #include "data/data_transport.h"
@@ -10,6 +12,14 @@
 #include <algorithm>
 
 namespace Data {
+namespace {
+
+// The request field that names the chat: a group has routes of its own.
+[[nodiscard]] QString ChatKey(const QString &chat) {
+	return IsGroupId(chat) ? u"group"_s : u"chat"_s;
+}
+
+} // namespace
 
 qint64 History::firstSeq() const {
 	for (const auto &item : items) {
@@ -80,6 +90,19 @@ const History &Messages::history(const QString &chat) {
 const Message *Messages::find(const QString &chat, qint64 seq) const {
 	const auto i = _histories.find(chat);
 	return (i != _histories.end()) ? i->second.find(seq) : nullptr;
+}
+
+bool Messages::held(const QString &chat) const {
+	const auto i = _histories.find(chat);
+	return (i != _histories.end())
+		&& (i->second.loaded || !i->second.items.isEmpty());
+}
+
+bool Messages::live(const QString &chat) const {
+	const auto i = _histories.find(chat);
+	return (i != _histories.end())
+		&& i->second.loaded
+		&& !i->second.hasMoreAfter;
 }
 
 void Messages::forget(const QString &chat) {
@@ -288,6 +311,101 @@ void Messages::markPeerRead(const QString &chat, qint64 seq) {
 	}
 }
 
+// ---- changes of a group (Data::Groups)
+
+void Messages::applyChanges(const QString &chat, QVector<Message> changed, bool cache) {
+	if (changed.isEmpty()) {
+		return;
+	}
+	if (const auto history = existing(chat)) {
+		// The window takes what lies inside it, what extends it at the end
+		// (when it reaches the end) and my own message on its way out.
+		const auto first = history->firstSeq();
+		const auto last = history->lastSeq();
+		const auto atEnd = history->loaded && !history->hasMoreAfter;
+		auto take = QVector<Message>();
+		for (const auto &message : std::as_const(changed)) {
+			const auto inside = (first > 0) && (message.seq >= first) && (message.seq <= last);
+			const auto extends = atEnd && (message.seq > last);
+			const auto echo = !message.clientMessageId.isEmpty()
+				&& history->indexOfKey(Message::KeyForLocal(message.clientMessageId)) >= 0;
+			if (inside || extends || echo) {
+				take.push_back(message);
+			}
+		}
+		if (!take.isEmpty()) {
+			merge(chat, std::move(take), false);
+		}
+	}
+	if (!cache) {
+		return;
+	}
+	if (const auto db = _session->local()) {
+		// Rows that are cached are replaced, rows newer than everything
+		// cached are added; a change of an old message that is not cached
+		// must not land in the cache as an island.
+		std::sort(changed.begin(), changed.end(), MessageLess);
+		auto rows = QVector<Storage::Database::MessageRow>();
+		for (const auto &message : std::as_const(changed)) {
+			if (message.seq > 0) {
+				rows.push_back({ chat, message.seq, message.toStored() });
+			}
+		}
+		db->mergeMessages(rows);
+	}
+}
+
+void Messages::dropMessages(const QString &chat, const QVector<qint64> &seqs, bool cache) {
+	if (seqs.isEmpty()) {
+		return;
+	}
+	if (const auto history = existing(chat)) {
+		auto &items = history->items;
+		const auto before = items.size();
+		items.erase(std::remove_if(items.begin(), items.end(), [&](const Message &message) {
+			return message.seq > 0 && seqs.contains(message.seq);
+		}), items.end());
+		if (items.size() != before) {
+			Q_EMIT historyChanged(chat);
+		}
+	}
+	if (!cache) {
+		return;
+	}
+	if (const auto db = _session->local()) {
+		for (const auto seq : seqs) {
+			db->deleteMessage(chat, seq);
+		}
+	}
+}
+
+bool Messages::applyReactions(
+		const QString &chat,
+		qint64 seq,
+		const QMap<QString, qint64> &reactions) {
+	if (!find(chat, seq)) {
+		return false;
+	}
+	patchMessage(chat, Message::KeyForSeq(seq), [&](Message &message) {
+		message.reactions = reactions;
+		for (auto i = message.reactions.begin(); i != message.reactions.end();) {
+			i = (i.value() <= 0) ? message.reactions.erase(i) : std::next(i);
+		}
+		// The counts say nothing of whose they are: mine stays while the
+		// emoji is still there.
+		if (!message.myReaction.isEmpty() && !message.reactions.contains(message.myReaction)) {
+			message.myReaction = QString();
+		}
+	});
+	return true;
+}
+
+void Messages::setMyReaction(const QString &chat, qint64 seq, const QString &emoji) {
+	patchMessage(chat, Message::KeyForSeq(seq), [&](Message &message) {
+		message.myReaction = emoji;
+	});
+}
+
 // ---- loading
 
 void Messages::loadCached(const QString &chat, base::Guard guard, Fn<void(int)> done) {
@@ -327,8 +445,10 @@ void Messages::loadPage(
 		PageOptions options,
 		Fn<void(const Page &)> done,
 		Fn<void(const Api::Error &)> fail) {
+	const auto group = IsGroupId(chat);
+	const auto newest = !options.before && !options.after && !options.around;
 	auto body = QJsonObject{
-		{ u"chat"_s, chat },
+		{ ChatKey(chat), chat },
 		{ u"limit"_s, QString::number(options.limit) },
 	};
 	if (options.before > 0) {
@@ -340,12 +460,20 @@ void Messages::loadPage(
 	if (options.around > 0) {
 		body.insert(u"around"_s, QString::number(options.around));
 	}
-	_session->transport().rpc(u"chat.history"_s)
+	_session->transport().rpc(group ? u"groups.history"_s : u"chat.history"_s)
 		.body(body)
 		.guard(this)
 		.done([=, this](const QJsonObject &result) {
 			auto page = Page();
-			page.info = ChatInfo::FromJson(result.value("chat"_L1).toObject());
+			if (group) {
+				const auto header = Group::FromJson(result.value("group"_L1).toObject());
+				if (header.valid()) {
+					page.group = header;
+					page.info = Groups::InfoFor(header);
+				}
+			} else {
+				page.info = ChatInfo::FromJson(result.value("chat"_L1).toObject());
+			}
 			if (!page.info.valid()) {
 				// Tolerate a server that leaves the header out of a page.
 				if (const auto &known = historyRef(chat).info) {
@@ -370,9 +498,32 @@ void Messages::loadPage(
 				page.messages.push_back(std::move(message));
 			}
 			std::sort(page.messages.begin(), page.messages.end(), MessageLess);
+			if (page.group) {
+				// The header moves the row; the newest page is what the
+				// cached messages of the group are current against.
+				_session->groups().historyPage(*page.group, newest);
+				auto people = QStringList();
+				for (const auto &message : std::as_const(page.messages)) {
+					if (!people.contains(message.sender)) {
+						people.push_back(message.sender);
+					}
+					const auto named = GroupRules::NoteUser(message.system);
+					if (!named.isEmpty() && !people.contains(named)) {
+						people.push_back(named);
+					}
+				}
+				_session->users().request(people);
+			}
 			done(page);
 		})
-		.fail(std::move(fail))
+		.fail([=, this](const Api::Error &error) {
+			if (group) {
+				_session->groups().handleError(chat, error);
+			}
+			if (fail) {
+				fail(error);
+			}
+		})
 		.send();
 }
 
@@ -399,10 +550,26 @@ void Messages::loadLatest(
 		} else {
 			merge(chat, page.messages, true);
 		}
-		// The header refreshes the row (read marks, pins, theme).
-		_session->users().ensure(page.info.peopleIds(), this, [=, this] {
-			_session->chats().applyInfo(page.info);
-		});
+		if (page.group) {
+			// The page is the group as it is now: its newest message is the
+			// row's preview (a group's header carries none).
+			if (!page.messages.isEmpty()) {
+				const auto &last = page.messages.back();
+				_session->chats().patch(chat, [&](Chat &c) {
+					const auto pending = c.lastMessage && c.lastMessage->local();
+					if (!pending && (!c.lastMessage || last.seq >= c.lastMessage->seq)) {
+						c.lastMessage = last;
+						c.lastMine = last.mine;
+						c.lastActivityAt = std::max(c.lastActivityAt, last.createdAt);
+					}
+				});
+			}
+		} else {
+			// The header refreshes the row (read marks, pins, theme).
+			_session->users().ensure(page.info.peopleIds(), this, [=, this] {
+				_session->chats().applyInfo(page.info);
+			});
+		}
 		if (done && guard.alive()) {
 			done();
 		}
@@ -631,6 +798,11 @@ void Messages::simple(
 		.body(body)
 		.guard(this)
 		.fail([=, this](const Api::Error &error) {
+			if (IsGroupId(chat) && _session->groups().handleError(chat, error)) {
+				// The group is gone, and its timeline with it.
+				_session->reportFailure(action, chat, error);
+				return;
+			}
 			if (onFail) {
 				onFail();
 			}
@@ -644,16 +816,39 @@ void Messages::markRead(const QString &chat, qint64 seq) {
 	if (seq <= 0 || (row && row->lastReadSeq >= seq)) {
 		return;
 	}
+	const auto group = IsGroupId(chat);
+	const auto mentionsLeft = group && row && row->unreadMentions > 0 && seq < row->lastSeq;
 	_session->chats().patch(chat, [&](Chat &c) {
 		c.unread = 0;
 		c.unreadCapped = false;
 		c.lastReadSeq = seq;
 		c.info.lastReadSeq = seq;
+		if (!mentionsLeft) {
+			c.unreadMentions = 0;
+		}
+		if (c.group) {
+			c.group->lastReadSeq = seq;
+			c.group->unread = 0;
+			c.group->unreadCapped = false;
+			c.group->unreadMentions = c.unreadMentions;
+		}
 	});
 	// Best effort: the next read mark covers a lost one.
-	_session->transport().rpc(u"chat.read"_s)
-		.body(QJsonObject{ { u"chat"_s, chat }, { u"seq"_s, double(seq) } })
+	_session->transport().rpc(group ? u"groups.read"_s : u"chat.read"_s)
+		.body(QJsonObject{ { ChatKey(chat), chat }, { u"seq"_s, double(seq) } })
 		.guard(this)
+		.done([=, this] {
+			if (mentionsLeft) {
+				// Read, but not to the end: how many mentions are left is
+				// the header's to say.
+				_session->groups().refreshHeader(chat);
+			}
+		})
+		.fail([=, this](const Api::Error &error) {
+			if (group) {
+				_session->groups().handleError(chat, error);
+			}
+		})
 		.send();
 }
 
@@ -673,12 +868,15 @@ void Messages::react(const QString &chat, qint64 seq, const QString &emoji) {
 			message.reactions.insert(emoji, message.reactions.value(emoji) + 1);
 		}
 	});
-	auto body = QJsonObject{ { u"chat"_s, chat }, { u"seq"_s, double(seq) } };
+	const auto group = IsGroupId(chat);
+	auto body = QJsonObject{ { ChatKey(chat), chat }, { u"seq"_s, double(seq) } };
 	if (!emoji.isEmpty()) {
 		body.insert(u"emoji"_s, emoji);
 	}
 	simple(
-		emoji.isEmpty() ? u"chat.unreact"_s : u"chat.react"_s,
+		emoji.isEmpty()
+			? (group ? u"groups.unreact"_s : u"chat.unreact"_s)
+			: (group ? u"groups.react"_s : u"chat.react"_s),
 		body,
 		u"message.react"_s,
 		chat,
@@ -694,12 +892,12 @@ void Messages::edit(
 		Fn<void()> done,
 		Fn<void(const Api::Error &)> fail) {
 	auto body = QJsonObject{
-		{ u"chat"_s, chat },
+		{ ChatKey(chat), chat },
 		{ u"seq"_s, double(seq) },
 		{ u"text"_s, text },
 	};
 	Json::Put(body, "entities"_L1, Json::Array(entities));
-	_session->transport().rpc(u"chat.edit"_s)
+	_session->transport().rpc(IsGroupId(chat) ? u"groups.edit"_s : u"chat.edit"_s)
 		.body(body)
 		.guard(this)
 		.done([=, this] {
@@ -714,6 +912,9 @@ void Messages::edit(
 			}
 		})
 		.fail([=, this](const Api::Error &error) {
+			if (IsGroupId(chat)) {
+				_session->groups().handleError(chat, error);
+			}
 			if (fail && guard.alive()) {
 				fail(error);
 			} else {
@@ -733,13 +934,13 @@ void Messages::editWithPreview(
 		Fn<void()> done,
 		Fn<void(const Api::Error &)> fail) {
 	auto body = QJsonObject{
-		{ u"chat"_s, chat },
+		{ ChatKey(chat), chat },
 		{ u"seq"_s, double(seq) },
 		{ u"text"_s, text },
 	};
 	Json::Put(body, "entities"_L1, Json::Array(entities));
 	Json::Put(body, "link_preview"_L1, linkPreview);
-	_session->transport().rpc(u"chat.edit"_s)
+	_session->transport().rpc(IsGroupId(chat) ? u"groups.edit"_s : u"chat.edit"_s)
 		.body(body)
 		.guard(this)
 		.done([=, this] {
@@ -758,6 +959,9 @@ void Messages::editWithPreview(
 			}
 		})
 		.fail([=, this](const Api::Error &error) {
+			if (IsGroupId(chat)) {
+				_session->groups().handleError(chat, error);
+			}
 			if (fail && guard.alive()) {
 				fail(error);
 			} else {
@@ -784,8 +988,8 @@ void Messages::deleteMessage(const QString &chat, qint64 seq, bool forEveryone) 
 			c.lastMine = last && last->mine;
 		});
 	}
-	simple(u"chat.delete"_s, QJsonObject{
-		{ u"chat"_s, chat },
+	simple(IsGroupId(chat) ? u"groups.delete"_s : u"chat.delete"_s, QJsonObject{
+		{ ChatKey(chat), chat },
 		{ u"seq"_s, double(seq) },
 		{ u"scope"_s, forEveryone ? u"everyone"_s : u"me"_s },
 	}, u"message.delete"_s, chat, [=, this] {
@@ -817,6 +1021,13 @@ void Messages::applyPin(const QString &chat, qint64 seq, bool pinned) {
 	if (_session->chats().chat(chat)) {
 		_session->chats().patch(chat, [&](Chat &c) {
 			changed = apply(c.info.pins) || changed;
+			if (c.group) {
+				// The header lists the newest pin first.
+				c.group->pins.removeAll(seq);
+				if (pinned) {
+					c.group->pins.push_front(seq);
+				}
+			}
 		});
 	}
 	if (!pinned) {
@@ -835,6 +1046,14 @@ void Messages::applyPin(const QString &chat, qint64 seq, bool pinned) {
 
 void Messages::pin(const QString &chat, qint64 seq, const QString &scope) {
 	applyPin(chat, seq, true);
+	if (IsGroupId(chat)) {
+		// A group's pin is for everyone: there is no scope.
+		simple(u"groups.message.pin"_s, QJsonObject{
+			{ u"group"_s, chat },
+			{ u"seq"_s, double(seq) },
+		}, u"message.pin"_s, chat, [=, this] { applyPin(chat, seq, false); });
+		return;
+	}
 	simple(u"chat.message.pin"_s, QJsonObject{
 		{ u"chat"_s, chat },
 		{ u"seq"_s, double(seq) },
@@ -844,6 +1063,13 @@ void Messages::pin(const QString &chat, qint64 seq, const QString &scope) {
 
 void Messages::unpin(const QString &chat, qint64 seq, const QString &scope) {
 	applyPin(chat, seq, false);
+	if (IsGroupId(chat)) {
+		simple(u"groups.message.unpin"_s, QJsonObject{
+			{ u"group"_s, chat },
+			{ u"seq"_s, double(seq) },
+		}, u"message.unpin"_s, chat, [=, this] { applyPin(chat, seq, true); });
+		return;
+	}
 	simple(u"chat.message.unpin"_s, QJsonObject{
 		{ u"chat"_s, chat },
 		{ u"seq"_s, double(seq) },
@@ -855,8 +1081,8 @@ void Messages::loadPins(
 		const QString &chat,
 		base::Guard guard,
 		Fn<void(const QVector<PinnedMessage> &)> done) {
-	_session->transport().rpc(u"chat.pins"_s)
-		.body(QJsonObject{ { u"chat"_s, chat } })
+	_session->transport().rpc(IsGroupId(chat) ? u"groups.pins"_s : u"chat.pins"_s)
+		.body(QJsonObject{ { ChatKey(chat), chat } })
 		.guard(this)
 		.done([=, this](const QJsonObject &result) {
 			auto &history = historyRef(chat);
@@ -887,7 +1113,8 @@ void Messages::loadPins(
 
 void Messages::markPlayed(const QString &chat, qint64 seq) {
 	const auto found = find(chat, seq);
-	if (!found || found->played) {
+	if (!found || found->played || IsGroupId(chat)) {
+		// Nobody learns what a member of a group has played.
 		return;
 	}
 	patchMessage(chat, Message::KeyForSeq(seq), [](Message &message) {

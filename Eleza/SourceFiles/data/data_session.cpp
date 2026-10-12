@@ -6,6 +6,7 @@
 #include "data/data_conversations.h"
 #include "data/data_feed.h"
 #include "data/data_graph.h"
+#include "data/data_groups.h"
 #include "data/data_media.h"
 #include "data/data_messages.h"
 #include "data/data_notifications.h"
@@ -31,6 +32,7 @@ Session::Session(Config config, QObject *parent)
 	_upload = new Upload(this);
 	_media = new Media(this);
 	_outbox = new Outbox(this);
+	_groups = new Groups(this);
 	_notifications = new Notifications(this);
 	_conversations = new Conversations(this);
 	_sync = new Sync(this);
@@ -66,6 +68,7 @@ void Session::start(Fn<void()> ready) {
 	_users->loadCachedMe(this, nullptr);
 	_conversations->loadDismissed();
 	_chats->loadCached(this, [=, this](bool) {
+		_groups->start();
 		_sync->start(this, [=, this] {
 			_outbox->start(this, [=, this] {
 				if (!_started) {
@@ -76,6 +79,9 @@ void Session::start(Fn<void()> ready) {
 					ready();
 				}
 				_chats->loadInbox();
+				// The inbox does not list groups: their own catch-up (the
+				// connection asks again with every Hello).
+				_groups->requestSync();
 				_users->refreshMe();
 				_notifications->refreshUnread();
 				_graph->retryDismissals();
@@ -91,6 +97,7 @@ void Session::stop() {
 	_started = false;
 	_feed->flushViews();
 	_sync->stop();
+	_groups->stop();
 	_outbox->stop();
 }
 

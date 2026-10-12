@@ -7,6 +7,9 @@
 // server; commands are plain HTTPS, what the other side did arrives as signals
 // on the realtime connection:
 //
+// (Every signal of a call that was started as a video call also carries
+// `video: true`; so do the answers below.)
+//
 //   call.incoming            a call rings for me            { call, from }
 //   call.ringing             my call rings on their device  { call }
 //   call.accepted            they answered                  { call }
@@ -47,6 +50,9 @@ struct CallJoin {
 	QString call;
 	QString state;   // ringing | accepted | connected
 	QString peer;    // user id
+	// The call was started as a video call (the intent; who shows a camera
+	// is a matter of the tracks in the room).
+	bool video = false;
 	// The whole answer: sfu_url, token, token_expires_at, turn, relay_only.
 	QJsonObject media;
 
@@ -66,6 +72,7 @@ struct CallInfo {
 	qint64 createdAt = 0; // unix seconds
 	qint64 durationS = -1; // of an ended call that was connected; -1: not told
 	bool delivered = false; // an outgoing ringing call: their device rings
+	bool video = false;     // started as a video call
 
 	[[nodiscard]] bool valid() const {
 		return !call.isEmpty();
@@ -79,6 +86,7 @@ struct ActiveCall {
 	QString state; // ringing | accepted | connected
 	QString peer;
 	bool caller = false;
+	bool video = false;
 	qint64 createdAt = 0;
 
 	[[nodiscard]] static ActiveCall FromJson(const QJsonObject &json);
@@ -99,6 +107,7 @@ struct CallSignal {
 	QString reason;
 	QString from;   // the other user
 	QString device; // answered_elsewhere: the device that answered
+	bool video = false; // on every signal of a call started as a video call
 
 	// From a frame of Rt::Frame::Type::Call; Unknown for anything else.
 	[[nodiscard]] static CallSignal FromFrame(const Rt::Frame &frame);
@@ -150,8 +159,11 @@ public:
 
 	virtual ~CallsApi() = default;
 
+	// `video`: the call starts as a video call. Only where the server lists
+	// `feature.video_calls` (an older one refuses the unknown field).
 	virtual void invite(
 		const QString &userId,
+		bool video,
 		base::Guard guard,
 		JoinDone done,
 		FailCallback fail) = 0;
@@ -200,6 +212,7 @@ public:
 
 	void invite(
 		const QString &userId,
+		bool video,
 		base::Guard guard,
 		JoinDone done,
 		FailCallback fail) override;

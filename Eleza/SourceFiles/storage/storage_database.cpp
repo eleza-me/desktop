@@ -395,6 +395,38 @@ void Database::putMessages(const QVector<MessageRow> &messages) {
 	});
 }
 
+void Database::mergeMessages(const QVector<MessageRow> &messages) {
+	if (messages.isEmpty()) {
+		return;
+	}
+	post([messages](details::DatabaseWorker &worker) {
+		worker.transaction([&] {
+			for (const auto &message : messages) {
+				if (message.seq <= 0) {
+					continue;
+				}
+				if (!worker.exec(
+						u"INSERT OR REPLACE INTO messages (chat, seq, data) "
+						"SELECT ?, ?, ? WHERE "
+						"EXISTS (SELECT 1 FROM messages WHERE chat = ? AND seq = ?) "
+						"OR ? > COALESCE((SELECT MAX(seq) FROM messages WHERE chat = ?), 0)"_s,
+						{
+							message.chat,
+							message.seq,
+							Serialize(message.data),
+							message.chat,
+							message.seq,
+							message.seq,
+							message.chat,
+						})) {
+					return false;
+				}
+			}
+			return true;
+		});
+	});
+}
+
 void Database::deleteMessage(const QString &chat, qint64 seq) {
 	post([chat, seq](details::DatabaseWorker &worker) {
 		if (worker.ready()) {

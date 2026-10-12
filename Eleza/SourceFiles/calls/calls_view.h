@@ -13,6 +13,16 @@
 // pickers; the choice is remembered (Core::Settings::calls()). After the end
 // the buttons are «تماس دوباره» and «بستن». Esc and the chevron go back to
 // the bar.
+//
+// Video (where the server has video calls): «دوربین» turns my camera on and
+// off in a call of either kind. What is shown follows the cameras, not how
+// the call started:
+//
+//   theirs on            their picture fills the view, the name and the state
+//                        in a corner; mine (if on) small, mirrored, in the
+//                        other corner
+//   only mine on         my picture, mirrored, in place of the userpic
+//   both off             the voice call above
 #pragma once
 
 #include "ui/effects/animations.h"
@@ -29,6 +39,8 @@ namespace Ui {
 class IconButton;
 class PopupMenu;
 } // namespace Ui
+
+class Painter;
 
 namespace Calls {
 
@@ -55,11 +67,19 @@ private:
 	void updateControls();
 	void showDevicesMenu();
 	[[nodiscard]] int contentTop() const;
+	// What of the cameras there is to paint right now.
+	[[nodiscard]] bool showsRemoteVideo() const;
+	[[nodiscard]] bool showsLocalVideo() const;
+	[[nodiscard]] QSize previewSize() const;
+	[[nodiscard]] QRect pictureRect() const;
+	void paintRemoteVideo(Painter &p);
+	void paintLocalCorner(Painter &p);
 
 	Service *_service = nullptr;
 	Ui::IconButton *_collapse = nullptr;
 	Support::UserpicButton *_userpic = nullptr;
 	LabeledButton *_devices = nullptr;
+	LabeledButton *_camera = nullptr;
 	LabeledButton *_mute = nullptr;
 	LabeledButton *_end = nullptr;
 	LabeledButton *_again = nullptr;

@@ -30,7 +30,8 @@ constexpr auto kPulsePeriodMs = 1600;
 IncomingWindow::IncomingWindow(
 	Main::Session *session,
 	const QString &callId,
-	const QString &peerId)
+	const QString &peerId,
+	bool video)
 : RpWidget(nullptr)
 , _session(session)
 , _callId(callId)
@@ -48,6 +49,10 @@ IncomingWindow::IncomingWindow(
 	this,
 	tr::lng_calls_decline(tr::now),
 	st::callsIncomingDecline))
+, _acceptVideo(new Ui::RoundButton(
+	this,
+	tr::lng_calls_accept_video(tr::now),
+	st::callsIncomingAccept))
 , _pulse([this](qint64) {
 	update();
 	return isVisible();
@@ -72,9 +77,16 @@ IncomingWindow::IncomingWindow(
 	// The keys belong to the window, not to whichever button was clicked last.
 	_accept->setFocusPolicy(Qt::NoFocus);
 	_decline->setFocusPolicy(Qt::NoFocus);
+	_acceptVideo->setIcon(&st::callsIncomingVideoIcon);
+	_acceptVideo->setFocusPolicy(Qt::NoFocus);
+	_acceptVideo->setClickedCallback([this] {
+		if (_acceptCallback) {
+			_acceptCallback(true);
+		}
+	});
 	_accept->setClickedCallback([this] {
 		if (_acceptCallback) {
-			_acceptCallback();
+			_acceptCallback(false);
 		}
 	});
 	_decline->setClickedCallback([this] {
@@ -94,13 +106,32 @@ IncomingWindow::IncomingWindow(
 			});
 	}
 	refreshName();
-	relayout();
+	_video = !video;
+	setVideo(video);
 }
 
 IncomingWindow::~IncomingWindow() = default;
 
-void IncomingWindow::setAcceptCallback(std::function<void()> callback) {
+void IncomingWindow::setAcceptCallback(
+		std::function<void(bool withCamera)> callback) {
 	_acceptCallback = std::move(callback);
+}
+
+void IncomingWindow::setVideo(bool video) {
+	if (_video == video) {
+		return;
+	}
+	_video = video;
+	setWindowTitle(video
+		? tr::lng_calls_state_incoming_video(tr::now)
+		: tr::lng_calls_state_incoming(tr::now));
+	// A video call is answered with the camera or without it.
+	_acceptVideo->setVisible(video);
+	_accept->setText(video
+		? tr::lng_calls_accept_voice(tr::now)
+		: tr::lng_calls_accept(tr::now));
+	relayout();
+	update();
 }
 
 void IncomingWindow::setDeclineCallback(std::function<void()> callback) {
@@ -137,22 +168,29 @@ void IncomingWindow::relayout() {
 		extend.left() + padding.left(),
 		body.y() + padding.top(),
 		width());
+	const auto skip = int(st::callsIncomingButtonSkip);
+	const auto count = _video ? 3 : 2;
 	const auto available = bodyWidth
 		- padding.left()
 		- padding.right()
-		- st::callsIncomingButtonSkip;
-	const auto each = available / 2;
+		- (count - 1) * skip;
+	const auto each = available / count;
+	// Decline on the leading side, the answers after it («فقط صدا», then
+	// «تصویری» for a video call).
+	auto left = extend.left() + padding.left();
 	_decline->setFullWidth(each);
-	_accept->setFullWidth(available - each);
-	// Decline on the leading side, accept on the trailing one.
-	_decline->moveToLeft(
-		extend.left() + padding.left(),
-		body.y() + buttonsTop,
-		width());
-	_accept->moveToLeft(
-		extend.left() + padding.left() + each + st::callsIncomingButtonSkip,
-		body.y() + buttonsTop,
-		width());
+	_decline->moveToLeft(left, body.y() + buttonsTop, width());
+	left += each + skip;
+	if (_video) {
+		_accept->setFullWidth(each);
+		_accept->moveToLeft(left, body.y() + buttonsTop, width());
+		left += each + skip;
+		_acceptVideo->setFullWidth(available - 2 * each);
+		_acceptVideo->moveToLeft(left, body.y() + buttonsTop, width());
+	} else {
+		_accept->setFullWidth(available - each);
+		_accept->moveToLeft(left, body.y() + buttonsTop, width());
+	}
 }
 
 void IncomingWindow::showAtCorner() {
@@ -225,7 +263,11 @@ void IncomingWindow::paintEvent(QPaintEvent *e) {
 	const auto top = body.y() + padding.top();
 	p.setFont(st::callsIncomingNameFont);
 	p.setPen(st::callsIncomingNameFg);
-	const auto name = _name.isEmpty() ? tr::lng_calls_voice_call(tr::now) : _name;
+	const auto name = !_name.isEmpty()
+		? _name
+		: _video
+		? tr::lng_calls_video_call(tr::now)
+		: tr::lng_calls_voice_call(tr::now);
 	p.drawTextLeft(
 		textLeft,
 		top + st::callsIncomingNameTop,
@@ -238,14 +280,17 @@ void IncomingWindow::paintEvent(QPaintEvent *e) {
 		top + st::callsIncomingTextTop,
 		width(),
 		st::callsIncomingTextFont->elided(
-			tr::lng_calls_state_incoming(tr::now),
+			_video
+				? tr::lng_calls_state_incoming_video(tr::now)
+				: tr::lng_calls_state_incoming(tr::now),
 			textWidth));
 }
 
 void IncomingWindow::keyPressEvent(QKeyEvent *e) {
 	if (e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter) {
 		if (!e->isAutoRepeat() && _acceptCallback) {
-			_acceptCallback();
+			// Never the camera from a key.
+			_acceptCallback(false);
 		}
 	} else if (e->key() == Qt::Key_Escape) {
 		if (!e->isAutoRepeat() && _declineCallback) {

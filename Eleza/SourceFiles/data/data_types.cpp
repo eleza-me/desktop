@@ -1,6 +1,7 @@
 #include "data/data_types.h"
 
 #include "base/bytes.h"
+#include "data/data_group_rules.h"
 #include "data/data_json.h"
 
 #include <QtCore/QRegularExpression>
@@ -183,6 +184,7 @@ Entity Entity::FromJson(const QJsonObject &json) {
 	result.length = Int(json, "length"_L1);
 	result.url = String(json, "url"_L1);
 	result.language = String(json, "language"_L1);
+	result.user = String(json, "user"_L1);
 	return result;
 }
 
@@ -193,6 +195,7 @@ QJsonObject Entity::toJson() const {
 	result.insert("length"_L1, length);
 	Put(result, "url"_L1, url);
 	Put(result, "language"_L1, language);
+	Put(result, "user"_L1, user);
 	return result;
 }
 
@@ -453,6 +456,7 @@ CallRecord CallRecord::FromJson(const QJsonObject &json) {
 	auto result = CallRecord();
 	result.outcome = String(json, "outcome"_L1);
 	result.durationS = Int64(json, "duration_s"_L1);
+	result.video = Bool(json, "video"_L1);
 	return result;
 }
 
@@ -460,6 +464,7 @@ QJsonObject CallRecord::toJson() const {
 	auto result = QJsonObject();
 	result.insert("outcome"_L1, outcome);
 	Put(result, "duration_s"_L1, durationS);
+	Put(result, "video"_L1, video);
 	return result;
 }
 
@@ -644,7 +649,13 @@ QString Message::KeyForLocal(const QString &clientMessageId) {
 }
 
 ServiceEvent Message::serviceEvent() const {
-	if (!text.isEmpty()) {
+	if (IsGroupId(chat)) {
+		// The notes of a group have codes of their own («member_joined» is
+		// not a listener joining a conversation).
+		return (GroupRules::NoteOf(system) != GroupRules::Note::None)
+			? ServiceEvent::Group
+			: ServiceEvent::None;
+	} else if (!text.isEmpty()) {
 		return ServiceEvent::Text;
 	}
 	static const auto kSeparators = QRegularExpression(u"[._-]"_s);
@@ -667,8 +678,10 @@ ServiceEvent Message::serviceEvent() const {
 }
 
 bool Message::visible() const {
-	if (deleted || underReview) {
+	if (deleted) {
 		return false;
+	} else if (underReview) {
+		return IsGroupId(chat);
 	} else if (kind == MessageKind::System) {
 		return call.has_value() || serviceEvent() != ServiceEvent::None;
 	}
@@ -899,6 +912,13 @@ Chat Chat::FromStored(const QJsonObject &json) {
 	result.theme = String(json, "theme"_L1);
 	result.timeRingExpiresAt = Int64(json, "time_ring_expires_at"_L1);
 	result.info = ChatInfo::FromJson(json.value("info"_L1).toObject());
+	if (const auto group = json.value("group"_L1); group.isObject()) {
+		result.isGroup = true;
+		result.group = Group::FromJson(group.toObject());
+		result.groupPts = Int64(json, "group_pts"_L1, -1);
+		result.groupCachePts = Int64(json, "group_cache_pts"_L1, -1);
+		result.unreadMentions = Int(json, "unread_mentions"_L1);
+	}
 	return result;
 }
 
@@ -941,6 +961,12 @@ QJsonObject Chat::toStored() const {
 	Put(result, "theme"_L1, theme);
 	Put(result, "time_ring_expires_at"_L1, timeRingExpiresAt);
 	result.insert("info"_L1, info.toJson());
+	if (isGroup && group) {
+		result.insert("group"_L1, group->toJson());
+		result.insert("group_pts"_L1, double(groupPts));
+		result.insert("group_cache_pts"_L1, double(groupCachePts));
+		Put(result, "unread_mentions"_L1, unreadMentions);
+	}
 	return result;
 }
 
@@ -966,6 +992,13 @@ PinnedMessage PinnedMessage::FromJson(const QJsonObject &json) {
 	result.message = Message::FromJson(json.value("message"_L1).toObject());
 	result.pinnedAt = Int64(json, "pinned_at"_L1);
 	result.scope = String(json, "scope"_L1);
+	result.pinnedBy = String(json, "pinned_by"_L1);
+	if (result.message.seq <= 0) {
+		// A group's pin whose message the viewer cannot see (cleared, or
+		// from before they joined): only its place is known.
+		result.message.seq = Int64(json, "seq"_L1);
+		result.hidden = true;
+	}
 	return result;
 }
 

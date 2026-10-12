@@ -36,7 +36,9 @@ Eleza/
     crypto/               OpenSSL wrappers: x25519, chacha20-poly1305, sha256/hmac/hkdf, device key
     storage/              per-account SQLite cache + key/value, secure blob for tokens / device key
     data/                 typed models + stores: chats, messages, users, sync (pts), outbox, media,
-                          upload, feed, graph, conversations, notifications, stickers, calls
+                          upload, feed, graph, conversations, notifications, stickers, calls,
+                          groups (their own sync track: data_groups.h; the decisions as plain
+                          functions: data_group_rules.h)
     lang/                 lang runtime (fa / en), number + date formatting (Persian digits, Jalali)
     updater/              in-app updates without widgets: signed manifest, package unpacker,
                           the checker (check -> download -> verify -> unpack), install glue
@@ -45,14 +47,17 @@ Eleza/
     dialogs/              chat list
     history/              chat screen: list view, bubbles, composer, menus
     conversation/         anonymous talker/listener layer: topics, new/join sheets, radar
+    groups/               groups beyond their chat: the info screen (members, settings), creating
+                          a group, invite links, join requests, administration
     eli/                  feed, post cards, post detail, compose, notifications, topic pages, viewer
     search/               browse + search
     profile/              profiles, follow lists, edit profile
     settings/             settings sections
     boxes/                modal boxes shared by sections (peer list, photo crop, country list, about)
     media/                audio/voice player, video player widget, image viewer
-    calls/                voice calls (ELEZA_ENABLE_CALLS): the call state machine, the media
-                          layer over the LiveKit library, the call bar / view / incoming window
+    calls/                voice and video calls (ELEZA_ENABLE_CALLS): the call state machine, the
+                          media layer over the LiveKit library, the camera, the call bar / view /
+                          incoming window
     support/              shared session helpers: media images / userpics, error texts, links,
                           connection label, desktop notifications, file dialogs
 tests/                    unit tests (noise vectors, proto codec, frames, style codegen)

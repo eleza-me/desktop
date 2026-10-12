@@ -8,6 +8,9 @@
 //   ended declined no-answer busy failed lost not-allowed        (how it ended)
 //   incoming                                                     (the window)
 //   missed                                    (the desktop notification)
+//   video-incoming                            (the window of a video call)
+//   video-ringing video video-remote video-local   (a video call: my camera
+//                                 while it rings; both; theirs; mine)
 //   …-expanded                                (the same in the expanded view)
 //
 // The other side is the peer of the first direct chat, or "?user=<id>".
@@ -16,6 +19,7 @@
 #include "calls/calls_service.h"
 
 #include "calls/calls_text.h"
+#include "calls/calls_video.h"
 #include "data/data_chats.h"
 #include "data/data_session.h"
 #include "lang_auto.h"
@@ -94,6 +98,24 @@ public:
 	}
 	void requestStats() override {
 	}
+	// A camera without a camera: one generated picture per side.
+	void setCameraEnabled(bool enabled) override {
+		if (_camera == enabled) {
+			return;
+		}
+		_camera = enabled;
+		Q_EMIT cameraChanged(enabled);
+		if (enabled) {
+			Q_EMIT localVideoFrame(Video::PatternFrame(7));
+		}
+	}
+	bool cameraEnabled() const override {
+		return _camera;
+	}
+	void showRemoteVideo() {
+		Q_EMIT remoteVideoChanged(true);
+		Q_EMIT remoteVideoFrame(Video::PatternFrame(23, QSize(960, 540)));
+	}
 	void set(State state) {
 		if (_state != state) {
 			_state = state;
@@ -103,6 +125,7 @@ public:
 
 private:
 	State _state = State::Idle;
+	bool _camera = false;
 
 };
 
@@ -114,7 +137,7 @@ public:
 	std::optional<Api::Error> inviteError;
 	QPointer<DemoMedia> media;
 
-	void invite(const QString &userId, base::Guard guard, JoinDone done, Data::FailCallback fail) override {
+	void invite(const QString &userId, bool video, base::Guard guard, JoinDone done, Data::FailCallback fail) override {
 		if (!guard.alive()) {
 			return;
 		} else if (inviteError) {
@@ -126,6 +149,7 @@ public:
 				{ u"sfu_url"_s, u"wss://demo.invalid"_s },
 				{ u"token"_s, u"demo"_s },
 				{ u"peer"_s, userId },
+				{ u"video"_s, video },
 			}));
 		}
 	}
@@ -190,6 +214,10 @@ bool Service::showDemo(const QString &what) {
 		u"muted"_s, u"reconnecting"_s, u"ended"_s, u"declined"_s,
 		u"no-answer"_s, u"busy"_s, u"failed"_s, u"lost"_s,
 		u"not-allowed"_s, u"incoming"_s, u"missed"_s,
+		// Video calls: it rings here; it rings there (my camera); both
+		// cameras; only theirs; only mine.
+		u"video-incoming"_s, u"video-ringing"_s, u"video"_s,
+		u"video-remote"_s, u"video-local"_s,
 	};
 	if (!known.contains(name)) {
 		return false;
@@ -234,14 +262,19 @@ bool Service::showDemo(const QString &what) {
 	const auto raw = instance.get();
 	replaceInstance(std::move(instance));
 
-	if (name == u"incoming") {
-		raw->handleSignal(Data::CallSignal::FromJson(u"call.incoming"_s, {
+	if (name == u"incoming" || name == u"video-incoming") {
+		auto json = QJsonObject{
 			{ u"call"_s, kDemoCall },
 			{ u"from"_s, peer },
-		}));
+		};
+		if (name == u"video-incoming") {
+			json.insert(u"video"_s, true);
+		}
+		raw->handleSignal(Data::CallSignal::FromJson(u"call.incoming"_s, json));
 		return true;
 	}
-	raw->start(peer);
+	const auto video = name.startsWith(u"video");
+	raw->start(peer, video);
 	const auto connect = [&] {
 		raw->handleSignal(Signal("call.accepted"));
 		if (world->media) {
@@ -260,6 +293,16 @@ bool Service::showDemo(const QString &what) {
 		raw->handleSignal(Signal("call.ringing"));
 	} else if (name == u"connecting") {
 		raw->handleSignal(Signal("call.accepted"));
+	} else if (name == u"video-ringing") {
+		raw->handleSignal(Signal("call.ringing"));
+	} else if (name == u"video" || name == u"video-remote" || name == u"video-local") {
+		connect();
+		if (const auto call = raw->call()) {
+			call->setCameraEnabled(name != u"video-remote");
+		}
+		if (world->media && name != u"video-local") {
+			world->media->showRemoteVideo();
+		}
 	} else if (name == u"connected") {
 		connect();
 	} else if (name == u"muted") {
@@ -284,7 +327,7 @@ bool Service::showDemo(const QString &what) {
 		raw->handleSignal(Signal("call.ended", u"timeout"_s));
 	}
 	Q_EMIT callUpdated();
-	if (expand && call()) {
+	if ((expand || video) && call()) {
 		// An ended call can be looked at in the expanded view as well.
 		if (!_expanded) {
 			_expanded = true;
@@ -297,7 +340,8 @@ bool Service::showDemo(const QString &what) {
 // ---- driven by a script
 //
 // <folder>/command   one line, taken (and removed) within 100 ms:
-//                      start <user id> | answer | hangup | mute | dismiss
+//                      start <user id> | start-video <user id> | answer
+//                      | answer-video | camera | hangup | mute | dismiss
 //                      | input <device id> | quit
 // <folder>/state     the call now, rewritten on every change:
 //                      { "state": "none|calling|ringing|incoming|connecting
@@ -328,6 +372,11 @@ void Service::startDebugControl() {
 			{ u"reason"_s, call ? DebugReasonName(call->endReason()) : QString() },
 			{ u"id"_s, call ? call->id() : QString() },
 			{ u"muted"_s, call && call->muted() },
+			{ u"video"_s, call && call->video() },
+			{ u"camera"_s, call && call->cameraEnabled() },
+			{ u"remote_video"_s, call && call->remoteVideo() },
+			{ u"local_frame"_s, !_localFrame.isNull() },
+			{ u"remote_frame"_s, !_remoteFrame.isNull() },
 			{ u"peer"_s, call ? call->peerId() : QString() },
 		}).toJson(QJsonDocument::Compact);
 		if (*last == text) {
@@ -343,6 +392,7 @@ void Service::startDebugControl() {
 	};
 	connect(this, &Service::callChanged, control, write);
 	connect(this, &Service::callUpdated, control, write);
+	connect(this, &Service::videoFrameChanged, control, write);
 	connect(this, &Service::noticeShown, control, [=](Notice notice) {
 		record("notice " + QByteArray::number(int(notice))
 			+ ' '
@@ -365,8 +415,14 @@ void Service::startDebugControl() {
 		record("command " + line.toUtf8());
 		if (verb == u"start") {
 			start(value);
+		} else if (verb == u"start-video") {
+			start(value, true);
 		} else if (verb == u"answer") {
 			answer();
+		} else if (verb == u"answer-video") {
+			answer(true);
+		} else if (verb == u"camera") {
+			toggleCamera();
 		} else if (verb == u"hangup") {
 			hangup();
 		} else if (verb == u"mute") {

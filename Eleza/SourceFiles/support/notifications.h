@@ -4,7 +4,8 @@
 //
 // The manager is created with the session services (support/session_services.h);
 // feature code normally does not touch it. It listens to
-// Data::Sync::messageReceived and shows a toast when
+// Data::Sync::messageReceived (chats) and Data::Groups::messageReceived
+// (groups, which have a notify level of their own) and shows a toast when
 //   * notifications are on (Core::Settings::notifications().desktopEnabled),
 //   * the chat is not muted and is not «Saved messages»,
 //   * the window is not active, or another chat is on screen
@@ -62,6 +63,13 @@ struct NotificationData {
 [[nodiscard]] std::optional<NotificationData> NotificationFor(
 	Main::Session *session,
 	const Data::Message &message);
+// The same for a message of a group that Data::Groups decided may alert (it
+// applied the group's notify level and mute: a mention gets through a muted
+// group). The toast names the sender and the group.
+[[nodiscard]] std::optional<NotificationData> GroupNotificationFor(
+	Main::Session *session,
+	const Data::Message &message,
+	bool addressesMe);
 
 class NotificationWidget;
 
@@ -80,6 +88,8 @@ public:
 
 private:
 	void messageReceived(const Data::Message &message);
+	void groupMessageReceived(const Data::Message &message, bool addressesMe);
+	void alert(const NotificationData &data);
 	[[nodiscard]] bool shouldShow(const Data::Message &message) const;
 	void show(const NotificationData &data);
 	void showNext();

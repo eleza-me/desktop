@@ -459,10 +459,20 @@ void TestSync::updateKinds() {
 	Test::Settle();
 	QCOMPARE(harness.transport.count(u"chat.history"_s), reads + 1);
 
-	// cleared: history before a seq goes.
+	// cleared: the mark is the last message that went (the server writes the
+	// chat's last seq there), so the history up to and including it goes.
 	push(u"cleared"_s, { { u"chat"_s, u"c1"_s }, { u"cleared_before_seq"_s, 6 } });
 	QVERIFY(messages.find(u"c1"_s, 5) == nullptr);
-	QVERIFY(messages.find(u"c1"_s, 6) != nullptr);
+	QVERIFY(messages.find(u"c1"_s, 6) == nullptr);
+	// Something newer is left: the chat stays in the list with it.
+	QVERIFY(chats.chat(u"c1"_s) != nullptr);
+	QCOMPARE(chats.chat(u"c1"_s)->lastMessage->seq, 8);
+
+	// The whole history cleared: the chat leaves the list (the inbox does not
+	// return it either until somebody writes again).
+	QVERIFY(chats.chat(u"c2"_s) != nullptr);
+	push(u"cleared"_s, { { u"chat"_s, u"c2"_s }, { u"cleared_before_seq"_s, chats.chat(u"c2"_s)->lastSeq } });
+	QVERIFY(chats.chat(u"c2"_s) == nullptr);
 
 	// notif: the bell.
 	push(u"notif"_s, { { u"news"_s, 4 }, { u"kinds"_s, QJsonObject{ { u"like"_s, 3 }, { u"follow"_s, 1 } } } });

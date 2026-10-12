@@ -13,7 +13,9 @@
 //   * the incoming call window, which must work with the main window
 //     minimized or in the tray;
 //   * what the user chose for calls (Core::Settings::calls()) on its way to
-//     the audio of the running call.
+//     the audio of the running call;
+//   * the last picture of each camera of a video call, for whatever shows
+//     the call.
 #pragma once
 
 #include "calls/calls_instance.h"
@@ -66,12 +68,30 @@ public:
 	void setController(Window::SessionController *controller);
 	[[nodiscard]] Window::SessionController *controller() const;
 
-	void start(const QString &userId);
-	void answer();
+	// `video`: as a video call (my camera starts with it).
+	void start(const QString &userId, bool video = false);
+	// `withCamera`: «تصویری» of a video call.
+	void answer(bool withCamera = false);
 	void hangup();
 	void callAgain();
 	void toggleMuted();
 	void dismissEnded();
+
+	// ---- video
+	// The server has video calls (`feature.video_calls`): the camera
+	// controls exist.
+	[[nodiscard]] bool videoOffered() const;
+	void toggleCamera();
+	// A device id of Calls::Video::Cameras() (empty: the system's default):
+	// saved in the settings and applied to the running call.
+	void setCameraDevice(const QByteArray &id);
+	// The last frame of each side (null: nothing to show).
+	[[nodiscard]] const QImage &localFrame() const {
+		return _localFrame;
+	}
+	[[nodiscard]] const QImage &remoteFrame() const {
+		return _remoteFrame;
+	}
 	// Device ids of QAudioDevice (empty: the system's default): saved in
 	// the settings and applied to the running call.
 	void setInputDevice(const QByteArray &id);
@@ -116,6 +136,8 @@ Q_SIGNALS:
 	void callUpdated();
 	void expandedChanged();
 	void levelsChanged();
+	// A new picture of one of the cameras (or one of them went away).
+	void videoFrameChanged();
 	void noticeShown(Calls::Notice notice);
 
 private:
@@ -143,6 +165,8 @@ private:
 	bool _expanded = false;
 	float _inputLevel = 0.;
 	float _outputLevel = 0.;
+	QImage _localFrame;
+	QImage _remoteFrame;
 	bool _echoCancellation = true;
 	bool _noiseSuppression = true;
 

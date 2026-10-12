@@ -1,6 +1,7 @@
 #include "dialogs/dialogs_widget.h"
 
 #include "data/data_chats.h"
+#include "data/data_groups.h"
 #include "data/data_session.h"
 #include "dialogs/dialogs_inner_widget.h"
 #include "dialogs/dialogs_menu.h"
@@ -173,6 +174,10 @@ Widget::Widget(QWidget *parent, Window::SessionController *controller)
 	refreshTopBar();
 	refreshState();
 	refreshActiveChat();
+
+	// The list is on screen: the groups get their catch-up if this run has
+	// not had one yet (nothing happens while the server has no groups).
+	controller->session().data().groups().ensureSynced();
 }
 
 Widget::~Widget() = default;

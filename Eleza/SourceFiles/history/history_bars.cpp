@@ -2,6 +2,8 @@
 
 #include "data/data_chats.h"
 #include "data/data_conversations.h"
+#include "data/data_group_rules.h"
+#include "data/data_groups.h"
 #include "data/data_messages.h"
 #include "data/data_session.h"
 #include "history/history_logic.h"
@@ -63,12 +65,21 @@ PinnedBar::PinnedBar(QWidget *parent, Main::Session *session, const QString &cha
 , _unpin(Ui::CreateChild<Ui::IconButton>(this, st::historyPinnedUnpin)) {
 	setCursor(style::cur_pointer);
 	_reloadTimer.setSingleShot(true);
-	connect(&_reloadTimer, &QTimer::timeout, this, [this] {
+	// A group has pins only on a server with the second release of groups.
+	const auto hasPins = [this] {
+		return !Data::IsGroupId(_chatId)
+			|| _session->data().groups().administration();
+	};
+	connect(&_reloadTimer, &QTimer::timeout, this, [=, this] {
 		_requestedAt = Ui::Now();
-		_session->data().messages().loadPins(_chatId, this);
+		if (hasPins()) {
+			_session->data().messages().loadPins(_chatId, this);
+		}
 	});
 	_requestedAt = Ui::Now();
-	session->data().messages().loadPins(_chatId, this);
+	if (hasPins()) {
+		session->data().messages().loadPins(_chatId, this);
+	}
 	_unpin->setClickedCallback([this] {
 		if (const auto pin = current()) {
 			Q_EMIT unpinRequested(pin->message);
@@ -96,7 +107,8 @@ void PinnedBar::refresh() {
 	const auto shownSeq = current() ? current()->message.seq : qint64(0);
 	auto pins = QVector<Data::PinnedMessage>();
 	for (const auto &pin : history.pins) {
-		if (pin.message.seq <= 0 || pin.message.deleted) {
+		if (pin.message.seq <= 0 || pin.message.deleted || pin.hidden) {
+			// (hidden: a pin of a group from before I joined.)
 			continue;
 		}
 		auto copy = pin;
@@ -144,6 +156,13 @@ void PinnedBar::refresh() {
 			_index = i;
 			break;
 		}
+	}
+	if (Data::IsGroupId(_chatId)) {
+		// Unpinning is for those who may pin.
+		const auto row = _session->data().chats().chat(_chatId);
+		_unpin->setVisible(row
+			&& row->group
+			&& row->group->can(u"pin_messages"));
 	}
 	refreshThumb();
 	update();

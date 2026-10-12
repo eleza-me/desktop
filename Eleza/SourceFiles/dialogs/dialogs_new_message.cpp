@@ -5,6 +5,7 @@
 #include "boxes/peer_list_box.h"
 #include "data/data_chats.h"
 #include "data/data_graph.h"
+#include "data/data_groups.h"
 #include "data/data_session.h"
 #include "data/data_users.h"
 #include "lang_auto.h"
@@ -20,6 +21,7 @@ namespace {
 
 constexpr auto kRecentLimit = 20;
 const auto kSavedRowId = u"saved"_s;
+const auto kNewGroupRowId = u"new_group"_s;
 
 class NewMessageController final : public Boxes::PeerListController {
 public:
@@ -46,6 +48,14 @@ public:
 		saved.id = kSavedRowId;
 		saved.title = tr::lng_saved_messages(tr::now);
 		saved.special = Ui::UserpicKind::Saved;
+		if (session->data().groups().enabled()) {
+			// «گروه تازه» leads the list while the server has groups.
+			auto group = Boxes::PeerListRow();
+			group.id = kNewGroupRowId;
+			group.title = tr::lng_groups_new_group(tr::now);
+			group.special = Ui::UserpicKind::User;
+			_base.push_back(group);
+		}
 		_base.push_back(saved);
 
 		// The people of the recent chats…
@@ -150,6 +160,12 @@ public:
 
 	void rowClicked(const Boxes::PeerListRow &row) override {
 		if (_opening) {
+			return;
+		}
+		if (row.id == kNewGroupRowId) {
+			const auto controller = _controller;
+			delegate()->closeBox();
+			controller->openRoute(Window::Routes::NewGroup());
 			return;
 		}
 		_opening = true;

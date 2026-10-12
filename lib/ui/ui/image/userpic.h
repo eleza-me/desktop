@@ -54,11 +54,17 @@ public:
 		const QString &name,
 		UserpicKind kind = UserpicKind::User);
 	void setImage(const QImage &image);
-	void setSource(std::shared_ptr<ImageSource> source);
+	// `keep`: the picture shown now stays until the new source has its own
+	// (somebody changed the photo: no flash of the initial in between).
+	void setSource(std::shared_ptr<ImageSource> source, bool keep = false);
 	void setOnline(bool online);
 	// The color around the online dot (the background the widget lies on).
 	void setBorderColor(style::color color);
 	void setSize(int size);
+	// A row of a layout that is given an alignment keeps the picture's size.
+	[[nodiscard]] int naturalWidth() const override {
+		return _size;
+	}
 
 protected:
 	void paintEvent(QPaintEvent *e) override;

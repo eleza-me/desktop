@@ -14,14 +14,27 @@
 //   audio processing module: echo canceller (reference = what Audio::Output
 //       played), noise suppression, gain control, on the captured frames
 //
+// and, while a camera is on (either side's, in a call of either kind):
+//
+//   video source (fed RGBA frames of the camera) -> local track, source
+//       "camera" -> published; unpublished again when the camera goes off
+//   remote video track -> video stream (RGBA frames) -> the call's view
+//
+// The camera itself is opened by the thin Media object on its own thread
+// (calls_video.h); the engine only gets its frames.
+//
 // Message and field numbers are those of the protocol files of the pinned
 // library version (livekit-ffi/protocol/*.proto, see cmake/eleza_livekit.cmake).
 #include "calls/calls_media.h"
 
 #include "calls/calls_audio_io.h"
 #include "calls/calls_ffi.h"
+#include "calls/calls_video.h"
 
 #include <QtCore/QCoreApplication>
+#include <QtGui/QTransform>
+#include <QtGui/QImage>
+#include <QtCore/QDateTime>
 #include <QtCore/QHash>
 #include <QtCore/QPointer>
 #include <QtCore/QSemaphore>
@@ -43,9 +56,14 @@ namespace Request {
 constexpr auto kConnect = 3;
 constexpr auto kDisconnect = 4;
 constexpr auto kPublishTrack = 5;
+constexpr auto kUnpublishTrack = 6;
 constexpr auto kGetSessionStats = 12;
+constexpr auto kCreateVideoTrack = 15;
 constexpr auto kCreateAudioTrack = 16;
 constexpr auto kLocalTrackMute = 17;
+constexpr auto kNewVideoStream = 20;
+constexpr auto kNewVideoSource = 21;
+constexpr auto kCaptureVideoFrame = 22;
 constexpr auto kNewAudioStream = 25;
 constexpr auto kNewAudioSource = 26;
 constexpr auto kCaptureAudioFrame = 27;
@@ -60,7 +78,10 @@ constexpr auto kConnect = 3;
 constexpr auto kDisconnect = 4;
 constexpr auto kPublishTrack = 5;
 constexpr auto kGetSessionStats = 12;
+constexpr auto kCreateVideoTrack = 15;
 constexpr auto kCreateAudioTrack = 16;
+constexpr auto kNewVideoStream = 20;
+constexpr auto kNewVideoSource = 21;
 constexpr auto kNewAudioStream = 25;
 constexpr auto kNewAudioSource = 26;
 constexpr auto kNewApm = 49;
@@ -68,6 +89,7 @@ constexpr auto kNewApm = 49;
 
 namespace Event {
 constexpr auto kRoom = 1;
+constexpr auto kVideoStream = 3;
 constexpr auto kAudioStream = 4;
 constexpr auto kConnect = 5;
 constexpr auto kDisconnect = 7;
@@ -82,6 +104,8 @@ constexpr auto kParticipantConnected = 2;
 constexpr auto kTrackPublished = 7;
 constexpr auto kTrackSubscribed = 9;
 constexpr auto kTrackUnsubscribed = 10;
+constexpr auto kTrackMuted = 12;
+constexpr auto kTrackUnmuted = 13;
 constexpr auto kDisconnected = 22;
 constexpr auto kReconnecting = 23;
 constexpr auto kReconnected = 24;
@@ -91,7 +115,15 @@ constexpr auto kTextStreamOpened = 35;
 } // namespace Room
 
 constexpr auto kTrackKindAudio = 1;
+constexpr auto kTrackKindVideo = 2;
+constexpr auto kTrackSourceCamera = 1;
 constexpr auto kTrackSourceMicrophone = 2;
+constexpr auto kVideoBufferRgba = 0;
+// Frames of the other side's camera handed to the view per second, at most.
+constexpr auto kRemoteVideoMinIntervalMs = 40;
+// A picture larger than this is not what a call sends: not copied.
+constexpr auto kMaxRemoteVideoSide = 4096;
+constexpr auto kVideoPublishRetryMs = 3000;
 constexpr auto kIceTransportAll = 2;
 constexpr auto kGatherContinually = 1;
 
@@ -244,6 +276,10 @@ public:
 	void setOutput(quint64 session, const QAudioDevice &device);
 	void setProcessing(quint64 session, bool echo, bool noise, bool gain);
 	void requestStats(quint64 session);
+	// The camera of this side: published while `enabled` (now, or once the
+	// room is joined); its frames come through captureVideo().
+	void setCamera(quint64 session, bool enabled);
+	void captureVideo(quint64 session, const QImage &rgba);
 	void shutdown();
 
 	void handleEvent(const QByteArray &bytes);
@@ -253,6 +289,8 @@ Q_SIGNALS:
 	void levelsChanged(quint64 session, float input, float output);
 	void statsReady(quint64 session, const Calls::MediaStats &stats);
 	void inputFailed(quint64 session);
+	void remoteVideoChanged(quint64 session, bool shown);
+	void remoteVideoFrame(quint64 session, const QImage &frame);
 
 private:
 	[[nodiscard]] QByteArray request(int field, const Writer &message) {
@@ -278,8 +316,13 @@ private:
 	void publish();
 	void roomEvent(Reader event);
 	void audioStreamEvent(Reader event);
+	void videoStreamEvent(Reader event);
 	void statsEvent(Reader event);
 	void captured(qint16 *samples);
+	void publishVideo(QSize size);
+	void unpublishVideo();
+	void closeVideoStream();
+	void setRemoteVideoShown(bool shown);
 
 	Ffi::Library *_library = nullptr;
 	quint64 _session = 0;
@@ -310,6 +353,23 @@ private:
 	quint64 _publishAsync = 0;
 	quint64 _statsAsync = 0;
 	bool _published = false;
+
+	// ---- video
+	bool _cameraWanted = false;
+	quint64 _videoSource = 0;
+	QSize _videoSourceSize;
+	quint64 _videoTrack = 0;
+	quint64 _videoPublishAsync = 0;
+	QString _videoPublicationSid;
+	bool _videoPublished = false;
+	quint64 _remoteVideoTrack = 0;
+	QString _remoteVideoSid;
+	quint64 _videoStream = 0;
+	bool _remoteVideoMuted = false;
+	bool _remoteVideoShown = false;
+	qint64 _remoteVideoFrameMs = 0;
+	qint64 _videoRetryAt = 0;
+
 	// Rooms that are being left: the library needs the handle until it says
 	// that the room is closed (async id -> room handle).
 	QHash<quint64, quint64> _closing;
@@ -550,8 +610,32 @@ void Engine::closeStream() {
 	_remoteTrackSid = QString();
 }
 
+void Engine::closeVideoStream() {
+	drop(_videoStream);
+	drop(_remoteVideoTrack);
+	_remoteVideoSid = QString();
+	_remoteVideoMuted = false;
+	_remoteVideoFrameMs = 0;
+	setRemoteVideoShown(false);
+}
+
+void Engine::setRemoteVideoShown(bool shown) {
+	if (_remoteVideoShown != shown) {
+		_remoteVideoShown = shown;
+		Q_EMIT remoteVideoChanged(_session, shown);
+	}
+}
+
 void Engine::closeRoom() {
 	closeStream();
+	closeVideoStream();
+	// The camera track belongs to the room that is going away; a camera
+	// that is still wanted is published again in the next one.
+	_videoPublished = false;
+	_videoPublishAsync = 0;
+	_videoPublicationSid = QString();
+	_videoRetryAt = 0;
+	drop(_videoTrack);
 	_published = false;
 	_publishAsync = 0;
 	_statsAsync = 0;
@@ -601,6 +685,9 @@ void Engine::close(quint64 session) {
 	leave(session);
 	drop(_apm);
 	drop(_source);
+	drop(_videoSource);
+	_videoSourceSize = QSize();
+	_cameraWanted = false;
 	_session = 0;
 	_state = Media::State::Idle;
 }
@@ -619,6 +706,120 @@ void Engine::setMuted(quint64 session, bool muted) {
 			Request::kLocalTrackMute,
 			message);
 	}
+}
+
+void Engine::setCamera(quint64 session, bool enabled) {
+	if (session != _session || _cameraWanted == enabled) {
+		return;
+	}
+	_cameraWanted = enabled;
+	if (!enabled) {
+		unpublishVideo();
+	}
+	// On: the first frame publishes the track (its size is known then).
+}
+
+void Engine::publishVideo(QSize size) {
+	if (!_room
+		|| !_participant
+		|| !_published
+		|| _videoPublishAsync
+		|| _videoPublished
+		|| QDateTime::currentMSecsSinceEpoch() < _videoRetryAt) {
+		return;
+	}
+	if (!_videoSource || _videoSourceSize != size) {
+		drop(_videoSource);
+		// NewVideoSourceRequest { type = 1 (native: 0), resolution = 2
+		// { width = 1, height = 2 }, is_screencast = 3 }.
+		auto resolution = Writer();
+		resolution.varint(1, quint64(size.width())).varint(2, quint64(size.height()));
+		auto message = Writer();
+		message.varint(1, 0).message(2, resolution).boolean(3, false);
+		const auto response = request(Request::kNewVideoSource, message);
+		_videoSource = OwnedHandle(
+			Sub(Sub(Reader(response), Response::kNewVideoSource), 1));
+		_videoSourceSize = size;
+	}
+	if (!_videoSource) {
+		qWarning("Calls: the media library gave no video source.");
+		return;
+	}
+	// CreateVideoTrackRequest { name = 1, source_handle = 2 }.
+	auto create = Writer();
+	create.string(1, QStringLiteral("camera")).varint(2, _videoSource);
+	const auto created = request(Request::kCreateVideoTrack, create);
+	_videoTrack = OwnedHandle(
+		Sub(Sub(Reader(created), Response::kCreateVideoTrack), 1));
+	if (!_videoTrack) {
+		return;
+	}
+	// TrackPublishOptions { simulcast = 6, source = 7 }: one layer is all a
+	// call of two needs; the source has to be the camera (the token allows
+	// the microphone and the camera, nothing else).
+	auto options = Writer();
+	options.boolean(6, false).varint(7, kTrackSourceCamera);
+	auto message = Writer();
+	message.varint(1, _participant).varint(2, _videoTrack).message(3, options);
+	const auto response = request(Request::kPublishTrack, message);
+	_videoPublishAsync = Varint(Sub(Reader(response), Response::kPublishTrack), 1);
+	if (!_videoPublishAsync) {
+		drop(_videoTrack);
+	}
+}
+
+void Engine::unpublishVideo() {
+	_videoPublishAsync = 0;
+	if (_videoPublished && _participant && !_videoPublicationSid.isEmpty()) {
+		// UnpublishTrackRequest { local_participant_handle = 1, track_sid = 2,
+		// stop_on_unpublish = 3 }: the other side sees the track go away.
+		auto message = Writer();
+		message.varint(1, _participant)
+			.string(2, _videoPublicationSid)
+			.boolean(3, true);
+		[[maybe_unused]] const auto response = request(
+			Request::kUnpublishTrack,
+			message);
+	}
+	_videoPublished = false;
+	_videoPublicationSid = QString();
+	drop(_videoTrack);
+}
+
+void Engine::captureVideo(quint64 session, const QImage &rgba) {
+	if (session != _session
+		|| !_cameraWanted
+		|| rgba.isNull()
+		|| rgba.format() != QImage::Format_RGBA8888) {
+		return;
+	}
+	if (!_videoPublished) {
+		publishVideo(rgba.size());
+		return;
+	} else if (rgba.size() != _videoSourceSize) {
+		// Another camera, another picture: a new source and track.
+		unpublishVideo();
+		publishVideo(rgba.size());
+		return;
+	}
+	// CaptureVideoFrameRequest { source_handle = 1, buffer = 2, timestamp_us = 3,
+	// rotation = 4 }; VideoBufferInfo { type = 1, width = 2, height = 3,
+	// data_ptr = 4, stride = 6 }. The library converts the picture before it
+	// returns: the image only has to live through the call.
+	auto buffer = Writer();
+	buffer.varint(1, kVideoBufferRgba)
+		.varint(2, quint64(rgba.width()))
+		.varint(3, quint64(rgba.height()))
+		.varint(4, quint64(quintptr(rgba.constBits())))
+		.varint(6, quint64(rgba.bytesPerLine()));
+	auto message = Writer();
+	message.varint(1, _videoSource)
+		.message(2, buffer)
+		.integer(3, QDateTime::currentMSecsSinceEpoch() * 1000)
+		.varint(4, 0);
+	[[maybe_unused]] const auto response = request(
+		Request::kCaptureVideoFrame,
+		message);
 }
 
 void Engine::setInput(quint64 session, const QAudioDevice &device) {
@@ -697,6 +898,7 @@ void Engine::handleEvent(const QByteArray &bytes) {
 		auto body = event.sub();
 		switch (event.field()) {
 		case Event::kAudioStream: audioStreamEvent(body); break;
+		case Event::kVideoStream: videoStreamEvent(body); break;
 		case Event::kRoom: roomEvent(body); break;
 		case Event::kConnect: {
 			// ConnectCallback { async_id = 1, error = 2, result = 3 }.
@@ -756,15 +958,40 @@ void Engine::handleEvent(const QByteArray &bytes) {
 			auto asyncId = quint64();
 			auto hasError = false;
 			auto publication = quint64();
+			auto publicationSid = QString();
 			while (body.next()) {
 				switch (body.field()) {
 				case 1: asyncId = body.varint(); break;
 				case 2: hasError = true; break;
-				case 3: publication = OwnedHandle(body.sub()); break;
+				case 3: {
+					// OwnedTrackPublication { handle = 1, info = 2 { sid = 1 } }.
+					const auto owned = body.sub();
+					publication = OwnedHandle(owned);
+					publicationSid = String(Sub(owned, 2), 1);
+				} break;
 				}
 			}
 			if (publication) {
 				_library->dropHandle(publication);
+			}
+			if (asyncId && asyncId == _videoPublishAsync) {
+				_videoPublishAsync = 0;
+				if (hasError) {
+					// The call goes on with audio; not tried again with
+					// every frame.
+					qInfo("Calls: publishing the camera failed.");
+					drop(_videoTrack);
+					_videoRetryAt = QDateTime::currentMSecsSinceEpoch()
+						+ kVideoPublishRetryMs;
+				} else {
+					_videoPublished = true;
+					_videoPublicationSid = publicationSid;
+					if (!_cameraWanted) {
+						// Turned off while it was being published.
+						unpublishVideo();
+					}
+				}
+				break;
 			}
 			if (asyncId && asyncId == _publishAsync) {
 				_publishAsync = 0;
@@ -871,7 +1098,27 @@ void Engine::roomEvent(Reader event) {
 			const auto owned = Sub(body, 2);
 			auto track = OwnedHandle(owned);
 			const auto info = Sub(owned, 2);
-			const auto audio = (Varint(info, 3) == kTrackKindAudio);
+			const auto kind = int(Varint(info, 3));
+			const auto audio = (kind == kTrackKindAudio);
+			if (mine && track && kind == kTrackKindVideo) {
+				// The other side's camera. NewVideoStreamRequest {
+				// track_handle = 1, type = 2 (native: 0), format = 3,
+				// normalize_stride = 4 }: RGBA frames, rows of width * 4.
+				closeVideoStream();
+				_remoteVideoTrack = track;
+				_remoteVideoSid = String(info, 1);
+				_remoteVideoMuted = (Varint(info, 5) != 0);
+				auto message = Writer();
+				message.varint(1, _remoteVideoTrack)
+					.varint(2, 0)
+					.varint(3, kVideoBufferRgba)
+					.boolean(4, true);
+				const auto response = request(Request::kNewVideoStream, message);
+				_videoStream = OwnedHandle(
+					Sub(Sub(Reader(response), Response::kNewVideoStream), 1));
+				// Shown with its first frame.
+				break;
+			}
 			if (!mine || !audio || !track) {
 				_library->dropHandle(track);
 				break;
@@ -894,6 +1141,24 @@ void Engine::roomEvent(Reader event) {
 			// { participant_identity = 1, track_sid = 2 }.
 			if (mine && String(body, 2) == _remoteTrackSid) {
 				closeStream();
+			} else if (mine
+				&& !_remoteVideoSid.isEmpty()
+				&& String(body, 2) == _remoteVideoSid) {
+				closeVideoStream();
+			}
+			break;
+		case Room::kTrackMuted:
+		case Room::kTrackUnmuted:
+			// { participant_identity = 1, track_sid = 2 }: a camera that is
+			// muted shows nothing (the layout follows the tracks, not the
+			// call's flag).
+			if (mine
+				&& !_remoteVideoSid.isEmpty()
+				&& String(body, 2) == _remoteVideoSid) {
+				_remoteVideoMuted = (event.field() == Room::kTrackMuted);
+				if (_remoteVideoMuted) {
+					setRemoteVideoShown(false);
+				}
 			}
 			break;
 		case Room::kReconnecting:
@@ -990,6 +1255,98 @@ void Engine::audioStreamEvent(Reader event) {
 		_output->push(
 			reinterpret_cast<const qint16*>(quintptr(pointer)),
 			int(samples));
+	}
+	_library->dropHandle(handle);
+}
+
+void Engine::videoStreamEvent(Reader event) {
+	// VideoStreamEvent { stream_handle = 1, frame_received = 2 { buffer = 1
+	// (OwnedVideoBuffer { handle = 1, info = 2 }), timestamp_us = 2,
+	// rotation = 3 }, eos = 3 }; VideoBufferInfo { type = 1, width = 2,
+	// height = 3, data_ptr = 4, stride = 6 }.
+	auto stream = quint64();
+	auto received = Reader();
+	auto have = false;
+	while (event.next()) {
+		if (event.field() == 1 && !event.isChunk()) {
+			stream = event.varint();
+		} else if (event.field() == 2 && event.isChunk()) {
+			received = event.sub();
+			have = true;
+		}
+	}
+	if (!have) {
+		return;
+	}
+	auto handle = quint64();
+	auto info = Reader();
+	auto rotation = 0;
+	while (received.next()) {
+		if (received.field() == 1 && received.isChunk()) {
+			auto owned = received.sub();
+			while (owned.next()) {
+				if (!owned.isChunk()) {
+					continue;
+				}
+				if (owned.field() == 1) {
+					handle = Varint(owned.sub(), 1);
+				} else if (owned.field() == 2) {
+					info = owned.sub();
+				}
+			}
+		} else if (received.field() == 3 && !received.isChunk()) {
+			rotation = int(received.varint());
+		}
+	}
+	if (!handle) {
+		return;
+	}
+	auto type = quint64(~0ULL);
+	auto width = quint64();
+	auto height = quint64();
+	auto pointer = quint64();
+	auto stride = quint64();
+	while (info.next()) {
+		switch (info.field()) {
+		case 1: type = info.varint(); break;
+		case 2: width = info.varint(); break;
+		case 3: height = info.varint(); break;
+		case 4: pointer = info.varint(); break;
+		case 6: stride = info.varint(); break;
+		}
+	}
+	const auto now = QDateTime::currentMSecsSinceEpoch();
+	// The pixels belong to the handle: copy before giving it back. Frames
+	// that come faster than the view repaints are let go.
+	if (stream == _videoStream
+		&& stream != 0
+		&& pointer != 0
+		&& type == quint64(kVideoBufferRgba)
+		&& width > 0
+		&& height > 0
+		&& width <= quint64(kMaxRemoteVideoSide)
+		&& height <= quint64(kMaxRemoteVideoSide)
+		&& (stride == 0 || stride >= width * 4)
+		&& !_remoteVideoMuted
+		&& now - _remoteVideoFrameMs >= kRemoteVideoMinIntervalMs) {
+		_remoteVideoFrameMs = now;
+		const auto line = stride ? qsizetype(stride) : qsizetype(width * 4);
+		auto frame = QImage(
+			reinterpret_cast<const uchar*>(quintptr(pointer)),
+			int(width),
+			int(height),
+			line,
+			QImage::Format_RGBA8888).copy();
+		if (rotation != 0) {
+			// VideoRotation: 1 = 90, 2 = 180, 3 = 270 degrees.
+			auto transform = QTransform();
+			transform.rotate(90. * rotation);
+			frame = frame.transformed(transform);
+		}
+		if (!frame.isNull()) {
+			setRemoteVideoShown(true);
+			Q_EMIT remoteVideoFrame(_session, frame);
+		}
 	}
 	_library->dropHandle(handle);
 }
@@ -1192,6 +1549,44 @@ public:
 				Q_EMIT inputFailed();
 			}
 		});
+		connect(engine, &Engine::remoteVideoChanged, this, [this](
+				quint64 session,
+				bool shown) {
+			if (session == _session) {
+				Q_EMIT remoteVideoChanged(shown);
+			}
+		});
+		connect(engine, &Engine::remoteVideoFrame, this, [this](
+				quint64 session,
+				const QImage &frame) {
+			if (session == _session) {
+				Q_EMIT remoteVideoFrame(frame);
+			}
+		});
+		connect(&_camera, &Video::Camera::frame, this, [this](
+				const QImage &frame) {
+			if (!_cameraEnabled) {
+				return;
+			}
+			// Implicitly shared: the engine converts its copy on its
+			// thread, the view scales this one.
+			const auto session = _session;
+			Post(_engine, [=, engine = _engine] {
+				engine->captureVideo(session, frame);
+			});
+			Q_EMIT localVideoFrame(frame);
+		});
+		connect(&_camera, &Video::Camera::failed, this, [this] {
+			// Unplugged in the middle of a call: the default one, once.
+			if (!_cameraEnabled) {
+				return;
+			}
+			_settings.cameraDeviceId = QByteArray();
+			if (!startCamera()) {
+				disableCamera();
+				Q_EMIT cameraFailed(!Video::HasCamera());
+			}
+		});
 		connect(&_devices, &QMediaDevices::audioInputsChanged, this, [this] {
 			devicesChanged(true);
 		});
@@ -1209,6 +1604,7 @@ public:
 	}
 
 	~LiveKitMedia() {
+		_camera.stop();
 		const auto session = _session;
 		Post(_engine, [=, engine = _engine] { engine->close(session); });
 	}
@@ -1226,6 +1622,8 @@ public:
 
 	void leave() override {
 		const auto session = _session;
+		// The call is over for this side: the camera's light goes off.
+		disableCamera();
 		if (_state != State::Idle) {
 			_state = State::Idle;
 			Q_EMIT stateChanged(_state);
@@ -1268,7 +1666,62 @@ public:
 		Post(_engine, [=, engine = _engine] { engine->requestStats(session); });
 	}
 
+	void setCameraEnabled(bool enabled) override {
+		if (_cameraEnabled == enabled) {
+			return;
+		}
+		if (!enabled) {
+			disableCamera();
+			return;
+		}
+		if (!startCamera()) {
+			Q_EMIT cameraFailed(!Video::HasCamera());
+			return;
+		}
+		_cameraEnabled = true;
+		const auto session = _session;
+		Post(_engine, [=, engine = _engine] {
+			engine->setCamera(session, true);
+		});
+		Q_EMIT cameraChanged(true);
+	}
+
+	bool cameraEnabled() const override {
+		return _cameraEnabled;
+	}
+
+	void setCameraDevice(const QByteArray &id) override {
+		_settings.cameraDeviceId = id;
+		if (_cameraEnabled && !startCamera()) {
+			disableCamera();
+			Q_EMIT cameraFailed(!Video::HasCamera());
+		}
+	}
+
 private:
+	[[nodiscard]] bool startCamera() {
+#ifdef ELEZA_DEBUG_TOOLS
+		if (!_settings.debugCamera.isEmpty()) {
+			_camera.startPattern();
+			return true;
+		}
+#endif // ELEZA_DEBUG_TOOLS
+		return _camera.start(_settings.cameraDeviceId);
+	}
+
+	void disableCamera() {
+		_camera.stop();
+		if (!_cameraEnabled) {
+			return;
+		}
+		_cameraEnabled = false;
+		const auto session = _session;
+		Post(_engine, [=, engine = _engine] {
+			engine->setCamera(session, false);
+		});
+		Q_EMIT cameraChanged(false);
+	}
+
 	[[nodiscard]] QAudioDevice pick(bool input, bool *found) const {
 		return input
 			? Audio::PickDevice(
@@ -1318,6 +1771,8 @@ private:
 	QMediaDevices _devices;
 	QAudioDevice _input;
 	QAudioDevice _output;
+	Video::Camera _camera;
+	bool _cameraEnabled = false;
 	State _state = State::Idle;
 
 };

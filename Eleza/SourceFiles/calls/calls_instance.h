@@ -19,6 +19,8 @@
 //    after one, an answered call is joined again (GET /v1/calls/active says
 //    whether it still exists), a call that was only ringing there is
 //    cancelled. A call the user is in on another device is left alone.
+//  * A video call needs nothing more than a voice call: without a camera (or
+//    with one that cannot be opened) it goes on with audio and a notice.
 //  * No microphone, no call: starting and answering are refused with a
 //    notice instead of connecting a call the other side cannot hear.
 //
@@ -42,6 +44,8 @@ enum class Notice {
 	MicrophoneFailed,  // the microphone stopped working during the call
 	InputDeviceChanged,  // the chosen microphone is gone: the default is used
 	OutputDeviceChanged,
+	NoCamera,          // the camera was asked for and there is none
+	CameraFailed,      // … or it could not be opened: the call goes on with audio
 };
 
 class Instance final : public QObject {
@@ -79,9 +83,10 @@ public:
 		return _call && !_call->ended();
 	}
 	// True when a call to that person is now there (started, or was live).
-	bool start(const QString &peerId);
-	// Accepts the call that rings here.
-	void answer();
+	// `video`: as a video call (my camera starts with it).
+	bool start(const QString &peerId, bool video = false);
+	// Accepts the call that rings here; `withCamera`: with my camera on.
+	void answer(bool withCamera = false);
 	void dismissEnded();
 
 	void handleSignal(const Data::CallSignal &signal);
@@ -93,17 +98,20 @@ public:
 Q_SIGNALS:
 	// call() is another call now, or none.
 	void callChanged();
-	// The state, the mute flag or the id of call() changed.
+	// The state, the mute flag, the id, the video intent or one of the
+	// cameras of call() changed.
 	void callUpdated();
 	// call() ended (still there: read endReason(), quiet(), startError()).
 	void callEnded();
 	void notice(Calls::Notice notice);
 
 private:
-	[[nodiscard]] Call::Args callArgs(const QString &peerId) const;
+	[[nodiscard]] Call::Args callArgs(
+		const QString &peerId,
+		bool video = false) const;
 	void setCall(std::unique_ptr<Call> call);
 	void watch(Call *call);
-	void ring(const QString &call, const QString &from);
+	void ring(const QString &call, const QString &from, bool video);
 	void callStateChanged(Call *call);
 	void recover();
 	void checkIncoming(bool force);

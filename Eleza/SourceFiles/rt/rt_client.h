@@ -59,6 +59,7 @@ struct Frame {
 		FeedNew,      // count, since: new posts in the following feed
 		LiveLocation, // data = { chat, seq, sender, location, at, until }
 		Call,         // kind = "call.*", data = the voice service's JSON
+		Group,        // a change of a group: data = { group, pts, kind, data? }
 	};
 	Type type = Type::Disconnected;
 	qint64 pts = 0;

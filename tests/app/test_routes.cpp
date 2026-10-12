@@ -96,6 +96,23 @@ private Q_SLOTS:
 		QCOMPARE(ParseRoute("eli/share/abcp1").type, RouteType::SharedPost);
 		QCOMPARE(Routes::SharedPost("x1"), QStringLiteral("eli/share/x1"));
 		QVERIFY(!ParseRoute("eli/share").valid());
+
+		// Groups: the info screen, «new group» and invite links. The chat
+		// of a group is an ordinary chat route.
+		QCOMPARE(ParseRoute("group/j1team").type, RouteType::Group);
+		QCOMPARE(ParseRoute("group/j1team").id, QStringLiteral("j1team"));
+		QCOMPARE(ParseRoute("group/new").type, RouteType::NewGroup);
+		QCOMPARE(Routes::NewGroup(), QStringLiteral("group/new"));
+		QCOMPARE(Routes::Group("j1team"), QStringLiteral("group/j1team"));
+		QVERIFY(!ParseRoute("group").valid());
+		const auto token = QStringLiteral("j1team.AAAAAAAAAAAAAAAAAAAAAA");
+		QCOMPARE(RouteFromWebPath("/g/" + token)->type, RouteType::GroupInvite);
+		QCOMPARE(RouteFromWebPath("/g/" + token)->id, token);
+		QCOMPARE(RouteFromWebPath("/g/" + token + "/")->id, token);
+		QCOMPARE(Routes::GroupInvite(token), QStringLiteral("g/") + token);
+		QCOMPARE(ParseRoute(Routes::GroupInvite(token)).id, token);
+		QVERIFY(!RouteFromWebPath("/g").has_value());
+		QVERIFY(!ParseRoute("g").valid());
 		QCOMPARE(RouteFromWebPath("/eli/post/p1")->toString(), QStringLiteral("eli/post/p1"));
 		QCOMPARE(RouteFromWebPath("/eli/thread/p1")->toString(), QStringLiteral("eli/post/p1"));
 		QCOMPARE(

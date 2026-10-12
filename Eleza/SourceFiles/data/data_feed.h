@@ -131,8 +131,9 @@ public:
 
 	// ---- reports
 	void reportReasons(base::Guard guard, Fn<void(const ReportReasons &)> done, FailCallback fail = nullptr);
-	// targetKind: post | reply | account | conversation.
-	void sendReport(const QString &targetKind, const QString &target, const QString &reason, const QString &note, base::Guard guard = base::Guard(), Fn<void()> done = nullptr, FailCallback fail = nullptr);
+	// targetKind: post | reply | account | conversation | group |
+	// group_message (target = the group, messageSeq = the message).
+	void sendReport(const QString &targetKind, const QString &target, const QString &reason, const QString &note, base::Guard guard = base::Guard(), Fn<void()> done = nullptr, FailCallback fail = nullptr, qint64 messageSeq = 0);
 
 	// Mention autocomplete (`@abc`): at most five people.
 	void searchUsers(const QString &query, base::Guard guard, Fn<void(const QVector<Profile> &)> done);

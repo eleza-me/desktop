@@ -59,6 +59,9 @@ namespace {
 	case RouteType::ConversationTopics:
 		return QStringLiteral("conversation/topics");
 	case RouteType::Conversation: return QStringLiteral("conversation/") + id;
+	case RouteType::NewGroup: return QStringLiteral("group/new");
+	case RouteType::Group: return QStringLiteral("group/") + id;
+	case RouteType::GroupInvite: return QStringLiteral("g/") + id;
 	case RouteType::Unknown: break;
 	}
 	return QString();
@@ -139,6 +142,12 @@ Route ParseRoute(const QString &route) {
 		result = (parts[1] == QStringLiteral("topics"))
 			? Make(RouteType::ConversationTopics)
 			: Make(RouteType::Conversation, parts[1]);
+	} else if (head == QStringLiteral("group") && count == 2) {
+		result = (parts[1] == QStringLiteral("new"))
+			? Make(RouteType::NewGroup)
+			: Make(RouteType::Group, parts[1]);
+	} else if (head == QStringLiteral("g") && count == 2) {
+		result = Make(RouteType::GroupInvite, parts[1]);
 	}
 	const auto needsId = (result.type == RouteType::Chat)
 		|| (result.type == RouteType::User)
@@ -146,7 +155,9 @@ Route ParseRoute(const QString &route) {
 		|| (result.type == RouteType::Post)
 		|| (result.type == RouteType::SharedPost)
 		|| (result.type == RouteType::Topic)
-		|| (result.type == RouteType::Conversation);
+		|| (result.type == RouteType::Conversation)
+		|| (result.type == RouteType::Group)
+		|| (result.type == RouteType::GroupInvite);
 	if (needsId && result.id.isEmpty()) {
 		return Route();
 	}
@@ -197,6 +208,9 @@ std::optional<Route> RouteFromWebPath(
 		result = Make(RouteType::Post, parts[1]);
 	} else if (parts[0] == QStringLiteral("s") && count == 2) {
 		result = Make(RouteType::SharedPost, parts[1]);
+	} else if (parts[0] == QStringLiteral("g") && count == 2 && !parts[1].isEmpty()) {
+		// An invite link of a group.
+		result = Make(RouteType::GroupInvite, parts[1]);
 	} else if (parts[0] == QStringLiteral("eli")) {
 		if (count == 3 && parts[1] == QStringLiteral("thread")) {
 			result = Make(RouteType::Post, parts[2]);
@@ -305,6 +319,18 @@ QString ConversationTopics() {
 
 QString Conversation(const QString &id) {
 	return Make(RouteType::Conversation, id).toString();
+}
+
+QString NewGroup() {
+	return Make(RouteType::NewGroup).toString();
+}
+
+QString Group(const QString &groupId) {
+	return Make(RouteType::Group, groupId).toString();
+}
+
+QString GroupInvite(const QString &token) {
+	return Make(RouteType::GroupInvite, token).toString();
 }
 
 } // namespace Routes

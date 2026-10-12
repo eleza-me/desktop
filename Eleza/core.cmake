@@ -44,6 +44,12 @@ set(_eleza_core_files
 	data/data_feed.h
 	data/data_graph.cpp
 	data/data_graph.h
+	data/data_group_rules.cpp
+	data/data_group_rules.h
+	data/data_group_types.cpp
+	data/data_group_types.h
+	data/data_groups.cpp
+	data/data_groups.h
 	data/data_image_decode.cpp
 	data/data_image_decode.h
 	data/data_json.cpp

@@ -12,6 +12,15 @@
 // menu; the ranges live next to the text (UTF-16 offsets), follow every edit
 // (History::AdjustEntities) and are sent as entities.
 //
+// Mentions (a group, on a server with the second release of groups): «@»
+// lists the members whose name or handle matches what is typed after it
+// (history_mentions.h); a picked member's name goes into the text and the
+// range is sent as a mention entity with the member's id. Editing inside
+// the name turns it back into plain text. The rules are Data::MentionRules.
+//
+// «Send without sound»: the context menu of the send button; the message
+// goes out with `silent` and alerts nobody.
+//
 // Drafts: the text is saved two seconds after the last keystroke and when the
 // chat is left; while the field has the focus a draft that arrives from
 // another device does not replace what is being typed. Anonymous
@@ -47,6 +56,7 @@ class SessionController;
 namespace History {
 
 class BotKeyboard;
+class MentionsDropdown;
 class TabbedPanel;
 class VoiceRecorder;
 
@@ -117,6 +127,7 @@ protected:
 	void paintEvent(QPaintEvent *e) override;
 	void resizeEvent(QResizeEvent *e) override;
 	void mousePressEvent(QMouseEvent *e) override;
+	void hideEvent(QHideEvent *e) override;
 	bool eventFilter(QObject *object, QEvent *event) override;
 	int resizeGetHeight(int newWidth) override;
 
@@ -164,7 +175,8 @@ private:
 
 	// ---- sending
 	void submit();
-	void send();
+	void send(bool silent = false);
+	void showSendMenu(QPoint globalPosition);
 	void saveEdit();
 	void sendForwards();
 	void sendSticker(const Data::Sticker &sticker);
@@ -172,6 +184,15 @@ private:
 	void pickFiles(bool media);
 	void typing();
 	void showToast(const QString &text);
+
+	// ---- mentions (a group)
+	void updateMentions();
+	void hideMentions();
+	void showMentions(int request, const QVector<Data::User> &users);
+	void pickMention(const Data::User &user);
+	void checkMentions();
+	void placeMentions();
+	[[nodiscard]] QVector<Data::Entity> entitiesToSend() const;
 
 	// ---- the bot's reply keyboard
 	void refreshBotKeyboard();
@@ -213,6 +234,15 @@ private:
 	// ---- the text
 	QString _text;
 	QVector<Data::Entity> _spoilers;
+	// Picked members: type "mention", `user` = the person, `url` = the name
+	// as it was written (a range that no longer reads so is dropped).
+	QVector<Data::Entity> _mentions;
+	MentionsDropdown *_mentionsBox = nullptr;
+	QWidget *_panelParent = nullptr;
+	QString _mentionShownFor; // "<at>:<text>" of the query the list answers
+	int _mentionRequest = 0;
+	bool _group = false;
+	QPointer<Ui::PopupMenu> _sendMenu;
 	int _changeHint = -1;
 	bool _settingText = false;
 

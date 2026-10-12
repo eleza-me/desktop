@@ -1,6 +1,9 @@
 #include "data/data_chats.h"
 
+#include "api/api_client_config.h"
 #include "base/unixtime.h"
+#include "data/data_group_rules.h"
+#include "data/data_groups.h"
 #include "data/data_json.h"
 #include "data/data_messages.h"
 #include "data/data_session.h"
@@ -47,10 +50,15 @@ const Chat *Chats::chat(const QString &id) const {
 	return (i != _chats.cend()) ? &*i : nullptr;
 }
 
+// Group rows stay in the cache while the feature is switched off, hidden.
+bool Chats::shown(const Chat &chat) const {
+	return !chat.isGroup || _session->groups().enabled();
+}
+
 QVector<Chat> Chats::list(Section section) const {
 	auto result = QVector<Chat>();
 	for (const auto &chat : _chats) {
-		if (InSection(chat, section)) {
+		if (InSection(chat, section) && shown(chat)) {
 			result.push_back(chat);
 		}
 	}
@@ -60,7 +68,7 @@ QVector<Chat> Chats::list(Section section) const {
 
 int Chats::count(Section section) const {
 	return int(std::count_if(_chats.cbegin(), _chats.cend(), [&](const Chat &chat) {
-		return InSection(chat, section);
+		return InSection(chat, section) && shown(chat);
 	}));
 }
 
@@ -96,7 +104,7 @@ void Chats::recount() {
 	auto unread = 0;
 	auto muted = 0;
 	for (const auto &chat : _chats) {
-		if (!chat.archived && !chat.isRequest() && chat.unread > 0) {
+		if (!chat.archived && !chat.isRequest() && chat.unread > 0 && shown(chat)) {
 			++(chat.muted ? muted : unread);
 		}
 	}
@@ -292,8 +300,19 @@ bool Chats::applyInfo(const ChatInfo &info) {
 
 void Chats::replaceAll(const QVector<Chat> &chats) {
 	const auto before = _chats.keys();
+	// The inbox does not list groups: their rows are Data::Groups' to keep.
+	auto groups = QVector<Chat>();
+	for (const auto &chat : std::as_const(_chats)) {
+		if (chat.isGroup) {
+			groups.push_back(chat);
+		}
+	}
 	_chats.clear();
 	auto rows = QVector<Storage::Database::Row>();
+	for (const auto &chat : std::as_const(groups)) {
+		_chats.insert(chat.id, chat);
+		rows.push_back({ chat.id, chat.toStored() });
+	}
 	for (const auto &chat : chats) {
 		if (isCleared(chat)) {
 			continue;
@@ -584,6 +603,26 @@ void Chats::loadHeader(
 		base::Guard guard,
 		Fn<void(const ChatInfo &)> done,
 		Fn<void(const Api::Error &)> fail) {
+	if (IsGroupId(chat)) {
+		_session->transport().rpc(u"groups.get"_s)
+			.body(QJsonObject{ { u"group"_s, chat } })
+			.guard(this)
+			.done([=, this](const QJsonObject &result) {
+				const auto header = Group::FromJson(result);
+				_session->groups().applyHeader(header);
+				if (done && guard.alive()) {
+					done(Groups::InfoFor(header));
+				}
+			})
+			.fail([=, this](const Api::Error &error) {
+				_session->groups().handleError(chat, error);
+				if (fail && guard.alive()) {
+					fail(error);
+				}
+			})
+			.send();
+		return;
+	}
 	_session->transport().rpc(u"chat.header"_s)
 		.body(QJsonObject{ { u"chat"_s, chat } })
 		.guard(this)
@@ -669,13 +708,16 @@ void Chats::member(
 		const QJsonObject &body,
 		const QString &action,
 		Fn<void()> revert) {
+	const auto group = IsGroupId(chat);
 	auto request = body;
-	request.insert(u"chat"_s, chat);
-	_session->transport().rpc(u"chat.member"_s)
+	request.insert(group ? u"group"_s : u"chat"_s, chat);
+	_session->transport().rpc(group ? u"groups.member"_s : u"chat.member"_s)
 		.body(request)
 		.guard(this)
 		.fail([=, this](const Api::Error &error) {
-			if (revert) {
+			if (group && _session->groups().handleError(chat, error)) {
+				// The group is gone: there is nothing to put back.
+			} else if (revert) {
 				revert();
 			}
 			_session->reportFailure(action, chat, error);
@@ -698,11 +740,19 @@ void Chats::muteFor(const QString &chat, const QString &duration) {
 	patch(chat, [&](Chat &c) {
 		c.muted = muted;
 		c.mutedUntil = 0;
+		if (c.group) {
+			c.group->muted = muted;
+			c.group->mutedUntil = 0;
+		}
 	});
 	member(chat, QJsonObject{ { u"mute_for"_s, duration } }, u"chat.mute"_s, [=, this] {
 		patch(chat, [&](Chat &c) {
 			c.muted = was;
 			c.mutedUntil = wasUntil;
+			if (c.group) {
+				c.group->muted = was;
+				c.group->mutedUntil = wasUntil;
+			}
 		});
 	});
 }
@@ -713,9 +763,17 @@ void Chats::setArchived(const QString &chat, bool archived) {
 		return;
 	}
 	const auto was = row->archived;
-	patch(chat, [&](Chat &c) { c.archived = archived; });
-	member(chat, QJsonObject{ { u"archived"_s, archived } }, u"chat.archive"_s, [=, this] {
-		patch(chat, [&](Chat &c) { c.archived = was; });
+	const auto apply = [=, this](bool value) {
+		patch(chat, [&](Chat &c) {
+			c.archived = value;
+			if (c.group) {
+				c.group->archived = value;
+			}
+		});
+	};
+	apply(archived);
+	member(chat, QJsonObject{ { u"archived"_s, archived } }, u"chat.archive"_s, [=] {
+		apply(was);
 	});
 }
 
@@ -725,12 +783,27 @@ void Chats::setPinned(const QString &chat, bool pinned) {
 		return;
 	}
 	const auto was = row->pinned;
-	patch(chat, [&](Chat &c) { c.pinned = pinned; });
-	_session->transport().rpc(pinned ? u"chat.pin"_s : u"chat.unpin"_s)
-		.body(QJsonObject{ { u"chat"_s, chat } })
+	const auto apply = [=, this](bool value) {
+		patch(chat, [&](Chat &c) {
+			c.pinned = value;
+			if (c.group) {
+				c.group->pinned = value;
+			}
+		});
+	};
+	apply(pinned);
+	// Pinned groups have a pin list of their own on the server.
+	const auto group = IsGroupId(chat);
+	const auto method = group
+		? (pinned ? u"groups.pin"_s : u"groups.unpin"_s)
+		: (pinned ? u"chat.pin"_s : u"chat.unpin"_s);
+	_session->transport().rpc(method)
+		.body(QJsonObject{ { group ? u"group"_s : u"chat"_s, chat } })
 		.guard(this)
 		.fail([=, this](const Api::Error &error) {
-			patch(chat, [&](Chat &c) { c.pinned = was; });
+			if (!group || !_session->groups().handleError(chat, error)) {
+				apply(was);
+			}
 			_session->reportFailure(u"chat.pin"_s, chat, error);
 		})
 		.send();
@@ -741,13 +814,20 @@ void Chats::setPinnedOrder(const QStringList &chats) {
 	// order for the clients that show one.
 	for (const auto &chat : _chats) {
 		const auto pinned = chats.contains(chat.id);
-		if (chat.pinned != pinned && !chat.isConversation && !chat.isRequest()) {
+		if (chat.pinned != pinned
+			&& !chat.isConversation
+			&& !chat.isRequest()
+			&& !chat.isGroup) {
 			patch(chat.id, [&](Chat &c) { c.pinned = pinned; });
 		}
 	}
+	// The order the server keeps is that of the chats; groups are pinned
+	// one by one.
 	auto ids = QJsonArray();
 	for (const auto &id : chats) {
-		ids.push_back(id);
+		if (!IsGroupId(id)) {
+			ids.push_back(id);
+		}
 	}
 	_session->transport().rpc(u"chat.pinned_chats"_s)
 		.body(QJsonObject{ { u"chats"_s, ids } })
@@ -766,6 +846,10 @@ void Chats::setTheme(const QString &chat, const QString &theme) {
 		c.theme = theme;
 		c.info.theme = theme;
 	});
+	if (IsGroupId(chat)) {
+		// A group has no shared theme: the choice stays on this device.
+		return;
+	}
 	_session->transport().rpc(u"chat.theme"_s)
 		.body(QJsonObject{ { u"chat"_s, chat }, { u"theme"_s, theme } })
 		.guard(this)
@@ -780,6 +864,12 @@ void Chats::setTheme(const QString &chat, const QString &theme) {
 }
 
 void Chats::deleteChat(const QString &chat, bool forEveryone) {
+	if (IsGroupId(chat)) {
+		// A group is left or deleted (Data::Groups); «delete» of its row is
+		// clearing its history for me.
+		_session->groups().clearHistory(chat);
+		return;
+	}
 	const auto row = this->chat(chat);
 	if (!forEveryone) {
 		markCleared(chat, row ? row->lastSeq : 0);
@@ -868,30 +958,47 @@ void Chats::pushDraft(const QString &chat, const Draft &draft) {
 			}
 		}
 	};
+	const auto group = IsGroupId(chat);
+	if (group
+		&& (!_session->groups().administration()
+			|| (_session->clientConfig() && !_session->clientConfig()->draftsEnabled()))) {
+		// A server that does not keep group drafts: the draft never leaves
+		// this device (it stays in the database until it is sent or cleared).
+		if (draft.empty()) {
+			confirmed();
+		}
+		return;
+	}
 	const auto failed = [=, this](const Api::Error &error) {
 		// Best effort: after a transport failure the draft stays local and is
 		// sent again when the connection is back (flushDrafts).
 		if (!error.transient()) {
 			confirmed();
+			if (group && _session->groups().handleError(chat, error)) {
+				return;
+			} else if (group && error.code == u"draft.not_supported") {
+				return;
+			}
 			_session->reportFailure(u"draft.save"_s, chat, error);
 		}
 	};
+	const auto key = group ? u"group"_s : u"chat"_s;
 	if (!draft.empty()) {
 		auto body = QJsonObject{
-			{ u"chat"_s, chat },
+			{ key, chat },
 			{ u"text"_s, draft.text },
 		};
 		Json::Put(body, "reply_to_seq"_L1, draft.replyToSeq);
 		Json::Put(body, "entities"_L1, Json::Array(draft.entities));
-		_session->transport().rpc(u"chat.draft.save"_s)
+		_session->transport().rpc(group ? u"groups.draft.save"_s : u"chat.draft.save"_s)
 			.body(body)
 			.guard(this)
 			.done(confirmed)
 			.fail(failed)
 			.send();
 	} else {
-		_session->transport().rpc(u"chat.draft.clear"_s)
-			.body(QJsonObject{ { u"chat"_s, chat } })
+		_session->transport().rpc(group ? u"groups.draft.clear"_s : u"chat.draft.clear"_s)
+			.body(QJsonObject{ { key, chat } })
 			.guard(this)
 			.done(confirmed)
 			.fail(failed)
@@ -901,6 +1008,10 @@ void Chats::pushDraft(const QString &chat, const Draft &draft) {
 
 void Chats::clearDraft(const QString &chat) {
 	saveDraft(chat, Draft());
+}
+
+bool Chats::hasLocalDraft(const QString &chat) const {
+	return _localDrafts.contains(chat);
 }
 
 void Chats::flushDrafts() {
@@ -939,7 +1050,8 @@ void Chats::capability(const QString &chat, Fn<void(const QString &)> done) {
 }
 
 void Chats::sendTyping(const QString &chat, const QString &kind) {
-	if (!_session->transport().connected()) {
+	if (!_session->transport().connected() || IsGroupId(chat)) {
+		// Groups have no typing indicators.
 		return;
 	}
 	const auto now = base::unixtime::nowMs();

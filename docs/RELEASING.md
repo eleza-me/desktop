@@ -86,7 +86,7 @@ directory must belong to the user, be writable and not be under `/usr`.
 {
 	"format": 1,
 	"channel": "stable",
-	"version": "0.3.0",
+	"version": "0.4.0",
 	"published_at": "2026-10-11T10:00:00Z",
 	"min_supported": "0.1.0",
 	"notes": { "fa": "…", "en": "…" },
@@ -95,8 +95,8 @@ directory must belong to the user, be writable and not be under `/usr`.
 			"size": 35123456,
 			"sha256": "<64 hex digits>",
 			"urls": [
-				"https://eleza.me/desktop/updates/Eleza-0.3.0-windows-x64.zip",
-				"https://github.com/eleza-me/desktop/releases/download/v0.3.0/Eleza-0.3.0-windows-x64.zip"
+				"https://eleza.me/desktop/updates/Eleza-0.4.0-windows-x64.zip",
+				"https://github.com/eleza-me/desktop/releases/download/v0.4.0/Eleza-0.4.0-windows-x64.zip"
 			]
 		},
 		"linux-x86_64": { "size": 9123456, "sha256": "…", "urls": [ "…" ] }
@@ -132,7 +132,7 @@ build.
 4. Merge all of that, then tag the merge commit and push the tag:
 
    ```sh
-   git tag v0.3.0 && git push origin v0.3.0
+   git tag v0.4.0 && git push origin v0.4.0
    ```
 
    (or run the *release* workflow by hand with the version; it creates the tag).
@@ -299,7 +299,7 @@ else. `--update-url` also allows `http://` on the loopback interface;
 
 ```sh
 # a portable build of the version to offer, then:
-tests/tools/make-test-update.sh 0.3.0 <its directory> http://127.0.0.1:8765 /tmp/served
+tests/tools/make-test-update.sh 0.4.0 <its directory> http://127.0.0.1:8765 /tmp/served
 python3 -m http.server 8765 --bind 127.0.0.1 --directory /tmp/served
 # in a packaged copy of an older debug build:
 Eleza --update-url=http://127.0.0.1:8765/update.json --update-key=<the printed key>

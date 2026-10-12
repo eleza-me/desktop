@@ -1,4 +1,6 @@
 #include "history/history_boxes.h"
+#include "data/data_groups.h"
+#include "data/data_group_rules.h"
 
 #include "api/api_client_config.h"
 #include "boxes/peer_list_box.h"
@@ -810,10 +812,29 @@ void ShowDeleteMessagesBox(
 	const auto config = session->data().clientConfig();
 	const auto window = config ? config->deleteForEveryoneWindow() : qint64(0);
 	const auto now = QDateTime::currentMSecsSinceEpoch();
-	const auto direct = chat && !chat->isConversation && !chat->saved;
+	const auto group = chat && chat->isGroup;
+	const auto direct = chat && !chat->isConversation && !chat->saved && !group;
 	const auto conversation = chat && chat->isConversation;
+	// A group: my own messages (inside the server's window, when it sets
+	// one) and, with the right to delete messages, anybody's.
+	const auto groupWindow = group
+		? session->data().groups().deleteOwnWindow() * 1000
+		: qint64(0);
+	const auto deleteRight = group
+		&& chat->group
+		&& chat->group->hasRight(u"delete_messages");
 	// Whether the other side can lose this message too.
 	const auto revocable = [=](const Data::Message &message) {
+		if (group) {
+			return Data::GroupRules::CanDeleteForEveryone(
+				message.mine,
+				message.kind == Data::MessageKind::System,
+				message.seq,
+				message.createdAt,
+				now,
+				groupWindow,
+				deleteRight);
+		}
 		if (message.seq <= 0 || !chat || chat->saved || chat->peerDeleted) {
 			return false;
 		} else if (conversation && !message.mine) {
@@ -834,8 +855,12 @@ void ShowDeleteMessagesBox(
 	args.confirmText = tr::lng_delete(tr::now);
 	args.destructive = true;
 	if (anyRevocable) {
-		const auto name = PeerName(session, *chat);
-		args.checkboxText = tr::lng_history_delete_also_for(tr::now, lt_name, name);
+		args.checkboxText = group
+			? tr::lng_groups_delete_also_everyone(tr::now)
+			: tr::lng_history_delete_also_for(
+				tr::now,
+				lt_name,
+				PeerName(session, *chat));
 		args.checkboxChecked = false;
 		args.checkboxChanged = [=](bool checked) {
 			*forEveryone = checked;
@@ -843,14 +868,26 @@ void ShowDeleteMessagesBox(
 	}
 	args.confirmed = [=](std::function<void()> close) {
 		auto &data = session->data();
+		auto everyone = QVector<qint64>();
 		for (const auto &message : messages) {
 			if (message.local()) {
 				data.outbox().discard(message.clientMessageId);
+			} else if (group && *forEveryone && revocable(message)) {
+				// One change for all of them.
+				everyone.push_back(message.seq);
 			} else {
 				data.messages().deleteMessage(
 					chatId,
 					message.seq,
 					*forEveryone && revocable(message));
+			}
+		}
+		if (everyone.size() > 1 && data.groups().administration()) {
+			data.groups().deleteMessages(chatId, everyone);
+		} else {
+			// (The bulk call came with the second release of groups.)
+			for (const auto seq : std::as_const(everyone)) {
+				data.messages().deleteMessage(chatId, seq, true);
 			}
 		}
 		close();

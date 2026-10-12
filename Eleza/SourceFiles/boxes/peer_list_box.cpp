@@ -48,7 +48,10 @@ PeerListRow PeerListRow::FromChat(
 	result.id = chat.id;
 	result.title = Support::ChatTitle(session, chat);
 	result.verified = chat.verified;
-	if (chat.saved) {
+	if (chat.isGroup) {
+		result.groupId = chat.id;
+		result.groupPhoto = chat.group ? chat.group->photo : QString();
+	} else if (chat.saved) {
 		result.special = Ui::UserpicKind::Saved;
 	} else if (chat.peerDeleted) {
 		result.special = Ui::UserpicKind::Deleted;
@@ -253,7 +256,9 @@ void PeerListBox::paintRow(
 		size,
 		size,
 		width);
-	if (row.userId.isEmpty()) {
+	if (!row.groupId.isEmpty()) {
+		_userpics->paintGroup(p, userpic, row.groupId, row.groupPhoto, row.title);
+	} else if (row.userId.isEmpty()) {
 		_userpics->paintSpecial(p, userpic, row.special, row.id, row.title);
 	} else {
 		_userpics->paint(p, userpic, row.userId);
@@ -357,7 +362,8 @@ void PeerListBox::rowChosen(int index) {
 
 void PeerListBox::refreshSubmit() {
 	if (_submit) {
-		_submit->setDisabled(_selected.isEmpty());
+		_submit->setDisabled(_selected.isEmpty()
+			&& !_controller->submitWithoutSelection());
 		_submit->setText(_selected.isEmpty()
 			? _controller->submitText()
 			: (_controller->submitText()
@@ -369,7 +375,7 @@ void PeerListBox::refreshSubmit() {
 
 void PeerListBox::userpicUpdated(const QString &userId) {
 	for (auto i = 0; i != int(_filtered.size()); ++i) {
-		if (shown(i).userId == userId) {
+		if (shown(i).userId == userId || shown(i).groupId == userId) {
 			_list->updateRow(i);
 		}
 	}

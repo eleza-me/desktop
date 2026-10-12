@@ -70,14 +70,19 @@ struct Preview {
 	// The last message has a picture worth a mini thumbnail.
 	bool thumbnail = false;
 };
+// A group row names who wrote the last message («سارا: سلام») and words its
+// notes with people's names: the list passes both (`senderName` is the first
+// name of the sender, `noteText` the worded note of a system message).
 [[nodiscard]] Preview PreviewFor(
 	const Data::Chat &chat,
-	const QString &activityKind = QString());
+	const QString &activityKind = QString(),
+	const QString &senderName = QString(),
+	const QString &noteText = QString());
 
 // Whether the «برای … هم حذف شود» checkbox makes sense: a direct chat with a
 // person (not «Saved messages», not a bot, not a conversation).
 [[nodiscard]] bool CanDeleteForBoth(const Data::Chat &chat);
-// Pinning is offered for direct chats outside the requests.
+// Pinning is offered for direct chats and groups outside the requests.
 [[nodiscard]] bool CanPin(const Data::Chat &chat);
 
 // "1h" -> «یک ساعت» … for the mute submenu.

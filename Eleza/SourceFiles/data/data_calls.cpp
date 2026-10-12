@@ -29,6 +29,7 @@ CallJoin CallJoin::FromJson(const QJsonObject &json) {
 	result.call = String(json, "call"_L1);
 	result.state = String(json, "state"_L1);
 	result.peer = String(json, "peer"_L1);
+	result.video = Bool(json, "video"_L1);
 	result.media = json;
 	return result;
 }
@@ -45,6 +46,7 @@ CallInfo CallInfo::FromJson(const QJsonObject &json) {
 		? Int64(json, "duration_s"_L1)
 		: -1;
 	result.delivered = Bool(json, "delivered"_L1);
+	result.video = Bool(json, "video"_L1);
 	return result;
 }
 
@@ -54,6 +56,7 @@ ActiveCall ActiveCall::FromJson(const QJsonObject &json) {
 	result.state = String(json, "state"_L1);
 	result.peer = String(json, "peer"_L1);
 	result.caller = (String(json, "role"_L1) == u"caller");
+	result.video = Bool(json, "video"_L1);
 	result.createdAt = Int64(json, "created_at"_L1);
 	return result;
 }
@@ -76,6 +79,7 @@ CallSignal CallSignal::FromJson(const QString &type, const QJsonObject &json) {
 	result.reason = String(json, "reason"_L1);
 	result.from = String(json, "from"_L1);
 	result.device = String(json, "device"_L1);
+	result.video = Bool(json, "video"_L1);
 	if (result.call.isEmpty()) {
 		result.type = Type::Unknown;
 	}
@@ -196,10 +200,16 @@ void Calls::post(
 
 void Calls::invite(
 		const QString &userId,
+		bool video,
 		base::Guard guard,
 		JoinDone done,
 		FailCallback fail) {
-	post(u"/v1/calls"_s, { { u"user_id"_s, userId } }, guard, [=](
+	auto body = QJsonObject{ { u"user_id"_s, userId } };
+	if (video) {
+		// Never `false`: a server without video calls refuses the field.
+		body.insert(u"video"_s, true);
+	}
+	post(u"/v1/calls"_s, body, guard, [=](
 			const QJsonObject &result) {
 		done(CallJoin::FromJson(result));
 	}, fail);

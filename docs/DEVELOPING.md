@@ -383,6 +383,9 @@ One string per place (`window/window_routes.h`). Never build them by hand: use
 | `settings[/<section>]` | `Routes::Settings(section)` | Settings | settings |
 | `conversation/topics` | `Routes::ConversationTopics()` | Chats | conversation |
 | `conversation/<id>` | `Routes::Conversation(id)` | Chats | conversation |
+| `group/new` | `Routes::NewGroup()` | Chats | groups («گروه تازه») |
+| `group/<groupId>` | `Routes::Group(id)` | Chats | groups (the info screen; the chat of a group is `chat/<groupId>`) |
+| `g/<token>` | `Routes::GroupInvite(token)` | Chats | groups (the box of an invite link) |
 
 ```cpp
 Window::RegisterRouteHandler(Window::RouteType::Chat, [](
@@ -402,7 +405,8 @@ first and are for `debug/…` routes.
 
 Links: `Support::OpenLink(controller, url)` (`support/links.h`) turns
 `https://eleza.me/u/sara`, `https://eleza.me/@sara`, `https://eleza.me/p/<post>`,
-`https://eleza.me/s/<share slug>`, `eleza://chat/c1`, `@sara`, `#tag` into routes, asks before
+`https://eleza.me/s/<share slug>`, `https://eleza.me/g/<invite token>`, `eleza://chat/c1`,
+`@sara`, `#tag` into routes, asks before
 opening a foreign site in the browser, and refuses anything that is not http(s) / mailto /
 tel. For rich text: `label->setLinkHandler(Support::LinkHandler(controller))`, or
 `Support::ActivateTextLink(controller, text.link(index))` in custom painted text.
@@ -446,9 +450,9 @@ All in `lib/ui/ui/**`; every header starts with an example. The gallery (`--gall
 | --- | --- |
 | An image from the media cache in a widget | `Support::MakeImageSource(&session, ref, variant, { .blurhash = …, .aspect = … })` -> `Ui::ImageView::setSource` |
 | A photo / video poster of a message | `Support::MakeMessageImageSource(&session, message)` |
-| A userpic widget bound to a user | `Support::UserpicButton(parent, &session, userId, size)`, `setShowOnline(true)`, `setSpecial(kind, name, id)` |
-| Userpics in a custom painted list | `Support::UserpicPainter _userpics{ &session, [=](const QString &userId) { … update rows … } };` then `_userpics.paint(p, rect, userId)` / `paintSpecial(…)` |
-| Chat title / one-line message preview | `Support::ChatTitle(&session, chat)`, `Support::MessagePreview(message)` (`support/chat_text.h`) |
+| A userpic widget bound to a user | `Support::UserpicButton(parent, &session, userId, size)`, `setShowOnline(true)`, `setSpecial(kind, name, id)`, `setGroup(groupId, photoId, title)` |
+| Userpics in a custom painted list | `Support::UserpicPainter _userpics{ &session, [=](const QString &userId) { … update rows … } };` then `_userpics.paint(p, rect, userId)` / `paintGroup(p, rect, groupId, photoId, title)` / `paintSpecial(…)` |
+| Chat title / one-line message preview | `Support::ChatTitle(&session, chat)`, `Support::MessagePreview(message)`; with names in the notes of a group: `Support::MessagePreview(&session, message)`, `Support::MemberName(&session, userId)` (`support/chat_text.h`) |
 | An error to the user | `Support::ErrorText(error, fallback)` for inline text, `Support::ShowError(controller, error[, fallback])` for a toast |
 | «در حال اتصال…» in a top bar | `new Support::ConnectionTitle(bar, &session, title)` (or `Mode::Subtitle` for a chat header); `Support::ConnectionState::For(&session)` for the raw state |
 | Open a link / mention / hashtag | `Support::OpenLink`, `Support::LinkHandler` |
@@ -457,7 +461,7 @@ All in `lib/ui/ui/**`; every header starts with an example. The gallery (`--gall
 | A searchable list of people / chats | `Boxes::PeerListBox` with your `Boxes::PeerListController`; ready-made `Boxes::ChooseChatsBox(&session, args, done)` |
 | A round photo crop | `Boxes::PickAndCropPhoto(parent, show, done)`, `Boxes::SaveCroppedPhoto(image, guard, done)` |
 | Country list, about | `Boxes::CountrySelectBox`, `Boxes::AboutBox` |
-| «گزارش» (post / reply / account / conversation) | `Boxes::ShowReportBox(controller, args)` |
+| «گزارش» (post / reply / account / conversation / group / a message of a group) | `Boxes::ShowReportBox(controller, args)` |
 | Full-window photo / video viewer | `Media::ShowImageViewer(controller->window(), items, index)` |
 | Voice / music playback | `Media::Player().toggle(track, &session)`; signals `stateChanged`, `positionChanged`; `cycleSpeed()` |
 | Inline video | `Media::VideoPlayerWidget` (`setSource(localPath)`, `setPoster`, `play`) |
@@ -553,7 +557,13 @@ signals: sent(chat, clientMessageId, seq), failed(chat, clientMessageId, error)
 MediaHandlePtr Media::request(const MediaRef &ref, MediaVariant variant = MediaVariant::Thumb);
 MediaHandlePtr Media::request(const MediaRef &ref, MediaVariant variant, const Options &options);  // decode, fit, force
 QImage Media::cached(const MediaRef &ref, MediaVariant variant, QSize fit = QSize()) const;
+QImage Media::picture(const MediaRef &ref, MediaVariant variant = MediaVariant::Thumb);
+// ^ a person's or a group's picture ready to paint NOW: from the pictures' own store (nothing
+//   else evicts it) or decoded on the spot from its small cached file. Null only when it was
+//   never fetched. Support::UserpicPainter / UserpicButton use it, so a face that was seen
+//   once never flashes its initial again; paint userpics through them.
 MediaRef::Avatar(userId, avatarId) | Attachment(chat, seq) | PostMedia(postId, mediaId) | Url(url)
+        | GroupPhoto(groupId, photoId) | InvitePhoto(inviteToken, photoId)
 MediaVariant::Thumb | Feed | Full | Poster | Mp4 | Audio | File | Cover
 MediaHandle: isReady(), isFailed(), image(), filePath(), progress(); signals ready(), failed(), progressChanged()
 // Keep the handle while the media is on screen.
@@ -622,6 +632,18 @@ void Stickers::setInstalled(const QString &packId, bool installed);  noteUsed(co
 
 // ---- sync (data/data_sync.h)
 bool Sync::updating() const;     signals: updatingChanged(bool), messageReceived(const Data::Message &)
+
+// ---- groups (data/data_groups.h; section 13)
+bool Groups::enabled() const;          // client-config `feature.groups`
+bool Groups::administration() const;   // the second release: admins, links, pins, mentions
+const Group *Groups::group(const QString &id) const;   // the header of a group in the list
+void Groups::create(request, guard, done, fail);   leave / deleteGroup / clearHistory / setNotify / edit / transfer
+void Groups::loadMembers(group, filter, cursor, guard, done, fail);   addMembers / removeMember / searchMembers
+void Groups::setAdmin / unsetAdmin / restrict / ban / unban / setPermissions / deleteMessages
+void Groups::loadInvites / createInvite / revokeInvite / invitePreview / joinByInvite / loadJoinRequests / decideJoinRequest
+signals: groupRemoved(group, status), membersChanged(group), messageReceived(message, addressesMe), enabledChanged()
+// A group is a row of Data::Chats (Chat::isGroup, Chat::group = the header) and its messages
+// are in Data::Messages under the group's id: Data::IsGroupId(id) routes every call.
 ```
 
 Errors: `Api::Error { status, code, message, retryable, retryAfter, requestId }` with
@@ -688,9 +710,9 @@ Don't
 * no `QDesktopServices::openUrl` on addresses from the network — `Support::OpenLink`;
 * no stubs / TODOs left behind; no third-party client code; authorship is `eleza`.
 
-## 12. Voice calls (`calls/`)
+## 12. Voice and video calls (`calls/`)
 
-One-to-one voice calls with the mobile apps. The server decides everything about a call
+One-to-one voice and video calls with the mobile apps. The server decides everything about a call
 (`/v1/calls…`, the `call.*` signals of the realtime connection, `privacy.calls`); the audio
 goes through an SFU room of two that the server names in the join payload. The module is
 compiled with `ELEZA_ENABLE_CALLS` (ON by default; `docs/BUILDING.md`, "Voice calls: the
@@ -701,7 +723,8 @@ media library") and nothing outside it includes its headers.
 | `data/data_calls.*` (core) | the wire: `Data::CallsApi` (start, accept, reject, cancel, hangup, ringing, connected, rejoin, qos, get, incoming, active), `Data::CallSignal`, call records (`ClassifyCallRecord`), `CallAvailabilityFor(chat)` — when the top bar shows, disables or hides the call button |
 | `calls_call.*` | `Calls::Call`: one call's state machine (Calling → Ringing / Incoming → Connecting → InCall ↔ Reconnecting → Ended) between the API, the signals and the media. Its header lists the rules it shares with the mobile apps (who reports what, polling, the reconnect budget). No widgets |
 | `calls_instance.*` | `Calls::Instance`: which call there is — one at a time, glare (both call each other), a call that rings while the start is on its way, calls found after a restart (`calls/active`) or without the realtime connection (`calls/incoming`), "no microphone" |
-| `calls_media.h` | `Calls::Media`, the interface the call talks to: join / leave / mute / devices / stats. Everything behind it can be replaced without touching the rest |
+| `calls_media.h` | `Calls::Media`, the interface the call talks to: join / leave / mute / devices / stats, and the cameras (`setCameraEnabled`, `localVideoFrame`, `remoteVideoFrame`, `remoteVideoChanged`). Everything behind it can be replaced without touching the rest |
+| `calls_video.*` | `Calls::Video::Camera`: the frames of a camera (Qt Multimedia) as RGBA pictures of at most 640×480 at 15 per second; the list of cameras |
 | `calls_media_livekit.cpp`, `calls_ffi.*`, `calls_ffi_proto.h`, `calls_audio_io.*` | the implementation: the LiveKit library loaded at run time (four C functions exchanging protobuf messages), the microphone and the loudspeaker through Qt Multimedia, the library's audio processing (echo, noise, gain). All of it lives on one thread ("Calls media"); the GUI thread only posts to it |
 | `calls_service.*` | `Calls::Service`, one per signed-in session: owns the instance, the sounds, the incoming-call window, the settings on their way to a running call |
 | `calls_panel.*`, `calls_view.*`, `calls_incoming_window.*`, `calls_settings.*`, `calls_widgets.*`, `calls_text.*`, `calls_sounds.*` | what the user sees and hears: the bar on top of the window (`MainWindow::setTopStrip`), the expanded view, the always-on-top incoming window, Settings → «تماس‌ها», the phrases of every state |
@@ -709,8 +732,9 @@ media library") and nothing outside it includes its headers.
 
 How it is plugged in (all of these are general hooks, calls are their first user):
 
-* `window/window_calls.h` — `Window::CallsSupported()` / `Window::StartCall(controller, userId)`:
-  what the chat top bar, the profile and a call record in the history use.
+* `window/window_calls.h` — `Window::CallsSupported()` / `Window::StartCall(controller, userId[, video])`
+  / `Window::VideoCallsOffered(controller)`: what the chat top bar, the profile and a call
+  record in the history use.
 * `Settings::RegisterCallsPage(factory)` — the «تماس‌ها» section exists only when somebody
   registered it.
 * `Core::Application::registerExitTask` (hang up before the process ends or the user signs
@@ -719,6 +743,35 @@ How it is plugged in (all of these are general hooks, calls are their first user
 
 The sounds (`Resources/sounds/call_*.wav`) are generated: `python3
 codegen/scripts/gen_call_sounds.py` writes the same bytes every time.
+
+### Video
+
+A call has a `video` *intent* (`POST /v1/calls {"video": true}`), which the server repeats on
+the join, the call views, every signal and the call record; it words the call («تماس
+تصویری») and decides whether the caller's camera starts with it. The camera itself is a track
+of the SFU room that either side publishes or stops at any time in a call of either kind —
+the backend is never told — and the layout of the call view follows the tracks, not the flag
+(the table is in `calls_view.h`).
+
+* **Gate.** `Api::ClientConfig::videoCallsEnabled()` (`feature.video_calls`; absent = off):
+  without it there is no video call button, no camera toggle, no camera row in the settings
+  and no `video` in a request. `call.video_disabled` on a start is answered by starting the
+  same call as a voice call.
+* **Sending.** `Calls::Video::Camera` (GUI thread) → `Media::setCameraEnabled` → the engine
+  creates a video source of the picture's size, a track with the source `camera`, publishes
+  it and feeds it RGBA frames (`CaptureVideoFrame`); turning the camera off unpublishes it.
+  After a rejoin the camera is published again by its next frame.
+* **Receiving.** A subscribed video track gets a video stream that delivers RGBA frames;
+  each is copied into a `QImage` and handed to the view at up to 25 per second. A muted or
+  unsubscribed track ends it (`remoteVideoChanged(false)`).
+* **Falling back to audio.** No camera, a camera that cannot be opened or that is unplugged,
+  a publish the SFU refuses: a notice, and the call goes on as it was.
+* **The incoming window** of a video call has «فقط صدا» and «تصویری»; Enter answers without
+  the camera.
+
+`calls_media_probe --camera=pattern` publishes generated frames and prints what arrives from
+the other side (`video local=… remote=… size=…`): two of them in one room are the end-to-end
+check of video through a real SFU without a camera.
 
 ### Testing calls
 
@@ -759,9 +812,58 @@ Debug hooks of the module (`ELEZA_DEBUG_TOOLS` only):
 
 | Hook | Does |
 | --- | --- |
-| route `debug/calls/<state>[?user=<id>]` | a call in that state without a server, for grabs: `calling`, `ringing`, `connecting`, `connected`, `muted`, `reconnecting`, `ended`, `declined`, `no-answer`, `busy`, `failed`, `lost`, `not-allowed` (the bar; add `-expanded` for the call view), `incoming` (the window), `missed` (the notification). Run it after the chats are loaded (`wait:700;route:debug/calls/connected`) |
+| route `debug/calls/<state>[?user=<id>]` | a call in that state without a server, for grabs: `calling`, `ringing`, `connecting`, `connected`, `muted`, `reconnecting`, `ended`, `declined`, `no-answer`, `busy`, `failed`, `lost`, `not-allowed` (the bar; add `-expanded` for the call view), `incoming` (the window), `missed` (the notification); video calls: `video-incoming` (the window with «فقط صدا» / «تصویری»), `video-ringing` (my camera while it rings), `video` (both cameras), `video-remote`, `video-local` (generated pictures; they open the call view). Run it after the chats are loaded (`wait:700;route:debug/calls/connected`) |
+| `ELEZA_DEBUG_CALL_CAMERA=pattern` | generated video frames (colour bars, a moving bar, a frame counter) instead of a camera |
 | `ELEZA_DEBUG_CALL_INPUT=tone:<Hz>` | a tone instead of the microphone (on during the first half of every second of the clock, so a recording shows the delay); also makes "no microphone" pass |
 | `ELEZA_DEBUG_CALL_OUTPUT=<file.wav>` | records what would be played (48 kHz mono) and writes `<file.wav>.json` with the time of its first sample |
-| `ELEZA_DEBUG_CALL_CONTROL=<folder>` | drives the calls from a script: a line in `<folder>/command` (`start <user id>`, `answer`, `hangup`, `mute`, `dismiss`, `input <device id>`, `quit`), the call's state in `<folder>/state`, every change in `<folder>/events` |
+| `ELEZA_DEBUG_CALL_CONTROL=<folder>` | drives the calls from a script: a line in `<folder>/command` (`start <user id>`, `start-video <user id>`, `answer`, `answer-video`, `camera`, `hangup`, `mute`, `dismiss`, `input <device id>`, `quit`), the call's state in `<folder>/state` (also `video`, `camera`, `remote_video`, `local_frame`, `remote_frame`), every change in `<folder>/events` |
 | `ELEZA_DEBUG_CALL_INCOMING_INTERVAL_MS=<n>` | how often a copy without the realtime connection asks whether a call rings (a minute otherwise) |
 | `ELEZA_LIVEKIT_FFI=<file>` | another build of the media library |
+
+## 13. Groups (`data/data_group*`, `groups/`, and the chat list / chat screen)
+
+A group is not a chat on the server — its own ids (`j…`), routes (`/v1/groups…`,
+`groups.*`), counters and sync — but the user meets it in the same places: a row of the chat
+list and the ordinary chat screen. So there is no second list and no second chat screen:
+
+| Where | What |
+| --- | --- |
+| `data/data_group_rules.*` | every decision as a plain function, tested one by one (`tests/core/test_group_rules.cpp`): the pts rule of a live frame, what the answer of a send means, catch-up entries, unread from a difference, service notes, composer states, the rights table the server evaluates (mirrored from its tests), invite links, mentions (where one starts, UTF-16 offsets, "does it address me") |
+| `data/data_group_types.*` | `Group` (the header as I see it), `GroupMember`, `GroupInvite`, `GroupInvitePreview`, `GroupJoinRequest` |
+| `data/data_groups.*` | `Data::Groups`: the sync track (catch-up after every Hello, live frames, per-group difference, my own place from the user-level log) and every action. Its header explains the two counters kept per row. `tests/core/test_groups.cpp` drives it on the fake transport |
+| `data/data_chats.*`, `data_messages.*`, `data_outbox.*` | route by `Data::IsGroupId(id)`: a group's row is a `Data::Chat` with `isGroup` and `group`, its history lives in `Data::Messages`, its sends go through the outbox like any other (idempotent by client message id) |
+| `dialogs/` | group rows: the group's photo, «سارا: …» previews, notes with names, the «@» badge of an unread mention, «گروه تازه» in «پیام جدید» |
+| `history/` | the chat screen in a group: the sender's name (one of eight colours by user id) and role tag above the first bubble of a run and the picture next to the last one (`View::Delegate::elementGroup / elementSender`), notes with names, the composer's states (restricted with the time left, slow mode with a countdown), «@» suggestions (`history_mentions.*`), delete for everyone by rights, pins by permission |
+| `groups/` | everything else: `groups_info.*` (the info screen, route `group/<id>`), `groups_boxes.*` (creating a group, adding members, the box of an invite link, notification level, edit, permissions, admin rights, restrictions, bans, invite links, join requests, delete, report, the menu of a member), `groups_module.cpp` (routes, the chat menu filler, debug routes) |
+
+**Gates.** `Groups::enabled()` (`feature.groups`): off means no group row, no request and no
+entry point anywhere. `Groups::administration()` (the server lists `groups.max_admins`): the
+second release — admins, restrictions, bans, permissions, invite links, join requests, pins,
+mentions, reports, server drafts. What a screen offers beyond that comes from the header:
+`group.can("add_members")` for permissions, `group.hasRight("ban_users")` for admin rights,
+`Data::GroupRights::CanPromote / CanRestrict / CanBan(me, target)` for a member row. The
+server has the last word; `group.right_required` re-reads the header.
+
+**Testing by hand.** `tests/tools/mock-groups.mjs` is a proxy in front of the usual mock
+stack that owns everything of groups (and gives people pictures):
+
+```sh
+node <pwa>/scripts/mock-api.mjs &                       # :8000
+PORT=8102 TARGET=http://127.0.0.1:8000 node tests/tools/mock-history.mjs &
+PORT=8103 TARGET=http://127.0.0.1:8102 node tests/tools/mock-groups.mjs &
+Eleza --api=http://127.0.0.1:8103 --workdir=/tmp/wd-groups --no-single-instance --debug-login=+989121234567:123456
+```
+
+Its header lists the groups it starts with (one I own, one where I am restricted, one in
+slow mode, one of 240 members where I am an admin), the invite tokens for every answer of a
+preview, and the switches: `GROUPS=off` (the feature flag absent), `PHASE=1` (a server of the
+first release), `VIDEO=off`, `AVATAR_DELAY=<ms>`, `POST /control/frame` (a live frame),
+`GET /control/stats` (how often each picture was fetched).
+
+Debug routes (`ELEZA_DEBUG_TOOLS`): `debug/group-new`, `debug/group-add/<g>`,
+`debug/group-edit/<g>`, `debug/group-notify/<g>`, `debug/group-perms/<g>`,
+`debug/group-links/<g>`, `debug/group-requests/<g>`, `debug/group-members/<g>/<admins|
+restricted|banned>`, `debug/group-admin/<g>/<u>`, `debug/group-restrict/<g>/<u>`,
+`debug/group-member-menu/<g>/<u>[/<role>]`, `debug/group-leave/<g>`, `debug/group-clear/<g>`,
+`debug/group-delete/<g>`, `debug/group-report/<g>`; the screens themselves are routes
+(`group/<g>`, `g/<token>`, `chat/<g>`).

@@ -1060,6 +1060,12 @@ void Widget::showMenu() {
 			tr::lng_calls_voice_call(tr::now),
 			[=, this] { Window::StartCall(controller(), callee); },
 			&st::profileMenuCallIcon);
+		if (Window::VideoCallsOffered(controller())) {
+			add(
+				tr::lng_calls_video_call(tr::now),
+				[=, this] { Window::StartCall(controller(), callee, true); },
+				&st::profileMenuVideoCallIcon);
+		}
 	}
 	for (const auto entry : model.menu) {
 		switch (entry) {

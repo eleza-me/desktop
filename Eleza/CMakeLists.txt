@@ -19,6 +19,7 @@ set(eleza_gui_modules
 	dialogs
 	history
 	conversation
+	groups
 	eli
 	search
 	profile

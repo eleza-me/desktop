@@ -1,5 +1,6 @@
 #include "calls/calls_service.h"
 
+#include "api/api_client_config.h"
 #include "calls/calls_incoming_window.h"
 #include "calls/calls_panel.h"
 #include "calls/calls_sounds.h"
@@ -162,7 +163,10 @@ MediaSettings Service::mediaSettings() const {
 	result.echoCancellation = settings.echoCancellation;
 	result.noiseSuppression = settings.noiseSuppression;
 	result.autoGainControl = true;
+	result.cameraDeviceId = settings.cameraDevice;
 #ifdef ELEZA_DEBUG_TOOLS
+	// ELEZA_DEBUG_CALL_CAMERA=pattern: generated frames instead of a camera.
+	result.debugCamera = qEnvironmentVariable("ELEZA_DEBUG_CALL_CAMERA");
 	result.debugInput = qEnvironmentVariable("ELEZA_DEBUG_CALL_INPUT");
 	result.debugOutput = qEnvironmentVariable("ELEZA_DEBUG_CALL_OUTPUT");
 #endif // ELEZA_DEBUG_TOOLS
@@ -215,7 +219,28 @@ void Service::watchCall() {
 	}
 	_watched = call;
 	_inputLevel = _outputLevel = 0.;
+	_localFrame = _remoteFrame = QImage();
 	if (call) {
+		connect(call, &Call::localVideoFrame, this, [this](const QImage &frame) {
+			_localFrame = frame;
+			Q_EMIT videoFrameChanged();
+		});
+		connect(call, &Call::remoteVideoFrame, this, [this](const QImage &frame) {
+			_remoteFrame = frame;
+			Q_EMIT videoFrameChanged();
+		});
+		connect(call, &Call::cameraChanged, this, [this](bool enabled) {
+			if (!enabled && !_localFrame.isNull()) {
+				_localFrame = QImage();
+				Q_EMIT videoFrameChanged();
+			}
+		});
+		connect(call, &Call::remoteVideoChanged, this, [this](bool shown) {
+			if (!shown && !_remoteFrame.isNull()) {
+				_remoteFrame = QImage();
+				Q_EMIT videoFrameChanged();
+			}
+		});
 		connect(call, &Call::levelsChanged, this, [this](
 				float input,
 				float output) {
@@ -343,12 +368,37 @@ Window::SessionController *Service::controller() const {
 	return _controller.data();
 }
 
-void Service::start(const QString &userId) {
+bool Service::videoOffered() const {
+	return _session->account().clientConfig().videoCallsEnabled();
+}
+
+void Service::toggleCamera() {
+	const auto call = this->call();
+	if (!call || call->ended() || !videoOffered()) {
+		return;
+	}
+	call->setCameraEnabled(!call->cameraEnabled());
+}
+
+void Service::setCameraDevice(const QByteArray &id) {
+	auto settings = Core::App().settings().calls();
+	settings.cameraDevice = id;
+	Core::App().settings().setCalls(settings);
+	if (const auto call = this->call(); call && !call->ended()) {
+		call->setCameraDevice(id);
+	}
+}
+
+void Service::start(const QString &userId, bool video) {
 	if (!_instance) {
 		return;
 	}
 	const auto already = live() && (call()->peerId() == userId);
-	if (_instance->start(userId) && already) {
+	const auto withVideo = video && videoOffered();
+	if (_instance->start(userId, withVideo) && !already && withVideo) {
+		// A video call is looked at: the view, not the bar.
+		setExpanded(true);
+	} else if (already) {
 		// «تماس» on somebody I am talking to: show that call.
 		if (call()->state() != State::Incoming) {
 			setExpanded(true);
@@ -356,14 +406,18 @@ void Service::start(const QString &userId) {
 	}
 }
 
-void Service::answer() {
+void Service::answer(bool withCamera) {
 	if (!_instance) {
 		return;
 	}
-	_instance->answer();
+	const auto camera = withCamera && videoOffered();
+	_instance->answer(camera);
 	if (const auto call = this->call();
 		call && !call->ended() && call->state() != State::Incoming) {
 		showWindow();
+		if (call->video()) {
+			setExpanded(true);
+		}
 	}
 }
 
@@ -379,7 +433,8 @@ void Service::callAgain() {
 		return;
 	}
 	const auto peer = call->peerId();
-	_instance->start(peer);
+	const auto video = call->video() && videoOffered();
+	_instance->start(peer, video);
 }
 
 void Service::toggleMuted() {
@@ -438,14 +493,20 @@ void Service::updateIncomingWindow() {
 		_incoming = nullptr;
 		return;
 	}
+	// The camera is offered only where the server has video calls.
+	const auto video = call->video() && videoOffered();
 	if (_incoming && _incoming->callId() == call->id()) {
+		_incoming->setVideo(video);
 		return;
 	}
 	_incoming = std::make_unique<IncomingWindow>(
 		_session,
 		call->id(),
-		call->peerId());
-	_incoming->setAcceptCallback([this] { answer(); });
+		call->peerId(),
+		video);
+	_incoming->setAcceptCallback([this](bool withCamera) {
+		answer(withCamera);
+	});
 	_incoming->setDeclineCallback([this] { hangup(); });
 	_incoming->showAtCorner();
 }

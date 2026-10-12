@@ -168,7 +168,11 @@ QString ActivityText(const QString &kind) {
 	return tr::lng_action_typing(tr::now);
 }
 
-Preview PreviewFor(const Data::Chat &chat, const QString &activityKind) {
+Preview PreviewFor(
+		const Data::Chat &chat,
+		const QString &activityKind,
+		const QString &senderName,
+		const QString &noteText) {
 	auto result = Preview();
 	const auto activity = ActivityText(activityKind);
 	if (!activity.isEmpty()) {
@@ -186,7 +190,9 @@ Preview PreviewFor(const Data::Chat &chat, const QString &activityKind) {
 	const auto &message = *chat.lastMessage;
 	if (message.kind == Data::MessageKind::System) {
 		result.kind = Preview::Kind::Service;
-		result.text = Support::MessagePreview(message);
+		result.text = noteText.isEmpty()
+			? Support::MessagePreview(message)
+			: noteText;
 		if (result.text.isEmpty()) {
 			result.kind = Preview::Kind::Empty;
 		}
@@ -205,6 +211,18 @@ Preview PreviewFor(const Data::Chat &chat, const QString &activityKind) {
 			tr::now,
 			lt_text,
 			QString()).trimmed();
+	} else if (chat.isGroup && !senderName.isEmpty()) {
+		result.prefix = tr::lng_groups_preview_from(
+			tr::now,
+			lt_name,
+			senderName);
+	}
+	if (message.underReview) {
+		// A moderator holds it back: the row says so, nothing of it shows.
+		result.kind = Preview::Kind::Service;
+		result.text = Support::MessagePreview(message);
+		result.thumbnail = false;
+		return result;
 	}
 	if (!label.isEmpty() && caption.isEmpty()) {
 		result.kind = Preview::Kind::Media;

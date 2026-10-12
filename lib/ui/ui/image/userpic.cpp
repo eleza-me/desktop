@@ -191,13 +191,15 @@ void UserpicWidget::setImage(const QImage &image) {
 	update();
 }
 
-void UserpicWidget::setSource(std::shared_ptr<ImageSource> source) {
+void UserpicWidget::setSource(std::shared_ptr<ImageSource> source, bool keep) {
 	if (_sourceConnection) {
 		QObject::disconnect(_sourceConnection);
 	}
 	_source = std::move(source);
-	_original = QImage();
-	_prepared = QImage();
+	if (!keep || !_source) {
+		_original = QImage();
+		_prepared = QImage();
+	}
 	if (_source) {
 		_sourceConnection = QObject::connect(
 			_source.get(),

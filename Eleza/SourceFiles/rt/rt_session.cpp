@@ -248,8 +248,9 @@ void Session::dispatch(const QJsonObject &envelope, int depth) {
 		auto body = QJsonObject();
 		if (const auto name = SignalBody(type); name && !raw.isEmpty()) {
 			body = Proto::Decode(QLatin1StringView(name), raw).value_or(QJsonObject());
-		} else if (type.startsWith(u"call.") && !raw.isEmpty()) {
-			// The voice service's JSON travels as is.
+		} else if ((type.startsWith(u"call.") || type == u"group") && !raw.isEmpty()) {
+			// The voice service's JSON travels as is, in the generic JSON
+			// carrier; so does a change of a group.
 			if (const auto call = Proto::Decode("CallSignal"_L1, raw)) {
 				body = QJsonDocument::fromJson(BytesOf(*call, "json"_L1)).object();
 			}

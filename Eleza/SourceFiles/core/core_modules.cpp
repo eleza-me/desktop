@@ -7,6 +7,7 @@
 #include "history/history_module.h"
 #include "conversation/conversation_module.h"
 #include "eli/eli_module.h"
+#include "groups/groups_module.h"
 #include "intro/intro_module.h"
 #include "profile/profile_module.h"
 #include "search/search_module.h"
@@ -27,6 +28,7 @@ void RegisterModules() {
 	Dialogs::Register();
 	History::Register();
 	Conversation::Register();
+	Groups::Register();
 	Eli::Register();
 	Search::Register();
 	Profile::Register();

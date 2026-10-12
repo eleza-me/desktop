@@ -75,6 +75,7 @@ public:
 	};
 
 	QVector<JoinRequest> invites;
+	QVector<bool> inviteVideo; // the `video` of every invite
 	QVector<JoinRequest> accepts;
 	QVector<JoinRequest> rejoins;
 	QVector<GetRequest> gets;
@@ -91,8 +92,9 @@ public:
 	std::optional<Data::CallInfo> autoGet;
 	int autoGetStatus = 0; // != 0: polls fail with this status
 
-	void invite(const QString &userId, base::Guard guard, JoinDone done, Data::FailCallback fail) override {
+	void invite(const QString &userId, bool video, base::Guard guard, JoinDone done, Data::FailCallback fail) override {
 		invites.push_back({ userId, guard, done, fail });
+		inviteVideo.push_back(video);
 	}
 	void accept(const QString &call, base::Guard guard, JoinDone done, Data::FailCallback fail) override {
 		accepts.push_back({ call, guard, done, fail });
@@ -236,6 +238,8 @@ public:
 		int leaves = 0;
 		int statsRequests = 0;
 		QVector<bool> mutes;
+		QVector<bool> cameras; // every setCameraEnabled()
+		bool cameraWorks = true;
 		QPointer<FakeMedia> media;
 	};
 
@@ -267,6 +271,20 @@ public:
 	void requestStats() override {
 		++_log->statsRequests;
 	}
+	void setCameraEnabled(bool enabled) override {
+		_log->cameras.push_back(enabled);
+		if (enabled && !_log->cameraWorks) {
+			Q_EMIT cameraFailed(true);
+			return;
+		}
+		if (_camera != enabled) {
+			_camera = enabled;
+			Q_EMIT cameraChanged(enabled);
+		}
+	}
+	bool cameraEnabled() const override {
+		return _camera;
+	}
 
 	void set(State state) {
 		if (_state != state) {
@@ -278,6 +296,7 @@ public:
 private:
 	Log *_log = nullptr;
 	State _state = State::Idle;
+	bool _camera = false;
 
 };
 
@@ -389,6 +408,17 @@ private Q_SLOTS:
 	void instanceRestartRecovery();
 	void instanceEndedCallStaysUntilDismissed();
 	void instanceStoresTheCall();
+
+	// ---- video
+	void videoFlagsFromJson();
+	void voiceCallSendsNoVideo();
+	void videoCallStartsWithMyCamera();
+	void videoDisabledFallsBackToVoice();
+	void incomingVideoAnsweredWithAndWithoutCamera();
+	void cameraInAVoiceCall();
+	void cameraThatCannotOpenLeavesTheCall();
+	void remoteVideoFollowsTheTracks();
+	void instancePassesTheIntent();
 
 };
 
@@ -1781,6 +1811,256 @@ void TestCallsCall::instanceStoresTheCall() {
 	auto idle = 0;
 	h.instance->finishOnExit([&] { ++idle; });
 	QCOMPARE(idle, 1);
+}
+
+// ---- video
+
+void TestCallsCall::videoFlagsFromJson() {
+	// Absent on a voice call (never `false`), `true` on a video call.
+	QVERIFY(!Join(u"ca1"_s).video);
+	QVERIFY(Data::CallJoin::FromJson(Json(R"({ "call": "ca1", "state": "ringing", "video": true })")).video);
+	QVERIFY(Data::CallInfo::FromJson(Json(R"({ "call": "ca1", "state": "ringing", "video": true })")).video);
+	QVERIFY(!Data::CallInfo::FromJson(Json(R"({ "call": "ca1", "state": "ringing" })")).video);
+	const auto active = Data::ActiveCall::FromJson(Json(
+		R"({ "call": "ca1", "state": "connected", "role": "caller", "video": true })"));
+	QVERIFY(active.video && active.caller);
+	const auto signal = CallSignal::FromJson(u"call.incoming"_s, Json(
+		R"({ "call": "ca1", "state": "ringing", "from": "u_sara", "video": true })"));
+	QVERIFY(signal.video);
+	QVERIFY(!Signal("call.incoming", u"ca1"_s).video);
+	// The record of the chat: how the call started.
+	const auto record = Data::CallRecord::FromJson(Json(
+		R"({ "outcome": "completed", "duration_s": 204, "video": true })"));
+	QVERIFY(record.video);
+	QVERIFY(!Data::CallRecord::FromJson(Json(R"({ "outcome": "missed" })")).video);
+	QVERIFY(Data::CallRecord::FromJson(record.toJson()).video);
+}
+
+void TestCallsCall::voiceCallSendsNoVideo() {
+	auto f = Fixture();
+	auto call = Call(f.args());
+	call.start();
+	QCOMPARE(f.api.inviteVideo, QVector<bool>{ false });
+	QVERIFY(!call.video());
+	QVERIFY(!call.cameraEnabled());
+	f.api.answer(f.api.invites, 0, Join(u"ca1"_s));
+	// No camera is touched in a voice call nobody asked a camera in.
+	QVERIFY(f.media.cameras.isEmpty());
+}
+
+void TestCallsCall::videoCallStartsWithMyCamera() {
+	auto f = Fixture();
+	auto args = f.args();
+	args.video = true;
+	auto call = Call(args);
+	auto cameras = QVector<bool>();
+	connect(&call, &Call::cameraChanged, [&](bool on) { cameras.push_back(on); });
+	call.start();
+	QCOMPARE(f.api.inviteVideo, QVector<bool>{ true });
+	QVERIFY(call.video());
+	// Wanted from the start; opened when the room is joined (while it rings).
+	QVERIFY(call.cameraEnabled());
+	auto join = Join(u"ca1"_s);
+	join.video = true;
+	f.api.answer(f.api.invites, 0, join);
+	QCOMPARE(f.media.cameras, QVector<bool>{ true });
+	QCOMPARE(cameras, QVector<bool>{ true });
+
+	// Off and on again are track operations: the server hears nothing.
+	const auto commands = f.api.commandsSent.size();
+	call.setCameraEnabled(false);
+	QVERIFY(!call.cameraEnabled());
+	call.setCameraEnabled(true);
+	QVERIFY(call.cameraEnabled());
+	QCOMPARE(f.media.cameras, (QVector<bool>{ true, false, true }));
+	QCOMPARE(cameras, (QVector<bool>{ true, false, true }));
+	QCOMPARE(f.api.commandsSent.size(), commands);
+	QVERIFY(call.video()); // the intent is how it started
+
+	call.hangup();
+	QVERIFY(!call.cameraEnabled());
+}
+
+void TestCallsCall::videoDisabledFallsBackToVoice() {
+	auto f = Fixture();
+	auto args = f.args();
+	args.video = true;
+	auto call = Call(args);
+	auto intents = QVector<bool>();
+	connect(&call, &Call::videoChanged, [&](bool video) { intents.push_back(video); });
+	call.start();
+	// Video calls were switched off since client-config was read.
+	f.api.fail(f.api.invites, 0, 403, u"call.video_disabled"_s);
+	QCOMPARE(call.state(), State::Calling);
+	QCOMPARE(f.api.inviteVideo, (QVector<bool>{ true, false }));
+	QCOMPARE(intents, QVector<bool>{ false });
+	QVERIFY(!call.video());
+	QVERIFY(!call.cameraEnabled());
+	f.api.answer(f.api.invites, 1, Join(u"ca1"_s));
+	QCOMPARE(call.id(), u"ca1"_s);
+	QVERIFY(f.media.cameras.isEmpty());
+	call.handleSignal(Signal("call.ringing", u"ca1"_s));
+	QCOMPARE(call.state(), State::Ringing);
+
+	// The same refusal twice is a failed call, not a loop.
+	auto g = Fixture();
+	auto again = g.args();
+	again.video = true;
+	auto second = Call(again);
+	second.start();
+	g.api.fail(g.api.invites, 0, 403, u"call.video_disabled"_s);
+	g.api.fail(g.api.invites, 1, 403, u"call.video_disabled"_s);
+	QCOMPARE(second.state(), State::Ended);
+	QCOMPARE(second.endReason(), EndReason::Failed);
+	QCOMPARE(g.api.invites.size(), 2);
+}
+
+void TestCallsCall::incomingVideoAnsweredWithAndWithoutCamera() {
+	{
+		// «تصویری»
+		auto f = Fixture();
+		auto call = Call(f.args());
+		call.ring(u"ca1"_s, true);
+		QVERIFY(call.video());
+		QVERIFY(!call.cameraEnabled()); // nothing opens while it rings
+		call.answer(true);
+		QVERIFY(call.cameraEnabled());
+		auto join = Join(u"ca1"_s, u"accepted"_s);
+		join.video = true;
+		f.api.answer(f.api.accepts, 0, join);
+		QCOMPARE(f.media.cameras, QVector<bool>{ true });
+	}
+	{
+		// «فقط صدا»: the same call, the microphone only.
+		auto f = Fixture();
+		auto call = Call(f.args());
+		call.ring(u"ca1"_s, true);
+		call.answer();
+		auto join = Join(u"ca1"_s, u"accepted"_s);
+		join.video = true;
+		f.api.answer(f.api.accepts, 0, join);
+		QVERIFY(call.video());
+		QVERIFY(!call.cameraEnabled());
+		QVERIFY(f.media.cameras.isEmpty());
+	}
+	{
+		// The signal did not say; the poll does.
+		auto f = Fixture();
+		auto call = Call(f.args());
+		auto intents = QVector<bool>();
+		connect(&call, &Call::videoChanged, [&](bool video) { intents.push_back(video); });
+		call.ring(u"ca1"_s);
+		QVERIFY(!call.video());
+		auto info = Info(u"ca1"_s, u"ringing"_s);
+		info.video = true;
+		f.api.answerGet(0, info);
+		QVERIFY(call.video());
+		QCOMPARE(intents, QVector<bool>{ true });
+	}
+}
+
+void TestCallsCall::cameraInAVoiceCall() {
+	// "Upgrade to video": my camera in a call that started as a voice call.
+	auto f = Fixture();
+	auto call = Call(f.args());
+	call.start();
+	f.api.answer(f.api.invites, 0, Join(u"ca1"_s));
+	f.media.media->set(Calls::Media::State::Connected);
+	call.handleSignal(Signal("call.accepted", u"ca1"_s));
+	QCOMPARE(call.state(), State::InCall);
+	call.setCameraEnabled(true);
+	QVERIFY(call.cameraEnabled());
+	QCOMPARE(f.media.cameras, QVector<bool>{ true });
+	QVERIFY(!call.video()); // still a voice call for the record
+	// The camera survives a dropped connection (the media publishes again).
+	f.media.media->set(Calls::Media::State::Failed);
+	QVERIFY(call.cameraEnabled());
+	call.hangup();
+	QVERIFY(!call.cameraEnabled());
+	// Nothing turns a camera on in a call that is over.
+	call.setCameraEnabled(true);
+	QVERIFY(!call.cameraEnabled());
+}
+
+void TestCallsCall::cameraThatCannotOpenLeavesTheCall() {
+	auto f = Fixture();
+	f.media.cameraWorks = false;
+	auto args = f.args();
+	args.video = true;
+	auto call = Call(args);
+	auto failures = 0;
+	auto cameras = QVector<bool>();
+	connect(&call, &Call::cameraFailed, [&](bool noDevice) {
+		QVERIFY(noDevice);
+		++failures;
+	});
+	connect(&call, &Call::cameraChanged, [&](bool on) { cameras.push_back(on); });
+	call.start();
+	f.api.answer(f.api.invites, 0, Join(u"ca1"_s));
+	// No camera: said once, and the call goes on with audio.
+	QCOMPARE(failures, 1);
+	QVERIFY(!call.cameraEnabled());
+	QCOMPARE(cameras, QVector<bool>{ false });
+	QCOMPARE(call.state(), State::Calling);
+	QVERIFY(call.video());
+	f.media.media->set(Calls::Media::State::Connected);
+	call.handleSignal(Signal("call.accepted", u"ca1"_s));
+	QCOMPARE(call.state(), State::InCall);
+}
+
+void TestCallsCall::remoteVideoFollowsTheTracks() {
+	auto f = Fixture();
+	auto call = Call(f.args());
+	auto shown = QVector<bool>();
+	auto frames = 0;
+	connect(&call, &Call::remoteVideoChanged, [&](bool on) { shown.push_back(on); });
+	connect(&call, &Call::remoteVideoFrame, [&](const QImage &) { ++frames; });
+	call.start();
+	f.api.answer(f.api.invites, 0, Join(u"ca1"_s));
+	f.media.media->set(Calls::Media::State::Connected);
+	call.handleSignal(Signal("call.accepted", u"ca1"_s));
+	QVERIFY(!call.remoteVideo());
+	// Their camera came on in a voice call: shown, whatever the call's flag.
+	Q_EMIT f.media.media->remoteVideoChanged(true);
+	Q_EMIT f.media.media->remoteVideoFrame(QImage(4, 4, QImage::Format_RGBA8888));
+	QVERIFY(call.remoteVideo());
+	QCOMPARE(frames, 1);
+	Q_EMIT f.media.media->remoteVideoChanged(true);
+	Q_EMIT f.media.media->remoteVideoChanged(false);
+	QVERIFY(!call.remoteVideo());
+	QCOMPARE(shown, (QVector<bool>{ true, false }));
+}
+
+void TestCallsCall::instancePassesTheIntent() {
+	{
+		auto f = InstanceFixture();
+		f.create();
+		QVERIFY(f.instance->start(u"u_sara"_s, true));
+		QCOMPARE(f.api.inviteVideo, QVector<bool>{ true });
+		QVERIFY(f.instance->call()->video());
+	}
+	{
+		// A video call rings: the call knows before anything is answered.
+		auto f = InstanceFixture();
+		f.create();
+		f.instance->handleSignal(CallSignal::FromJson(u"call.incoming"_s, Json(
+			R"({ "call": "ca7", "state": "ringing", "from": "u_sara", "video": true })")));
+		QVERIFY(f.instance->call());
+		QCOMPARE(f.instance->call()->state(), State::Incoming);
+		QVERIFY(f.instance->call()->video());
+		f.instance->answer(true);
+		QVERIFY(f.instance->call()->cameraEnabled());
+	}
+	{
+		// A camera that is not there is a notice, not the end of the call.
+		auto f = InstanceFixture();
+		f.media.cameraWorks = false;
+		f.create();
+		QVERIFY(f.instance->start(u"u_sara"_s, true));
+		f.api.answer(f.api.invites, 0, Join(u"ca1"_s));
+		QCOMPARE(f.notices, QVector<Calls::Notice>{ Calls::Notice::NoCamera });
+		QVERIFY(f.instance->live());
+	}
 }
 
 QTEST_GUILESS_MAIN(TestCallsCall)

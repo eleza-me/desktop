@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(Eleza
-	VERSION 0.3.0
+	VERSION 0.4.0
 	DESCRIPTION "Eleza Desktop"
 	HOMEPAGE_URL "https://eleza.me"
 	LANGUAGES C CXX)

@@ -3,12 +3,15 @@
 #include "base/random.h"
 #include "base/unixtime.h"
 #include "data/data_chats.h"
+#include "data/data_group_rules.h"
+#include "data/data_groups.h"
 #include "data/data_json.h"
 #include "data/data_messages.h"
 #include "data/data_session.h"
 #include "data/data_transport.h"
 #include "storage/storage_database.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace Data {
@@ -116,6 +119,7 @@ QString Outbox::sendText(const QString &chat, const QString &text, const TextOpt
 		item.body.insert("quote"_L1, options.quote->toJson());
 	}
 	Json::Put(item.body, "link_preview"_L1, options.linkPreview);
+	Json::Put(item.body, "silent"_L1, options.silent);
 	return enqueue(std::move(item));
 }
 
@@ -157,6 +161,7 @@ QString Outbox::sendFile(const QString &chat, const QString &filePath, const Fil
 	if (messageKind == u"audio" && options.audio) {
 		Json::Put(item.body, "audio"_L1, options.audio->toJson());
 	}
+	Json::Put(item.body, "silent"_L1, options.silent);
 	return enqueue(std::move(item));
 }
 
@@ -411,6 +416,30 @@ void Outbox::discard(const QString &clientMessageId) {
 	pumpChat(item.chat);
 }
 
+// The chat is gone (a group I am no longer in): what waited for it never goes.
+void Outbox::discardChat(const QString &chat) {
+	const auto queue = chatQueue(chat);
+	for (const auto &id : queue) {
+		const auto i = _items.find(id);
+		if (i == _items.end()) {
+			continue;
+		}
+		if (const auto upload = _uploads.take(id)) {
+			_session->upload().cancel(upload);
+		}
+		if (!i->uploadId.isEmpty() && i->mediaId.isEmpty()) {
+			_session->upload().abandon(i->uploadId);
+		}
+		delete _retryTimers.take(id);
+		_items.erase(i);
+		_order.removeAll(id);
+		if (const auto db = _session->local()) {
+			db->deleteOutbox(id);
+		}
+	}
+	_running.remove(chat);
+}
+
 void Outbox::retryAll() {
 	if (!_started) {
 		return;
@@ -520,11 +549,13 @@ void Outbox::send(const QString &clientMessageId) {
 		return;
 	}
 	auto body = i->body;
-	body.insert("chat"_L1, i->chat);
+	// The route is picked by the id of the destination: a group has its own.
+	const auto group = IsGroupId(i->chat);
+	body.insert(group ? "group"_L1 : "chat"_L1, i->chat);
 	body.insert("client_message_id"_L1, clientMessageId);
 	// Over the connection or HTTP: the same id either way, so the server
 	// answers a repeat with `duplicate` instead of a second message.
-	_session->transport().rpc(u"chat.send"_s)
+	_session->transport().rpc(group ? u"groups.send"_s : u"chat.send"_s)
 		.body(body)
 		.idempotencyKey(clientMessageId)
 		.guard(this)
@@ -548,6 +579,8 @@ void Outbox::succeeded(const QString &clientMessageId, const QJsonObject &result
 	// bubble; until it lands, show the local one as sent with its seq.
 	const auto &history = _session->messages().history(item.chat);
 	const auto index = history.indexOfKey(Message::KeyForLocal(clientMessageId));
+	// The live frame of a group's message may have come before this answer.
+	const auto cached = (seq > 0) && (history.find(seq) != nullptr);
 	if (index >= 0 && seq > 0) {
 		auto message = history.items[index];
 		message.seq = seq;
@@ -574,6 +607,12 @@ void Outbox::succeeded(const QString &clientMessageId, const QJsonObject &result
 	} else if (index >= 0) {
 		_session->messages().removeMessage(item.chat, Message::KeyForLocal(clientMessageId));
 	}
+	if (IsGroupId(item.chat) && seq > 0) {
+		// The answer carries the group's pts: the message is the next
+		// change, or something else happened in between.
+		const auto found = _session->messages().find(item.chat, seq);
+		_session->groups().sent(item.chat, found ? *found : Message(), result, cached);
+	}
 	_items.erase(i);
 	_order.removeAll(clientMessageId);
 	_running.remove(item.chat);
@@ -586,18 +625,37 @@ void Outbox::succeeded(const QString &clientMessageId, const QJsonObject &result
 }
 
 void Outbox::errored(const QString &clientMessageId, const Api::Error &error) {
-	const auto i = _items.find(clientMessageId);
+	auto i = _items.find(clientMessageId);
 	if (i == _items.end()) {
 		return;
 	}
 	const auto chat = i->chat;
+	auto slowMode = false;
+	if (IsGroupId(chat)) {
+		// «Not a member any more» drops the group, and its queued sends
+		// with it: none of them is tried again.
+		if (_session->groups().handleError(chat, error)) {
+			return;
+		}
+		i = _items.find(clientMessageId);
+		if (i == _items.end()) {
+			return;
+		}
+		slowMode = (error.code == u"group.slow_mode");
+	}
 	if (_running.value(chat) == clientMessageId) {
 		_running.remove(chat);
 	}
-	++i->attempts;
-	if (error.transient() && i->attempts < kMaxAttempts) {
+	if (!slowMode) {
+		++i->attempts;
+	}
+	if (slowMode || (error.transient() && i->attempts < kMaxAttempts)) {
 		persist(*i);
-		const auto delay = int(std::min(30., std::pow(2., i->attempts)) * 1000);
+		// Slow mode names the wait: the message stays queued and goes with
+		// the same id when it is over.
+		const auto delay = slowMode
+			? int(std::clamp(error.retryAfter.value_or(5.), 1., 3600.) * 1000) + 250
+			: int(std::min(30., std::pow(2., i->attempts)) * 1000);
 		const auto timer = new base::Timer([=, this] {
 			if (const auto own = _retryTimers.take(clientMessageId)) {
 				own->deleteLater();

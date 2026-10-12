@@ -65,6 +65,7 @@ constexpr auto kMaxInlineGifs = 2;
 	case Zone::Button:
 	case Zone::Retry:
 	case Zone::ViaBot:
+	case Zone::Sender:
 		return true;
 	default:
 		return false;
@@ -345,6 +346,12 @@ void ListWidget::activate(const MouseTarget &target, Qt::MouseButton button) {
 	// A copy: actions below may change the timeline under us.
 	const auto message = element->data();
 	switch (zone) {
+	case Zone::Sender:
+		// The name above a bubble of a group, or the picture next to it.
+		if (!target.hit.text.isEmpty()) {
+			_controller->openRoute(Window::Routes::User(target.hit.text));
+		}
+		break;
 	case Zone::Link:
 		if (const auto link = element->link(target.hit.link)) {
 			Support::ActivateTextLink(_controller, *link, button);
@@ -633,7 +640,11 @@ void ListWidget::openMedia(const Data::Message &message) {
 			&& Window::CallsSupported()
 			&& (Data::CallAvailabilityFor(*chat)
 				== Data::CallAvailability::Available)) {
-			Window::StartCall(_controller, chat->peerUserId);
+			// The same kind of call again (where video calls still exist).
+			Window::StartCall(
+				_controller,
+				chat->peerUserId,
+				message.call->video);
 		}
 		return;
 	}
@@ -1165,15 +1176,22 @@ void ListWidget::requestPin(const Data::Message &message, bool pin) {
 		_controller->showToast(tr::lng_history_unpinned(tr::now));
 		return;
 	}
-	// «Also pin for …» in chats with somebody else.
-	const auto withPeer = chat && !chat->saved && !chat->peerDeleted;
+	// «Also pin for …» in chats with somebody else; in a group a pin is
+	// always for everyone.
+	const auto withPeer = chat && !chat->saved && !chat->peerDeleted && !chat->isGroup;
 	const auto both = std::make_shared<bool>(withPeer);
 	const auto session = QPointer<Main::Session>(_session);
 	const auto chatId = _chatId;
 	const auto controller = _controller;
 	auto args = Ui::ConfirmBoxArgs();
-	args.text = tr::lng_history_pin_sure(tr::now);
+	const auto group = chat && chat->isGroup;
+	args.text = group
+		? tr::lng_groups_pin_sure(tr::now)
+		: tr::lng_history_pin_sure(tr::now);
 	args.confirmText = tr::lng_pin(tr::now);
+	if (group) {
+		*both = true;
+	}
 	if (withPeer) {
 		args.checkboxText = tr::lng_history_pin_also_for(
 			tr::now,

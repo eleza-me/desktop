@@ -5,7 +5,7 @@
 
 namespace Rt::Schema {
 
-inline constexpr auto kGeneratedMessages = 163;
-inline constexpr auto kGeneratedMethods = 45;
+inline constexpr auto kGeneratedMessages = 262;
+inline constexpr auto kGeneratedMethods = 88;
 
 } // namespace Rt::Schema

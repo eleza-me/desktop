@@ -1,12 +1,14 @@
 #include "history/history_view_element.h"
 
 #include "history/history_view_media.h"
+#include "data/data_group_rules.h"
 #include "lang/lang_format.h"
 #include "history/history_themes.h"
 #include "lang_auto.h"
 #include "support/chat_text.h"
 #include "support/media_image.h"
 #include "ui/effects/radial_animation.h"
+#include "ui/image/userpic.h"
 #include "ui/painter.h"
 #include "ui/ui_utility.h"
 #include "styles/palette.h"
@@ -268,8 +270,25 @@ void Element::ensureLoaded() {
 	_serviceText = QString();
 	_forwardedText = QString();
 	_viaText = QString();
+	_group = false;
+	_sender = SenderInfo();
 	if (_service) {
-		_serviceText = Support::MessagePreview(_data);
+		_serviceText = _delegate->elementServiceText(_data);
+		if (_serviceText.isEmpty()) {
+			_serviceText = Support::MessagePreview(_data);
+		}
+		return;
+	}
+	if (_delegate->elementGroup() && !outgoing()) {
+		_group = true;
+		_sender = _delegate->elementSender(_data);
+	}
+	if (_data.underReview) {
+		// Held back by a moderator: the place of the message stays, nothing
+		// of it is shown.
+		_text.setText(
+			st::historyTextStyle,
+			tr::lng_groups_under_review(tr::now));
 		return;
 	}
 	createMedia();
@@ -514,6 +533,7 @@ void Element::layout(int width) {
 	_unreadTop = -1;
 	_serviceRect = QRect();
 	_bubble = QRect();
+	_senderRect = _userpicRect = QRect();
 	_forwardedRect = _viaRect = _replyRect = QRect();
 	_mediaRect = _textRect = _previewRect = _metaRect = _retryRect = QRect();
 	_metaOverMedia = false;
@@ -544,15 +564,18 @@ void Element::layout(int width) {
 	}
 	const auto column = std::min(width, int(st::historyComposeMaxWidth));
 	const auto columnLeft = (width - column) / 2;
+	// In a group the pictures of the senders take a column of their own
+	// before the incoming bubbles.
+	const auto userpics = userpicSpace();
 	const auto maxWidth = std::max(
 		std::min(
 			int(st::historyBubbleMaxWidth),
-			column - 2 * st::historySideSkip - st::historyFarSkip),
+			column - 2 * st::historySideSkip - st::historyFarSkip - userpics),
 		140);
 	layoutBubble(maxWidth);
 	const auto left = outgoing()
 		? (columnLeft + column - st::historySideSkip - _bubble.width())
-		: (columnLeft + st::historySideSkip);
+		: (columnLeft + st::historySideSkip + userpics);
 	const auto shift = QPoint(left, top);
 	const auto move = [&](QRect &rect) {
 		if (!rect.isNull()) {
@@ -560,6 +583,7 @@ void Element::layout(int width) {
 		}
 	};
 	move(_bubble);
+	move(_senderRect);
 	move(_forwardedRect);
 	move(_viaRect);
 	move(_replyRect);
@@ -572,6 +596,15 @@ void Element::layout(int width) {
 	}
 	_reactionsTop += top;
 	top += _bubble.height();
+	if (userpics > 0 && !_flags.attachedToNext) {
+		// Next to the last bubble of the run, at its bottom.
+		const auto size = int(st::historyGroupUserpic);
+		_userpicRect = QRect(
+			columnLeft + st::historySideSkip - st::historyGroupUserpicShift,
+			_bubble.bottom() + 1 - size,
+			size,
+			size);
+	}
 	if (failed()) {
 		const auto size = st::historyRetrySize;
 		_retryRect = QRect(
@@ -596,9 +629,10 @@ void Element::layoutService(int width, int top) {
 		int(st::historyServiceMaxWidth),
 		width - 2 * st::historySideSkip) - padding.left() - padding.right();
 	const auto natural = font->width(_serviceText);
-	if (natural > limit && limit > 0) {
-		_serviceText = font->elided(_serviceText, limit);
-	}
+	// The whole text is kept: a wider layout later shows more of it.
+	_serviceShown = (natural > limit && limit > 0)
+		? font->elided(_serviceText, limit)
+		: _serviceText;
 	const auto textWidth = std::min(natural, std::max(limit, 1));
 	const auto pillWidth = textWidth + padding.left() + padding.right();
 	_serviceRect = QRect(
@@ -747,7 +781,9 @@ void Element::layoutBubble(int maxWidth) {
 	auto mediaSize = QSize();
 	auto inner = 0;
 	auto bubbleWidth = 0;
-	const auto hasHeader = !_forwardedText.isEmpty()
+	const auto named = showsSenderName();
+	const auto hasHeader = named
+		|| !_forwardedText.isEmpty()
 		|| !_viaText.isEmpty()
 		|| _reply;
 	const auto textIsLast = hasText && !_preview && _reactions.empty();
@@ -770,6 +806,17 @@ void Element::layoutBubble(int maxWidth) {
 				std::min(
 					_reply->naturalWidth,
 					std::min(innerMax, int(st::historyReplyMaxWidth))));
+		}
+		if (named) {
+			others = std::max(
+				others,
+				std::min(
+					st::historyGroupNameFont->width(_sender.name)
+						+ (_sender.tag.isEmpty()
+							? 0
+							: (st::historyGroupTagSkip
+								+ st::historyGroupTagFont->width(_sender.tag))),
+					innerMax));
 		}
 		if (!_forwardedText.isEmpty()) {
 			others = std::max(
@@ -825,6 +872,20 @@ void Element::layoutBubble(int maxWidth) {
 
 	const auto left = padding.left();
 	auto top = (fullBleed && !hasHeader) ? mediaPad : padding.top();
+	if (named) {
+		_senderRect = QRect(left, top, inner, st::historyGroupNameHeight);
+		top += st::historyGroupNameHeight;
+		// The role gives way to the name, the name to the bubble's width.
+		const auto tagWidth = _sender.tag.isEmpty()
+			? 0
+			: st::historyGroupTagFont->width(_sender.tag);
+		const auto withTag = (tagWidth > 0)
+			&& (tagWidth + st::historyGroupTagSkip <= inner / 2);
+		_senderTag = withTag ? _sender.tag : QString();
+		_senderName = st::historyGroupNameFont->elided(
+			_sender.name,
+			inner - (withTag ? (tagWidth + st::historyGroupTagSkip) : 0));
+	}
 	if (!_forwardedText.isEmpty()) {
 		_forwardedRect = QRect(left, top, inner, st::historyForwardedHeight);
 		top += st::historyForwardedHeight;
@@ -1053,6 +1114,9 @@ void Element::paint(Painter &p, const PaintContext &context) {
 	if (!bubbleless()) {
 		paintBubble(p, colors);
 	}
+	if (!_senderRect.isNull() || !_userpicRect.isNull()) {
+		paintSender(p, colors);
+	}
 	const auto accent = outgoing() ? colors.accentOut : colors.accentIn;
 	const auto rtl = style::RightToLeft();
 	if (!_forwardedRect.isNull()) {
@@ -1168,7 +1232,7 @@ void Element::paintUnread(Painter &p) const {
 }
 
 void Element::paintService(Painter &p) const {
-	PaintPill(p, _serviceRect, _serviceText);
+	PaintPill(p, _serviceRect, _serviceShown);
 }
 
 void Element::paintBubble(Painter &p, const ChatColors &colors) const {
@@ -1189,6 +1253,53 @@ void Element::paintBubble(Painter &p, const ChatColors &colors) const {
 		p.fillPath(path.translated(0., 1.), colors.shadow);
 	}
 	p.fillPath(path, outgoing() ? colors.bubbleOut : colors.bubbleIn);
+}
+
+bool Element::showsSenderName() const {
+	return _group
+		&& !_sender.name.isEmpty()
+		&& !_flags.attachedToPrevious
+		&& !bubbleless();
+}
+
+int Element::userpicSpace() const {
+	return _group
+		? int(st::historyGroupUserpic + st::historyGroupUserpicSkip)
+		: 0;
+}
+
+void Element::paintSender(Painter &p, const ChatColors &colors) const {
+	if (!_userpicRect.isNull()) {
+		_delegate->elementPaintUserpic(p, _userpicRect, _sender.userId);
+	}
+	if (_senderRect.isNull()) {
+		return;
+	}
+	const auto rtl = style::RightToLeft();
+	// One of eight colours by the person's id, pulled towards the text
+	// colour of the bubble so it reads on a light and on a dark one.
+	auto color = Ui::UserpicColor(_sender.colorIndex)->c;
+	color = (colors.bubbleIn.lightness() > 127)
+		? color.darker(135)
+		: color.lighter(120);
+	const auto &font = st::historyGroupNameFont;
+	const auto nameWidth = font->width(_senderName);
+	p.setPen(color);
+	p.setFont(font);
+	p.drawText(
+		rtl ? (_senderRect.right() + 1 - nameWidth) : _senderRect.x(),
+		_senderRect.y() + font->ascent,
+		_senderName);
+	if (!_senderTag.isEmpty()) {
+		const auto &tagFont = st::historyGroupTagFont;
+		const auto tagWidth = tagFont->width(_senderTag);
+		p.setPen(colors.metaIn);
+		p.setFont(tagFont);
+		p.drawText(
+			rtl ? _senderRect.x() : (_senderRect.right() + 1 - tagWidth),
+			_senderRect.y() + font->ascent,
+			_senderTag);
+	}
 }
 
 void Element::paintReply(Painter &p, const ChatColors &colors) const {
@@ -1552,6 +1663,25 @@ HitResult Element::hitTest(QPoint point) const {
 		if (chip.rect.contains(point)) {
 			result.zone = Zone::Reaction;
 			result.text = chip.emoji;
+			return result;
+		}
+	}
+	if (!_sender.userId.isEmpty()) {
+		const auto nameWidth = _senderRect.isNull()
+			? 0
+			: st::historyGroupNameFont->width(_senderName);
+		const auto name = _senderRect.isNull()
+			? QRect()
+			: QRect(
+				style::RightToLeft()
+					? (_senderRect.right() + 1 - nameWidth)
+					: _senderRect.x(),
+				_senderRect.y(),
+				nameWidth,
+				_senderRect.height());
+		if (name.contains(point) || _userpicRect.contains(point)) {
+			result.zone = Zone::Sender;
+			result.text = _sender.userId;
 			return result;
 		}
 	}

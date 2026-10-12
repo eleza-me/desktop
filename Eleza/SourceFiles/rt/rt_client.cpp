@@ -511,6 +511,12 @@ void Client::onSignal(const QString &type, const QJsonObject &body) {
 		frame.type = Frame::Type::Call;
 		frame.kind = type;
 		frame.data = body;
+	} else if (type == u"group") {
+		frame.type = Frame::Type::Group;
+		frame.kind = body.value("kind"_L1).toString();
+		frame.chat = body.value("group"_L1).toString();
+		frame.pts = base::SafeInt64(body.value("pts"_L1).toDouble());
+		frame.data = body;
 	} else {
 		return;
 	}
