@@ -6,7 +6,9 @@
 #include "data/data_json.h"
 #include "data/data_session.h"
 #include "data/data_users.h"
+#include "groups/groups_admin.h"
 #include "groups/groups_boxes.h"
+#include "groups/groups_common.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
 #include "main/main_session.h"
@@ -43,41 +45,6 @@ constexpr auto kLoadMoreThreshold = 400;
 		? tr::lng_groups_notify_none(tr::now)
 		: tr::lng_groups_notify_all(tr::now);
 }
-
-// One centred column inside the scroll area, like the pages of the settings.
-class ColumnWrap final : public Ui::RpWidget {
-public:
-	ColumnWrap(QWidget *parent, Ui::VerticalLayout *content)
-	: RpWidget(parent)
-	, _content(content) {
-		_content->setParent(this);
-		connect(_content, &Ui::RpWidget::heightChanged, this, [this] {
-			if (!_inResize) {
-				resizeToWidth(width());
-			}
-		});
-	}
-
-protected:
-	int resizeGetHeight(int newWidth) override {
-		_inResize = true;
-		const auto inner = std::min(newWidth, int(st::groupsColumnWidth));
-		_content->resizeToWidth(inner);
-		_content->move((newWidth - inner) / 2, 0);
-		_inResize = false;
-		return _content->height();
-	}
-	void visibleTopBottomUpdated(int visibleTop, int visibleBottom) override {
-		_content->setVisibleTopBottom(
-			visibleTop - _content->y(),
-			visibleBottom - _content->y());
-	}
-
-private:
-	Ui::VerticalLayout *_content = nullptr;
-	bool _inResize = false;
-
-};
 
 } // namespace
 
@@ -515,7 +482,12 @@ QString InfoWidget::shape(const Data::Group &group) const {
 		group.role,
 		group.rights.join(u','),
 		group.permissions.join(u','),
-		groups.administration() ? u"2"_s : u"1"_s,
+		groups.thirdRelease()
+			? u"3"_s
+			: groups.administration()
+			? u"2"_s
+			: u"1"_s,
+		group.membersHidden ? u"h"_s : u"-"_s,
 		group.about.trimmed().isEmpty() ? u"-"_s : u"a"_s,
 	}.join(u'|');
 }
@@ -571,6 +543,14 @@ void InfoWidget::refresh() {
 			? Lang::Num(group->joinRequests)
 			: QString());
 	}
+	if (_slowMode) {
+		_slowMode->setValueText(SlowModeLabel(group->slowModeS));
+	}
+	if (_hideMembers) {
+		_hideMembers->setValueText(group->hideMembers
+			? tr::lng_groups_hide_on(tr::now)
+			: tr::lng_groups_hide_off(tr::now));
+	}
 	updateGeometries();
 }
 
@@ -584,6 +564,7 @@ void InfoWidget::rebuild() {
 	const auto window = controller();
 	const auto id = _groupId;
 	const auto administration = groups.administration();
+	const auto third = groups.thirdRelease();
 	const auto me = Rights::Member::Of(
 		window->session().userId(),
 		group.role,
@@ -597,6 +578,8 @@ void InfoWidget::rebuild() {
 	_about = nullptr;
 	_notify = nullptr;
 	_requests = nullptr;
+	_slowMode = nullptr;
+	_hideMembers = nullptr;
 	_members = nullptr;
 
 	_cover = _content->add(
@@ -621,6 +604,11 @@ void InfoWidget::rebuild() {
 		ShowNotifyBox(window, id);
 	});
 	_notify->setValueText(NotifyLabel(group.notify));
+	if (third) {
+		addRow(tr::lng_groups_media_title(tr::now), &st::groupsIconMedia, [=] {
+			window->openRoute(Window::Routes::GroupMedia(id));
+		});
+	}
 	if (group.can(u"change_info")) {
 		addRow(tr::lng_groups_edit(tr::now), &st::groupsIconEdit, [=] {
 			ShowEditBox(window, id);
@@ -648,6 +636,26 @@ void InfoWidget::rebuild() {
 			addRow(tr::lng_groups_perms_title(tr::now), &st::groupsIconPermissions, [=] {
 				ShowPermissionsBox(window, id);
 			});
+			if (third) {
+				_slowMode = addRow(
+					tr::lng_groups_slow_mode(tr::now),
+					&st::groupsIconSlow,
+					[=] { ShowSlowModeBox(window, id); });
+				_slowMode->setValueText(SlowModeLabel(group.slowModeS));
+				_hideMembers = addRow(
+					tr::lng_groups_hide_members(tr::now),
+					&st::groupsIconHide,
+					[=] { ShowHideMembersBox(window, id); });
+				_hideMembers->setValueText(group.hideMembers
+					? tr::lng_groups_hide_on(tr::now)
+					: tr::lng_groups_hide_off(tr::now));
+			}
+		}
+		// Recent actions: the owner and every admin, whatever rights.
+		if (third && (group.role == u"owner" || group.role == u"admin")) {
+			addRow(tr::lng_groups_log_title(tr::now), &st::groupsIconLog, [=] {
+				window->openRoute(Window::Routes::GroupAdminLog(id));
+			});
 		}
 		addRow(tr::lng_groups_admins(tr::now), &st::groupsIconAdmins, [=] {
 			ShowMembersBox(window, id, u"admins"_s);
@@ -669,6 +677,16 @@ void InfoWidget::rebuild() {
 		addRow(tr::lng_groups_add_members(tr::now), &st::groupsIconAdd, [=] {
 			ShowAddMembers(window, id);
 		});
+	}
+	if (group.membersHidden) {
+		// An ordinary member of a group that hides its members: the list
+		// below has the owner and the admins only.
+		_content->add(
+			Ui::object_ptr<Ui::FlatLabel>(
+				_content,
+				tr::lng_groups_members_hidden_note(tr::now),
+				st::groupsFootnote),
+			st::groupsHiddenNotePadding);
 	}
 	_members = _content->add(Ui::object_ptr<MembersList>(_content, window, id));
 
@@ -704,6 +722,34 @@ void InfoWidget::updateGeometries() {
 	_bar->move(0, 0);
 	const auto top = _bar->height();
 	_scroll->setGeometry(0, top, width(), std::max(height() - top, 0));
+}
+
+// ---- the column
+
+ColumnWrap::ColumnWrap(QWidget *parent, Ui::VerticalLayout *content)
+: RpWidget(parent)
+, _content(content) {
+	_content->setParent(this);
+	connect(_content, &Ui::RpWidget::heightChanged, this, [this] {
+		if (!_inResize) {
+			resizeToWidth(width());
+		}
+	});
+}
+
+int ColumnWrap::resizeGetHeight(int newWidth) {
+	_inResize = true;
+	const auto inner = std::min(newWidth, int(st::groupsColumnWidth));
+	_content->resizeToWidth(inner);
+	_content->move((newWidth - inner) / 2, 0);
+	_inResize = false;
+	return _content->height();
+}
+
+void ColumnWrap::visibleTopBottomUpdated(int visibleTop, int visibleBottom) {
+	_content->setVisibleTopBottom(
+		visibleTop - _content->y(),
+		visibleBottom - _content->y());
 }
 
 } // namespace Groups

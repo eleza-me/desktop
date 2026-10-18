@@ -9,6 +9,9 @@
 #include "data/data_types.h"
 #include "rt/rt_proto.h"
 
+#include <QtCore/QDateTime>
+#include <QtCore/QTimeZone>
+
 using namespace Data;
 
 class TestModels final : public QObject {
@@ -631,6 +634,30 @@ void TestModels::socialLists() {
 	QCOMPARE(sessions[0].id, u"s1"_s);
 	QVERIFY(sessions[0].current);
 	QCOMPARE(sessions[1].platform, u"ios"_s);
+
+	// Contact bans: a Go time (RFC 3339) and the mask name only.
+	const auto bans = Json::List<ContactBan>(Test::Json(R"({"bans":[
+		{"token":"b1.x","label":"روباه","created_at":"2026-03-01T10:20:30.5Z"},
+		{"token":"b2.y","label":"","created_at":"bogus"}]})").value("bans"_L1));
+	QCOMPARE(bans.size(), 2);
+	QCOMPARE(bans[0].token, u"b1.x"_s);
+	QCOMPARE(bans[0].label, u"روباه"_s);
+	QCOMPARE(
+		bans[0].createdAt,
+		QDateTime(QDate(2026, 3, 1), QTime(10, 20, 30, 500), QTimeZone::utc()).toMSecsSinceEpoch());
+	QVERIFY(bans[1].label.isEmpty());
+	QCOMPARE(bans[1].createdAt, qint64(0));
+
+	// Last-seen exceptions: the cards inside `items`, a card without an id skipped.
+	const auto exceptions = LastSeenExceptionsPage::FromJson(Test::Json(R"({"items":[
+		{"user":{"id":"u1","handle":"sara","display_name":"سارا"},"kind":"always"},
+		{"user":{"display_name":"x"},"kind":"always"},
+		{"kind":"never"}],"next_cursor":"c2"})"));
+	QCOMPARE(exceptions.users.size(), 1);
+	QCOMPARE(exceptions.users[0].id, u"u1"_s);
+	QCOMPARE(exceptions.users[0].handle, u"sara"_s);
+	QCOMPARE(exceptions.nextCursor, u"c2"_s);
+	QVERIFY(LastSeenExceptionsPage::FromJson(QJsonObject()).users.isEmpty());
 
 	const auto state = GraphState::FromJson(Test::Json(R"({"follow":"requested","follows_you":true})"));
 	QCOMPARE(state.follow, u"requested"_s);

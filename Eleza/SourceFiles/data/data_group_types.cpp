@@ -61,6 +61,9 @@ Group Group::FromJson(const QJsonObject &json) {
 	result.clearedBeforeSeq = Int64(json, "cleared_before_seq"_L1);
 	result.createdAt = Int64(json, "created_at"_L1);
 	result.joinRequests = Int(json, "join_requests"_L1);
+	result.adminCount = Int(json, "admin_count"_L1);
+	result.hideMembers = Bool(json, "hide_members"_L1);
+	result.membersHidden = Bool(json, "members_hidden"_L1);
 	return result;
 }
 
@@ -98,6 +101,9 @@ QJsonObject Group::toJson() const {
 	Put(result, "cleared_before_seq"_L1, clearedBeforeSeq);
 	Put(result, "created_at"_L1, createdAt);
 	Put(result, "join_requests"_L1, joinRequests);
+	Put(result, "admin_count"_L1, adminCount);
+	Put(result, "hide_members"_L1, hideMembers);
+	Put(result, "members_hidden"_L1, membersHidden);
 	return result;
 }
 
@@ -169,6 +175,52 @@ GroupJoinRequest GroupJoinRequest::FromJson(const QJsonObject &json) {
 	result.user = String(json, "user"_L1);
 	result.createdAt = Int64(json, "created_at"_L1);
 	result.linkName = Name(json, "link_name"_L1);
+	return result;
+}
+
+GroupAdminLogEntry GroupAdminLogEntry::FromJson(const QJsonObject &json) {
+	auto result = GroupAdminLogEntry();
+	result.id = String(json, "id"_L1);
+	result.at = ToMs(Int64(json, "at"_L1));
+	result.actor = String(json, "actor"_L1);
+	result.action = String(json, "action"_L1);
+	result.target = String(json, "target"_L1);
+	const auto detail = json.value("detail"_L1).toObject();
+	result.seq = Int64(detail, "seq"_L1);
+	result.seqs = Int64s(detail.value("seqs"_L1));
+	result.rights = Strings(detail.value("rights"_L1));
+	result.adminTitle = Name(detail, "admin_title"_L1);
+	result.denied = Strings(detail.value("denied"_L1));
+	result.until = Int64(detail, "until"_L1);
+	result.defaultPermissions = Strings(detail.value("default_permissions"_L1));
+	result.historyVisible = Bool(detail, "history_visible"_L1);
+	result.slowModeS = Int(detail, "slow_mode_s"_L1);
+	result.hideMembers = Bool(detail, "hide_members"_L1);
+	result.linkName = Name(detail, "link_name"_L1);
+	result.requiresApproval = Bool(detail, "requires_approval"_L1);
+	result.deleteMessages = Bool(detail, "delete_messages"_L1);
+	return result;
+}
+
+GroupReaction GroupReaction::FromJson(const QJsonObject &json) {
+	auto result = GroupReaction();
+	result.user = String(json, "user"_L1);
+	result.emoji = String(json, "emoji"_L1);
+	result.at = ToMs(Int64(json, "at"_L1));
+	return result;
+}
+
+GroupDecideFailure GroupDecideFailure::FromJson(const QJsonObject &json) {
+	auto result = GroupDecideFailure();
+	result.user = String(json, "user"_L1);
+	result.reason = String(json, "reason"_L1);
+	return result;
+}
+
+GroupInviteMember GroupInviteMember::FromJson(const QJsonObject &json) {
+	auto result = GroupInviteMember();
+	result.user = String(json, "user"_L1);
+	result.joinedAt = ToMs(Int64(json, "joined_at"_L1));
 	return result;
 }
 

@@ -266,6 +266,23 @@ struct ViaBot {
 	[[nodiscard]] QJsonObject toJson() const;
 };
 
+// The story a story_reply / story_reaction message points at (StoryRefView).
+struct StoryRef {
+	QString storyId;
+	QString owner;      // the story's owner (the other member, or me)
+	QString thumbUrl;   // an API path: fetched with the token (MediaRef::Story)
+	QString kind;       // image | video | post
+	qint64 expiresAt = 0; // unix seconds
+	QString emoji;      // story_reaction
+
+	// `now` in unix seconds.
+	[[nodiscard]] bool expired(qint64 now) const {
+		return expiresAt > 0 && now >= expiresAt;
+	}
+	[[nodiscard]] static StoryRef FromJson(const QJsonObject &json);
+	[[nodiscard]] QJsonObject toJson() const;
+};
+
 struct MarkupButton {
 	QString text;
 	QString kind; // callback | url | switch_inline | ...
@@ -308,6 +325,8 @@ enum class MessageKind {
 	ForwardedPost, // "forwarded_post": a shared feed post (Message::forwardedPost)
 	System,
 	Call,
+	StoryReply,    // "story_reply": text + Message::story
+	StoryReaction, // "story_reaction": Message::story (with the emoji)
 	Unknown,       // a kind this build does not know: Message::kindName has the wire value
 };
 [[nodiscard]] MessageKind MessageKindFromString(const QString &kind);
@@ -373,6 +392,7 @@ struct Message {
 	std::optional<Sticker> sticker;
 	std::optional<ReplyMarkup> replyMarkup;
 	std::optional<ViaBot> viaBot;
+	std::optional<StoryRef> story; // story_reply / story_reaction
 
 	// ---- local
 	bool mine = false;

@@ -1,9 +1,12 @@
 #include "profile/profile_cover.h"
 
+#include "data/data_session.h"
+#include "data/data_stories.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
 #include "main/main_session.h"
 #include "profile/profile_follow.h"
+#include "stories/stories_ring.h"
 #include "support/links.h"
 #include "ui/painter.h"
 #include "ui/widgets/labels.h"
@@ -137,6 +140,15 @@ Cover::Cover(QWidget *parent, Window::SessionController *controller)
 	}) {
 		widget->hide();
 	}
+	connect(
+		&controller->session().data().stories(),
+		&Data::Stories::ringsChanged,
+		this,
+		[this](const QStringList &ids) {
+			if (ids.contains(_profile.id)) {
+				update();
+			}
+		});
 }
 
 QWidget *Cover::moreButton() const {
@@ -144,9 +156,19 @@ QWidget *Cover::moreButton() const {
 }
 
 void Cover::setProfile(const Data::Profile &profile, const ButtonModel &model) {
+	const auto userChanged = (_profile.id != profile.id);
 	_profile = profile;
 	_model = model;
 	_userpic->setUserId(profile.id);
+	auto &stories = _controller->session().data().stories();
+	if (userChanged
+		&& !profile.id.isEmpty()
+		&& !profile.deleted
+		&& stories.enabled()
+		&& profile.id != _controller->session().userId()) {
+		// The ring around the face: GET /v1/users/{id}/stories.
+		stories.loadUser(profile.id, this, nullptr);
+	}
 	_posts->setValue(profile.posts, tr::lng_profile_posts(tr::now));
 	_followers->setValue(profile.followers, tr::lng_profile_followers(tr::now));
 	_following->setValue(profile.following, tr::lng_profile_following(tr::now));
@@ -396,6 +418,11 @@ void Cover::paintEvent(QPaintEvent *e) {
 	const auto &padding = st::profileCoverPadding;
 	const auto left = padding.left();
 	const auto inner = std::max(outer - left - padding.right(), 0);
+
+	const auto ring = _controller->session().data().stories().ring(_profile.id);
+	if (ring != Data::StoryRing::None && !_userpic->isHidden()) {
+		Stories::PaintRing(p, _userpic->geometry(), ring);
+	}
 
 	p.setPen(st::textPrimary);
 	_name.drawLeftElided(p, left, _nameTop, _nameWidth, outer);

@@ -1,5 +1,7 @@
 #include "groups/groups_boxes.h"
 
+#include "groups/groups_admin.h"
+
 #include "api/api_auth.h"
 #include "boxes/peer_list_box.h"
 #include "boxes/photo_crop_box.h"
@@ -1587,9 +1589,19 @@ public:
 			delegate()->peerListBox(),
 			[=, this](const QString &group) {
 				if (group == _groupId) {
-					load(true);
+					reload();
 				}
 			});
+		if (Store(_controller).thirdRelease()) {
+			const auto box = delegate()->peerListBox();
+			box->addLeftButton(
+				tr::lng_groups_requests_dismiss_all(tr::now),
+				[=, this] { decideAll(false); });
+			box->addButton(
+				tr::lng_groups_requests_add_all(tr::now),
+				[=, this] { decideAll(true); },
+				st::defaultRoundButton);
+		}
 	}
 	void loadMore() override {
 		if (!_cursor.isEmpty()) {
@@ -1613,6 +1625,7 @@ public:
 						? tr::lng_groups_requests_approved(tr::now, lt_name, name)
 						: tr::lng_groups_requests_declined(tr::now, lt_name, name));
 					if (weak) {
+						_users.removeAll(user);
 						delegate()->removeRow(user);
 					}
 				},
@@ -1634,6 +1647,88 @@ public:
 	}
 
 private:
+	// «افزودن همه» / «رد همه»: every request, the pages not read yet too.
+	void decideAll(bool approve) {
+		if (_users.isEmpty() && _cursor.isEmpty()) {
+			return;
+		}
+		const auto controller = _controller;
+		const auto weak = QPointer<Ui::BoxContent>(delegate()->peerListBox());
+		auto args = Ui::ConfirmBoxArgs();
+		args.text = approve
+			? tr::lng_groups_requests_add_all_sure(tr::now)
+			: tr::lng_groups_requests_dismiss_all_sure(tr::now);
+		args.confirmText = approve
+			? tr::lng_groups_requests_add_all(tr::now)
+			: tr::lng_groups_requests_dismiss_all(tr::now);
+		args.destructive = !approve;
+		args.confirmed = [=, this](std::function<void()> close) {
+			close();
+			if (weak) {
+				collectAll(_cursor, _users, [=, this](const QStringList &users) {
+					decide(users, approve);
+				});
+			}
+		};
+		controller->show(Ui::MakeConfirmBox(std::move(args)));
+	}
+	void collectAll(
+			const QString &cursor,
+			const QStringList &collected,
+			Fn<void(QStringList)> done,
+			int pages = 0) {
+		if (cursor.isEmpty() || pages >= kMaxCollectPages) {
+			done(collected);
+			return;
+		}
+		const auto controller = _controller;
+		Store(controller).loadJoinRequests(
+			_groupId,
+			cursor,
+			base::Guard(delegate()->peerListBox()),
+			[=, this](const Data::GroupJoinRequestsPage &page) {
+				auto more = collected;
+				for (const auto &request : page.requests) {
+					if (!more.contains(request.user)) {
+						more.push_back(request.user);
+					}
+				}
+				collectAll(page.nextCursor, more, done, pages + 1);
+			},
+			FailHandler(controller));
+	}
+	void decide(const QStringList &users, bool approve) {
+		const auto controller = _controller;
+		const auto weak = QPointer<Ui::BoxContent>(delegate()->peerListBox());
+		Store(controller).decideJoinRequests(
+			_groupId,
+			users,
+			approve,
+			base::Guard(controller),
+			[=, this](const Data::GroupDecideResult &result) {
+				const auto done = int(result.done.size());
+				const auto failed = int(result.failed.size());
+				auto text = approve
+					? tr::lng_groups_requests_added(tr::now, lt_count, done)
+					: tr::lng_groups_requests_dismissed(tr::now, lt_count, done);
+				if (failed > 0) {
+					text += u"\n"_s
+						+ tr::lng_groups_requests_failed(tr::now, lt_count, failed);
+				}
+				controller->showToast(text);
+				if (weak) {
+					reload();
+				}
+			},
+			FailHandler(controller));
+	}
+	void reload() {
+		_cursor = QString();
+		_users.clear();
+		_loading = false;
+		delegate()->setLoading(true);
+		load(true);
+	}
 	void load(bool first) {
 		if (_loading) {
 			return;
@@ -1663,6 +1758,9 @@ private:
 						if (row.title.isEmpty()) {
 							row.title = Support::MemberName(session, request.user);
 						}
+						if (!_users.contains(request.user)) {
+							_users.push_back(request.user);
+						}
 						if (!request.linkName.trimmed().isEmpty()) {
 							row.subtitle = tr::lng_groups_requests_via(
 								tr::now,
@@ -1687,9 +1785,12 @@ private:
 			});
 	}
 
+	static constexpr auto kMaxCollectPages = 50;
+
 	Window::SessionController *_controller = nullptr;
 	QString _groupId;
 	QString _cursor;
+	QStringList _users;
 	bool _loading = false;
 
 };
@@ -1869,6 +1970,7 @@ void ShowInviteLinks(
 				st::boxRowPaddingNoTitle);
 		}
 		const auto base = store.inviteLinkBase();
+		const auto third = store.thirdRelease();
 		for (const auto &invite : invites) {
 			if (invite.revoked) {
 				continue;
@@ -1887,12 +1989,20 @@ void ShowInviteLinks(
 			row->setIcon(&st::groupsIconLink);
 			row->setValueText(InviteStatus(invite));
 			const auto link = invite.link;
+			const auto title = invite.name.trimmed().isEmpty()
+				? tr::lng_groups_link_joined(tr::now)
+				: Data::Json::CleanName(invite.name.simplified());
 			row->setClickedCallback([=] {
 				const auto menu = new Ui::PopupMenu(controller->window());
 				menu->addAction(tr::lng_copy_link(tr::now), [=] {
 					QGuiApplication::clipboard()->setText(url);
 					controller->showToast(tr::lng_groups_links_copied(tr::now));
 				}, &st::menuIconLink);
+				if (third) {
+					menu->addAction(tr::lng_groups_link_joined(tr::now), [=] {
+						ShowInviteMembersBox(controller, groupId, link, title);
+					}, &st::groupsMenuJoined);
+				}
 				auto revoke = Ui::MenuItem();
 				revoke.text = tr::lng_groups_links_revoke(tr::now);
 				revoke.icon = &st::menuIconDelete;

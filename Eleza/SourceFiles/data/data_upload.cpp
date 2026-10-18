@@ -115,6 +115,7 @@ QString Upload::PurposeName(UploadPurpose purpose) {
 	case UploadPurpose::Post: return u"post"_s;
 	case UploadPurpose::Chat: return u"chat"_s;
 	case UploadPurpose::Conversation: return u"conversation"_s;
+	case UploadPurpose::Story: return u"story"_s;
 	}
 	return u"chat"_s;
 }

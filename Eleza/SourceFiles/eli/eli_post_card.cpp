@@ -3,12 +3,14 @@
 #include "data/data_blurhash.h"
 #include "data/data_feed.h"
 #include "data/data_session.h"
+#include "data/data_stories.h"
 #include "data/data_users.h"
 #include "eli/eli_logic.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
 #include "main/main_session.h"
 #include "media/media_audio_player.h"
+#include "stories/stories_ring.h"
 #include "support/media_image.h"
 #include "ui/image/image_prepare.h"
 #include "ui/painter.h"
@@ -1425,7 +1427,17 @@ void PostCard::paint(Painter &p, const CardPaintState &state) const {
 	if (!_contextText.isEmpty()) {
 		paintContext(p);
 	}
-	_host->cardUserpics().paint(p, _userpicRect, _post.author);
+	if (const auto ring = _host->cardSession().data().stories().ring(_post.author);
+		ring != Data::StoryRing::None) {
+		// The face steps in to leave room for the story ring.
+		const auto outset = Stories::RingOutset();
+		const auto inner = _userpicRect.marginsRemoved(
+			QMargins(outset, outset, outset, outset));
+		_host->cardUserpics().paint(p, inner, _post.author);
+		Stories::PaintRing(p, inner, ring);
+	} else {
+		_host->cardUserpics().paint(p, _userpicRect, _post.author);
+	}
 	paintHeader(p, state);
 	paintText(p, state);
 	if (!_post.deleted) {

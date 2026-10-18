@@ -66,6 +66,8 @@ private:
 	Ui::FlatLabel *_about = nullptr;
 	Ui::SettingsButton *_notify = nullptr;
 	Ui::SettingsButton *_requests = nullptr;
+	Ui::SettingsButton *_slowMode = nullptr;
+	Ui::SettingsButton *_hideMembers = nullptr;
 	Ui::FlatLabel *_membersTitle = nullptr;
 	MembersList *_members = nullptr;
 	QString _shape;

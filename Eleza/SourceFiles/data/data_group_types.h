@@ -47,6 +47,9 @@ struct Group {
 	qint64 clearedBeforeSeq = 0;
 	qint64 createdAt = 0;       // ms
 	int joinRequests = 0;       // undecided requests, for those who may decide
+	int adminCount = 0;         // the owner and the admins together
+	bool hideMembers = false;   // the group's setting: ordinary members see only the admins
+	bool membersHidden = false; // the member list is limited for me (the setting, and I am a member)
 
 	[[nodiscard]] bool valid() const {
 		return !id.isEmpty();
@@ -126,6 +129,56 @@ struct GroupJoinRequest {
 	QString linkName;
 
 	[[nodiscard]] static GroupJoinRequest FromJson(const QJsonObject &json);
+};
+
+// One entry of the admin log («اقدام‌های اخیر»). Every value of the detail
+// is the value after the action; an absent one is the zero one.
+struct GroupAdminLogEntry {
+	QString id;
+	qint64 at = 0;              // ms
+	QString actor;
+	QString action;             // promote | restrict | slow_mode | … (unknown: generic)
+	QString target;             // empty: the action is about nobody
+	qint64 seq = 0;             // pin, unpin, delete_message
+	QVector<qint64> seqs;       // delete_messages
+	QStringList rights;         // promote, admin_rights
+	QString adminTitle;
+	QStringList denied;         // restrict
+	qint64 until = 0;           // restrict: unix seconds, 0 = until lifted
+	QStringList defaultPermissions; // permissions
+	bool historyVisible = false;
+	int slowModeS = 0;          // slow_mode: 0 = off
+	bool hideMembers = false;   // hide_members
+	QString linkName;           // invite_create, invite_revoke
+	bool requiresApproval = false;
+	bool deleteMessages = false; // ban
+
+	[[nodiscard]] static GroupAdminLogEntry FromJson(const QJsonObject &json);
+};
+
+// Who reacted to a message, and with what.
+struct GroupReaction {
+	QString user;
+	QString emoji;
+	qint64 at = 0;              // ms
+
+	[[nodiscard]] static GroupReaction FromJson(const QJsonObject &json);
+};
+
+// A request of a bulk decision that was not decided.
+struct GroupDecideFailure {
+	QString user;
+	QString reason;             // not_found | full | limit | banned
+
+	[[nodiscard]] static GroupDecideFailure FromJson(const QJsonObject &json);
+};
+
+// Somebody who joined through an invite link and is a member now.
+struct GroupInviteMember {
+	QString user;
+	qint64 joinedAt = 0;        // ms
+
+	[[nodiscard]] static GroupInviteMember FromJson(const QJsonObject &json);
 };
 
 } // namespace Data

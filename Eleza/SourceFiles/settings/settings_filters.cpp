@@ -1,6 +1,9 @@
-// «بی‌صدا و مسدود»: muted words, blocked accounts, muted accounts, hidden topics.
+// «بی‌صدا و مسدود»: muted words, blocked accounts, muted accounts, hidden
+// accounts, hidden topics, people blocked in masked conversations; and the
+// lists of the privacy page: last seen exceptions and sent follow requests.
 #include "settings/settings_pages.h"
 
+#include "boxes/peer_list_box.h"
 #include "data/data_graph.h"
 #include "data/data_session.h"
 #include "data/data_users.h"
@@ -8,6 +11,7 @@
 #include "lang_auto.h"
 #include "main/main_session.h"
 #include "settings/settings_common.h"
+#include "support/chat_text.h"
 #include "support/error_text.h"
 #include "support/media_image.h"
 #include "ui/layers/generic_box.h"
@@ -28,6 +32,7 @@ using Controller = Window::SessionController;
 using Changed = std::function<void()>;
 
 constexpr auto kMaxWordLength = 64;
+constexpr auto kMaxExceptionPages = 20;
 
 // A person with one small action on the trailing side.
 class PeerRow final : public Ui::RpWidget {
@@ -515,6 +520,434 @@ void ShowHiddenTopicsBox(
 	}));
 }
 
+// ---- hidden accounts
+
+void ShowHiddenUsersBox(
+		Controller *controller,
+		const QStringList &ids,
+		Changed changed) {
+	controller->show(Ui::Box([=](Ui::GenericBox *box) {
+		box->setTitle(tr::lng_settings_hidden_users(tr::now));
+		const auto session = &controller->session();
+		const auto parts = std::make_shared<ListParts>(AddList(
+			box,
+			ids.isEmpty()
+				? tr::lng_settings_list_empty(tr::now)
+				: tr::lng_loading(tr::now)));
+		const auto users = &session->data().users();
+		users->ensure(ids, box, [=] {
+			for (const auto &id : ids) {
+				auto user = users->peek(id);
+				if (!user.valid()) {
+					user.id = id;
+				}
+				const auto name = user.displayName;
+				const auto row = std::make_shared<QPointer<PeerRow>>();
+				*row = parts->rows->add(Ui::object_ptr<PeerRow>(
+					parts->rows,
+					session,
+					user,
+					tr::lng_settings_show_again(tr::now),
+					[=] {
+						session->data().graph().unhide(id);
+						controller->showToast(tr::lng_settings_unhidden_toast(
+							tr::now,
+							lt_name,
+							name));
+						Ui::PostponeCall(box, [=] {
+							if (*row) {
+								parts->rows->removeChild(row->data());
+							}
+							parts->refresh();
+							if (changed) {
+								changed();
+							}
+						});
+					},
+					[=] {
+						const auto route = Window::Routes::User(id);
+						box->closeBox();
+						controller->openRoute(route);
+					}));
+			}
+			parts->empty->setText(tr::lng_settings_list_empty(tr::now));
+			parts->refresh();
+		});
+		box->addButton(tr::lng_close(tr::now), [=] { box->closeBox(); });
+	}));
+}
+
+// ---- blocked in masked conversations
+
+void ShowContactBansBox(Controller *controller) {
+	controller->show(Ui::Box([=](Ui::GenericBox *box) {
+		box->setTitle(tr::lng_settings_contact_bans(tr::now));
+		box->addRow(
+			Ui::object_ptr<Ui::FlatLabel>(
+				box,
+				tr::lng_settings_contact_bans_about(tr::now),
+				st::settingsFootnote),
+			st::boxRowPadding);
+		const auto graph = &controller->session().data().graph();
+		const auto parts = std::make_shared<ListParts>(
+			AddList(box, tr::lng_loading(tr::now)));
+		graph->contactBans(box, [=](const QVector<Data::ContactBan> &bans) {
+			for (const auto &ban : bans) {
+				const auto token = ban.token;
+				const auto name = ban.label.trimmed().isEmpty()
+					? tr::lng_settings_contact_bans_unnamed(tr::now)
+					: ban.label.simplified();
+				const auto row = std::make_shared<QPointer<TextRow>>();
+				*row = parts->rows->add(
+					Ui::object_ptr<TextRow>(parts->rows, name));
+				const auto button = (*row)->addAction(tr::lng_unblock(tr::now), nullptr);
+				const auto weakButton = QPointer<Ui::RoundButton>(button);
+				button->setClickedCallback([=] {
+					if (weakButton) {
+						weakButton->setLoading(true);
+					}
+					graph->removeContactBan(token, box, [=] {
+						controller->showToast(tr::lng_settings_unblocked_toast(
+							tr::now,
+							lt_name,
+							name));
+						Ui::PostponeCall(box, [=] {
+							if (*row) {
+								parts->rows->removeChild(row->data());
+							}
+							parts->refresh();
+						});
+					}, [=](const Api::Error &error) {
+						if (weakButton) {
+							weakButton->setLoading(false);
+						}
+						Support::ShowError(controller, error);
+					});
+				});
+			}
+			parts->empty->setText(tr::lng_settings_list_empty(tr::now));
+			parts->refresh();
+		}, [=](const Api::Error &error) {
+			parts->empty->setText(Support::ErrorText(
+				error,
+				tr::lng_error_load(tr::now)));
+			parts->refresh();
+		});
+		box->addButton(tr::lng_close(tr::now), [=] { box->closeBox(); });
+	}));
+}
+
+// ---- people for a list: searched on the server, several at once
+
+class PickPeopleController final : public Boxes::PeerListController {
+public:
+	PickPeopleController(
+		QStringList exclude,
+		Fn<void(QStringList)> chosen)
+	: _exclude(std::move(exclude))
+	, _chosen(std::move(chosen)) {
+	}
+
+	QString title() const override {
+		return tr::lng_settings_ls_add(tr::now);
+	}
+	QString searchPlaceholder() const override {
+		return tr::lng_settings_ls_search(tr::now);
+	}
+	QString emptyText() const override {
+		return delegate()->searchQuery().trimmed().size() < 2
+			? tr::lng_settings_ls_search(tr::now)
+			: tr::lng_nothing_found(tr::now);
+	}
+	bool searchRemotely() const override {
+		return true;
+	}
+	bool multiSelect() const override {
+		return true;
+	}
+	QString submitText() const override {
+		return tr::lng_settings_add(tr::now);
+	}
+	void prepare() override {
+		delegate()->setRows({});
+	}
+	void rowClicked(const Boxes::PeerListRow &row) override {
+		Q_UNUSED(row);
+	}
+	void searchQueryChanged(const QString &query) override {
+		const auto trimmed = query.trimmed();
+		const auto generation = ++_generation;
+		if (trimmed.size() < 2) {
+			delegate()->setRows({});
+			return;
+		}
+		delegate()->setLoading(true);
+		const auto session = this->session();
+		const auto me = session->userId();
+		session->data().graph().searchPeople(
+			trimmed,
+			base::Guard(delegate()->peerListBox()),
+			[=, this](const QVector<Data::Profile> &people) {
+				if (generation != _generation) {
+					return;
+				}
+				auto rows = QVector<Boxes::PeerListRow>();
+				for (const auto &person : people) {
+					if (person.id.isEmpty()
+						|| person.id == me
+						|| person.deleted
+						|| person.isBot) {
+						continue;
+					}
+					auto row = Boxes::PeerListRow::FromUser(person);
+					if (_exclude.contains(person.id)) {
+						row.disabled = true;
+					}
+					rows.push_back(row);
+				}
+				delegate()->setRows(rows);
+			});
+	}
+	void submit(const QStringList &ids) override {
+		const auto chosen = _chosen;
+		delegate()->closeBox();
+		if (chosen) {
+			chosen(ids);
+		}
+	}
+
+private:
+	QStringList _exclude;
+	Fn<void(QStringList)> _chosen;
+	int _generation = 0;
+
+};
+
+// ---- sent follow requests
+
+void ShowSentRequestsBoxImpl(Controller *controller) {
+	controller->show(Ui::Box([=](Ui::GenericBox *box) {
+		box->setTitle(tr::lng_settings_sent_requests(tr::now));
+		box->addRow(
+			Ui::object_ptr<Ui::FlatLabel>(
+				box,
+				tr::lng_settings_sent_requests_about(tr::now),
+				st::settingsFootnote),
+			st::boxRowPadding);
+		const auto session = &controller->session();
+		const auto parts = std::make_shared<ListParts>(
+			AddList(box, tr::lng_loading(tr::now)));
+		struct State {
+			QString cursor;
+			bool loading = false;
+			bool finished = false;
+		};
+		const auto state = std::make_shared<State>();
+		const auto load = std::make_shared<Fn<void()>>();
+		*load = [=] {
+			if (state->loading || state->finished) {
+				return;
+			}
+			state->loading = true;
+			session->data().graph().sentFollowRequests(state->cursor, box, [=](
+					const Data::GraphList &list) {
+				state->loading = false;
+				state->cursor = list.nextCursor;
+				state->finished = list.nextCursor.isEmpty()
+					|| list.users.isEmpty();
+				for (const auto &user : list.users) {
+					const auto id = user.id;
+					const auto name = user.displayName;
+					const auto row = std::make_shared<QPointer<PeerRow>>();
+					*row = parts->rows->add(Ui::object_ptr<PeerRow>(
+						parts->rows,
+						session,
+						user,
+						tr::lng_settings_sent_cancel(tr::now),
+						[=] {
+							if (*row) {
+								(*row)->setBusy(true);
+							}
+							session->data().graph().unfollow(id, box, [=](
+									const Data::GraphState &) {
+								if (*row) {
+									parts->rows->removeChild(row->data());
+								}
+								parts->refresh();
+								controller->showToast(
+									tr::lng_settings_sent_cancelled(
+										tr::now,
+										lt_name,
+										name));
+							}, [=](const Api::Error &error) {
+								if (*row) {
+									(*row)->setBusy(false);
+								}
+								Support::ShowError(controller, error);
+							});
+						},
+						[=] {
+							const auto route = Window::Routes::User(id);
+							box->closeBox();
+							controller->openRoute(route);
+						}));
+				}
+				parts->empty->setText(tr::lng_settings_list_empty(tr::now));
+				parts->refresh();
+			}, [=](const Api::Error &error) {
+				state->loading = false;
+				state->finished = true;
+				parts->empty->setText(Support::ErrorText(
+					error,
+					tr::lng_error_load(tr::now)));
+				parts->refresh();
+			});
+		};
+		(*load)();
+		Ui::PostponeCall(box, [=] {
+			if (const auto scroll = box->scrollArea()) {
+				QObject::connect(
+					scroll,
+					&Ui::ScrollArea::nearBottom,
+					box,
+					[=] { (*load)(); });
+			}
+		});
+		box->addButton(tr::lng_close(tr::now), [=] { box->closeBox(); });
+	}));
+}
+
+// ---- last seen exceptions
+
+void ShowLastSeenExceptionsBoxImpl(
+		Controller *controller,
+		const QString &kind,
+		Changed changed) {
+	const auto always = (kind == u"always");
+	controller->show(Ui::Box([=](Ui::GenericBox *box) {
+		box->setTitle(always
+			? tr::lng_settings_ls_always(tr::now)
+			: tr::lng_settings_ls_never(tr::now));
+		box->addRow(
+			Ui::object_ptr<Ui::FlatLabel>(
+				box,
+				always
+					? tr::lng_settings_ls_always_about(tr::now)
+					: tr::lng_settings_ls_never_about(tr::now),
+				st::settingsFootnote),
+			st::boxRowPadding);
+		const auto session = &controller->session();
+		const auto graph = &session->data().graph();
+		const auto known = std::make_shared<QStringList>();
+		const auto parts = std::make_shared<ListParts>();
+		const auto addPerson = std::make_shared<Fn<void(const Data::User &)>>();
+		*addPerson = [=](const Data::User &user) {
+			if (user.id.isEmpty() || known->contains(user.id)) {
+				return;
+			}
+			known->push_back(user.id);
+			const auto id = user.id;
+			const auto name = user.displayName;
+			const auto row = std::make_shared<QPointer<PeerRow>>();
+			*row = parts->rows->add(Ui::object_ptr<PeerRow>(
+				parts->rows,
+				session,
+				user,
+				tr::lng_settings_ls_remove(tr::now),
+				[=] {
+					if (*row) {
+						(*row)->setBusy(true);
+					}
+					graph->removeLastSeenException(id, box, [=] {
+						known->removeAll(id);
+						controller->showToast(tr::lng_settings_ls_removed(
+							tr::now,
+							lt_name,
+							name));
+						if (*row) {
+							parts->rows->removeChild(row->data());
+						}
+						parts->refresh();
+						if (changed) {
+							changed();
+						}
+					}, [=](const Api::Error &error) {
+						if (*row) {
+							(*row)->setBusy(false);
+						}
+						Support::ShowError(controller, error);
+					});
+				},
+				[=] {
+					const auto route = Window::Routes::User(id);
+					box->closeBox();
+					controller->openRoute(route);
+				}));
+			parts->refresh();
+		};
+		const auto add = box->addRow(
+			Ui::object_ptr<Ui::SettingsButton>(
+				box,
+				tr::lng_settings_ls_add(tr::now),
+				st::settingsButton),
+			style::margins());
+		add->setIcon(&st::settingsIconAddPeople);
+		add->setClickedCallback([=] {
+			const auto weak = QPointer<Ui::GenericBox>(box);
+			controller->show(Ui::Box<Boxes::PeerListBox>(
+				session,
+				std::make_unique<PickPeopleController>(*known, [=](
+						const QStringList &ids) {
+					for (const auto &id : ids) {
+						graph->setLastSeenException(id, kind, box, [=] {
+							if (!weak) {
+								return;
+							}
+							auto user = session->data().users().peek(id);
+							if (!user.valid()) {
+								user.id = id;
+							}
+							(*addPerson)(user);
+							controller->showToast(tr::lng_settings_ls_added(
+								tr::now,
+								lt_name,
+								Support::MemberName(session, id)));
+							if (changed) {
+								changed();
+							}
+						}, [=](const Api::Error &error) {
+							Support::ShowError(controller, error);
+						});
+					}
+				})));
+		});
+		*parts = AddList(box, tr::lng_loading(tr::now));
+
+		const auto load = std::make_shared<Fn<void(QString, int)>>();
+		*load = [=](const QString &cursor, int page) {
+			graph->lastSeenExceptions(kind, cursor, box, [=](
+					const Data::LastSeenExceptionsPage &result) {
+				for (const auto &user : result.users) {
+					(*addPerson)(user);
+				}
+				if (!result.nextCursor.isEmpty() && page < kMaxExceptionPages) {
+					(*load)(result.nextCursor, page + 1);
+				} else {
+					parts->empty->setText(tr::lng_settings_list_empty(tr::now));
+					parts->refresh();
+				}
+			}, [=](const Api::Error &error) {
+				parts->empty->setText(Support::ErrorText(
+					error,
+					tr::lng_error_load(tr::now)));
+				parts->refresh();
+			});
+		};
+		(*load)(QString(), 0);
+		box->addButton(tr::lng_close(tr::now), [=] { box->closeBox(); });
+	}));
+}
+
 class FiltersPage final : public Page {
 public:
 	FiltersPage(QWidget *parent, Controller *controller)
@@ -565,6 +998,17 @@ private:
 		)->setValueText(count(filters.muted.size()));
 		AddLinkButton(
 			content(),
+			tr::lng_settings_hidden_users(tr::now),
+			&st::settingsIconHidden,
+			[=] { ShowHiddenUsersBox(window, filters.hidden, reload); }
+		)->setValueText(count(filters.hidden.size()));
+		AddLinkButton(
+			content(),
+			tr::lng_settings_contact_bans(tr::now),
+			&st::settingsIconAnonymous,
+			[=] { ShowContactBansBox(window); });
+		AddLinkButton(
+			content(),
 			tr::lng_settings_hidden_topics(tr::now),
 			&st::settingsIconTopics,
 			[=] { ShowHiddenTopicsBox(window, filters.hiddenTopics, reload); }
@@ -578,6 +1022,17 @@ private:
 };
 
 } // namespace
+
+void ShowLastSeenExceptionsBox(
+		Window::SessionController *controller,
+		const QString &kind,
+		std::function<void()> changed) {
+	ShowLastSeenExceptionsBoxImpl(controller, kind, std::move(changed));
+}
+
+void ShowSentRequestsBox(Window::SessionController *controller) {
+	ShowSentRequestsBoxImpl(controller);
+}
 
 Window::SectionFactory FiltersPageFactory() {
 	return [](QWidget *parent, Window::SessionController *controller) {

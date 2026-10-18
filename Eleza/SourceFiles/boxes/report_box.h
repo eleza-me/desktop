@@ -22,7 +22,7 @@ class SessionController;
 namespace Boxes {
 
 struct ReportArgs {
-	QString kind; // post | reply | account | conversation | group | group_message
+	QString kind; // post | reply | account | conversation | group | group_message | story
 	QString id;   // (a group or a message of one: the group's id)
 	qint64 messageSeq = 0; // group_message: which message
 	// Offers «also block» for this user (never for myself or a conversation).

@@ -52,6 +52,7 @@ enum class Zone {
 	Location,
 	LiveStop,
 	Post,          // a shared feed post
+	Story,         // the story a reply / a reaction points at
 	Preview,       // the link preview card
 	Reaction,      // a reaction chip: `text`
 	Button,        // an inline keyboard button: `row`, `column`

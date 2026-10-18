@@ -8,6 +8,7 @@
 #include "data/data_chats.h"
 #include "data/data_graph.h"
 #include "data/data_session.h"
+#include "data/data_stories.h"
 #include "dialogs/dialogs_module.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
@@ -15,6 +16,7 @@
 #include "main/main_session.h"
 #include "settings/settings_common.h"
 #include "settings/settings_logic.h"
+#include "stories/stories_settings.h"
 #include "support/brand_mark.h"
 #include "support/links.h"
 #include "ui/layers/generic_box.h"
@@ -26,6 +28,7 @@
 #include "window/window_title_frame.h"
 #include "styles/style_layers.h"
 #include "styles/style_settings.h"
+#include "styles/style_stories.h"
 
 #include <QtCore/QTimeZone>
 #include <QtGui/QClipboard>
@@ -76,6 +79,12 @@ private:
 			u"privacy.private_account"_s,
 			false);
 		AddFootnote(content(), tr::lng_settings_private_account_about(tr::now));
+		const auto window = controller();
+		AddLinkButton(
+			content(),
+			tr::lng_settings_sent_requests(tr::now),
+			&st::settingsIconRequests,
+			[=] { ShowSentRequestsBox(window); });
 
 		AddDivider(content());
 		AddSubsectionTitle(content(), tr::lng_settings_who_can(tr::now));
@@ -126,6 +135,17 @@ private:
 				Nobody(),
 			},
 			u"everyone"_s);
+		AddLinkButton(
+			content(),
+			tr::lng_settings_ls_always(tr::now),
+			&st::settingsIconSeen,
+			[=] { ShowLastSeenExceptionsBox(window, u"always"_s); });
+		AddLinkButton(
+			content(),
+			tr::lng_settings_ls_never(tr::now),
+			&st::settingsIconSeenOff,
+			[=] { ShowLastSeenExceptionsBox(window, u"never"_s); });
+		AddFootnote(content(), tr::lng_settings_ls_exceptions_about(tr::now));
 		addPicker(
 			tr::lng_settings_birthday(tr::now),
 			u"privacy.birthday_visibility"_s,
@@ -163,6 +183,16 @@ private:
 			tr::lng_settings_show_conversations(tr::now),
 			u"privacy.show_conversations_on_profile"_s,
 			true);
+
+		if (controller()->session().data().stories().enabled()) {
+			AddDivider(content());
+			const auto controller = this->controller();
+			AddLinkButton(
+				content(),
+				tr::lng_stories_settings(tr::now),
+				&st::storiesSettingsIconStory,
+				[=] { controller->showMainSection(Stories::SettingsFactory()); });
+		}
 	}
 
 };

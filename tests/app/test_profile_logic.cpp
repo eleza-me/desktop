@@ -127,6 +127,7 @@ private Q_SLOTS:
 			MenuEntry::ShareProfile,
 			MenuEntry::CopyLink,
 			MenuEntry::Mute,
+			MenuEntry::Hide,
 			MenuEntry::RemoveFollower,
 			MenuEntry::Report,
 			MenuEntry::Block,
@@ -136,11 +137,14 @@ private Q_SLOTS:
 	void modelMenuToggles() {
 		auto state = Other();
 		state.muted = true;
+		state.hidden = true;
 		state.postNotifications = true;
 		state.hasHandle = false;
 		const auto model = MakeButtonModel(state);
 		QVERIFY(model.has(MenuEntry::Unmute));
 		QVERIFY(!model.has(MenuEntry::Mute));
+		QVERIFY(model.has(MenuEntry::Unhide));
+		QVERIFY(!model.has(MenuEntry::Hide));
 		QVERIFY(model.has(MenuEntry::PostNotificationsOff));
 		QVERIFY(!model.has(MenuEntry::ShareProfile));
 		QVERIFY(!model.has(MenuEntry::CopyLink));

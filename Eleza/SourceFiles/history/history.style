@@ -194,6 +194,9 @@ historyPostTextStyle: TextStyle(defaultTextStyle) {
 historyPostTextLines: 4;
 historyPostThumb: 64px;
 historyPostThumbRadius: 8px;
+historyStoryWidth: 240px;
+historyStoryThumb: size(44px, 78px);
+historyStoryEmojiFont: font(26px);
 
 // link preview card
 historyPreviewPadding: margins(10px, 6px, 8px, 7px);
@@ -305,6 +308,7 @@ menuIconUnpin: icon {{ "pin", menuIconFg, 20px }};
 menuIconFile: icon {{ "file", menuIconFg, 20px }};
 menuIconLocation: icon {{ "location", menuIconFg, 20px }};
 menuIconStop: icon {{ "close-circle", menuIconFg, 20px }};
+menuIconReactions: icon {{ "like", menuIconFg, 20px }};
 
 // ---- bars under the top bar
 historyBarHeight: 46px;

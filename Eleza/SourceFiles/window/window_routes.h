@@ -19,6 +19,9 @@
 //   conversation/<id>          an anonymous conversation (its sheet / chat)
 //   group/new                  «گروه تازه»: pick people, then name the group
 //   group/<groupId>            the info of a group (members, settings, administration)
+//   group/<groupId>?show=media the shared media of a group (photos, files, links, voice)
+//   group/<groupId>?show=log   «اقدام‌های اخیر» (the admin log)
+//   group/<groupId>?show=reactions&seq=N   who reacted to a message (a box)
 //   g/<token>                  an invite link of a group (https://eleza.me/g/<token>)
 //
 // The chat of a group is a chat route like any other: chat/<groupId>.
@@ -117,6 +120,9 @@ namespace Routes {
 [[nodiscard]] QString Conversation(const QString &id);
 [[nodiscard]] QString NewGroup();
 [[nodiscard]] QString Group(const QString &groupId);
+[[nodiscard]] QString GroupMedia(const QString &groupId);
+[[nodiscard]] QString GroupAdminLog(const QString &groupId);
+[[nodiscard]] QString GroupReactions(const QString &groupId, qint64 seq);
 [[nodiscard]] QString GroupInvite(const QString &token);
 
 } // namespace Routes

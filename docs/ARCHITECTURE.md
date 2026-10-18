@@ -38,7 +38,7 @@ Eleza/
     storage/              per-account SQLite cache + key/value, secure blob for tokens / device key
     data/                 typed models + stores: chats, messages, users, sync (pts), outbox, media,
                           upload, feed, graph, conversations, notifications, stickers (and
-                          the decoders of animated ones: data_sticker_decode.h), calls,
+                          the decoders of animated ones: data_sticker_decode.h), calls, stories,
                           groups (their own sync track: data_groups.h; the decisions as plain
                           functions: data_group_rules.h)
     lang/                 lang runtime (fa / en), number + date formatting (Persian digits, Jalali)
@@ -56,6 +56,9 @@ Eleza/
     profile/              profiles, follow lists, edit profile
     settings/             settings sections
     boxes/                modal boxes shared by sections (peer list, photo crop, country list, about)
+    stories/              stories: the tray on top of the feed, rings around faces, the
+                          full-window viewer, posting, the viewers box, Settings → Privacy →
+                          «استوری» (the data side: data/data_stories.h, data_story_types.h)
     media/                audio/voice player, video player widget, image viewer
     calls/                voice and video calls (ELEZA_ENABLE_CALLS): the call state machine, the
                           media layer over the LiveKit library, the camera, the call bar / view /

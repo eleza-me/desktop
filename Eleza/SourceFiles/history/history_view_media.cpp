@@ -24,6 +24,7 @@
 #include "styles/style_history.h"
 
 #include <QtCore/QCoreApplication>
+#include <QtCore/QDateTime>
 #include <QtCore/QFileInfo>
 #include <QtCore/QPointer>
 #include <QtCore/QThreadPool>
@@ -1834,6 +1835,155 @@ void Media::watch(const std::shared_ptr<Ui::ImageSource> &source) {
 		[=] { delegate->elementRepaint(parent); });
 }
 
+// ---- a reply / a reaction to a story
+
+class StoryMedia final : public Media {
+public:
+	StoryMedia(Delegate *delegate, Element *parent)
+	: Media(delegate, parent) {
+	}
+
+	QSize countSize(int maxWidth, bool hasCaption) override {
+		Q_UNUSED(hasCaption);
+		const auto width = std::min(int(st::historyStoryWidth), maxWidth);
+		const auto &padding = st::historyPostPadding;
+		const auto &story = data().story;
+		_reaction = (data().kind == Data::MessageKind::StoryReaction);
+		_emoji = (story && _reaction) ? story->emoji : QString();
+		_gone = !story
+			|| story->expired(QDateTime::currentSecsSinceEpoch())
+			|| (_source && _source->failed());
+		if (!_gone && !_source) {
+			_source = Support::MakeImageSource(
+				delegate()->elementSession(),
+				Data::MediaRef::Story(story->storyId),
+				Data::MediaVariant::Thumb);
+			watch(_source);
+		}
+		const auto thumb = _gone ? QSize() : st::historyStoryThumb;
+		const auto line = st::historyPostLabelFont->height + 3;
+		const auto emoji = _emoji.isEmpty() ? 0 : st::historyStoryEmojiFont->height;
+		const auto text = _gone ? (st::historyPostTextStyle.font->height + 2) : 0;
+		const auto height = std::max(
+			line + emoji + text,
+			thumb.height());
+		return QSize(width, padding.top() + height + padding.bottom());
+	}
+
+	void unload() override {
+		_source = nullptr;
+		_prepared = PreparedImage();
+	}
+
+	void dataChanged() override {
+		if (_source && _source->failed()) {
+			_gone = true;
+		}
+	}
+
+	void paint(Painter &p, const QRect &rect, const MediaPaint &context) override {
+		const auto &colors = *context.colors;
+		const auto rtl = style::RightToLeft();
+		const auto accent = context.outgoing ? colors.accentOut : colors.accentIn;
+		const auto &padding = st::historyPostPadding;
+		if (!_gone && _source && _source->failed()) {
+			// 404: deleted or no longer mine to see.
+			_gone = true;
+		}
+		{
+			auto hq = PainterHighQualityEnabler(p);
+			auto path = QPainterPath();
+			path.addRoundedRect(QRectF(rect), st::historyPostRadius, st::historyPostRadius);
+			auto bg = context.outgoing ? colors.tintOut : colors.tintIn;
+			if (context.hovered == Zone::Story && !_gone) {
+				bg.setAlphaF(std::min(bg.alphaF() * 1.6f, 1.f));
+			}
+			p.fillPath(path, bg);
+			p.save();
+			p.setClipPath(path);
+			p.fillRect(
+				QRect(
+					rtl ? (rect.right() + 1 - st::historyReplyBar) : rect.x(),
+					rect.y(),
+					st::historyReplyBar,
+					rect.height()),
+				accent);
+			p.restore();
+		}
+		const auto innerLeft = rect.x()
+			+ (rtl ? padding.right() : (padding.left() + st::historyReplyBar));
+		const auto innerWidth = rect.width()
+			- padding.left()
+			- padding.right()
+			- st::historyReplyBar;
+		const auto thumb = _gone ? QSize() : st::historyStoryThumb;
+		const auto thumbSkip = thumb.isEmpty() ? 0 : (thumb.width() + st::historyPreviewThumbSkip);
+		const auto textLeft = rtl ? (innerLeft + thumbSkip) : innerLeft;
+		const auto textWidth = innerWidth - thumbSkip;
+		auto top = rect.y() + padding.top();
+		p.setPen(accent);
+		DrawLine(
+			p,
+			st::historyPostLabelFont,
+			_reaction
+				? tr::lng_stories_chat_reaction(tr::now)
+				: tr::lng_stories_chat_reply(tr::now),
+			textLeft,
+			top,
+			textWidth);
+		top += st::historyPostLabelFont->height + 3;
+		if (!_emoji.isEmpty()) {
+			p.setPen(context.outgoing ? colors.textOut : colors.textIn);
+			DrawLine(p, st::historyStoryEmojiFont, _emoji, textLeft, top, textWidth);
+			top += st::historyStoryEmojiFont->height;
+		}
+		if (_gone) {
+			p.setPen(context.outgoing ? colors.metaOut : colors.metaIn);
+			DrawLine(
+				p,
+				st::historyPostTextStyle.font,
+				tr::lng_stories_chat_gone(tr::now),
+				textLeft,
+				top,
+				textWidth);
+			return;
+		}
+		const auto box = QRect(
+			rtl ? innerLeft : (innerLeft + innerWidth - thumb.width()),
+			rect.y() + padding.top(),
+			thumb.width(),
+			thumb.height());
+		const auto ratio = delegate()->elementRatio();
+		auto image = _source ? _source->request(box.size() * ratio) : QImage();
+		const auto radius = st::historyPostThumbRadius;
+		const int radii[4] = { radius, radius, radius, radius };
+		if (image.isNull()) {
+			auto hq = PainterHighQualityEnabler(p);
+			p.setPen(Qt::NoPen);
+			p.setBrush(st::historyMediaBg);
+			p.drawRoundedRect(box, radius, radius);
+		} else {
+			PaintCover(p, box, image, radii, false, _prepared);
+		}
+	}
+
+	HitResult hitTest(QPoint point, const QRect &rect) const override {
+		auto result = HitResult();
+		if (rect.contains(point)) {
+			result.zone = _gone ? Zone::Bubble : Zone::Story;
+		}
+		return result;
+	}
+
+private:
+	std::shared_ptr<Ui::ImageSource> _source;
+	PreparedImage _prepared;
+	QString _emoji;
+	bool _reaction = false;
+	bool _gone = false;
+
+};
+
 std::unique_ptr<Media> CreateMedia(Delegate *delegate, Element *parent) {
 	const auto &message = parent->data();
 	switch (message.kind) {
@@ -1857,6 +2007,9 @@ std::unique_ptr<Media> CreateMedia(Delegate *delegate, Element *parent) {
 		return std::make_unique<PostMedia>(delegate, parent);
 	case Data::MessageKind::Call:
 		return std::make_unique<CallMedia>(delegate, parent);
+	case Data::MessageKind::StoryReply:
+	case Data::MessageKind::StoryReaction:
+		return std::make_unique<StoryMedia>(delegate, parent);
 	case Data::MessageKind::System:
 		if (message.call) {
 			return std::make_unique<CallMedia>(delegate, parent);

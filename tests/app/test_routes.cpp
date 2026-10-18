@@ -105,6 +105,15 @@ private Q_SLOTS:
 		QCOMPARE(Routes::NewGroup(), QStringLiteral("group/new"));
 		QCOMPARE(Routes::Group("j1team"), QStringLiteral("group/j1team"));
 		QVERIFY(!ParseRoute("group").valid());
+		// Its sections: the shared media, the admin log, who reacted.
+		QCOMPARE(Routes::GroupMedia("j1team"), QStringLiteral("group/j1team?show=media"));
+		QCOMPARE(Routes::GroupAdminLog("j1team"), QStringLiteral("group/j1team?show=log"));
+		const auto reactions = ParseRoute(Routes::GroupReactions("j1team", 42));
+		QCOMPARE(reactions.type, RouteType::Group);
+		QCOMPARE(reactions.id, QStringLiteral("j1team"));
+		QCOMPARE(reactions.queryValue("show"), QStringLiteral("reactions"));
+		QCOMPARE(reactions.seq(), qint64(42));
+		QCOMPARE(ParseRoute(Routes::GroupMedia("j1team")).queryValue("show"), QStringLiteral("media"));
 		const auto token = QStringLiteral("j1team.AAAAAAAAAAAAAAAAAAAAAA");
 		QCOMPARE(RouteFromWebPath("/g/" + token)->type, RouteType::GroupInvite);
 		QCOMPARE(RouteFromWebPath("/g/" + token)->id, token);

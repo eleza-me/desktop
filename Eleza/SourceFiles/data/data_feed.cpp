@@ -3,6 +3,7 @@
 #include "base/unixtime.h"
 #include "data/data_json.h"
 #include "data/data_session.h"
+#include "data/data_stories.h"
 #include "data/data_transport.h"
 #include "data/data_users.h"
 
@@ -174,6 +175,8 @@ void Feed::applyCounts(const QJsonObject &map) {
 FeedPage Feed::parseFeed(const QJsonObject &json, bool videoOnly) {
 	auto page = FeedPage();
 	_session->users().seedJson(json.value("authors"_L1));
+	// The author cards carry the story ring hints (has_story, story_unseen).
+	_session->stories().applyAuthorHints(json.value("authors"_L1));
 	const auto now = base::unixtime::nowMs();
 	auto actors = QStringList();
 	for (const auto &value : json.value("items"_L1).toArray()) {
@@ -602,6 +605,22 @@ void Feed::shareLink(
 		.done([=](const QJsonObject &result) {
 			if (done) {
 				done(u"https://eleza.me/s/"_s + Json::String(result, "slug"_L1));
+			}
+		})
+		.fail(std::move(fail))
+		.send();
+}
+
+void Feed::revokeShareLinks(
+		const QString &id,
+		base::Guard guard,
+		Fn<void()> done,
+		FailCallback fail) {
+	_session->api().request(Api::Delete, u"/v1/posts/%1/share-links"_s.arg(PathSegment(id)))
+		.guard(guard)
+		.done([=] {
+			if (done) {
+				done();
 			}
 		})
 		.fail(std::move(fail))
