@@ -163,6 +163,9 @@ public:
 	bool sendTyping(const QString &cap, const QString &kind) override {
 		return _rt->sendTyping(cap, kind);
 	}
+	bool sendGroupTyping(const QString &group, const QString &kind) override {
+		return _rt->sendGroupTyping(group, kind);
+	}
 	void subscribePresence(
 			const QStringList &users,
 			base::Guard guard,

@@ -500,6 +500,7 @@ struct Presence {
 struct Activity {
 	QString kind;      // typing | recording_voice | uploading_photo | ...
 	qint64 until = 0;  // ms, local clock
+	QString user;      // a group: the member doing it (empty in a direct chat)
 };
 
 struct PinnedMessage {

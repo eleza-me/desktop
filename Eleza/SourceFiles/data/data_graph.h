@@ -91,6 +91,10 @@ public:
 	// settingValue("privacy.private_account")
 	[[nodiscard]] QJsonValue settingValue(const QString &dotted) const;
 	void setSetting(const QString &dotted, const QJsonValue &value);
+	// The `settings` signal: the document changed (on another device). A
+	// document that was read is read again (settingsChanged follows), once
+	// per version.
+	void settingsVersionChanged(qint64 version);
 	[[nodiscard]] static QJsonObject SettingPatch(const QString &dotted, const QJsonValue &value);
 	[[nodiscard]] static QJsonValue DeepMerge(const QJsonValue &base, const QJsonValue &patch);
 
@@ -129,6 +133,7 @@ private:
 	QJsonObject _settings;
 	QStringList _pendingDismissals;
 	bool _settingsLoaded = false;
+	qint64 _settingsVersion = 0;
 	bool _dismissalsLoaded = false;
 
 };

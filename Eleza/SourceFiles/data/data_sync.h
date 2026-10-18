@@ -14,6 +14,13 @@
 // read, played, draft, cleared, member, state, message_pinned,
 // message_unpinned, notif, group.
 //
+// Signals it routes: typing / group_typing (Chats activity), presence,
+// profile, topics, group / group_admin (Data::Groups), config (client-config
+// read again when its version differs), settings (my settings document read
+// again), media (an upload finished processing: Data::Upload). Anything else
+// arrives as Rt::Frame::Type::Signal for the screens that listen to the
+// transport (the «story» hint).
+//
 // Groups are a second track with a counter per group (Data::Groups): this
 // store hands it the group frames of the connection, the user updates of
 // kind `group` (my own place in a group) and the moments to catch up (every

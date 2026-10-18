@@ -39,6 +39,35 @@ qint64 History::lastSeq() const {
 	return 0;
 }
 
+UnreadCount UnreadAfterRead(
+		const Chat &row,
+		const History *history,
+		qint64 readSeq) {
+	const auto lastSeq = std::max(row.lastSeq, history ? history->lastSeq() : 0);
+	if (readSeq >= lastSeq || (row.unread <= 0 && !row.unreadCapped)) {
+		return {};
+	}
+	if (history && history->loaded && !history->hasMoreAfter) {
+		const auto first = history->firstSeq();
+		const auto covers = (first > 0)
+			&& (first <= readSeq + 1 || !history->hasMoreBefore);
+		if (covers) {
+			auto count = 0;
+			for (const auto &message : history->items) {
+				if (message.seq > readSeq && !message.mine && message.visible()) {
+					++count;
+				}
+			}
+			return { row.unreadCapped ? count : std::min(count, row.unread), false };
+		}
+	}
+	const auto bound = int(std::min<qint64>(lastSeq - readSeq, 1 << 30));
+	if (row.unreadCapped && bound > row.unread) {
+		return { row.unread, true };
+	}
+	return { std::min(row.unread, bound), false };
+}
+
 int History::indexOfKey(const QString &key) const {
 	for (auto i = 0; i != items.size(); ++i) {
 		if (items[i].key() == key) {
@@ -818,9 +847,11 @@ void Messages::markRead(const QString &chat, qint64 seq) {
 	}
 	const auto group = IsGroupId(chat);
 	const auto mentionsLeft = group && row && row->unreadMentions > 0 && seq < row->lastSeq;
+	// Read to the middle (scrolled up): the messages below stay unread.
+	const auto left = row ? UnreadAfterRead(*row, existing(chat), seq) : UnreadCount();
 	_session->chats().patch(chat, [&](Chat &c) {
-		c.unread = 0;
-		c.unreadCapped = false;
+		c.unread = left.count;
+		c.unreadCapped = left.capped;
 		c.lastReadSeq = seq;
 		c.info.lastReadSeq = seq;
 		if (!mentionsLeft) {
@@ -828,8 +859,8 @@ void Messages::markRead(const QString &chat, qint64 seq) {
 		}
 		if (c.group) {
 			c.group->lastReadSeq = seq;
-			c.group->unread = 0;
-			c.group->unreadCapped = false;
+			c.group->unread = left.count;
+			c.group->unreadCapped = left.capped;
 			c.group->unreadMentions = c.unreadMentions;
 		}
 	});

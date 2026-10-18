@@ -59,6 +59,13 @@ void ClientConfig::load(QObject *guard, Fn<void(bool)> done) {
 		.send();
 }
 
+qint64 ClientConfig::version() const {
+	const auto value = _data.value("version"_L1);
+	return value.isString()
+		? value.toString().toLongLong()
+		: base::SafeInt64(value.toDouble());
+}
+
 QJsonValue ClientConfig::value(const QString &dotted) const {
 	// The server's document is { "version": N, "values": { "<key>": … } };
 	// a flat document (test servers) is read as well.

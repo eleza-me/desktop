@@ -6,6 +6,7 @@
 #include "data/data_groups.h"
 #include "data/data_json.h"
 #include "data/data_messages.h"
+#include "data/data_outbox.h"
 #include "data/data_session.h"
 #include "data/data_transport.h"
 #include "data/data_users.h"
@@ -55,10 +56,25 @@ bool Chats::shown(const Chat &chat) const {
 	return !chat.isGroup || _session->groups().enabled();
 }
 
+bool Chats::HasContent(const Chat &chat) {
+	if (chat.isGroup || chat.isConversation) {
+		return true;
+	}
+	return chat.lastSeq > 0
+		|| chat.lastMessage.has_value()
+		|| (chat.draft && !chat.draft->empty())
+		|| chat.pinned;
+}
+
+bool Chats::listed(const Chat &chat) const {
+	return shown(chat)
+		&& (HasContent(chat) || _session->outbox().holds(chat.id));
+}
+
 QVector<Chat> Chats::list(Section section) const {
 	auto result = QVector<Chat>();
 	for (const auto &chat : _chats) {
-		if (InSection(chat, section) && shown(chat)) {
+		if (InSection(chat, section) && listed(chat)) {
 			result.push_back(chat);
 		}
 	}
@@ -68,7 +84,7 @@ QVector<Chat> Chats::list(Section section) const {
 
 int Chats::count(Section section) const {
 	return int(std::count_if(_chats.cbegin(), _chats.cend(), [&](const Chat &chat) {
-		return InSection(chat, section) && shown(chat);
+		return InSection(chat, section) && listed(chat);
 	}));
 }
 
@@ -95,8 +111,8 @@ const Chat *Chats::savedChat() const {
 }
 
 int Chats::unreadRequests() const {
-	return int(std::count_if(_chats.cbegin(), _chats.cend(), [](const Chat &chat) {
-		return chat.isRequest() && chat.unread > 0;
+	return int(std::count_if(_chats.cbegin(), _chats.cend(), [&](const Chat &chat) {
+		return chat.isRequest() && chat.unread > 0 && listed(chat);
 	}));
 }
 
@@ -104,7 +120,7 @@ void Chats::recount() {
 	auto unread = 0;
 	auto muted = 0;
 	for (const auto &chat : _chats) {
-		if (!chat.archived && !chat.isRequest() && chat.unread > 0 && shown(chat)) {
+		if (!chat.archived && !chat.isRequest() && chat.unread > 0 && listed(chat)) {
 			++(chat.muted ? muted : unread);
 		}
 	}
@@ -298,20 +314,46 @@ bool Chats::applyInfo(const ChatInfo &info) {
 
 // ---- store operations
 
-void Chats::replaceAll(const QVector<Chat> &chats) {
+void Chats::replaceAll(
+		const QVector<Chat> &chats,
+		const QSet<QString> &partialSections) {
 	const auto before = _chats.keys();
-	// The inbox does not list groups: their rows are Data::Groups' to keep.
-	auto groups = QVector<Chat>();
+	auto fresh = QSet<QString>();
+	for (const auto &chat : chats) {
+		fresh.insert(chat.id);
+	}
+	// Rows the inbox does not carry that stay: groups (Data::Groups' to
+	// keep), the chat on screen, opened empty threads (the server omits
+	// them; they are not listed anyway), chats with a message in the
+	// outbox, and rows of a section that was not read to its end.
+	auto kept = QVector<Chat>();
+	auto keptStored = QVector<bool>();
 	for (const auto &chat : std::as_const(_chats)) {
-		if (chat.isGroup) {
-			groups.push_back(chat);
+		if (fresh.contains(chat.id)) {
+			continue;
+		}
+		const auto pending = _session->outbox().holds(chat.id);
+		const auto stays = chat.isGroup
+			|| chat.id == _visibleChat
+			|| pending
+			|| partialSections.contains(chat.section);
+		if (stays) {
+			kept.push_back(chat);
+			keptStored.push_back(true);
+		} else if (!HasContent(chat) && shown(chat)) {
+			// In memory for this run only: the table does not collect them.
+			kept.push_back(chat);
+			keptStored.push_back(false);
 		}
 	}
 	_chats.clear();
 	auto rows = QVector<Storage::Database::Row>();
-	for (const auto &chat : std::as_const(groups)) {
+	for (auto i = 0; i != kept.size(); ++i) {
+		const auto &chat = kept[i];
 		_chats.insert(chat.id, chat);
-		rows.push_back({ chat.id, chat.toStored() });
+		if (keptStored[i]) {
+			rows.push_back({ chat.id, chat.toStored() });
+		}
 	}
 	for (const auto &chat : chats) {
 		if (isCleared(chat)) {
@@ -353,13 +395,15 @@ void Chats::patch(const QString &id, const Fn<void(Chat &)> &change) {
 	const auto activity = i->lastActivityAt;
 	const auto archived = i->archived;
 	const auto section = i->section;
+	const auto wasListed = listed(*i);
 	change(*i);
 	i->id = id;
 	store(*i);
 	changed(id, pinned != i->pinned
 		|| activity != i->lastActivityAt
 		|| archived != i->archived
-		|| section != i->section);
+		|| section != i->section
+		|| wasListed != listed(*i));
 }
 
 void Chats::remove(const QString &id) {
@@ -401,8 +445,9 @@ void Chats::applyCard(const User &card) {
 	}
 }
 
-void Chats::setVisibleChat(const QString &id) {
+void Chats::setVisibleChat(const QString &id, bool atEnd) {
 	_visibleChat = id;
+	_visibleAtEnd = id.isEmpty() || atEnd;
 }
 
 // ---- loading
@@ -465,7 +510,7 @@ void Chats::loadSection(
 		const QString &cursor,
 		int page,
 		std::shared_ptr<QVector<InboxEntry>> into,
-		Fn<void(bool)> done) {
+		Fn<void(bool, bool)> done) {
 	auto body = QJsonObject{
 		{ u"section"_s, section },
 		{ u"limit"_s, QString::number(kInboxPageSize) },
@@ -485,18 +530,23 @@ void Chats::loadSection(
 				into->push_back(std::move(entry));
 			}
 			const auto next = result.value("next_cursor"_L1).toString();
-			if (next.isEmpty() || next == cursor || page + 1 >= kMaxInboxPages) {
-				done(true);
+			if (next.isEmpty() || next == cursor) {
+				done(true, true);
+			} else if (page + 1 >= kMaxInboxPages) {
+				// Older rows than these are not read now: the ones in the
+				// list stay as they are.
+				done(true, false);
 			} else {
 				loadSection(section, next, page + 1, into, done);
 			}
 		})
 		.fail([=, this](const Api::Error &error) {
-			// The requests section is optional; the other two decide.
+			// The requests section is optional; the other two decide. A
+			// requests section that failed is not known now: its rows stay.
 			if (section != u"request" && !_inboxError) {
 				_inboxError = error;
 			}
-			done(section == u"request");
+			done(section == u"request", false);
 		})
 		.send();
 }
@@ -519,12 +569,16 @@ void Chats::loadInbox(
 		std::shared_ptr<QVector<InboxEntry>> messages = std::make_shared<QVector<InboxEntry>>();
 		std::shared_ptr<QVector<InboxEntry>> conversations = std::make_shared<QVector<InboxEntry>>();
 		std::shared_ptr<QVector<InboxEntry>> requests = std::make_shared<QVector<InboxEntry>>();
+		QSet<QString> partial;
 		int left = 3;
 		bool ok = true;
 	};
 	const auto state = std::make_shared<State>();
-	const auto sectionDone = [=, this](bool ok) {
+	const auto sectionDone = [=, this](const QString &section, bool ok, bool complete) {
 		state->ok = state->ok && ok;
+		if (!complete) {
+			state->partial.insert(section);
+		}
 		if (--state->left > 0) {
 			return;
 		}
@@ -544,6 +598,7 @@ void Chats::loadInbox(
 			return;
 		}
 		auto entries = *state->messages + *state->conversations + *state->requests;
+		const auto partial = state->partial;
 		auto people = QStringList();
 		for (const auto &entry : entries) {
 			if (entry.chatInfo) {
@@ -552,7 +607,7 @@ void Chats::loadInbox(
 		}
 		// Cards first, so the rows appear with their names.
 		_session->users().ensure(people, this, [=, this] {
-			finishInbox(entries);
+			finishInbox(entries, partial);
 			_inboxLoading = false;
 			_inboxLoaded = true;
 			_inboxError = std::nullopt;
@@ -564,12 +619,19 @@ void Chats::loadInbox(
 			}
 		});
 	};
-	loadSection(u"message"_s, QString(), 0, state->messages, sectionDone);
-	loadSection(u"conversation"_s, QString(), 0, state->conversations, sectionDone);
-	loadSection(u"request"_s, QString(), 0, state->requests, sectionDone);
+	const auto load = [&](const QString &section, std::shared_ptr<QVector<InboxEntry>> into) {
+		loadSection(section, QString(), 0, into, [=](bool ok, bool complete) {
+			sectionDone(section, ok, complete);
+		});
+	};
+	load(u"message"_s, state->messages);
+	load(u"conversation"_s, state->conversations);
+	load(u"request"_s, state->requests);
 }
 
-void Chats::finishInbox(const QVector<InboxEntry> &entries) {
+void Chats::finishInbox(
+		const QVector<InboxEntry> &entries,
+		const QSet<QString> &partialSections) {
 	auto list = QVector<Chat>();
 	auto peers = QStringList();
 	for (const auto &entry : entries) {
@@ -594,7 +656,7 @@ void Chats::finishInbox(const QVector<InboxEntry> &entries) {
 		}
 		list.push_back(std::move(*row));
 	}
-	replaceAll(list);
+	replaceAll(list, partialSections);
 	_session->transport().followProfiles(peers);
 }
 
@@ -1050,9 +1112,20 @@ void Chats::capability(const QString &chat, Fn<void(const QString &)> done) {
 }
 
 void Chats::sendTyping(const QString &chat, const QString &kind) {
-	if (!_session->transport().connected() || IsGroupId(chat)) {
-		// Groups have no typing indicators.
+	if (!_session->transport().connected()) {
 		return;
+	}
+	const auto group = IsGroupId(chat);
+	if (group) {
+		// groups.typing.*: switched off, or not sent in a big group.
+		const auto config = _session->clientConfig();
+		const auto row = this->chat(chat);
+		const auto members = (row && row->group) ? row->group->memberCount : 0;
+		if (!_session->groups().enabled()
+			|| (config && !config->boolean(u"groups.typing.enabled"_s, true))
+			|| (config && members > config->integer(u"groups.typing.max_members"_s, 500))) {
+			return;
+		}
 	}
 	const auto now = base::unixtime::nowMs();
 	const auto key = chat + u'|' + kind;
@@ -1067,6 +1140,10 @@ void Chats::sendTyping(const QString &chat, const QString &kind) {
 			i = i.key().startsWith(chat + u'|') ? _typingSentAt.erase(i) : std::next(i);
 		}
 	}
+	if (group) {
+		_session->transport().sendGroupTyping(chat, kind);
+		return;
+	}
 	capability(chat, [=, this](const QString &cap) {
 		_session->transport().sendTyping(cap, kind);
 	});
@@ -1080,14 +1157,21 @@ std::optional<Activity> Chats::activity(const QString &chat) const {
 	return *i;
 }
 
-void Chats::setActivity(const QString &chat, const QString &kind, int ttlSeconds) {
+void Chats::setActivity(
+		const QString &chat,
+		const QString &kind,
+		int ttlSeconds,
+		const QString &user) {
 	if (kind.isEmpty() || kind == u"cancel") {
-		if (!_activity.remove(chat)) {
+		// In a group a member's cancel ends only that member's indicator.
+		const auto i = _activity.constFind(chat);
+		if (i == _activity.cend() || (!user.isEmpty() && i->user != user)) {
 			return;
 		}
+		_activity.remove(chat);
 	} else {
 		const auto ttl = std::clamp(ttlSeconds, 1, 30);
-		_activity.insert(chat, { kind, base::unixtime::nowMs() + qint64(ttl) * 1000 });
+		_activity.insert(chat, { kind, base::unixtime::nowMs() + qint64(ttl) * 1000, user });
 	}
 	Q_EMIT activityChanged(chat);
 	activityTick();
