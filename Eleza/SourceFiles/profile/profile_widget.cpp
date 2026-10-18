@@ -5,6 +5,7 @@
 #include "data/data_graph.h"
 #include "data/data_notifications.h"
 #include "data/data_session.h"
+#include "data/data_stories.h"
 #include "data/data_users.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
@@ -17,6 +18,7 @@
 #include "profile/profile_follow.h"
 #include "profile/profile_follow_list.h"
 #include "profile/profile_posts.h"
+#include "stories/stories_viewer.h"
 #include "support/error_text.h"
 #include "support/media_image.h"
 #include "ui/layers/generic_box.h"
@@ -999,6 +1001,13 @@ void Widget::openChat() {
 }
 
 void Widget::openPhoto() {
+	if (_loaded
+		&& controller()->session().data().stories().ring(_profile.id)
+			!= Data::StoryRing::None) {
+		// A ringed face opens the stories.
+		Stories::OpenUserStories(controller(), _profile.id);
+		return;
+	}
 	if (!_loaded || _profile.avatarId.isEmpty()) {
 		return;
 	}

@@ -12,6 +12,7 @@
 #include "profile/profile_module.h"
 #include "search/search_module.h"
 #include "settings/settings_module.h"
+#include "stories/stories_module.h"
 #include "support/session_services.h"
 
 // Feature modules: include the header that declares `Register()` and call it below.
@@ -33,6 +34,7 @@ void RegisterModules() {
 	Search::Register();
 	Profile::Register();
 	Settings::Register();
+	Stories::Register();
 #ifdef ELEZA_ENABLE_CALLS
 	// Voice calls: absent in a build with -DELEZA_ENABLE_CALLS=OFF (nothing
 	// then registers the hooks of window/window_calls.h: no call buttons).

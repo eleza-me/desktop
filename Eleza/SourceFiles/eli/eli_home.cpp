@@ -3,12 +3,14 @@
 #include "data/data_feed.h"
 #include "data/data_notifications.h"
 #include "data/data_session.h"
+#include "data/data_stories.h"
 #include "eli/eli_actions.h"
 #include "eli/eli_post_list.h"
 #include "lang_auto.h"
 #include "main/main_account.h"
 #include "main/main_session.h"
 #include "storage/storage_key_value.h"
+#include "stories/stories_tray.h"
 #include "support/connection_label.h"
 #include "support/file_dialogs.h"
 #include "support/media_image.h"
@@ -455,6 +457,9 @@ void HomeSection::createPane(int index) {
 	pane.content = pane.scroll->setOwnedWidget(
 		Ui::object_ptr<Ui::VerticalLayout>(pane.scroll));
 	const auto controller = this->controller();
+	// The story circles lead both feeds.
+	pane.stories = pane.content->add(
+		Ui::object_ptr<Stories::Tray>(pane.content, controller));
 	pane.entry = pane.content->add(
 		Ui::object_ptr<Entry>(pane.content, controller));
 	pane.entry->setClickedCallback([=] { OpenCompose(controller); });
@@ -578,6 +583,7 @@ void HomeSection::refreshCurrent() {
 	}
 	current().scroll->scrollToY(0);
 	current().list->reload();
+	controller()->session().data().stories().refreshTray();
 }
 
 void HomeSection::updateBadge() {
@@ -675,6 +681,10 @@ void HomeSection::applyNewPosts() {
 }
 
 void HomeSection::showFinished() {
+	if (const auto tray = current().stories) {
+		// The tray is read again on returning to the feed (debounced).
+		tray->refresh();
+	}
 	// Came back after a while: one count, not a timer.
 	const auto now = Ui::Now();
 	if (_lastCheck && now - _lastCheck < kRecheckAfterMs) {
@@ -715,7 +725,9 @@ void HomeSection::resizeEvent(QResizeEvent *e) {
 			continue;
 		}
 		pane.scroll->setGeometry(0, top, width(), height);
-		pane.list->setMinHeight(std::max(height - st::eliEntryHeight, 0));
+		pane.list->setMinHeight(std::max(
+			height - st::eliEntryHeight - (pane.stories ? pane.stories->height() : 0),
+			0));
 	}
 	_pill->move(
 		(width() - _pill->width()) / 2,
