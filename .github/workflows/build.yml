@@ -142,7 +142,7 @@ jobs:
       # GUI tests run on the offscreen platform (set per test by CMake); the
       # realtime interop test skips itself without the web client sources.
       - name: Test
-        run: ctest --preset windows-msvc-release
+        run: ctest --preset windows-msvc-release --output-on-failure
 
       - name: Deploy (windeployqt)
         shell: pwsh
