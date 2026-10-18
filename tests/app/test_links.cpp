@@ -160,7 +160,17 @@ private Q_SLOTS:
 			QVERIFY2(ParseLink(base + QStringLiteral("/terms")).type == ParsedLink::Type::External, host);
 			QVERIFY2(ParseLink(base + QStringLiteral("/u/sara")).type == ParsedLink::Type::External, host);
 		}
-		// Plain http to our own name is still ours, a foreign one is not.
+		// A bot's deep link, in the web form and the app's own scheme.
+		const auto bot = ParseLink(QStringLiteral("https://eleza.me/weather_bot?start=promo42"));
+		QCOMPARE(bot.type, ParsedLink::Type::Route);
+		QCOMPARE(bot.route.toString(), QStringLiteral("u/weather_bot?start=promo42"));
+		QCOMPARE(
+			ParseLink(QStringLiteral("eleza://u/weather_bot?start=promo42")).route.botStart(),
+			std::optional<QString>(QStringLiteral("promo42")));
+		QCOMPARE(
+			ParseLink(QStringLiteral("https://www.eleza.me/@weather_bot?start=x")).route.toString(),
+			QStringLiteral("u/weather_bot?start=x"));
+				// Plain http to our own name is still ours, a foreign one is not.
 		QCOMPARE(
 			ParseLink(QStringLiteral("example.com/x")).type,
 			ParsedLink::Type::External);

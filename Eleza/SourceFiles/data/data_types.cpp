@@ -482,6 +482,28 @@ QJsonObject Quote::toJson() const {
 	return result;
 }
 
+StoryRef StoryRef::FromJson(const QJsonObject &json) {
+	auto result = StoryRef();
+	result.storyId = String(json, "story_id"_L1);
+	result.owner = String(json, "owner"_L1);
+	result.thumbUrl = String(json, "thumb_url"_L1);
+	result.kind = String(json, "kind"_L1);
+	result.expiresAt = Int64(json, "expires_at"_L1);
+	result.emoji = String(json, "emoji"_L1);
+	return result;
+}
+
+QJsonObject StoryRef::toJson() const {
+	auto result = QJsonObject();
+	result.insert("story_id"_L1, storyId);
+	Put(result, "owner"_L1, owner);
+	Put(result, "thumb_url"_L1, thumbUrl);
+	Put(result, "kind"_L1, kind);
+	Put(result, "expires_at"_L1, expiresAt);
+	Put(result, "emoji"_L1, emoji);
+	return result;
+}
+
 ViaBot ViaBot::FromJson(const QJsonObject &json) {
 	auto result = ViaBot();
 	result.id = String(json, "id"_L1);
@@ -596,6 +618,10 @@ MessageKind MessageKindFromString(const QString &kind) {
 		return MessageKind::System;
 	} else if (kind == u"call") {
 		return MessageKind::Call;
+	} else if (kind == u"story_reply") {
+		return MessageKind::StoryReply;
+	} else if (kind == u"story_reaction") {
+		return MessageKind::StoryReaction;
 	}
 	return MessageKind::Unknown;
 }
@@ -616,6 +642,8 @@ QString MessageKindToString(MessageKind kind) {
 	case MessageKind::ForwardedPost: return u"forwarded_post"_s;
 	case MessageKind::System: return u"system"_s;
 	case MessageKind::Call: return u"call"_s;
+	case MessageKind::StoryReply: return u"story_reply"_s;
+	case MessageKind::StoryReaction: return u"story_reaction"_s;
 	case MessageKind::Unknown: return QString();
 	}
 	return QString();
@@ -721,6 +749,9 @@ Message Message::FromJson(const QJsonObject &json) {
 	result.myReaction = String(json, "my_reaction"_L1);
 	result.entities = List<Entity>(json.value("entities"_L1));
 	result.mediaSpoiler = Bool(json, "media_spoiler"_L1);
+	// Every item of an album compares equal in one spelling.
+	result.album = String(json, "album"_L1).toLower();
+	result.captionAbove = Bool(json, "caption_above"_L1);
 	result.quote = Optional<Quote>(json, "quote"_L1);
 	result.linkPreview = Optional<LinkPreview>(json, "link_preview"_L1);
 	result.sticker = Optional<Sticker>(json, "sticker"_L1);
@@ -728,6 +759,9 @@ Message Message::FromJson(const QJsonObject &json) {
 		result.replyMarkup = std::move(markup);
 	}
 	result.viaBot = Optional<ViaBot>(json, "via_bot"_L1);
+	if (auto story = Optional<StoryRef>(json, "story"_L1); story && !story->storyId.isEmpty()) {
+		result.story = std::move(story);
+	}
 	return result;
 }
 
@@ -769,6 +803,8 @@ QJsonObject Message::toJson() const {
 	Put(result, "my_reaction"_L1, myReaction);
 	Put(result, "entities"_L1, Array(entities));
 	Put(result, "media_spoiler"_L1, mediaSpoiler);
+	Put(result, "album"_L1, album);
+	Put(result, "caption_above"_L1, captionAbove);
 	if (quote) {
 		result.insert("quote"_L1, quote->toJson());
 	}
@@ -783,6 +819,9 @@ QJsonObject Message::toJson() const {
 	}
 	if (viaBot) {
 		result.insert("via_bot"_L1, viaBot->toJson());
+	}
+	if (story) {
+		result.insert("story"_L1, story->toJson());
 	}
 	return result;
 }
@@ -1022,6 +1061,7 @@ OutboxItem OutboxItem::FromJson(const QJsonObject &json) {
 	result.failed = Bool(json, "failed"_L1);
 	result.errorCode = String(json, "error_code"_L1);
 	result.errorText = String(json, "error_text"_L1);
+	result.previewText = String(json, "preview_text"_L1);
 	return result;
 }
 
@@ -1045,6 +1085,7 @@ QJsonObject OutboxItem::toJson() const {
 	Put(result, "failed"_L1, failed);
 	Put(result, "error_code"_L1, errorCode);
 	Put(result, "error_text"_L1, errorText);
+	Put(result, "preview_text"_L1, previewText);
 	return result;
 }
 

@@ -18,6 +18,17 @@
 // range is sent as a mention entity with the member's id. Editing inside
 // the name turns it back into plain text. The rules are Data::MentionRules.
 //
+// Bots (history_compose_bots.cpp, the rules in history_bot_logic.h):
+//   * in a chat with a bot, «/» lists its commands above the field (filtered
+//     as the name is typed; the «/» button shows them all); Enter sends the
+//     picked command, Tab puts it into the field;
+//   * inline mode in any chat of two: «@<bot> <query>» asks the bot (after a
+//     pause in typing) and lists its results above the field, page by page;
+//     a picked result goes out through the outbox as `inline_result`;
+//   * the reply keyboard follows `resize_keyboard`, a button next to the
+//     field hides / shows it (a new keyboard shows itself, a persistent one
+//     comes back after every message), `remove_keyboard` takes it away.
+//
 // «Send without sound»: the context menu of the send button; the message
 // goes out with `silent` and alerts nobody.
 //
@@ -28,13 +39,16 @@
 #pragma once
 
 #include "base/timer.h"
+#include "data/data_bots.h"
 #include "data/data_types.h"
+#include "history/history_bot_logic.h"
 #include "history/history_compose_logic.h"
 #include "ui/effects/animations.h"
 #include "ui/image/image_source.h"
 #include "ui/painter.h"
 #include "ui/rp_widget.h"
 
+#include <QtCore/QHash>
 #include <QtCore/QPointer>
 
 #include <memory>
@@ -56,6 +70,7 @@ class SessionController;
 namespace History {
 
 class BotKeyboard;
+class BotSuggestPanel;
 class MentionsDropdown;
 class TabbedPanel;
 class VoiceRecorder;
@@ -66,6 +81,13 @@ void SetPendingForward(
 	Main::Session *session,
 	const QString &toChat,
 	const QVector<Data::Message> &messages);
+
+// A text for the composer of another chat (a «switch inline» button): the
+// composer takes it when it is created or focused, like forwards.
+void SetPendingPrefill(
+	Main::Session *session,
+	const QString &toChat,
+	const QString &text);
 
 class ComposeControls final : public Ui::RpWidget {
 	Q_OBJECT
@@ -97,6 +119,15 @@ public:
 	void takePendingForward();
 	// Saves the draft right now (the chat is being left).
 	void flushDraft();
+	// Text left by SetPendingPrefill() for this chat goes into the field.
+	void takePendingPrefill();
+	// Puts `text` into the field (replacing what was typed), the caret at
+	// its end: «@bot query» of a «switch inline» button.
+	void prefill(const QString &text);
+	// A «/command» clicked in a bot's message: sent like a typed text.
+	void sendCommand(const QString &command);
+	// Inline mode may be used here: a chat of two, not anonymous, bots on.
+	[[nodiscard]] bool inlineModeAllowed() const;
 	// The sender's name for the reply bar comes from the list.
 	void setNameResolver(Fn<QString(const Data::Message &)> resolver) {
 		_resolveName = std::move(resolver);
@@ -197,6 +228,26 @@ private:
 	// ---- the bot's reply keyboard
 	void refreshBotKeyboard();
 	[[nodiscard]] int keyboardHeight() const;
+	[[nodiscard]] bool keyboardShown() const;
+	void toggleBotKeyboard();
+	void keyboardAfterSend();
+
+	// ---- bots: commands and inline mode (history_compose_bots.cpp)
+	void setupBots();
+	void refreshBotChat();
+	void applyBotInfo(const Data::BotInfo &info);
+	void updateBotSuggestions();
+	void hideBotPanel();
+	void placeBotPanel();
+	void toggleCommands();
+	void pickCommand(const Data::BotCommand &command, bool insert);
+	void inlineText(const QString &handle, const QString &query);
+	void leaveInline();
+	void runInlineQuery(const QString &offset);
+	void inlineNeedMore();
+	void pickInlineResult(const Data::InlineResult &result);
+	[[nodiscard]] QRect suggestionsAnchor() const;
+	[[nodiscard]] int trailingButtonsWidth() const;
 
 	// ---- link preview
 	void checkPreview();
@@ -227,8 +278,32 @@ private:
 	Ui::IconButton *_recordCancel = nullptr;
 	TabbedPanel *_panel = nullptr;
 	BotKeyboard *_keyboard = nullptr;
+	Ui::IconButton *_keyboardToggle = nullptr;
+	Ui::IconButton *_botCommands = nullptr;
 	qint64 _keyboardUsedSeq = 0;          // a one-time keyboard that was pressed
 	bool _keyboardOneTime = false;
+	bool _keyboardPersistent = false;
+	ReplyKeyboardView _keyboardView;      // which keyboard, put away or not
+
+	// ---- bots
+	struct InlineState {
+		bool active = false;
+		QString handle;                   // lower-case
+		QString botId;
+		QString placeholder;
+		QString query;
+		QVector<Data::InlineResult> results;
+		QHash<QString, QString> queryIds; // result id -> the query it came from
+		QString next;                     // the offset of the next page
+		bool loadingMore = false;
+		int generation = 0;               // an answer for an older query is dropped
+	};
+	BotSuggestPanel *_botPanel = nullptr;
+	bool _botChat = false;                // the peer is a bot
+	QString _botId;
+	QVector<Data::BotCommand> _commands;
+	InlineState _inline;
+	base::Timer _inlineTimer;
 	QPointer<Ui::PopupMenu> _attachMenu;
 
 	// ---- the text

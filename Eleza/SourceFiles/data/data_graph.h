@@ -45,6 +45,9 @@ public:
 	void unblock(const QString &userId, base::Guard guard = base::Guard(), Fn<void(const GraphState &)> done = nullptr, FailCallback fail = nullptr);
 	void mute(const QString &userId);
 	void unmute(const QString &userId);
+	// Hides a person's posts from the feed («پنهان کردن پست‌ها»).
+	void hide(const QString &userId);
+	void unhide(const QString &userId);
 	void postNotifications(const QString &userId, base::Guard guard, Fn<void(bool)> done);
 	void setPostNotifications(const QString &userId, bool on, base::Guard guard = base::Guard(), Fn<void(bool)> done = nullptr);
 
@@ -52,6 +55,8 @@ public:
 	void followRequests(base::Guard guard, Fn<void(const QVector<Profile> &)> done, FailCallback fail = nullptr);
 	void acceptFollowRequest(const QString &userId, base::Guard guard = base::Guard(), Fn<void(const GraphState &)> done = nullptr, FailCallback fail = nullptr);
 	void declineFollowRequest(const QString &userId, base::Guard guard = base::Guard(), Fn<void(const GraphState &)> done = nullptr, FailCallback fail = nullptr);
+	// The requests I sent that wait for an answer (cancel one with unfollow()).
+	void sentFollowRequests(const QString &cursor, base::Guard guard, Fn<void(const GraphList &)> done, FailCallback fail = nullptr);
 
 	// ---- lists
 	void followers(const QString &userId, const QString &cursor, base::Guard guard, Fn<void(const GraphList &)> done, FailCallback fail = nullptr);
@@ -91,6 +96,10 @@ public:
 	// settingValue("privacy.private_account")
 	[[nodiscard]] QJsonValue settingValue(const QString &dotted) const;
 	void setSetting(const QString &dotted, const QJsonValue &value);
+	// The `settings` signal: the document changed (on another device). A
+	// document that was read is read again (settingsChanged follows), once
+	// per version.
+	void settingsVersionChanged(qint64 version);
 	[[nodiscard]] static QJsonObject SettingPatch(const QString &dotted, const QJsonValue &value);
 	[[nodiscard]] static QJsonValue DeepMerge(const QJsonValue &base, const QJsonValue &patch);
 
@@ -99,7 +108,25 @@ public:
 	void removeMutedWord(const QString &word, base::Guard guard = base::Guard(), Fn<void()> done = nullptr);
 	void unhideTopic(const QString &id, base::Guard guard = base::Guard(), Fn<void()> done = nullptr);
 
+	// ---- privacy: last seen exceptions (kind: always | never), contact bans
+	void lastSeenExceptions(const QString &kind, const QString &cursor, base::Guard guard, Fn<void(const LastSeenExceptionsPage &)> done, FailCallback fail = nullptr);
+	void setLastSeenException(const QString &userId, const QString &kind, base::Guard guard, Fn<void()> done, FailCallback fail = nullptr);
+	void removeLastSeenException(const QString &userId, base::Guard guard, Fn<void()> done, FailCallback fail = nullptr);
+	void contactBans(base::Guard guard, Fn<void(const QVector<ContactBan> &)> done, FailCallback fail = nullptr);
+	void removeContactBan(const QString &token, base::Guard guard, Fn<void()> done, FailCallback fail = nullptr);
+
 	// ---- account
+	// «این من نبودم»: ends that session; devices that signed in after it
+	// confirm by SMS again.
+	void reportUnauthorizedSession(const QString &id, base::Guard guard, Fn<void()> done, FailCallback fail = nullptr);
+	// A code for a sensitive action: purpose delete_account | phone_change
+	// (with the new number) -> { challenge_id, code_length, resend_after }.
+	void requestAccountCode(const QString &purpose, const QString &newPhone, const QString &deviceId, base::Guard guard, Fn<void(const QJsonObject &)> done, FailCallback fail = nullptr);
+	// `password`: the two-step password when the server asked for it
+	// (two_step.password_required), empty otherwise.
+	void changePhone(const QString &challengeId, const QString &code, const QString &password, const QString &deviceId, base::Guard guard, Fn<void()> done, FailCallback fail = nullptr);
+	// Schedules the deletion (30 days; signing in cancels it).
+	void deleteAccount(const QString &challengeId, const QString &code, const QString &password, const QString &deviceId, base::Guard guard, Fn<void()> done, FailCallback fail = nullptr);
 	void sessions(base::Guard guard, Fn<void(const QVector<DeviceSession> &)> done, FailCallback fail = nullptr);
 	void revokeSession(const QString &id, base::Guard guard = base::Guard(), Fn<void()> done = nullptr, FailCallback fail = nullptr);
 	void revokeOtherSessions(base::Guard guard = base::Guard(), Fn<void()> done = nullptr, FailCallback fail = nullptr);
@@ -129,6 +156,7 @@ private:
 	QJsonObject _settings;
 	QStringList _pendingDismissals;
 	bool _settingsLoaded = false;
+	qint64 _settingsVersion = 0;
 	bool _dismissalsLoaded = false;
 
 };

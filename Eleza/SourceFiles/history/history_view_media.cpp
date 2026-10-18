@@ -1,5 +1,7 @@
 #include "history/history_view_media.h"
 
+#include "history/history_album.h"
+
 #include "data/data_calls.h"
 
 #include "base/platform_file.h"
@@ -13,6 +15,7 @@
 #include "lang_auto.h"
 #include "main/main_session.h"
 #include "support/media_image.h"
+#include "support/sticker_player.h"
 #include "ui/effects/radial_animation.h"
 #include "ui/image/image_prepare.h"
 #include "ui/painter.h"
@@ -21,6 +24,7 @@
 #include "styles/style_history.h"
 
 #include <QtCore/QCoreApplication>
+#include <QtCore/QDateTime>
 #include <QtCore/QFileInfo>
 #include <QtCore/QPointer>
 #include <QtCore/QThreadPool>
@@ -1003,18 +1007,18 @@ public:
 		return true;
 	}
 
-	std::shared_ptr<Ui::ImageSource> imageSource() const override {
-		return _source;
-	}
-
 	QImage currentImage() const override {
 		return _last;
 	}
 
 	void unload() override {
-		_source = nullptr;
-		_prepared = QImage();
+		QObject::disconnect(_watching);
+		_player = nullptr;
 		_last = QImage();
+	}
+
+	~StickerMedia() override {
+		QObject::disconnect(_watching);
 	}
 
 	// A sticker that is still being sent is known by its id alone: the
@@ -1033,20 +1037,29 @@ public:
 
 	void paint(Painter &p, const QRect &rect, const MediaPaint &context) override {
 		const auto sticker = resolved();
-		if (!_source && sticker && !sticker->url.isEmpty()) {
-			auto options = Support::ImageOptions();
-			options.fit = QSize(512, 512);
-			_source = Support::MakeImageSource(
-				delegate()->elementSession(),
-				Data::MediaRef::Url(sticker->url),
-				Data::MediaVariant::Full,
-				options);
-			watch(_source);
-		}
 		const auto ratio = delegate()->elementRatio();
-		const auto image = _source
-			? _source->request(rect.size() * ratio)
-			: QImage();
+		const auto size = rect.size() * ratio;
+		if (sticker
+			&& !sticker->url.isEmpty()
+			&& (!_player || _player->size() != size)) {
+			// Still, animated WebP or Lottie: rendered at the shown size,
+			// moving while the row is painted.
+			QObject::disconnect(_watching);
+			_player = Support::StickerPlayer::Get(
+				delegate()->elementSession(),
+				sticker->url,
+				size);
+			if (_player) {
+				const auto delegate = this->delegate();
+				const auto parent = this->parent();
+				_watching = QObject::connect(
+					_player.get(),
+					&Support::StickerPlayer::updated,
+					delegate->elementGuard(),
+					[=] { delegate->elementRepaint(parent); });
+			}
+		}
+		const auto image = _player ? _player->frame() : QImage();
 		if (image.isNull()) {
 			// The emoji the sticker stands for, until the picture arrives.
 			if (sticker && !sticker->emoji.isEmpty()) {
@@ -1060,23 +1073,15 @@ public:
 			}
 			return;
 		}
-		if (_prepared.isNull()
-			|| _preparedKey != image.cacheKey()
-			|| _prepared.size() != rect.size() * ratio) {
-			_prepared = image.scaled(
-				rect.size() * ratio,
-				Qt::KeepAspectRatio,
-				Qt::SmoothTransformation);
-			_prepared.setDevicePixelRatio(ratio);
-			_preparedKey = image.cacheKey();
-			_last = image;
-		}
-		const auto size = _prepared.size() / _prepared.devicePixelRatio();
+		_last = image;
+		const auto shown = QSizeF(image.size()) / ratio;
 		p.drawImage(
-			QPointF(
-				rect.x() + (rect.width() - size.width()) / 2.,
-				rect.y() + (rect.height() - size.height()) / 2.),
-			_prepared);
+			QRectF(
+				rect.x() + (rect.width() - shown.width()) / 2.,
+				rect.y() + (rect.height() - shown.height()) / 2.,
+				shown.width(),
+				shown.height()),
+			image);
 		if (context.selected) {
 			auto hq = PainterHighQualityEnabler(p);
 			p.setPen(Qt::NoPen);
@@ -1086,9 +1091,8 @@ public:
 	}
 
 private:
-	std::shared_ptr<Ui::ImageSource> _source;
-	QImage _prepared;
-	qint64 _preparedKey = 0;
+	std::shared_ptr<Support::StickerPlayer> _player;
+	QMetaObject::Connection _watching;
 	QImage _last;
 
 };
@@ -1631,6 +1635,182 @@ private:
 
 };
 
+// ---- album: photos / videos sent together, one tile each
+
+class AlbumMedia final : public Media {
+public:
+	AlbumMedia(Delegate *delegate, Element *parent)
+	: Media(delegate, parent) {
+	}
+
+	QSize countSize(int maxWidth, bool hasCaption) override {
+		Q_UNUSED(hasCaption);
+		ensureTiles();
+		const auto &items = parent()->album();
+		auto ratios = std::vector<double>();
+		ratios.reserve(items.size());
+		for (const auto &item : items) {
+			const auto w = item.media ? item.media->width : 0;
+			const auto h = item.media ? item.media->height : 0;
+			ratios.push_back((w > 0 && h > 0) ? (double(w) / h) : 0.);
+		}
+		_frames = AlbumLayout(ratios);
+		const auto width = std::max(
+			std::min(
+				maxWidth - 2 * st::historyMediaPadding,
+				int(st::historyMediaMaxWidth)),
+			1);
+		const auto height = std::max(
+			int(std::lround(AlbumHeight(_frames) * width / kAlbumMaxWidth)),
+			1);
+		return QSize(width, height);
+	}
+
+	bool fullBleed() const override {
+		return true;
+	}
+
+	std::shared_ptr<Ui::ImageSource> imageSource() const override {
+		return _tiles.empty() ? nullptr : _tiles.front()->imageSource();
+	}
+
+	QImage currentImage() const override {
+		return _tiles.empty() ? QImage() : _tiles.front()->currentImage();
+	}
+
+	Media *albumTile(int index) override {
+		return (index >= 0 && index < int(_tiles.size()))
+			? _tiles[index].get()
+			: nullptr;
+	}
+
+	void unload() override {
+		for (const auto &tile : _tiles) {
+			tile->unload();
+		}
+	}
+
+	void dataChanged() override {
+		if (int(_tiles.size()) != int(parent()->album().size())) {
+			_tiles.clear();
+			_frames.clear();
+			return;
+		}
+		for (const auto &tile : _tiles) {
+			tile->dataChanged();
+		}
+	}
+
+	void paint(Painter &p, const QRect &rect, const MediaPaint &context) override {
+		ensureTiles();
+		if (_frames.size() != _tiles.size()) {
+			return;
+		}
+		for (auto i = 0; i != int(_tiles.size()); ++i) {
+			const auto box = tileRect(i, rect);
+			if (!p.clipBoundingRect().isEmpty()
+				&& !p.clipBoundingRect().intersects(box)) {
+				continue;
+			}
+			auto tile = context;
+			const auto sides = visualSides(_frames[i].sides);
+			const auto inner = int(st::historyAlbumInnerRadius);
+			const auto left = (sides & kAlbumSideLeft) != 0;
+			const auto right = (sides & kAlbumSideRight) != 0;
+			const auto top = (sides & kAlbumSideTop) != 0;
+			const auto bottom = (sides & kAlbumSideBottom) != 0;
+			tile.radii[0] = (left && top) ? context.radii[0] : inner;
+			tile.radii[1] = (right && top) ? context.radii[1] : inner;
+			tile.radii[2] = (right && bottom) ? context.radii[2] : inner;
+			tile.radii[3] = (left && bottom) ? context.radii[3] : inner;
+			_tiles[i]->paint(p, box, tile);
+		}
+	}
+
+	HitResult hitTest(QPoint point, const QRect &rect) const override {
+		auto result = HitResult();
+		if (!rect.contains(point) || _frames.size() != _tiles.size()) {
+			return result;
+		}
+		for (auto i = 0; i != int(_tiles.size()); ++i) {
+			const auto box = tileRect(i, rect);
+			if (box.contains(point)) {
+				result = _tiles[i]->hitTest(point, box);
+				result.item = i;
+				return result;
+			}
+		}
+		// The gaps between the tiles.
+		result.zone = Zone::Bubble;
+		return result;
+	}
+
+private:
+	void ensureTiles() {
+		const auto count = int(parent()->album().size());
+		if (int(_tiles.size()) == count) {
+			return;
+		}
+		_tiles.clear();
+		for (auto i = 0; i != count; ++i) {
+			auto tile = std::make_unique<PhotoMedia>(delegate(), parent());
+			tile->setAlbumIndex(i);
+			_tiles.push_back(std::move(tile));
+		}
+	}
+
+	// The mosaic is mirrored in a right-to-left interface: the first item
+	// is on the right.
+	[[nodiscard]] static int visualSides(int sides) {
+		if (!style::RightToLeft()) {
+			return sides;
+		}
+		auto result = sides & (kAlbumSideTop | kAlbumSideBottom);
+		if (sides & kAlbumSideLeft) {
+			result |= kAlbumSideRight;
+		}
+		if (sides & kAlbumSideRight) {
+			result |= kAlbumSideLeft;
+		}
+		return result;
+	}
+
+	[[nodiscard]] QRect tileRect(int index, const QRect &rect) const {
+		const auto &f = _frames[index];
+		const auto k = rect.width() / kAlbumMaxWidth;
+		const auto x = style::RightToLeft() ? (kAlbumMaxWidth - f.x - f.w) : f.x;
+		auto left = int(std::lround(x * k));
+		auto right = int(std::lround((x + f.w) * k));
+		auto top = int(std::lround(f.y * k));
+		auto bottom = int(std::lround((f.y + f.h) * k));
+		const auto gap = int(st::historyAlbumGap);
+		const auto half = gap / 2;
+		const auto other = gap - half;
+		const auto sides = visualSides(f.sides);
+		if (!(sides & kAlbumSideLeft)) {
+			left += other;
+		}
+		if (!(sides & kAlbumSideRight)) {
+			right -= half;
+		}
+		if (!(sides & kAlbumSideTop)) {
+			top += other;
+		}
+		if (!(sides & kAlbumSideBottom)) {
+			bottom -= half;
+		}
+		return QRect(
+			rect.x() + left,
+			rect.y() + top,
+			std::max(right - left, 1),
+			std::max(bottom - top, 1));
+	}
+
+	std::vector<std::unique_ptr<Media>> _tiles;
+	std::vector<AlbumFrame> _frames;
+
+};
+
 } // namespace
 
 HitResult Media::hitTest(QPoint point, const QRect &rect) const {
@@ -1655,6 +1835,155 @@ void Media::watch(const std::shared_ptr<Ui::ImageSource> &source) {
 		[=] { delegate->elementRepaint(parent); });
 }
 
+// ---- a reply / a reaction to a story
+
+class StoryMedia final : public Media {
+public:
+	StoryMedia(Delegate *delegate, Element *parent)
+	: Media(delegate, parent) {
+	}
+
+	QSize countSize(int maxWidth, bool hasCaption) override {
+		Q_UNUSED(hasCaption);
+		const auto width = std::min(int(st::historyStoryWidth), maxWidth);
+		const auto &padding = st::historyPostPadding;
+		const auto &story = data().story;
+		_reaction = (data().kind == Data::MessageKind::StoryReaction);
+		_emoji = (story && _reaction) ? story->emoji : QString();
+		_gone = !story
+			|| story->expired(QDateTime::currentSecsSinceEpoch())
+			|| (_source && _source->failed());
+		if (!_gone && !_source) {
+			_source = Support::MakeImageSource(
+				delegate()->elementSession(),
+				Data::MediaRef::Story(story->storyId),
+				Data::MediaVariant::Thumb);
+			watch(_source);
+		}
+		const auto thumb = _gone ? QSize() : st::historyStoryThumb;
+		const auto line = st::historyPostLabelFont->height + 3;
+		const auto emoji = _emoji.isEmpty() ? 0 : st::historyStoryEmojiFont->height;
+		const auto text = _gone ? (st::historyPostTextStyle.font->height + 2) : 0;
+		const auto height = std::max(
+			line + emoji + text,
+			thumb.height());
+		return QSize(width, padding.top() + height + padding.bottom());
+	}
+
+	void unload() override {
+		_source = nullptr;
+		_prepared = PreparedImage();
+	}
+
+	void dataChanged() override {
+		if (_source && _source->failed()) {
+			_gone = true;
+		}
+	}
+
+	void paint(Painter &p, const QRect &rect, const MediaPaint &context) override {
+		const auto &colors = *context.colors;
+		const auto rtl = style::RightToLeft();
+		const auto accent = context.outgoing ? colors.accentOut : colors.accentIn;
+		const auto &padding = st::historyPostPadding;
+		if (!_gone && _source && _source->failed()) {
+			// 404: deleted or no longer mine to see.
+			_gone = true;
+		}
+		{
+			auto hq = PainterHighQualityEnabler(p);
+			auto path = QPainterPath();
+			path.addRoundedRect(QRectF(rect), st::historyPostRadius, st::historyPostRadius);
+			auto bg = context.outgoing ? colors.tintOut : colors.tintIn;
+			if (context.hovered == Zone::Story && !_gone) {
+				bg.setAlphaF(std::min(bg.alphaF() * 1.6f, 1.f));
+			}
+			p.fillPath(path, bg);
+			p.save();
+			p.setClipPath(path);
+			p.fillRect(
+				QRect(
+					rtl ? (rect.right() + 1 - st::historyReplyBar) : rect.x(),
+					rect.y(),
+					st::historyReplyBar,
+					rect.height()),
+				accent);
+			p.restore();
+		}
+		const auto innerLeft = rect.x()
+			+ (rtl ? padding.right() : (padding.left() + st::historyReplyBar));
+		const auto innerWidth = rect.width()
+			- padding.left()
+			- padding.right()
+			- st::historyReplyBar;
+		const auto thumb = _gone ? QSize() : st::historyStoryThumb;
+		const auto thumbSkip = thumb.isEmpty() ? 0 : (thumb.width() + st::historyPreviewThumbSkip);
+		const auto textLeft = rtl ? (innerLeft + thumbSkip) : innerLeft;
+		const auto textWidth = innerWidth - thumbSkip;
+		auto top = rect.y() + padding.top();
+		p.setPen(accent);
+		DrawLine(
+			p,
+			st::historyPostLabelFont,
+			_reaction
+				? tr::lng_stories_chat_reaction(tr::now)
+				: tr::lng_stories_chat_reply(tr::now),
+			textLeft,
+			top,
+			textWidth);
+		top += st::historyPostLabelFont->height + 3;
+		if (!_emoji.isEmpty()) {
+			p.setPen(context.outgoing ? colors.textOut : colors.textIn);
+			DrawLine(p, st::historyStoryEmojiFont, _emoji, textLeft, top, textWidth);
+			top += st::historyStoryEmojiFont->height;
+		}
+		if (_gone) {
+			p.setPen(context.outgoing ? colors.metaOut : colors.metaIn);
+			DrawLine(
+				p,
+				st::historyPostTextStyle.font,
+				tr::lng_stories_chat_gone(tr::now),
+				textLeft,
+				top,
+				textWidth);
+			return;
+		}
+		const auto box = QRect(
+			rtl ? innerLeft : (innerLeft + innerWidth - thumb.width()),
+			rect.y() + padding.top(),
+			thumb.width(),
+			thumb.height());
+		const auto ratio = delegate()->elementRatio();
+		auto image = _source ? _source->request(box.size() * ratio) : QImage();
+		const auto radius = st::historyPostThumbRadius;
+		const int radii[4] = { radius, radius, radius, radius };
+		if (image.isNull()) {
+			auto hq = PainterHighQualityEnabler(p);
+			p.setPen(Qt::NoPen);
+			p.setBrush(st::historyMediaBg);
+			p.drawRoundedRect(box, radius, radius);
+		} else {
+			PaintCover(p, box, image, radii, false, _prepared);
+		}
+	}
+
+	HitResult hitTest(QPoint point, const QRect &rect) const override {
+		auto result = HitResult();
+		if (rect.contains(point)) {
+			result.zone = _gone ? Zone::Bubble : Zone::Story;
+		}
+		return result;
+	}
+
+private:
+	std::shared_ptr<Ui::ImageSource> _source;
+	PreparedImage _prepared;
+	QString _emoji;
+	bool _reaction = false;
+	bool _gone = false;
+
+};
+
 std::unique_ptr<Media> CreateMedia(Delegate *delegate, Element *parent) {
 	const auto &message = parent->data();
 	switch (message.kind) {
@@ -1678,6 +2007,9 @@ std::unique_ptr<Media> CreateMedia(Delegate *delegate, Element *parent) {
 		return std::make_unique<PostMedia>(delegate, parent);
 	case Data::MessageKind::Call:
 		return std::make_unique<CallMedia>(delegate, parent);
+	case Data::MessageKind::StoryReply:
+	case Data::MessageKind::StoryReaction:
+		return std::make_unique<StoryMedia>(delegate, parent);
 	case Data::MessageKind::System:
 		if (message.call) {
 			return std::make_unique<CallMedia>(delegate, parent);
@@ -1688,6 +2020,10 @@ std::unique_ptr<Media> CreateMedia(Delegate *delegate, Element *parent) {
 		break;
 	}
 	return nullptr;
+}
+
+std::unique_ptr<Media> CreateAlbumMedia(Delegate *delegate, Element *parent) {
+	return std::make_unique<AlbumMedia>(delegate, parent);
 }
 
 std::shared_ptr<Ui::ImageSource> MakeLocalImageSource(

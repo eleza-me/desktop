@@ -14,6 +14,16 @@
 //   outbox.sendFile(chat, path, { .caption = u"look"_s });
 //   outbox.sendSticker(chat, stickerId);
 //   outbox.forward(toChat, message);
+//
+// Albums: several photos / videos (or files, or songs) sent together carry
+// the same `album` id (NewAlbumId()) and are queued one after another. The
+// items of an album are uploaded first (a few at a time) and then sent back
+// to back, so the album reaches the others as one piece:
+//
+//   const auto album = Data::Outbox::NewAlbumId();
+//   for (const auto &path : paths) {
+//       outbox.sendFile(chat, path, { .album = album });
+//   }
 #pragma once
 
 #include "api/api_error.h"
@@ -23,6 +33,7 @@
 #include "data/data_upload.h"
 
 #include <QtCore/QHash>
+#include <QtCore/QSet>
 
 namespace Data {
 
@@ -46,6 +57,8 @@ struct SendFileOptions {
 	bool spoiler = false;
 	std::optional<AudioMeta> audio;     // title / performer of a music file
 	bool silent = false;                // «send without sound»
+	QString album;                      // the same id on every item of an album
+	bool captionAbove = false;          // the caption is shown above the media
 };
 
 class Outbox final : public QObject {
@@ -75,13 +88,20 @@ public:
 	QString sendPost(const QString &chat, const QString &postId);
 	// Forwards a message I can see: text and media keep their kind (media is
 	// not uploaded again); stickers, locations and posts are sent anew.
-	QString forward(const QString &toChat, const Message &source);
-	// A result of a bot's inline query.
+	QString forward(
+		const QString &toChat,
+		const Message &source,
+		const QString &album = QString());
+	// A result of a bot's inline query (the server takes the content from
+	// the bot's answer; `previewText`, its title, is only what the local
+	// bubble shows until the message comes back).
 	QString sendInlineResult(
 		const QString &chat,
 		const QString &bot,
 		const QString &queryId,
-		const QString &resultId);
+		const QString &resultId,
+		const QString &previewText = QString(),
+		qint64 replyToSeq = 0);
 
 	// Tries a failed message again.
 	void retry(const QString &clientMessageId);
@@ -96,10 +116,21 @@ public:
 		return _items.contains(clientMessageId);
 	}
 	[[nodiscard]] int pendingCount(const QString &chat = QString()) const;
+	// Something for this chat is in the queue (also a failed message).
+	[[nodiscard]] bool holds(const QString &chat) const;
 	// The queue in sending order.
 	[[nodiscard]] QVector<OutboxItem> items() const;
 
 	static constexpr auto kMaxAttempts = 6;
+	// Uploads of one album that run at the same time.
+	static constexpr auto kAlbumParallelUploads = 3;
+
+	// A new album id: a random lower case UUID.
+	[[nodiscard]] static QString NewAlbumId();
+	// The client message id of an item of `album`: the ids of one album
+	// share their first 23 characters (with the «a1b» mark at 19), so apps
+	// that group albums by the id alone (older versions) group it too.
+	[[nodiscard]] static QString AlbumClientMessageId(const QString &album);
 
 Q_SIGNALS:
 	void sent(const QString &chat, const QString &clientMessageId, qint64 seq);
@@ -113,6 +144,10 @@ private:
 	void pump(const QString &clientMessageId);
 	void uploadFile(const QString &clientMessageId);
 	void send(const QString &clientMessageId);
+	// The head of the chat belongs to an album: uploads every item of it,
+	// then sends the head (the others follow as they become the head).
+	void pumpAlbum(const QString &clientMessageId);
+	[[nodiscard]] bool needsUpload(const OutboxItem &item) const;
 	void succeeded(const QString &clientMessageId, const QJsonObject &result);
 	void errored(const QString &clientMessageId, const Api::Error &error);
 	void setStatus(const OutboxItem &item, MessageStatus status);
@@ -124,6 +159,8 @@ private:
 	QHash<QString, QString> _running;            // chat -> the id being sent
 	QHash<QString, Upload::Id> _uploads;
 	QHash<QString, base::Timer*> _retryTimers;
+	QSet<QString> _sending;                      // ids whose send request is out
+	QSet<QString> _albumUploadFailed;            // items left for their own turn
 	bool _started = false;
 
 };

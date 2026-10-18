@@ -50,6 +50,33 @@ class Session;
 struct GroupMembersPage {
 	QVector<GroupMember> members;
 	QString nextCursor;
+	// The group hides its members from me: only the owner and the admins.
+	bool membersHidden = false;
+};
+
+struct GroupAdminLogPage {
+	QVector<GroupAdminLogEntry> entries; // newest first
+	QString nextCursor;
+};
+
+struct GroupMediaPage {
+	QVector<Message> messages; // newest first
+	bool hasMoreBefore = false;
+};
+
+struct GroupReactionsPage {
+	QVector<GroupReaction> reactions;
+	QString nextCursor;
+};
+
+struct GroupDecideResult {
+	QStringList done;
+	QVector<GroupDecideFailure> failed;
+};
+
+struct GroupInviteMembersPage {
+	QVector<GroupInviteMember> members;
+	QString nextCursor;
 };
 
 struct GroupJoinRequestsPage {
@@ -130,6 +157,14 @@ public:
 	void handleFrame(const QJsonObject &frame);
 	// The data of a user update of kind `group`.
 	void applyUser(const QJsonObject &data);
+	// A `Signal t:"group_admin"` (for the admins of a group, never stored):
+	// kind "join_requests" — the number of undecided requests is `count`
+	// now; `user` made a new one (empty when a request was decided).
+	void applyAdminSignal(
+		const QString &group,
+		const QString &kind,
+		int count,
+		const QString &user);
 	// A page of the group's history arrived (its header moves the row; the
 	// newest page attaches the message cache).
 	void historyPage(const Group &header, bool newest);
@@ -302,6 +337,71 @@ public:
 		Fn<void()> done,
 		Fail fail = nullptr);
 
+	// ---- the third release: slow mode, hidden members, the admin log,
+	// shared media, who reacted, bulk decisions, who joined by a link
+	// A server with it lists `groups.admin_log.page_size`.
+	[[nodiscard]] bool thirdRelease() const;
+	// The steps of the slow mode slider, in seconds (0 = off first).
+	[[nodiscard]] QVector<int> slowModeSteps() const;
+	[[nodiscard]] int joinRequestsBulkMax() const;
+	// `seconds`: one of slowModeSteps(); 0 switches it off.
+	void setSlowMode(
+		const QString &group,
+		int seconds,
+		base::Guard guard,
+		Fn<void(const Group &)> done,
+		Fail fail = nullptr);
+	void setHideMembers(
+		const QString &group,
+		bool hidden,
+		base::Guard guard,
+		Fn<void(const Group &)> done,
+		Fail fail = nullptr);
+	// `admin`: only that person's actions (empty: everybody's); `actions`:
+	// GroupAdminLog::ActionsParam (empty: every action).
+	void loadAdminLog(
+		const QString &group,
+		const QString &admin,
+		const QString &actions,
+		const QString &cursor,
+		base::Guard guard,
+		Fn<void(const GroupAdminLogPage &)> done,
+		Fail fail = nullptr);
+	// kinds: photo | video | gif | file | voice | video_note | audio | link;
+	// `before`: older than that seq (0: from the newest).
+	void loadMedia(
+		const QString &group,
+		const QStringList &kinds,
+		qint64 before,
+		base::Guard guard,
+		Fn<void(const GroupMediaPage &)> done,
+		Fail fail = nullptr);
+	// `emoji`: only that reaction (empty: every one).
+	void loadReactions(
+		const QString &group,
+		qint64 seq,
+		const QString &emoji,
+		const QString &cursor,
+		base::Guard guard,
+		Fn<void(const GroupReactionsPage &)> done,
+		Fail fail = nullptr);
+	// Approves / declines several requests to join (at most
+	// joinRequestsBulkMax() per call: longer lists go in several calls).
+	void decideJoinRequests(
+		const QString &group,
+		const QStringList &users,
+		bool approve,
+		base::Guard guard,
+		Fn<void(const GroupDecideResult &)> done,
+		Fail fail = nullptr);
+	void loadInviteMembers(
+		const QString &group,
+		const QString &link,
+		const QString &cursor,
+		base::Guard guard,
+		Fn<void(const GroupInviteMembersPage &)> done,
+		Fail fail = nullptr);
+
 	// ---- mentions
 	// The messages above my read mark that mention me or reply to me, oldest first.
 	void loadMentions(
@@ -327,6 +427,9 @@ Q_SIGNALS:
 	// Someone joined, left, was removed or changed role: a member list of
 	// this group that is on screen reads itself again.
 	void membersChanged(const QString &group);
+	// The requests to join changed (a group_admin signal): a list of them
+	// on screen reads itself again.
+	void joinRequestsChanged(const QString &group, const QString &user);
 	// A live message of somebody else that may alert (the notify level and
 	// the mute of the group were applied): for notifications / sounds.
 	void messageReceived(const Data::Message &message, bool addressesMe);

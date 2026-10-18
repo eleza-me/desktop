@@ -2,11 +2,13 @@
 
 #include "data/data_feed.h"
 #include "data/data_session.h"
+#include "data/data_stories.h"
 #include "data/data_users.h"
 #include "eli/eli_actions.h"
 #include "lang_auto.h"
 #include "main/main_session.h"
 #include "media/media_audio_player.h"
+#include "stories/stories_viewer.h"
 #include "support/error_text.h"
 #include "support/links.h"
 #include "support/media_image.h"
@@ -110,6 +112,9 @@ PostList::PostList(
 			rebuildIndex();
 			relayout();
 		}
+	});
+	connect(&data.stories(), &Data::Stories::ringsChanged, this, [this] {
+		update();
 	});
 	connect(&data.users(), &Data::Users::changed, this, [this](const QStringList &ids) {
 		peopleChanged(ids);
@@ -975,6 +980,14 @@ void PostList::activate(int rowIndex, Hit hit, QPoint globalPosition) {
 		}
 		break;
 	case HitType::Userpic:
+		if (_controller->session().data().stories().ring(post.author)
+			!= Data::StoryRing::None) {
+			// A ringed face opens the stories.
+			Stories::OpenUserStories(_controller, post.author);
+		} else {
+			OpenProfile(_controller, post.author);
+		}
+		break;
 	case HitType::Author:
 		OpenProfile(_controller, post.author);
 		break;

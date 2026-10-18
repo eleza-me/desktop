@@ -11,6 +11,7 @@
 #include "data/data_messages.h"
 #include "data/data_outbox.h"
 #include "data/data_session.h"
+#include "history/history_album.h"
 #include "history/history_compose_controls.h"
 #include "history/history_compose_logic.h"
 #include "history/history_logic.h"
@@ -382,6 +383,8 @@ private:
 	FilesPreview *_preview = nullptr;
 	Ui::Checkbox *_asFiles = nullptr;
 	Ui::Checkbox *_spoiler = nullptr;
+	Ui::Checkbox *_grouped = nullptr;
+	Ui::Checkbox *_captionAbove = nullptr;
 	Ui::InputField *_caption = nullptr;
 
 };
@@ -408,6 +411,13 @@ void SendFilesBoxContent::prepare() {
 	_spoiler = Ui::CreateChild<Ui::Checkbox>(
 		this,
 		tr::lng_history_send_spoiler(tr::now));
+	_grouped = Ui::CreateChild<Ui::Checkbox>(
+		this,
+		tr::lng_history_send_grouped(tr::now),
+		true);
+	_captionAbove = Ui::CreateChild<Ui::Checkbox>(
+		this,
+		tr::lng_history_send_caption_above(tr::now));
 	_caption = Ui::CreateChild<Ui::InputField>(
 		this,
 		st::historySendFilesCaption,
@@ -423,6 +433,15 @@ void SendFilesBoxContent::prepare() {
 		: Ui::InputField::SubmitSettings::Enter);
 	connect(_caption, &Ui::InputField::submitted, this, [this] { submit(); });
 	connect(_caption, &Ui::RpWidget::heightChanged, this, [this] { layout(); });
+	connect(_caption, &Ui::InputField::changed, this, [this] {
+		// «Caption above» means something only with a caption.
+		const auto wanted = _preview->hasVisual()
+			&& !_asFiles->checked()
+			&& !_caption->text().trimmed().isEmpty();
+		if (wanted == _captionAbove->isHidden()) {
+			refresh();
+		}
+	});
 	connect(_asFiles, &Ui::Checkbox::checkedChanged, this, [this](bool checked) {
 		_preview->setAsFiles(checked);
 		refresh();
@@ -467,6 +486,10 @@ void SendFilesBoxContent::refresh() {
 	const auto visual = _preview->hasVisual();
 	_asFiles->setVisible(visual);
 	_spoiler->setVisible(visual && !_asFiles->checked());
+	_grouped->setVisible(count > 1);
+	_captionAbove->setVisible(visual
+		&& !_asFiles->checked()
+		&& !_caption->text().trimmed().isEmpty());
 	layout();
 }
 
@@ -482,7 +505,7 @@ void SendFilesBoxContent::layout() {
 	_scroll->setGeometry(padding.left(), top, inner, listHeight);
 	top += listHeight + st::historySendFilesSkip;
 	const auto &check = st::historySendFilesCheckPadding;
-	for (const auto box : { _asFiles, _spoiler }) {
+	for (const auto box : { _asFiles, _spoiler, _grouped, _captionAbove }) {
 		if (box->isHidden()) {
 			continue;
 		}
@@ -533,6 +556,10 @@ void SendFilesBoxContent::submit() {
 	result.entities = prepared.entities;
 	result.asFiles = _asFiles->checked() || !_preview->hasVisual();
 	result.spoiler = !result.asFiles && _spoiler->checked();
+	result.grouped = _grouped->checked();
+	result.captionAbove = !result.asFiles
+		&& !result.caption.isEmpty()
+		&& _captionAbove->checked();
 	if (const auto send = std::exchange(_send, nullptr)) {
 		send(result);
 	}
@@ -697,6 +724,29 @@ void ThemesGrid::mousePressEvent(QMouseEvent *e) {
 }
 
 } // namespace
+
+void ForwardMessages(
+		Main::Session *session,
+		const QString &chat,
+		const QVector<Data::Message> &messages) {
+	const auto config = session->data().clientConfig();
+	const auto groups = ForwardAlbumGroups(
+		messages,
+		config ? config->maxAlbumItems() : 10);
+	auto ids = QHash<int, QString>();
+	auto &outbox = session->data().outbox();
+	for (auto i = 0; i != int(messages.size()); ++i) {
+		auto album = QString();
+		if (groups[i] >= 0) {
+			auto &id = ids[groups[i]];
+			if (id.isEmpty()) {
+				id = Data::Outbox::NewAlbumId();
+			}
+			album = id;
+		}
+		outbox.forward(chat, messages[i], album);
+	}
+}
 
 Ui::object_ptr<Ui::BoxContent> SendFilesBox(
 		Main::Session *session,
@@ -932,11 +982,8 @@ void ShowForwardBox(
 			SetPendingForward(session, chatIds.front(), sorted);
 			guard->openRoute(Window::Routes::Chat(chatIds.front()));
 		} else {
-			auto &outbox = session->data().outbox();
 			for (const auto &chat : chatIds) {
-				for (const auto &message : sorted) {
-					outbox.forward(chat, message);
-				}
+				ForwardMessages(session, chat, sorted);
 			}
 			guard->showToast(tr::lng_history_forwarded_toast(
 				tr::now,

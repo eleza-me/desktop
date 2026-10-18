@@ -1,24 +1,36 @@
-// «حساب کاربری» (phone, handle, devices, two-step verification, data export,
-// sign out, delete account) and «دستگاه‌ها» (the device sessions).
+// «حساب کاربری» (phone and its change, handle, devices, two-step
+// verification, data export, sign out, delete account) and «دستگاه‌ها» (the
+// device sessions, «این من نبودم»).
+//
+// A phone change and an account deletion are confirmed by an SMS code
+// (`POST /v1/account/otp` with the purpose, then the confirmation with the
+// challenge); with two-step verification on, the server answers the
+// confirmation with `two_step.password_required` and the same request is
+// sent again with the password — that answer does not spend the code.
 #include "settings/settings_pages.h"
 
 #include "api/api_client.h"
 #include "api/api_client_config.h"
+#include "core/core_application.h"
 #include "data/data_graph.h"
 #include "data/data_session.h"
 #include "data/data_users.h"
+#include "lang/lang_countries.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
 #include "main/main_account.h"
 #include "main/main_session.h"
 #include "settings/settings_code_box.h"
 #include "settings/settings_common.h"
+#include "settings/settings_logic.h"
 #include "settings/settings_two_step.h"
 #include "support/error_text.h"
 #include "support/file_dialogs.h"
 #include "ui/layers/generic_box.h"
 #include "ui/painter.h"
+#include "ui/widgets/input_fields.h"
 #include "ui/widgets/labels.h"
+#include "ui/widgets/popup_menu.h"
 #include "ui/widgets/tooltip.h"
 #include "ui/ui_utility.h"
 #include "window/window_main_window.h"
@@ -29,6 +41,8 @@
 
 #include <QtCore/QDateTime>
 #include <QtCore/QJsonObject>
+#include <QtGui/QCursor>
+#include <QtGui/QMouseEvent>
 
 namespace Settings {
 namespace {
@@ -225,6 +239,381 @@ void ShowExportStatusBox(Controller *controller, const QJsonObject &status) {
 
 // ---- account
 
+// ---- confirmations with an SMS code (and the two-step password)
+
+using ConfirmRequest = std::function<void(
+	const QString &password,
+	std::function<void()> done,
+	std::function<void(const Api::Error &)> fail)>;
+
+[[nodiscard]] bool PasswordRequired(const Api::Error &error) {
+	return error.code == u"two_step.password_required";
+}
+
+[[nodiscard]] bool PasswordWrong(const Api::Error &error) {
+	return error.code == u"two_step.password_invalid";
+}
+
+// «رمز دومرحله‌ای»: the same request again, with the password.
+void ShowConfirmPasswordBox(
+		Controller *controller,
+		ConfirmRequest request,
+		std::function<void()> succeeded) {
+	controller->show(Ui::Box([=](Ui::GenericBox *box) {
+		box->setTitle(tr::lng_settings_password_title(tr::now));
+		box->addRow(
+			Ui::object_ptr<Ui::FlatLabel>(
+				box,
+				tr::lng_settings_password_about(tr::now),
+				st::boxLabel),
+			st::boxRowPadding);
+		const auto password = box->addRow(
+			Ui::object_ptr<Ui::PasswordInput>(
+				box,
+				st::settingsTwoStepField,
+				tr::lng_intro_password(tr::now)),
+			st::settingsFieldPadding);
+		const auto error = box->addRow(
+			Ui::object_ptr<Ui::FlatLabel>(box, st::settingsErrorLabel),
+			st::settingsErrorPadding);
+		error->hide();
+		const auto busy = std::make_shared<bool>(false);
+		const auto button = std::make_shared<QPointer<Ui::RoundButton>>();
+		const auto submit = [=] {
+			const auto text = NormalizePassword(password->text());
+			if (*busy) {
+				return;
+			} else if (text.isEmpty()) {
+				password->showError();
+				password->setFocusFast();
+				return;
+			}
+			*busy = true;
+			if (*button) {
+				(*button)->setLoading(true);
+			}
+			error->hide();
+			request(text, [=] {
+				box->closeBox();
+				succeeded();
+			}, [=](const Api::Error &failure) {
+				*busy = false;
+				if (*button) {
+					(*button)->setLoading(false);
+				}
+				password->showError();
+				password->setFocusFast();
+				error->setText(PasswordWrong(failure)
+					? tr::lng_settings_password_wrong(tr::now)
+					: Support::ErrorText(failure));
+				error->show();
+			});
+		};
+		QObject::connect(
+			password,
+			&Ui::MaskedInputField::submitted,
+			box,
+			submit);
+		box->setFocusCallback([=] { password->setFocusFast(); });
+		*button = box->addButton(
+			tr::lng_continue(tr::now),
+			submit,
+			st::defaultRoundButton);
+		box->addButton(tr::lng_cancel(tr::now), [=] { box->closeBox(); });
+	}));
+}
+
+struct AccountCodeArgs {
+	QString title;
+	QString about;
+	QString purpose;  // delete_account | phone_change
+	QString newPhone; // phone_change
+	// The confirmation with the challenge, the code and the password ("").
+	std::function<void(
+		const QString &challenge,
+		const QString &code,
+		const QString &password,
+		std::function<void()> done,
+		std::function<void(const Api::Error &)> fail)> confirm;
+	std::function<void()> succeeded;
+	// The code was sent (the code box is shown next).
+	std::function<void()> requested;
+	// The code could not be requested (the box was not shown).
+	std::function<void(const Api::Error &)> failed;
+};
+
+void ShowAccountCodeBox(Controller *controller, AccountCodeArgs args) {
+	const auto session = &controller->session();
+	const auto deviceId = session->account().deviceId();
+	const auto shared = std::make_shared<AccountCodeArgs>(std::move(args));
+	session->data().graph().requestAccountCode(
+		shared->purpose,
+		shared->newPhone,
+		deviceId,
+		controller,
+		[=](const QJsonObject &result) {
+			const auto challenge = std::make_shared<QString>(
+				result.value(u"challenge_id"_s).toString());
+			auto code = CodeBoxArgs();
+			code.title = shared->title;
+			code.about = shared->about;
+			code.codeLength = result.value(u"code_length"_s).toInt(6);
+			code.resendAfter = result.value(u"resend_after"_s).toInt(60);
+			code.submit = [=](
+					const QString &typed,
+					std::function<void()> done,
+					std::function<void(const QString &)> fail) {
+				shared->confirm(*challenge, typed, QString(), [=] {
+					done();
+					shared->succeeded();
+				}, [=](const Api::Error &error) {
+					if (!PasswordRequired(error)) {
+						fail(Support::ErrorText(error));
+						return;
+					}
+					// The code stays valid: ask for the password and
+					// send the same confirmation with it.
+					done();
+					ShowConfirmPasswordBox(controller, [=](
+							const QString &password,
+							std::function<void()> passed,
+							std::function<void(const Api::Error &)> refused) {
+						shared->confirm(*challenge, typed, password, passed, refused);
+					}, shared->succeeded);
+				});
+			};
+			code.resend = [=](
+					std::function<void(int)> done,
+					std::function<void(const QString &)> fail) {
+				session->data().graph().requestAccountCode(
+					shared->purpose,
+					shared->newPhone,
+					deviceId,
+					controller,
+					[=](const QJsonObject &again) {
+						*challenge = again.value(u"challenge_id"_s).toString();
+						done(again.value(u"resend_after"_s).toInt(60));
+					},
+					[=](const Api::Error &error) {
+						fail(Support::ErrorText(error));
+					});
+			};
+			if (shared->requested) {
+				shared->requested();
+			}
+			ShowCodeBox(controller, std::move(code));
+		},
+		[=](const Api::Error &error) {
+			if (shared->failed) {
+				shared->failed(error);
+			} else {
+				Support::ShowError(controller, error);
+			}
+		});
+}
+
+// ---- delete account
+
+void ShowDeleteAccountBox(Controller *controller) {
+	const auto session = &controller->session();
+	const auto handle = session->data().users().me().handle;
+	controller->show(Ui::Box([=](Ui::GenericBox *box) {
+		box->setTitle(tr::lng_settings_delete_account(tr::now));
+		box->addRow(
+			Ui::object_ptr<Ui::FlatLabel>(
+				box,
+				tr::lng_settings_delete_title(tr::now),
+				st::settingsDeleteTitle),
+			st::boxRowPadding);
+		box->addRow(
+			Ui::object_ptr<Ui::FlatLabel>(
+				box,
+				tr::lng_settings_delete_body(tr::now),
+				st::settingsDeleteText),
+			st::boxRowPadding);
+		box->addRow(
+			Ui::object_ptr<Ui::FlatLabel>(
+				box,
+				tr::lng_settings_delete_after(tr::now),
+				st::settingsSubsectionTitle),
+			st::settingsDeleteHeaderPadding);
+		const auto points = QStringList{
+			tr::lng_settings_delete_point_posts(tr::now),
+			tr::lng_settings_delete_point_messages(tr::now),
+			handle.isEmpty()
+				? tr::lng_settings_delete_point_handle_generic(tr::now)
+				: tr::lng_settings_delete_point_handle(
+					tr::now,
+					lt_handle,
+					Lang::Handle(handle)),
+			tr::lng_settings_delete_point_anon(tr::now),
+		};
+		for (const auto &point : points) {
+			box->addRow(
+				Ui::object_ptr<Ui::FlatLabel>(
+					box,
+					QString(QChar(0x2022)) + QChar(' ') + point,
+					st::settingsDeletePoint),
+				st::settingsDeletePointPadding);
+		}
+		box->addButton(tr::lng_settings_delete_continue(tr::now), [=] {
+			box->closeBox();
+			auto args = AccountCodeArgs();
+			args.title = tr::lng_settings_delete_account(tr::now);
+			args.about = tr::lng_settings_delete_code_about(tr::now);
+			args.purpose = u"delete_account"_s;
+			args.confirm = [=](
+					const QString &challenge,
+					const QString &code,
+					const QString &password,
+					std::function<void()> done,
+					std::function<void(const Api::Error &)> fail) {
+				session->data().graph().deleteAccount(
+					challenge,
+					code,
+					password,
+					session->account().deviceId(),
+					controller,
+					std::move(done),
+					std::move(fail));
+			};
+			const auto account = &session->account();
+			args.succeeded = [=] {
+				// The local session and its data go now; signing in within
+				// the 30 days cancels the deletion. Later: this runs from the
+				// box that the session's end destroys.
+				QMetaObject::invokeMethod(account, [=] {
+					account->endSession(Main::SessionEndReason::SignedOut);
+					if (const auto window = Core::App().window()) {
+						window->showToast(tr::lng_settings_delete_done(tr::now));
+					}
+				}, Qt::QueuedConnection);
+			};
+			ShowAccountCodeBox(controller, std::move(args));
+		}, st::dangerRoundButton);
+		box->addButton(tr::lng_settings_delete_cancel(tr::now), [=] {
+			box->closeBox();
+		});
+	}));
+}
+
+// ---- change phone
+
+void ShowChangePhoneBox(Controller *controller, std::function<void()> changed) {
+	const auto session = &controller->session();
+	controller->show(Ui::Box([=](Ui::GenericBox *box) {
+		box->setTitle(tr::lng_settings_phone_new(tr::now));
+		box->addRow(
+			Ui::object_ptr<Ui::FlatLabel>(
+				box,
+				tr::lng_settings_phone_new_about(tr::now),
+				st::boxLabel),
+			st::boxRowPadding);
+		const auto phone = box->addRow(
+			Ui::object_ptr<Ui::PhoneInput>(
+				box,
+				st::settingsTwoStepField,
+				u"98"_s),
+			st::settingsFieldPadding);
+		phone->setNumberPlaceholder(tr::lng_intro_phone_placeholder(tr::now));
+		const auto error = box->addRow(
+			Ui::object_ptr<Ui::FlatLabel>(box, st::settingsErrorLabel),
+			st::settingsErrorPadding);
+		error->hide();
+		QObject::connect(
+			phone,
+			&Ui::PhoneInput::internationalNumberEntered,
+			box,
+			[=](const QString &digits) {
+				if (const auto found = Lang::CountryByPhone(digits)) {
+					phone->setCountryCode(found->code);
+					phone->setNumber(digits.mid(found->code.size()));
+				}
+			});
+		QObject::connect(phone, &Ui::PhoneInput::changed, box, [=] {
+			error->hide();
+		});
+		const auto busy = std::make_shared<bool>(false);
+		const auto button = std::make_shared<QPointer<Ui::RoundButton>>();
+		const auto submit = [=] {
+			const auto code = phone->countryCode();
+			const auto number = code.isEmpty()
+				? QString()
+				: Lang::E164(phone->number(), code);
+			if (*busy) {
+				return;
+			} else if (number.isEmpty()) {
+				phone->showError();
+				error->setText(tr::lng_intro_invalid_phone(tr::now));
+				error->show();
+				return;
+			}
+			*busy = true;
+			if (*button) {
+				(*button)->setLoading(true);
+			}
+			const auto weak = QPointer<Ui::GenericBox>(box);
+			auto args = AccountCodeArgs();
+			args.title = tr::lng_settings_phone_change(tr::now);
+			args.about = tr::lng_settings_phone_code_about(
+				tr::now,
+				lt_phone,
+				Lang::Phone(number));
+			args.purpose = u"phone_change"_s;
+			args.newPhone = number;
+			args.confirm = [=](
+					const QString &challenge,
+					const QString &typed,
+					const QString &password,
+					std::function<void()> done,
+					std::function<void(const Api::Error &)> fail) {
+				session->data().graph().changePhone(
+					challenge,
+					typed,
+					password,
+					session->account().deviceId(),
+					controller,
+					std::move(done),
+					std::move(fail));
+			};
+			args.succeeded = [=] {
+				controller->showToast(tr::lng_settings_phone_changed(tr::now));
+				if (changed) {
+					changed();
+				}
+			};
+			args.failed = [=](const Api::Error &failure) {
+				if (!weak) {
+					Support::ShowError(controller, failure);
+					return;
+				}
+				*busy = false;
+				if (*button) {
+					(*button)->setLoading(false);
+				}
+				phone->showError();
+				error->setText(Support::ErrorText(failure));
+				error->show();
+			};
+			// The box closes once the code is on its way (the code box
+			// takes its place); it stays to show why it was not.
+			args.requested = [=] {
+				if (weak) {
+					weak->closeBox();
+				}
+			};
+			ShowAccountCodeBox(controller, std::move(args));
+		};
+		QObject::connect(phone, &Ui::PhoneInput::submitted, box, submit);
+		box->setFocusCallback([=] { phone->setFocusFast(); });
+		*button = box->addButton(
+			tr::lng_settings_phone_send_code(tr::now),
+			submit,
+			st::defaultRoundButton);
+		box->addButton(tr::lng_cancel(tr::now), [=] { box->closeBox(); });
+	}));
+}
+
 class AccountPage final : public Page {
 public:
 	AccountPage(QWidget *parent, Controller *controller)
@@ -238,16 +627,24 @@ private:
 		const auto window = controller();
 		auto &session = window->session();
 
-		const auto phone = AddInfoRow(
+		const auto phone = std::make_shared<QPointer<Ui::SettingsButton>>();
+		const auto loadPhone = Guarded(this, [=, this] {
+			window->session().data().graph().accountPhone(this, [=](
+					const QString &value) {
+				if (*phone) {
+					(*phone)->setValueText(value.isEmpty()
+						? QString(QChar(0x2014))
+						: Lang::Phone(value));
+				}
+			});
+		});
+		*phone = AddLinkButton(
 			content(),
 			tr::lng_settings_phone(tr::now),
-			QString(QChar(0x2026)),
-			&st::settingsIconPhone);
-		session.data().graph().accountPhone(this, [=](const QString &value) {
-			phone->setValueText(value.isEmpty()
-				? QString(QChar(0x2014))
-				: Lang::Phone(value));
-		});
+			&st::settingsIconPhone,
+			[=] { ShowChangePhoneBox(window, loadPhone); });
+		(*phone)->setValueText(QString(QChar(0x2026)));
+		loadPhone();
 
 		const auto handle = AddLinkButton(
 			content(),
@@ -299,11 +696,7 @@ private:
 			content(),
 			tr::lng_settings_delete_account(tr::now),
 			&st::settingsIconDelete,
-			[=] {
-				window->show(Ui::MakeInformBox(
-					tr::lng_settings_delete_account_app_only(tr::now),
-					tr::lng_settings_delete_account(tr::now)));
-			});
+			[=] { ShowDeleteAccountBox(window); });
 		remove->setDestructive(true);
 		AddFootnote(content(), tr::lng_settings_delete_account_about(tr::now));
 	}
@@ -368,12 +761,17 @@ public:
 	SessionRow(
 		QWidget *parent,
 		const Data::DeviceSession &session,
-		std::function<void()> terminate)
+		std::function<void()> terminate,
+		std::function<void()> menu = nullptr)
 	: RpWidget(parent)
 	, _session(session)
 	, _subtitle(SessionSubtitle(
 		session,
-		QDateTime::currentMSecsSinceEpoch())) {
+		QDateTime::currentMSecsSinceEpoch()))
+	, _menu(std::move(menu)) {
+		if (_menu) {
+			setCursor(style::cur_pointer);
+		}
 		if (!session.current && terminate) {
 			_terminate = new Ui::IconButton(this, st::settingsSessionTerminate);
 			_terminate->setClickedCallback(std::move(terminate));
@@ -465,10 +863,20 @@ protected:
 			st::settingsSessionInfoFont->elided(_subtitle, available));
 	}
 
+	void mouseReleaseEvent(QMouseEvent *e) override {
+		if (_menu
+			&& (e->button() == Qt::LeftButton || e->button() == Qt::RightButton)
+			&& rect().contains(e->pos())) {
+			const auto callback = _menu;
+			callback();
+		}
+	}
+
 private:
 	Data::DeviceSession _session;
 	QString _subtitle;
 	Ui::IconButton *_terminate = nullptr;
+	std::function<void()> _menu;
 
 };
 
@@ -525,10 +933,14 @@ private:
 					content()->add(Ui::object_ptr<SessionRow>(
 						content(),
 						session,
-						[=, this] { terminate(copy); }));
+						[=, this] { terminate(copy); },
+						[=, this] { showMenu(copy); }));
 				}
 			}
 			AddFootnote(content(), tr::lng_settings_sessions_about(tr::now));
+			AddFootnote(
+				content(),
+				tr::lng_settings_sessions_not_me_about(tr::now));
 		} else {
 			AddFootnote(content(), tr::lng_settings_sessions_only_this(tr::now));
 		}
@@ -563,6 +975,52 @@ private:
 				rebuild();
 				window->showToast(
 					tr::lng_settings_session_terminated(tr::now));
+			}, [=](const Api::Error &error) {
+				Support::ShowError(window, error);
+			});
+		});
+		window->show(Ui::MakeConfirmBox(std::move(args)));
+	}
+
+	void showMenu(const Data::DeviceSession &session) {
+		const auto menu = new Ui::PopupMenu(this);
+		menu->addAction(tr::lng_settings_session_terminate(tr::now), [=, this] {
+			terminate(session);
+		}, &st::menuIconLogout);
+		auto report = Ui::MenuItem();
+		report.text = tr::lng_settings_session_not_me(tr::now);
+		report.icon = &st::menuIconReport;
+		report.destructive = true;
+		report.callback = [=, this] {
+			reportUnauthorized(session);
+		};
+		menu->addItem(std::move(report));
+		menu->popup(QCursor::pos());
+	}
+
+	void reportUnauthorized(const Data::DeviceSession &session) {
+		const auto window = controller();
+		const auto id = session.id;
+		const auto name = session.deviceName.isEmpty()
+			? PlatformTitle(session.platform)
+			: session.deviceName;
+		auto args = Ui::ConfirmBoxArgs();
+		args.title = name.isEmpty()
+			? tr::lng_settings_session_not_me_title(tr::now)
+			: tr::lng_settings_session_not_me_title_named(
+				tr::now,
+				lt_device,
+				Lang::Isolated(name));
+		args.text = tr::lng_settings_session_not_me_text(tr::now);
+		args.confirmText = tr::lng_settings_session_not_me_confirm(tr::now);
+		args.destructive = true;
+		args.confirmed = Guarded(this, [=, this](std::function<void()> close) {
+			close();
+			window->session().data().graph().reportUnauthorizedSession(id, this, [=, this] {
+				// The server also ends the sessions that came after it
+				// (they re-verify): read the list again.
+				load();
+				window->showToast(tr::lng_settings_session_reported(tr::now));
 			}, [=](const Api::Error &error) {
 				Support::ShowError(window, error);
 			});

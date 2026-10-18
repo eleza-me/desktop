@@ -26,6 +26,7 @@ set(eleza_gui_modules
 	settings
 	boxes
 	media
+	stories
 	support
 )
 if (ELEZA_DEBUG_TOOLS)

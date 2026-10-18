@@ -1,6 +1,7 @@
 #include "history/history_view_element.h"
 
 #include "history/history_view_media.h"
+#include "history/history_album.h"
 #include "data/data_group_rules.h"
 #include "lang/lang_format.h"
 #include "history/history_themes.h"
@@ -126,20 +127,62 @@ struct Element::PreviewView {
 	}
 };
 
-Element::Element(Delegate *delegate, const Data::Message &message)
+Element::Element(
+	Delegate *delegate,
+	const Data::Message &message,
+	const QVector<Data::Message> &album)
 : _delegate(delegate)
 , _data(message)
+, _album(album)
 , _key(message.key()) {
 }
 
 Element::~Element() = default;
 
-bool Element::setData(const Data::Message &message) {
+const Data::Message &Element::albumItem(int index) const {
+	return (index >= 0 && index < int(_album.size())) ? _album[index] : _data;
+}
+
+const Data::Message &Element::messageAt(const HitResult &hit) const {
+	return albumItem(hit.item);
+}
+
+QVector<Data::Message> Element::messages() const {
+	return _album.isEmpty() ? QVector<Data::Message>{ _data } : _album;
+}
+
+const Data::Message &Element::captionMessage() const {
+	return albumItem(AlbumCaptionIndex(_album));
+}
+
+qint64 Element::lastSeq() const {
+	auto result = _data.seq;
+	for (const auto &item : _album) {
+		result = std::max(result, item.seq);
+	}
+	return result;
+}
+
+bool Element::setData(
+		const Data::Message &message,
+		const QVector<Data::Message> &album) {
+	auto albumView = (album.size() == _album.size());
+	auto albumLayout = albumView;
+	for (auto i = 0; albumLayout && i != int(album.size()); ++i) {
+		if (!SameLayout(album[i], _album[i])) {
+			albumView = albumLayout = false;
+		} else if (albumView && !SameForView(album[i], _album[i])) {
+			albumView = false;
+		}
+	}
 	const auto sameKind = (_data.kind == message.kind)
-		&& (_data.kindName == message.kindName);
-	const auto sameView = SameForView(_data, message);
-	const auto sameLayout = sameView || SameLayout(_data, message);
+		&& (_data.kindName == message.kindName)
+		&& albumLayout;
+	const auto sameView = SameForView(_data, message) && albumView;
+	const auto sameLayout = sameView
+		|| (SameLayout(_data, message) && albumLayout);
 	_data = message;
+	_album = album;
 	_key = message.key();
 	if (sameView) {
 		return false;
@@ -256,7 +299,9 @@ void Element::unloadHeavy() {
 
 void Element::createMedia() {
 	if (!_media) {
-		_media = CreateMedia(_delegate, this);
+		_media = isAlbum()
+			? CreateAlbumMedia(_delegate, this)
+			: CreateMedia(_delegate, this);
 	}
 }
 
@@ -298,7 +343,8 @@ void Element::ensureLoaded() {
 	const auto captionKind = (kind == Data::MessageKind::Photo)
 		|| (kind == Data::MessageKind::Video)
 		|| (kind == Data::MessageKind::Gif)
-		|| (kind == Data::MessageKind::ForwardedPost);
+		|| (kind == Data::MessageKind::ForwardedPost)
+		|| (kind == Data::MessageKind::StoryReply);
 	if (kind == Data::MessageKind::Unknown && _data.text.trimmed().isEmpty()) {
 		_text.setText(st::historyTextStyle, tr::lng_history_unsupported(tr::now));
 	} else if ((textKind || captionKind) && !_data.text.isEmpty()) {
@@ -319,7 +365,9 @@ void Element::ensureLoaded() {
 					: st::historyJumboStyle3,
 				_data.text.trimmed());
 		} else {
-			_text.setMarkedText(st::historyTextStyle, TextForMessage(_data));
+			_text.setMarkedText(
+				st::historyTextStyle,
+				TextForMessage(_data, _delegate->elementBotCommands()));
 			if (_text.hasSpoilers()) {
 				_text.setSpoilersRevealed(_delegate->elementRevealed(_key));
 			}
@@ -488,6 +536,10 @@ int Element::estimateHeight(int width) const {
 		break;
 	case Data::MessageKind::ForwardedPost:
 		result += 110;
+		break;
+	case Data::MessageKind::StoryReply:
+	case Data::MessageKind::StoryReaction:
+		result += st::historyStoryThumb.height() + 24;
 		break;
 	case Data::MessageKind::Text:
 	case Data::MessageKind::Unknown:
@@ -786,7 +838,15 @@ void Element::layoutBubble(int maxWidth) {
 		|| !_forwardedText.isEmpty()
 		|| !_viaText.isEmpty()
 		|| _reply;
-	const auto textIsLast = hasText && !_preview && _reactions.empty();
+	// «Caption above»: the text of a photo / video goes over the picture.
+	const auto textAbove = hasText
+		&& fullBleed
+		&& _data.captionAbove
+		&& !_data.underReview;
+	const auto textIsLast = hasText
+		&& !textAbove
+		&& !_preview
+		&& _reactions.empty();
 	auto metaInline = false;
 	auto lastRtl = rtl;
 	if (fullBleed) {
@@ -871,7 +931,9 @@ void Element::layoutBubble(int maxWidth) {
 	}
 
 	const auto left = padding.left();
-	auto top = (fullBleed && !hasHeader) ? mediaPad : padding.top();
+	auto top = (fullBleed && !hasHeader && !textAbove)
+		? mediaPad
+		: padding.top();
 	if (named) {
 		_senderRect = QRect(left, top, inner, st::historyGroupNameHeight);
 		top += st::historyGroupNameHeight;
@@ -917,9 +979,14 @@ void Element::layoutBubble(int maxWidth) {
 		top += height + st::historyReplySkip;
 	}
 	auto mediaIsLast = false;
+	if (textAbove) {
+		const auto height = _text.countHeight(inner);
+		_textRect = QRect(left, top, inner, height);
+		top += height + int(st::historyMediaCaptionSkip);
+	}
 	if (_media) {
 		if (fullBleed) {
-			if (hasHeader) {
+			if (hasHeader && !textAbove) {
 				top += 1;
 			}
 			_mediaRect = QRect(
@@ -928,15 +995,15 @@ void Element::layoutBubble(int maxWidth) {
 				bubbleWidth - 2 * mediaPad,
 				mediaSize.height());
 			top += mediaSize.height();
-			top += hasText ? int(st::historyMediaCaptionSkip) : 0;
+			top += (hasText && !textAbove) ? int(st::historyMediaCaptionSkip) : 0;
 		} else {
 			_mediaRect = QRect(left, top + 1, inner, mediaSize.height());
 			top += mediaSize.height() + 1;
 			top += hasText ? 6 : 0;
 		}
-		mediaIsLast = !hasText && !_preview && _reactions.empty();
+		mediaIsLast = (!hasText || textAbove) && !_preview && _reactions.empty();
 	}
-	if (hasText) {
+	if (hasText && !textAbove) {
 		const auto height = _text.countHeight(inner);
 		_textRect = QRect(left, top, inner, height);
 		top += height;

@@ -3,6 +3,7 @@
 #include "api/api_client_config.h"
 #include "data/data_calls.h"
 #include "data/data_chats.h"
+#include "data/data_group_rules.h"
 #include "data/data_session.h"
 #include "data/data_users.h"
 #include "lang/lang_format.h"
@@ -286,7 +287,15 @@ void TopBar::refreshStatus() {
 	} else if (!chat) {
 		status = QString();
 	} else if (const auto activity = chats.activity(_chatId)) {
-		status = WithoutEllipsis(ActivityText(activity->kind));
+		const auto text = ActivityText(activity->kind);
+		status = WithoutEllipsis((chat->isGroup && !activity->user.isEmpty())
+			? tr::lng_action_member(
+				tr::now,
+				lt_name,
+				Data::GroupRules::FirstName(Support::MemberName(_session, activity->user)),
+				lt_action,
+				text)
+			: text);
 		active = true;
 		typing = true;
 	} else if (chat->isGroup) {

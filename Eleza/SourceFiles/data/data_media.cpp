@@ -160,6 +160,15 @@ MediaRef MediaRef::Url(const QString &url) {
 	return result;
 }
 
+MediaRef MediaRef::Story(const QString &storyId) {
+	auto result = MediaRef();
+	if (!storyId.isEmpty()) {
+		result.type = Type::Story;
+		result.id = storyId;
+	}
+	return result;
+}
+
 bool MediaRef::valid() const {
 	return type != Type::None;
 }
@@ -182,6 +191,8 @@ QString MediaRef::location(MediaVariant variant) const {
 		return u"/v1/group-invites/%1/photo?variant=%2"_s.arg(Encoded(id), name);
 	case Type::Url:
 		return id;
+	case Type::Story:
+		return u"/v1/stories/%1/media?variant=%2"_s.arg(Encoded(id), name);
 	case Type::None:
 		break;
 	}
@@ -198,6 +209,7 @@ QString MediaRef::cacheKey(MediaVariant variant) const {
 	case Type::GroupPhoto: return u"group:%1:%2:%3"_s.arg(id, version, name);
 	case Type::InvitePhoto: return u"invite:%1:%2:%3"_s.arg(id, version, name);
 	case Type::Url: return u"url:"_s + id;
+	case Type::Story: return u"story:%1:%2"_s.arg(id, name);
 	case Type::None: break;
 	}
 	return QString();

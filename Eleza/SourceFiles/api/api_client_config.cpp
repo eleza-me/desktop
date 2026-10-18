@@ -59,6 +59,13 @@ void ClientConfig::load(QObject *guard, Fn<void(bool)> done) {
 		.send();
 }
 
+qint64 ClientConfig::version() const {
+	const auto value = _data.value("version"_L1);
+	return value.isString()
+		? value.toString().toLongLong()
+		: base::SafeInt64(value.toDouble());
+}
+
 QJsonValue ClientConfig::value(const QString &dotted) const {
 	// The server's document is { "version": N, "values": { "<key>": … } };
 	// a flat document (test servers) is read as well.
@@ -215,6 +222,19 @@ bool ClientConfig::videoHlsEnabled() const {
 
 bool ClientConfig::groupsEnabled() const {
 	return boolean(u"feature.groups"_s, false);
+}
+
+bool ClientConfig::botsEnabled() const {
+	return boolean(u"feature.bots"_s, true);
+}
+
+bool ClientConfig::botsInlineEnabled() const {
+	return botsEnabled() && boolean(u"bots.inline.enabled"_s, true);
+}
+
+int ClientConfig::botsInlineQueryMaxChars() const {
+	const auto value = integer(u"bots.inline.query_max_chars"_s, 256);
+	return int(std::clamp(value, qint64(1), qint64(1024)));
 }
 
 bool ClientConfig::groupsAdministration() const {
@@ -394,6 +414,10 @@ int ClientConfig::postMaxThreadParts() const {
 
 int ClientConfig::postMaxAlbumItems() const {
 	return int(integer(u"post.max_album_items"_s, 10));
+}
+
+int ClientConfig::maxAlbumItems() const {
+	return std::clamp(int(integer(u"messaging.max_album_items"_s, 10)), 2, 20);
 }
 
 int ClientConfig::pollMinOptions() const {

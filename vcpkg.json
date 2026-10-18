@@ -4,6 +4,7 @@
 	"version-string": "0.4.0",
 	"description": "Eleza Desktop: third-party dependencies that do not come with Qt.",
 	"dependencies": [
-		"openssl"
+		"openssl",
+		"rlottie"
 	]
 }

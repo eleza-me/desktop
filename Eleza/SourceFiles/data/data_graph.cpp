@@ -191,6 +191,14 @@ void Graph::unmute(const QString &userId) {
 	simple(Api::Delete, u"/v1/users/%1/mute"_s.arg(PathSegment(userId)), QJsonObject(), u"graph.unmute"_s, userId, base::Guard(), nullptr);
 }
 
+void Graph::hide(const QString &userId) {
+	simple(Api::Post, u"/v1/users/%1/hide"_s.arg(PathSegment(userId)), QJsonObject(), u"graph.hide"_s, userId, base::Guard(), nullptr);
+}
+
+void Graph::unhide(const QString &userId) {
+	simple(Api::Delete, u"/v1/users/%1/hide"_s.arg(PathSegment(userId)), QJsonObject(), u"graph.unhide"_s, userId, base::Guard(), nullptr);
+}
+
 void Graph::postNotifications(const QString &userId, base::Guard guard, Fn<void(bool)> done) {
 	_session->api().request(Api::Get, u"/v1/users/%1/post-notifications"_s.arg(PathSegment(userId)))
 		.guard(guard)
@@ -253,6 +261,10 @@ void Graph::acceptFollowRequest(const QString &userId, base::Guard guard, Fn<voi
 
 void Graph::declineFollowRequest(const QString &userId, base::Guard guard, Fn<void(const GraphState &)> done, FailCallback fail) {
 	relation(Api::Post, u"/v1/me/follow-requests/%1/decline"_s.arg(PathSegment(userId)), userId, u"graph.decline_request"_s, guard, done, fail);
+}
+
+void Graph::sentFollowRequests(const QString &cursor, base::Guard guard, Fn<void(const GraphList &)> done, FailCallback fail) {
+	list(u"/v1/me/follow-requests/sent"_s, cursor, guard, done, fail);
 }
 
 // ---- lists
@@ -629,6 +641,17 @@ void Graph::setSetting(const QString &dotted, const QJsonValue &value) {
 	patchSettings(SettingPatch(dotted, value));
 }
 
+void Graph::settingsVersionChanged(qint64 version) {
+	if (version > 0 && version == _settingsVersion) {
+		return;
+	}
+	_settingsVersion = version;
+	// Not read yet: whoever needs it reads the current one then.
+	if (_settingsLoaded) {
+		loadSettings(true, base::Guard(), nullptr);
+	}
+}
+
 void Graph::loadSettings(
 		bool force,
 		base::Guard guard,
@@ -740,6 +763,198 @@ void Graph::revokeSession(const QString &id, base::Guard guard, Fn<void()> done,
 void Graph::revokeOtherSessions(base::Guard guard, Fn<void()> done, FailCallback fail) {
 	_session->api().request(Api::Post, u"/v1/sessions/revoke-others"_s)
 		.body(QJsonObject())
+		.guard(guard)
+		.done([=] {
+			if (done) {
+				done();
+			}
+		})
+		.fail(std::move(fail))
+		.send();
+}
+
+// ---- privacy
+
+void Graph::lastSeenExceptions(
+		const QString &kind,
+		const QString &cursor,
+		base::Guard guard,
+		Fn<void(const LastSeenExceptionsPage &)> done,
+		FailCallback fail) {
+	_session->api().request(Api::Get, u"/v1/me/privacy/last-seen/exceptions"_s)
+		.query(u"kind"_s, kind)
+		.query(u"cursor"_s, cursor)
+		.query(u"limit"_s, 100)
+		.guard(this)
+		.done([=, this](const QJsonObject &result) {
+			const auto page = LastSeenExceptionsPage::FromJson(result);
+			_session->users().seed(page.users);
+			if (done && guard.alive()) {
+				done(page);
+			}
+		})
+		.fail(Guarded(guard, fail))
+		.send();
+}
+
+void Graph::setLastSeenException(
+		const QString &userId,
+		const QString &kind,
+		base::Guard guard,
+		Fn<void()> done,
+		FailCallback fail) {
+	_session->api().request(
+		Api::Put,
+		u"/v1/me/privacy/last-seen/exceptions/"_s + PathSegment(userId)
+	).body(QJsonObject{ { u"kind"_s, kind } })
+		.guard(guard)
+		.done([=] {
+			if (done) {
+				done();
+			}
+		})
+		.fail(std::move(fail))
+		.send();
+}
+
+void Graph::removeLastSeenException(
+		const QString &userId,
+		base::Guard guard,
+		Fn<void()> done,
+		FailCallback fail) {
+	_session->api().request(
+		Api::Delete,
+		u"/v1/me/privacy/last-seen/exceptions/"_s + PathSegment(userId)
+	).guard(guard)
+		.done([=] {
+			if (done) {
+				done();
+			}
+		})
+		.fail(std::move(fail))
+		.send();
+}
+
+void Graph::contactBans(
+		base::Guard guard,
+		Fn<void(const QVector<ContactBan> &)> done,
+		FailCallback fail) {
+	_session->api().request(Api::Get, u"/v1/me/contact-bans"_s)
+		.guard(guard)
+		.done([=](const QJsonObject &result) {
+			if (done) {
+				done(Json::List<ContactBan>(result.value("bans"_L1)));
+			}
+		})
+		.fail(std::move(fail))
+		.send();
+}
+
+void Graph::removeContactBan(
+		const QString &token,
+		base::Guard guard,
+		Fn<void()> done,
+		FailCallback fail) {
+	_session->api().request(
+		Api::Delete,
+		u"/v1/me/contact-bans/"_s + PathSegment(token)
+	).guard(guard)
+		.done([=] {
+			if (done) {
+				done();
+			}
+		})
+		.fail(std::move(fail))
+		.send();
+}
+
+// ---- account
+
+void Graph::reportUnauthorizedSession(
+		const QString &id,
+		base::Guard guard,
+		Fn<void()> done,
+		FailCallback fail) {
+	_session->api().request(
+		Api::Post,
+		u"/v1/sessions/%1/report-unauthorized"_s.arg(PathSegment(id))
+	).body(QJsonObject())
+		.guard(guard)
+		.done([=] {
+			if (done) {
+				done();
+			}
+		})
+		.fail(std::move(fail))
+		.send();
+}
+
+void Graph::requestAccountCode(
+		const QString &purpose,
+		const QString &newPhone,
+		const QString &deviceId,
+		base::Guard guard,
+		Fn<void(const QJsonObject &)> done,
+		FailCallback fail) {
+	auto body = QJsonObject{
+		{ u"purpose"_s, purpose },
+		{ u"device_id"_s, deviceId },
+	};
+	Json::Put(body, "new_phone"_L1, newPhone);
+	_session->api().request(Api::Post, u"/v1/account/otp"_s)
+		.body(body)
+		.guard(guard)
+		.done([=](const QJsonObject &result) {
+			if (done) {
+				done(result);
+			}
+		})
+		.fail(std::move(fail))
+		.send();
+}
+
+void Graph::changePhone(
+		const QString &challengeId,
+		const QString &code,
+		const QString &password,
+		const QString &deviceId,
+		base::Guard guard,
+		Fn<void()> done,
+		FailCallback fail) {
+	auto body = QJsonObject{
+		{ u"challenge_id"_s, challengeId },
+		{ u"code"_s, code },
+		{ u"device_id"_s, deviceId },
+	};
+	Json::Put(body, "password"_L1, password);
+	_session->api().request(Api::Post, u"/v1/account/phone/change"_s)
+		.body(body)
+		.guard(guard)
+		.done([=] {
+			if (done) {
+				done();
+			}
+		})
+		.fail(std::move(fail))
+		.send();
+}
+
+void Graph::deleteAccount(
+		const QString &challengeId,
+		const QString &code,
+		const QString &password,
+		const QString &deviceId,
+		base::Guard guard,
+		Fn<void()> done,
+		FailCallback fail) {
+	auto body = QJsonObject{
+		{ u"challenge_id"_s, challengeId },
+		{ u"code"_s, code },
+		{ u"device_id"_s, deviceId },
+	};
+	Json::Put(body, "password"_L1, password);
+	_session->api().request(Api::Post, u"/v1/account/deletion"_s)
+		.body(body)
 		.guard(guard)
 		.done([=] {
 			if (done) {

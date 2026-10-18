@@ -11,6 +11,7 @@
 		<file alias="block.svg">../icons/block.svg</file>
 		<file alias="bookmark.svg">../icons/bookmark.svg</file>
 		<file alias="bookmark_active.svg">../icons/bookmark_active.svg</file>
+		<file alias="bot-commands.svg">../icons/bot-commands.svg</file>
 		<file alias="call.svg">../icons/call.svg</file>
 		<file alias="call-end.svg">../icons/call-end.svg</file>
 		<file alias="camera.svg">../icons/camera.svg</file>

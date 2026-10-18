@@ -34,6 +34,8 @@ set(_eleza_core_files
 	crypto/crypto_primitives.h
 	data/data_blurhash.cpp
 	data/data_blurhash.h
+	data/data_bots.cpp
+	data/data_bots.h
 	data/data_calls.cpp
 	data/data_calls.h
 	data/data_chats.cpp
@@ -66,8 +68,14 @@ set(_eleza_core_files
 	data/data_session.h
 	data/data_social_types.cpp
 	data/data_social_types.h
+	data/data_sticker_decode.cpp
+	data/data_sticker_decode.h
 	data/data_stickers.cpp
 	data/data_stickers.h
+	data/data_stories.cpp
+	data/data_stories.h
+	data/data_story_types.cpp
+	data/data_story_types.h
 	data/data_sync.cpp
 	data/data_sync.h
 	data/data_transport.cpp
@@ -137,6 +145,38 @@ if (NOT DEFINED ELEZA_CORE_VERSION)
 	endif()
 endif()
 target_compile_definitions(ElezaCore PRIVATE ELEZA_CORE_VERSION="${ELEZA_CORE_VERSION}")
+
+# Inflating Lottie stickers (.tgs are gzipped): the miniz the update packages
+# use (third_party/), added here when this file is used on its own.
+if (NOT TARGET ElezaMiniz)
+	add_subdirectory("${_eleza_core_root}/../third_party" "${CMAKE_BINARY_DIR}/third_party")
+endif()
+target_link_libraries(ElezaCore PRIVATE ElezaMiniz)
+
+# Animated Lottie stickers (.tgs) are played by rlottie when it is there
+# (Linux: librlottie-dev; Windows: the vcpkg manifest). Without it a Lottie
+# sticker shows its emoji and animated WebP stickers still play.
+option(ELEZA_ENABLE_RLOTTIE "Play Lottie (.tgs) stickers through rlottie when it is found." ON)
+if (ELEZA_ENABLE_RLOTTIE)
+	find_package(rlottie CONFIG QUIET)
+	if (NOT TARGET rlottie::rlottie)
+		find_package(PkgConfig QUIET)
+		if (PkgConfig_FOUND)
+			pkg_check_modules(ELEZA_RLOTTIE QUIET IMPORTED_TARGET rlottie)
+			if (ELEZA_RLOTTIE_FOUND)
+				add_library(rlottie::rlottie ALIAS PkgConfig::ELEZA_RLOTTIE)
+			endif()
+		endif()
+	endif()
+endif()
+if (ELEZA_ENABLE_RLOTTIE AND TARGET rlottie::rlottie)
+	message(STATUS "Lottie stickers: rlottie found")
+	target_link_libraries(ElezaCore PRIVATE rlottie::rlottie)
+	target_compile_definitions(ElezaCore PRIVATE ELEZA_HAVE_RLOTTIE)
+else()
+	message(STATUS "Lottie stickers: rlottie not found (or ELEZA_ENABLE_RLOTTIE=OFF), "
+		"they show their emoji; animated WebP stickers still play")
+endif()
 
 if (WIN32)
 	# DPAPI (CryptProtectData) for Storage::SecureBlob.

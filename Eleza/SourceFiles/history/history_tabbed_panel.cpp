@@ -10,6 +10,7 @@
 #include "lang_auto.h"
 #include "main/main_session.h"
 #include "support/media_image.h"
+#include "support/sticker_player.h"
 #include "ui/effects/shadow.h"
 #include "ui/painter.h"
 #include "ui/ui_utility.h"
@@ -20,15 +21,21 @@
 #include "styles/palette.h"
 #include "styles/style_history.h"
 
+#include <QtCore/QPointer>
+#include <QtCore/QTimer>
 #include <QtGui/QKeyEvent>
 #include <QtGui/QMouseEvent>
 #include <QtWidgets/QApplication>
+
+#include <algorithm>
 
 namespace History {
 namespace {
 
 constexpr auto kMaxRecentEmoji = 36;
 constexpr auto kStickerColumns = 4;
+// Pressed and held this long: the big preview instead of sending.
+constexpr auto kStickerPreviewDelay = 350;
 
 struct EmojiSection {
 	QString title;
@@ -223,12 +230,107 @@ struct MorePack {
 	int top = 0;
 };
 
+// The big copy of a sticker while it is pressed and held (it plays).
+class StickerPreview final : public Ui::RpWidget {
+public:
+	StickerPreview(QWidget *parent, Main::Session *session)
+	: RpWidget(parent)
+	, _session(session) {
+		Ui::MakeTransparentForMouse(this);
+		setAttribute(Qt::WA_NoSystemBackground);
+	}
+
+	void showSticker(const Data::Sticker &sticker) {
+		if (_sticker.id == sticker.id && _sticker.url == sticker.url) {
+			return;
+		}
+		_sticker = sticker;
+		QObject::disconnect(_watching);
+		_player = nullptr;
+		update();
+	}
+
+protected:
+	void paintEvent(QPaintEvent *e) override {
+		Q_UNUSED(e);
+		auto p = Painter(this);
+		p.fillRect(rect(), st::overlayScrim);
+		const auto side = std::min(
+			int(st::historyStickerPreviewSize),
+			std::min(width(), height()) - 2 * st::historyStickerPreviewSkip);
+		if (side <= 0) {
+			return;
+		}
+		const auto box = QRect(
+			(width() - side) / 2,
+			(height() - side) / 2,
+			side,
+			side);
+		const auto ratio = devicePixelRatioF();
+		const auto size = box.size() * ratio;
+		if (!_sticker.url.isEmpty() && (!_player || _player->size() != size)) {
+			QObject::disconnect(_watching);
+			_player = Support::StickerPlayer::Get(_session, _sticker.url, size);
+			if (_player) {
+				_watching = QObject::connect(
+					_player.get(),
+					&Support::StickerPlayer::updated,
+					this,
+					[this] { update(); });
+			}
+		}
+		const auto image = _player ? _player->frame() : QImage();
+		if (image.isNull()) {
+			if (!_sticker.emoji.isEmpty()) {
+				auto font = st::historyJumboStyle1.font->f;
+				font.setPixelSize(side / 2);
+				p.setFont(font);
+				p.setPen(st::staticWhite);
+				p.drawText(box, Qt::AlignCenter, _sticker.emoji);
+			}
+			return;
+		}
+		const auto shown = QSizeF(image.size()) / ratio;
+		p.drawImage(
+			QRectF(
+				box.x() + (box.width() - shown.width()) / 2.,
+				box.y() + (box.height() - shown.height()) / 2.,
+				shown.width(),
+				shown.height()),
+			image);
+		if (!_sticker.emoji.isEmpty()) {
+			p.setFont(st::historyEmojiFont);
+			p.setPen(st::staticWhite);
+			p.drawText(
+				QRect(0, box.bottom() + 8, width(), st::historyEmojiFont->height + 8),
+				Qt::AlignHCenter | Qt::AlignTop,
+				_sticker.emoji);
+		}
+	}
+
+private:
+	Main::Session *_session = nullptr;
+	Data::Sticker _sticker;
+	std::shared_ptr<Support::StickerPlayer> _player;
+	QMetaObject::Connection _watching;
+
+};
+
 class StickerGrid final : public Ui::RpWidget {
 public:
 	StickerGrid(QWidget *parent, Main::Session *session)
 	: RpWidget(parent)
 	, _session(session) {
 		setMouseTracking(true);
+		_previewTimer.setSingleShot(true);
+		connect(&_previewTimer, &QTimer::timeout, this, [this] {
+			if (_pressed.kind == Hit::Kind::Sticker) {
+				showPreview(_pressed);
+			}
+		});
+	}
+	~StickerGrid() {
+		hidePreview();
 	}
 
 	void setContent(std::vector<StickerSection> sections, std::vector<MorePack> more) {
@@ -365,10 +467,12 @@ protected:
 			const auto icon = rowHeight - 12;
 			const auto left = padding.left() + st::historyPanelHeaderPadding;
 			if (!pack.pack.stickers.isEmpty()) {
+				// A pack's cover: its first frame, never moving.
 				paintSticker(
 					p,
 					style::rtlrect(left, pack.top + 6, icon, icon, width()),
-					pack.pack.stickers.front());
+					pack.pack.stickers.front(),
+					false);
 			}
 			p.setPen(st::textPrimary);
 			p.setFont(st::historySendFilesNameFont);
@@ -401,6 +505,10 @@ protected:
 
 	void mouseMoveEvent(QMouseEvent *e) override {
 		const auto over = hitAt(e->pos());
+		if (_preview && over.kind == Hit::Kind::Sticker) {
+			// Held down and moved: the preview follows the pointer.
+			showPreview(over);
+		}
 		if (over != _over) {
 			_over = over;
 			setCursor((over.kind != Hit::Kind::None)
@@ -418,8 +526,18 @@ protected:
 	}
 	void mousePressEvent(QMouseEvent *e) override {
 		_pressed = (e->button() == Qt::LeftButton) ? hitAt(e->pos()) : Hit();
+		if (_pressed.kind == Hit::Kind::Sticker) {
+			_previewTimer.start(kStickerPreviewDelay);
+		}
 	}
 	void mouseReleaseEvent(QMouseEvent *e) override {
+		_previewTimer.stop();
+		if (_preview) {
+			// A preview ends where it began: nothing is sent.
+			hidePreview();
+			_pressed = Hit();
+			return;
+		}
 		const auto pressed = std::exchange(_pressed, Hit());
 		const auto hit = hitAt(e->pos());
 		if (e->button() != Qt::LeftButton || hit != pressed) {
@@ -461,11 +579,32 @@ private:
 		friend bool operator==(const Hit &, const Hit &) = default;
 	};
 	struct Picture {
-		std::shared_ptr<Ui::ImageSource> source;
-		QImage prepared;
-		qint64 key = 0;
-		QSize size;
+		std::shared_ptr<Support::StickerPlayer> player;
+		QMetaObject::Connection watching;
+		std::vector<QRect> rects; // where it was painted (a new frame repaints them)
 	};
+
+	void showPreview(const Hit &hit) {
+		if (hit.section < 0
+			|| hit.section >= int(_sections.size())
+			|| hit.index < 0
+			|| hit.index >= int(_sections[hit.section].stickers.size())) {
+			return;
+		}
+		const auto host = window();
+		if (!_preview) {
+			_preview = new StickerPreview(host, _session);
+			_preview->setGeometry(host->rect());
+			_preview->show();
+			_preview->raise();
+		}
+		_preview->showSticker(_sections[hit.section].stickers[hit.index]);
+	}
+	void hidePreview() {
+		if (_preview) {
+			delete _preview.data();
+		}
+	}
 
 	[[nodiscard]] QRect cellRect(int section, int index) const {
 		const auto column = index % kStickerColumns;
@@ -524,30 +663,51 @@ private:
 		}
 		return Hit();
 	}
-	void paintSticker(QPainter &p, const QRect &rect, const Data::Sticker &sticker) {
+	void paintSticker(
+			QPainter &p,
+			const QRect &rect,
+			const Data::Sticker &sticker,
+			bool play = true) {
 		if (sticker.url.isEmpty() || rect.isEmpty()) {
 			return;
 		}
+		const auto ratio = devicePixelRatioF();
+		const auto size = rect.size() * ratio;
 		auto &picture = _pictures[sticker.url];
-		if (!picture.source) {
-			auto options = Support::ImageOptions();
-			options.fit = QSize(256, 256);
-			picture.source = Support::MakeImageSource(
-				_session,
-				Data::MediaRef::Url(sticker.url),
-				Data::MediaVariant::Thumb,
-				options);
-			if (!picture.source) {
+		if (!picture.player || picture.player->size() != size) {
+			if (picture.player) {
+				QObject::disconnect(picture.watching);
+			}
+			// Animated stickers move while they are painted (the panel is
+			// open, the cell is in view), at most a dozen at a time.
+			picture.player = Support::StickerPlayer::Get(_session, sticker.url, size);
+			if (!picture.player) {
 				return;
 			}
-			QObject::connect(
-				picture.source.get(),
-				&Ui::ImageSource::updated,
+			const auto url = sticker.url;
+			picture.watching = QObject::connect(
+				picture.player.get(),
+				&Support::StickerPlayer::updated,
 				this,
-				[this] { update(); });
+				[this, url] {
+					const auto i = _pictures.constFind(url);
+					if (i == _pictures.cend()) {
+						return;
+					}
+					for (const auto &rect : i->rects) {
+						update(rect);
+					}
+				});
 		}
-		const auto ratio = devicePixelRatioF();
-		const auto image = picture.source->request(rect.size() * ratio);
+		if (std::find(picture.rects.begin(), picture.rects.end(), rect)
+			== picture.rects.end()) {
+			// The same sticker may be in «recent» and in its pack.
+			if (picture.rects.size() >= 4) {
+				picture.rects.erase(picture.rects.begin());
+			}
+			picture.rects.push_back(rect);
+		}
+		const auto image = picture.player->frame(play);
 		if (image.isNull()) {
 			if (!sticker.emoji.isEmpty()) {
 				p.setOpacity(0.4);
@@ -558,23 +718,14 @@ private:
 			}
 			return;
 		}
-		if (picture.prepared.isNull()
-			|| picture.key != image.cacheKey()
-			|| picture.size != rect.size()) {
-			picture.prepared = image.scaled(
-				rect.size() * ratio,
-				Qt::KeepAspectRatio,
-				Qt::SmoothTransformation);
-			picture.prepared.setDevicePixelRatio(ratio);
-			picture.key = image.cacheKey();
-			picture.size = rect.size();
-		}
-		const auto size = picture.prepared.size() / ratio;
+		const auto shown = QSizeF(image.size()) / ratio;
 		p.drawImage(
-			QPointF(
-				rect.x() + (rect.width() - size.width()) / 2.,
-				rect.y() + (rect.height() - size.height()) / 2.),
-			picture.prepared);
+			QRectF(
+				rect.x() + (rect.width() - shown.width()) / 2.,
+				rect.y() + (rect.height() - shown.height()) / 2.,
+				shown.width(),
+				shown.height()),
+			image);
 	}
 
 	Main::Session *_session = nullptr;
@@ -587,6 +738,8 @@ private:
 	Hit _pressed;
 	Fn<void(const Data::Sticker &)> _chosen;
 	Fn<void(const QString &, bool)> _install;
+	QTimer _previewTimer;
+	QPointer<StickerPreview> _preview;
 
 };
 

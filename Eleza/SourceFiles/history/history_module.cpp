@@ -299,9 +299,13 @@ void Register() {
 		// What the tab has open stays (activateTab, not a "click on the rail").
 		controller->activateTab(Window::Tab::Chats);
 		const auto current = CurrentChat(controller);
+		const auto botStart = route.botStart();
 		if (current && current->chatId() == route.id) {
 			// Already on screen: only the message (and waiting forwards).
 			current->showMessage(route.seq());
+			if (botStart) {
+				current->startBot(*botStart);
+			}
 			current->setInnerFocus();
 			return true;
 		}
@@ -310,7 +314,7 @@ void Register() {
 		// through all of them): it takes its place. Over anything else - a
 		// profile opened from a chat - it is pushed, so "back" returns there.
 		controller->showMainSection(
-			Factory(route.id, route.seq()),
+			Factory(route.id, route.seq(), botStart),
 			{ .stack = (current == nullptr), .tab = Window::Tab::Chats });
 		return true;
 	});

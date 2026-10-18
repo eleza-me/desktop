@@ -3,6 +3,8 @@
 // cases of the server's own acceptance tables), invite links and mentions.
 #include "data/data_group_rules.h"
 
+#include <QtCore/QJsonDocument>
+
 #include <QtCore/QMap>
 #include <QtTest/QtTest>
 
@@ -160,6 +162,11 @@ private Q_SLOTS:
 	void mentionLabelAndRoom();
 	void mentionOffsetsAreUtf16();
 	void mentionClipAndAddressing();
+
+	void thirdReleaseShapes();
+	void adminLogForms();
+	void adminLogFilter();
+	void slowModeSteps();
 
 };
 
@@ -914,6 +921,165 @@ void TestGroupRules::mentionClipAndAddressing() {
 	QCOMPARE(NextMention({ 2, 9, 14 }, 2), qint64(9));
 	QCOMPARE(NextMention({ 2, 9, 14 }, 14), qint64(0));
 	QCOMPARE(NextMention({}, 0), qint64(0));
+}
+
+
+namespace {
+
+[[nodiscard]] QJsonObject Parse(const char *json) {
+	return QJsonDocument::fromJson(QByteArray(json)).object();
+}
+
+[[nodiscard]] GroupAdminLogEntry Entry(const char *json) {
+	return GroupAdminLogEntry::FromJson(Parse(json));
+}
+
+} // namespace
+
+void TestGroupRules::thirdReleaseShapes() {
+	// GroupView: the new fields, and what an older server leaves out.
+	const auto header = Group::FromJson(Parse(R"({"group":"j18P1DKWNqdem","title":"x",
+		"member_count":4,"admin_count":2,"slow_mode_s":30,"slow_mode_wait_s":12,
+		"hide_members":true,"members_hidden":true})"));
+	QCOMPARE(header.adminCount, 2);
+	QVERIFY(header.hideMembers);
+	QVERIFY(header.membersHidden);
+	QCOMPARE(header.slowModeS, 30);
+	const auto again = Group::FromJson(header.toJson());
+	QVERIFY(again.hideMembers && again.membersHidden);
+	QCOMPARE(again.adminCount, 2);
+	const auto old = Group::FromJson(Parse(R"({"group":"j1","title":"x"})"));
+	QVERIFY(!old.hideMembers && !old.membersHidden);
+	QCOMPARE(old.adminCount, 0);
+
+	// An entry of the admin log with its detail.
+	const auto entry = Entry(R"({"id":"a1Qm4d7xYk2Lp","at":1791747176011,
+		"actor":"u1LrX5NIMrhqs","action":"restrict","target":"u1346hFY3UaS9",
+		"detail":{"denied":["send_media","send_links"],"until":1791750775}})");
+	QCOMPARE(entry.id, u"a1Qm4d7xYk2Lp"_s);
+	QCOMPARE(entry.at, qint64(1791747176011));
+	QCOMPARE(entry.actor, u"u1LrX5NIMrhqs"_s);
+	QCOMPARE(entry.target, u"u1346hFY3UaS9"_s);
+	QCOMPARE(entry.denied, (QStringList{ u"send_media"_s, u"send_links"_s }));
+	QCOMPARE(entry.until, qint64(1791750775));
+	// Over the connection int64 values come as strings.
+	const auto wire = Entry(R"({"id":"a2","at":"1791747176090","actor":"u1",
+		"action":"delete_messages","detail":{"seqs":["4","9"]}})");
+	QCOMPARE(wire.at, qint64(1791747176090));
+	QCOMPARE(wire.seqs, (QVector<qint64>{ 4, 9 }));
+	QVERIFY(wire.target.isEmpty());
+
+	const auto reaction = GroupReaction::FromJson(Parse(
+		R"({"user":"u1346hFY3UaS9","emoji":"👍","at":1791747176100})"));
+	QCOMPARE(reaction.user, u"u1346hFY3UaS9"_s);
+	QCOMPARE(reaction.emoji, QString::fromUtf8("👍"));
+	QCOMPARE(reaction.at, qint64(1791747176100));
+
+	const auto failure = GroupDecideFailure::FromJson(Parse(
+		R"({"user":"u1F0syPDjdfAz","reason":"not_found"})"));
+	QCOMPARE(failure.reason, u"not_found"_s);
+
+	const auto joined = GroupInviteMember::FromJson(Parse(
+		R"({"user":"u1GEBUAJjIb2b","joined_at":1791747176047})"));
+	QCOMPARE(joined.user, u"u1GEBUAJjIb2b"_s);
+	QCOMPARE(joined.joinedAt, qint64(1791747176047));
+}
+
+void TestGroupRules::adminLogForms() {
+	using GroupAdminLog::Form;
+	using GroupAdminLog::FormOf;
+	using GroupAdminLog::NamesTarget;
+	QCOMPARE(FormOf(Entry(R"({"action":"promote","target":"u2"})")), Form::Promote);
+	QCOMPARE(FormOf(Entry(R"({"action":"restrict","target":"u2"})")), Form::Restrict);
+	QCOMPARE(
+		FormOf(Entry(R"({"action":"restrict","target":"u2","detail":{"until":5}})")),
+		Form::RestrictUntil);
+	QCOMPARE(FormOf(Entry(R"({"action":"ban","target":"u2"})")), Form::Ban);
+	QCOMPARE(
+		FormOf(Entry(R"({"action":"ban","target":"u2","detail":{"delete_messages":true}})")),
+		Form::BanDelete);
+	// No detail on slow_mode / hide_members: switched off.
+	QCOMPARE(FormOf(Entry(R"({"action":"slow_mode"})")), Form::SlowModeOff);
+	QCOMPARE(
+		FormOf(Entry(R"({"action":"slow_mode","detail":{"slow_mode_s":30}})")),
+		Form::SlowModeOn);
+	QCOMPARE(FormOf(Entry(R"({"action":"hide_members"})")), Form::HideMembersOff);
+	QCOMPARE(
+		FormOf(Entry(R"({"action":"hide_members","detail":{"hide_members":true}})")),
+		Form::HideMembersOn);
+	QCOMPARE(FormOf(Entry(R"({"action":"invite_create"})")), Form::InviteCreate);
+	QCOMPARE(
+		FormOf(Entry(R"({"action":"invite_create","detail":{"link_name":"  "}})")),
+		Form::InviteCreate);
+	QCOMPARE(
+		FormOf(Entry(R"({"action":"invite_revoke","detail":{"link_name":"x"}})")),
+		Form::InviteRevokeNamed);
+	QCOMPARE(FormOf(Entry(R"({"action":"delete_messages"})")), Form::DeleteMessages);
+	QCOMPARE(
+		FormOf(Entry(R"({"action":"delete_messages","target":"u2"})")),
+		Form::DeleteMessagesOf);
+	QCOMPARE(FormOf(Entry(R"({"action":"transfer","target":"u2"})")), Form::Transfer);
+	QCOMPARE(FormOf(Entry(R"({"action":"something_new"})")), Form::Generic);
+	QCOMPARE(FormOf(Entry(R"({})")), Form::Generic);
+
+	QVERIFY(NamesTarget(Form::Promote));
+	QVERIFY(NamesTarget(Form::DeleteMessagesOf));
+	QVERIFY(!NamesTarget(Form::DeleteMessages));
+	QVERIFY(!NamesTarget(Form::SlowModeOn));
+	QVERIFY(!NamesTarget(Form::Generic));
+}
+
+void TestGroupRules::adminLogFilter() {
+	using namespace GroupAdminLog;
+	// Every action name of the server is in exactly one kind.
+	const auto all = QStringList{
+		u"promote"_s, u"admin_rights"_s, u"demote"_s, u"restrict"_s,
+		u"unrestrict"_s, u"remove"_s, u"ban"_s, u"unban"_s,
+		u"permissions"_s, u"slow_mode"_s, u"hide_members"_s, u"title"_s,
+		u"photo"_s, u"about"_s, u"pin"_s, u"unpin"_s, u"invite_create"_s,
+		u"invite_revoke"_s, u"join_approve"_s, u"join_decline"_s,
+		u"delete_message"_s, u"delete_messages"_s,
+		u"delete_all_messages"_s, u"transfer"_s,
+	};
+	auto seen = QStringList();
+	for (auto i = 0; i != kCategoryCount; ++i) {
+		seen += Actions(i);
+	}
+	QCOMPARE(seen.size(), all.size());
+	for (const auto &name : all) {
+		QCOMPARE(seen.count(name), 1);
+	}
+	QVERIFY(Actions(-1).isEmpty());
+	QVERIFY(Actions(kCategoryCount).isEmpty());
+
+	QCOMPARE(ActionsParam(0), QString());
+	QCOMPARE(ActionsParam((1 << kCategoryCount) - 1), QString());
+	QCOMPARE(ActionsParam(1 << Links), u"invite_create,invite_revoke"_s);
+	QCOMPARE(
+		ActionsParam((1 << Admins) | (1 << Links)),
+		u"promote,admin_rights,demote,transfer,invite_create,invite_revoke"_s);
+	QCOMPARE(PickedCount(0), 0);
+	QCOMPARE(PickedCount(1 << Settings), 1);
+	QCOMPARE(PickedCount((1 << Settings) | (1 << Members)), 2);
+	QCOMPARE(PickedCount((1 << kCategoryCount) - 1), 0);
+}
+
+void TestGroupRules::slowModeSteps() {
+	using GroupAdminLog::SlowModeSteps;
+	const auto defaults = QVector<int>{ 0, 10, 30, 60, 300, 900, 3600 };
+	QCOMPARE(
+		SlowModeSteps({ u"0"_s, u"10s"_s, u"30s"_s, u"1m"_s, u"5m"_s, u"15m"_s, u"1h"_s }),
+		defaults);
+	QCOMPARE(SlowModeSteps({}), defaults);
+	QCOMPARE(SlowModeSteps({ u"bogus"_s, u"-5"_s }), defaults);
+	// Plain seconds, repeats, any order, no "0" given: off stays first.
+	QCOMPARE(
+		SlowModeSteps({ u"120"_s, u"2m"_s, u"30"_s, u"1h30m"_s }),
+		(QVector<int>{ 0, 30, 120, 5400 }));
+	// Nonsense mixed in is skipped.
+	QCOMPARE(
+		SlowModeSteps({ u"10x"_s, u"20s"_s, u"s"_s, u"99999999"_s }),
+		(QVector<int>{ 0, 20 }));
 }
 
 QTEST_GUILESS_MAIN(TestGroupRules)

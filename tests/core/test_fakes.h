@@ -83,6 +83,7 @@ public:
 	QVector<Call> calls;
 	QVector<qint64> acks;
 	QVector<QPair<QString, QString>> typing;
+	QVector<QPair<QString, QString>> groupTyping;
 	QStringList presenceSubscriptions;
 	QStringList profileSubscriptions;
 	std::optional<QString> topics;
@@ -165,6 +166,10 @@ public:
 	}
 	bool sendTyping(const QString &cap, const QString &kind) override {
 		typing.push_back({ cap, kind });
+		return online;
+	}
+	bool sendGroupTyping(const QString &group, const QString &kind) override {
+		groupTyping.push_back({ group, kind });
 		return online;
 	}
 	void subscribePresence(

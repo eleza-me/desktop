@@ -81,6 +81,17 @@ QString ErrorPhrase(const QString &code) {
 		return tr::lng_calls_answered_elsewhere(tr::now);
 	} else if (code == u"server.overloaded") {
 		return tr::lng_support_error_rate_limited(tr::now);
+	} else if (code == u"bot.inline_result_expired") {
+		return tr::lng_bot_inline_expired(tr::now);
+	} else if (code == u"bot.inline_disabled") {
+		return tr::lng_bot_inline_disabled(tr::now);
+	} else if (code == u"bot.disabled"
+		|| code == u"bot.switched_off"
+		|| code == u"bot.suspended") {
+		return tr::lng_bot_disabled(tr::now);
+	} else if (code == u"bot.button_not_found"
+		|| code == u"bot.callback_query_expired") {
+		return tr::lng_bot_button_expired(tr::now);
 	}
 	return QString();
 }

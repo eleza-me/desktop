@@ -158,7 +158,36 @@ private Q_SLOTS:
 		QCOMPARE(EntityTypeFromName(QStringLiteral("nope")), EntityType::Invalid);
 	}
 
-	void layout() {
+	void parseBotCommands() {
+		const auto text = U(
+			"/start یا /help@weather_bot و and/or 1405/07/11 1/2 "
+			"https://eleza.me/x/y @sara/x /Settings_2!");
+		const auto commands = [&](uint flags) {
+			auto result = QStringList();
+			for (const auto &entity : ParseEntities(text, flags).entities) {
+				if (entity.type == EntityType::BotCommand) {
+					result.push_back(text.mid(entity.offset, entity.length));
+				}
+			}
+			return result;
+		};
+		// Only where a bot reads the chat.
+		QVERIFY(commands(ParseAll).isEmpty());
+		QCOMPARE(
+			commands(ParseAll | ParseBotCommands),
+			(QStringList{
+				QStringLiteral("/start"),
+				QStringLiteral("/help@weather_bot"),
+				QStringLiteral("/Settings_2"),
+			}));
+		// The command is a link of its own, isolated like an address.
+		const auto shown = IsolateLinks(ParseEntities(
+			QStringLiteral("/start"),
+			ParseBotCommands));
+		QCOMPARE(shown.text, U("\u2066/start\u2069"));
+	}
+
+		void layout() {
 		auto string = String(st::defaultTextStyle, QStringLiteral(
 			"one two three four five six seven eight nine ten eleven twelve"));
 		const auto line = string.minHeight();

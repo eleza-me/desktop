@@ -5,6 +5,7 @@
 #include "data/data_chats.h"
 #include "data/data_outbox.h"
 #include "data/data_session.h"
+#include "history/history_bot_logic.h"
 #include "history/history_downloads.h"
 #include "history/history_view_media.h"
 #include "lang_auto.h"
@@ -12,6 +13,7 @@
 #include "media/media_audio_player.h"
 #include "media/media_image_viewer.h"
 #include "media/media_video_player.h"
+#include "stories/stories_viewer.h"
 #include "support/chat_text.h"
 #include "support/error_text.h"
 #include "support/file_dialogs.h"
@@ -60,6 +62,7 @@ constexpr auto kMaxInlineGifs = 2;
 	case Zone::Location:
 	case Zone::LiveStop:
 	case Zone::Post:
+	case Zone::Story:
 	case Zone::Preview:
 	case Zone::Reaction:
 	case Zone::Button:
@@ -345,6 +348,8 @@ void ListWidget::activate(const MouseTarget &target, Qt::MouseButton button) {
 	}
 	// A copy: actions below may change the timeline under us.
 	const auto message = element->data();
+	// The tile of an album under the pointer (the message itself elsewhere).
+	const auto item = element->messageAt(target.hit);
 	switch (zone) {
 	case Zone::Sender:
 		// The name above a bubble of a group, or the picture next to it.
@@ -354,7 +359,14 @@ void ListWidget::activate(const MouseTarget &target, Qt::MouseButton button) {
 		break;
 	case Zone::Link:
 		if (const auto link = element->link(target.hit.link)) {
-			Support::ActivateTextLink(_controller, *link, button);
+			if (link->type == Ui::Text::EntityType::BotCommand) {
+				// Sent like a typed message (only where I may write).
+				if (_canWrite && button == Qt::LeftButton) {
+					Q_EMIT botCommandRequested(link->text);
+				}
+			} else {
+				Support::ActivateTextLink(_controller, *link, button);
+			}
 		}
 		break;
 	case Zone::Spoiler:
@@ -364,15 +376,15 @@ void ListWidget::activate(const MouseTarget &target, Qt::MouseButton button) {
 		jumpTo(message.replyToSeq, message.quote);
 		break;
 	case Zone::Media:
-		openMedia(message);
+		openMedia(item);
 		break;
 	case Zone::MediaSpoiler:
-		_revealed.insert(target.key);
+		_revealed.insert(item.key());
 		updateRow(target.index);
 		updateInlineVideos();
 		break;
 	case Zone::MediaCancel:
-		cancelTransfer(message);
+		cancelTransfer(item);
 		break;
 	case Zone::VoicePlay:
 		toggleVoice(message);
@@ -397,6 +409,11 @@ void ListWidget::activate(const MouseTarget &target, Qt::MouseButton button) {
 			_controller->openRoute(Window::Routes::Post(message.forwardedPost));
 		}
 		break;
+	case Zone::Story:
+		if (message.story) {
+			Stories::OpenStory(_controller, message.story->owner, message.story->storyId);
+		}
+		break;
 	case Zone::Preview:
 		if (message.linkPreview) {
 			Support::OpenLink(_controller, message.linkPreview->url);
@@ -412,8 +429,12 @@ void ListWidget::activate(const MouseTarget &target, Qt::MouseButton button) {
 		showRetryMenu(message, _lastMouseGlobal);
 		break;
 	case Zone::ViaBot:
+		// «via @bot»: inline mode with that bot in this chat's composer
+		// (the chat screen opens the bot's profile where there is none).
 		if (message.viaBot && !message.viaBot->handle.isEmpty()) {
-			_controller->openRoute(Window::Routes::Handle(message.viaBot->handle));
+			Q_EMIT inlineQueryRequested(
+				InlineQueryPrefill(message.viaBot->handle, QString()),
+				false);
 		}
 		break;
 	case Zone::Side:
@@ -580,7 +601,8 @@ QVector<Data::Message> ListWidget::selectedMessages() const {
 	result.reserve(_selected.size());
 	for (const auto &row : _rows) {
 		if (_selected.contains(row.element->key())) {
-			result.push_back(row.element->data());
+			// An album is selected as a whole: every item of it.
+			result.append(row.element->messages());
 		}
 	}
 	return result;
@@ -648,11 +670,20 @@ void ListWidget::openMedia(const Data::Message &message) {
 		}
 		return;
 	}
+	const auto index = indexOfKey(message.key());
+	const auto inAlbum = (index >= 0) && _rows[index].element->isAlbum();
 	switch (message.kind) {
 	case Data::MessageKind::Photo:
 		openPhoto(message);
 		break;
 	case Data::MessageKind::Video:
+		// A video of an album opens in the viewer with its neighbours.
+		if (inAlbum) {
+			openPhoto(message);
+		} else {
+			playVideo(message);
+		}
+		break;
 	case Data::MessageKind::Gif:
 		playVideo(message);
 		break;
@@ -664,21 +695,68 @@ void ListWidget::openMedia(const Data::Message &message) {
 	}
 }
 
+View::Media *ListWidget::mediaFor(const Data::Message &message) const {
+	const auto index = indexOfKey(message.key());
+	if (index < 0) {
+		return nullptr;
+	}
+	const auto element = _rows[index].element.get();
+	const auto media = element->media();
+	if (!media || !element->isAlbum()) {
+		return media;
+	}
+	const auto &album = element->album();
+	for (auto i = 0; i != int(album.size()); ++i) {
+		if (album[i].key() == message.key()) {
+			return media->albumTile(i);
+		}
+	}
+	return nullptr;
+}
+
 void ListWidget::openPhoto(const Data::Message &message) {
+	// Every photo of the chat, and the videos of the albums among them: ← →
+	// go through an album and on to the pictures around it.
 	auto items = std::vector<Media::ViewerItem>();
 	auto index = 0;
 	for (const auto &row : _rows) {
-		const auto &other = row.element->data();
-		if (other.kind != Data::MessageKind::Photo) {
+	const auto album = row.element->isAlbum();
+	for (const auto &other : row.element->messages()) {
+		const auto video = album && (other.kind == Data::MessageKind::Video);
+		if (other.kind != Data::MessageKind::Photo && !video) {
 			continue;
 		} else if (other.mediaSpoiler
-			&& !_revealed.contains(row.element->key())
-			&& row.element->key() != message.key()) {
+			&& !_revealed.contains(other.key())
+			&& other.key() != message.key()) {
 			// Hidden pictures stay hidden while flipping through.
 			continue;
 		}
 		auto item = Media::ViewerItem();
-		if (other.seq > 0) {
+		if (video) {
+			if (const auto media = mediaFor(other)) {
+				item.videoPoster = media->currentImage();
+			}
+			if (!other.localPath.isEmpty() && QFileInfo::exists(other.localPath)) {
+				item.videoPath = other.localPath;
+			} else if (other.seq > 0) {
+				const auto downloads = QPointer<Downloads>(_downloads);
+				item.loadVideo = [=](
+						QObject *guard,
+						std::function<void(QString)> done) {
+					if (!downloads) {
+						done(QString());
+						return;
+					}
+					downloads->fetch(
+						other,
+						Data::MediaVariant::Mp4,
+						guard,
+						[=](const QString &path) { done(path); });
+				};
+			} else {
+				continue;
+			}
+		} else if (other.seq > 0) {
 			auto options = Support::ImageOptions();
 			options.original = true;
 			if (other.media) {
@@ -690,7 +768,7 @@ void ListWidget::openPhoto(const Data::Message &message) {
 				Data::MediaRef::Attachment(other.chat, other.seq),
 				Data::MediaVariant::Full,
 				options);
-			if (const auto media = row.element->media()) {
+			if (const auto media = mediaFor(other)) {
 				item.preview = media->imageSource();
 				item.image = QImage();
 			}
@@ -699,12 +777,16 @@ void ListWidget::openPhoto(const Data::Message &message) {
 		} else {
 			continue;
 		}
-		item.caption = other.text;
+		// An album has one caption: every item of it shows it.
+		item.caption = album
+			? row.element->captionMessage().text
+			: other.text;
 		item.saveName = Downloads::SuggestedName(other);
-		if (row.element->key() == message.key()) {
+		if (other.key() == message.key()) {
 			index = int(items.size());
 		}
 		items.push_back(std::move(item));
+	}
 	}
 	if (!items.empty()) {
 		Media::ShowImageViewer(_controller->window(), std::move(items), index);
@@ -723,11 +805,8 @@ void ListWidget::playVideo(const Data::Message &message) {
 		Media::ShowImageViewer(_controller->window(), std::move(items), 0);
 	};
 	auto poster = QImage();
-	const auto index = indexOfKey(message.key());
-	if (index >= 0) {
-		if (const auto media = _rows[index].element->media()) {
-			poster = media->currentImage();
-		}
+	if (const auto media = mediaFor(message)) {
+		poster = media->currentImage();
 	}
 	if (!message.localPath.isEmpty() && QFileInfo::exists(message.localPath)) {
 		show(message.localPath, poster);
@@ -1027,11 +1106,7 @@ void ListWidget::saveAs(const Data::Message &message) {
 }
 
 void ListWidget::copyImage(const Data::Message &message) {
-	const auto index = indexOfKey(message.key());
-	if (index < 0) {
-		return;
-	}
-	const auto media = _rows[index].element->media();
+	const auto media = mediaFor(message);
 	const auto image = media ? media->currentImage() : QImage();
 	if (image.isNull()) {
 		_controller->showToast(tr::lng_chat_file_isnt_available(tr::now));
@@ -1063,10 +1138,27 @@ void ListWidget::pressButton(const Data::Message &message, int row, int column) 
 		return;
 	}
 	const auto &button = buttons[column];
-	if (!button.url.isEmpty()) {
+	switch (ButtonActionFor(button)) {
+	case ButtonAction::None:
+		return;
+	case ButtonAction::Url:
 		Support::OpenLink(_controller, button.url);
 		return;
-	} else if (message.seq <= 0) {
+	case ButtonAction::SwitchInlineCurrent:
+	case ButtonAction::SwitchInlinePick: {
+		// Never asked of the bot: «@bot query» goes into a composer.
+		const auto handle = ButtonBotHandle(message, _botHandle);
+		if (!handle.isEmpty()) {
+			Q_EMIT inlineQueryRequested(
+				InlineQueryPrefill(handle, button.query.value_or(QString())),
+				ButtonActionFor(button) == ButtonAction::SwitchInlinePick);
+		}
+		return;
+	}
+	case ButtonAction::Callback:
+		break;
+	}
+	if (message.seq <= 0) {
 		return;
 	}
 	const auto key = u"%1:%2:%3"_s.arg(message.seq).arg(row).arg(column);

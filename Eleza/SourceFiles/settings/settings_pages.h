@@ -20,6 +20,13 @@ void RegisterCallsPage(Window::SectionFactory factory);
 [[nodiscard]] Window::SectionFactory DevicesPageFactory();
 // settings_filters.cpp
 [[nodiscard]] Window::SectionFactory FiltersPageFactory();
+// «همیشه نشان بده به» / «هرگز نشان نده به» (kind always | never).
+void ShowLastSeenExceptionsBox(
+	Window::SessionController *controller,
+	const QString &kind,
+	std::function<void()> changed = nullptr);
+// «درخواست‌های فرستاده‌شده»: the follow requests that wait, with «لغو».
+void ShowSentRequestsBox(Window::SessionController *controller);
 // settings_storage.cpp
 [[nodiscard]] Window::SectionFactory StoragePageFactory();
 // settings_update.cpp

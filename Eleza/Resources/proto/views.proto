@@ -11,6 +11,120 @@ option java_package = "me.eleza.rt.v2";
 option java_multiple_files = true;
 option swift_prefix = "Rt";
 
+// calls.accept — POST /v1/calls/{id}/accept (Accept).
+message CallsAcceptRequest {
+  string call = 1 [json_name = "call"]; // path parameter {id}
+}
+
+// calls.accept — answer of POST /v1/calls/{id}/accept.
+message CallsAcceptResponse {
+  Join body = 1 [json_name = "body"]; // the HTTP body itself
+}
+
+// calls.active — GET /v1/calls/active (The call I am in right now (ringing, accepted or connected), or 404 call.not_found: a client that lost track of its call resumes it (rejoin) or ends it (hangup)).
+message CallsActiveRequest {
+}
+
+// calls.active — answer of GET /v1/calls/active.
+message CallsActiveResponse {
+  string call = 1 [json_name = "call"];
+  string state = 2 [json_name = "state"];
+  string peer = 3 [json_name = "peer"];
+  string role = 4 [json_name = "role"];
+  int64 created_at = 5 [json_name = "created_at"];
+  bool video = 6 [json_name = "video"];
+}
+
+// calls.cancel — POST /v1/calls/{id}/cancel (Cancel).
+message CallsCancelRequest {
+  string call = 1 [json_name = "call"]; // path parameter {id}
+}
+
+// calls.cancel — answer of POST /v1/calls/{id}/cancel.
+message CallsCancelResponse {
+}
+
+// calls.connected — POST /v1/calls/{id}/connected (Report media connected).
+message CallsConnectedRequest {
+  string call = 1 [json_name = "call"]; // path parameter {id}
+}
+
+// calls.connected — answer of POST /v1/calls/{id}/connected.
+message CallsConnectedResponse {
+}
+
+// calls.get — GET /v1/calls/{id} (Call state; polled by a participant while the call screen is up, it is also that side's heartbeat (a connected call without heartbeats ends with end_reason lost)).
+message CallsGetRequest {
+  string call = 1 [json_name = "call"]; // path parameter {id}
+}
+
+// calls.get — answer of GET /v1/calls/{id}.
+message CallsGetResponse {
+  string call = 1 [json_name = "call"];
+  string state = 2 [json_name = "state"];
+  string end_reason = 3 [json_name = "end_reason"];
+  string peer = 4 [json_name = "peer"];
+  bool outgoing = 5 [json_name = "outgoing"];
+  int64 created_at = 6 [json_name = "created_at"];
+  int64 duration_s = 7 [json_name = "duration_s"];
+  bool delivered = 8 [json_name = "delivered"];
+  bool video = 9 [json_name = "video"];
+}
+
+// calls.hangup — POST /v1/calls/{id}/hangup (Hang up).
+message CallsHangupRequest {
+  string call = 1 [json_name = "call"]; // path parameter {id}
+}
+
+// calls.hangup — answer of POST /v1/calls/{id}/hangup.
+message CallsHangupResponse {
+}
+
+// calls.incoming — GET /v1/calls/incoming (The call ringing for me now, if any ({} when none): a callee who was offline when call.incoming was signalled asks on connect).
+message CallsIncomingRequest {
+}
+
+// calls.incoming — answer of GET /v1/calls/incoming.
+message CallsIncomingResponse {
+  string call = 1 [json_name = "call"];
+  string state = 2 [json_name = "state"];
+  string end_reason = 3 [json_name = "end_reason"];
+  string peer = 4 [json_name = "peer"];
+  bool outgoing = 5 [json_name = "outgoing"];
+  int64 created_at = 6 [json_name = "created_at"];
+  int64 duration_s = 7 [json_name = "duration_s"];
+  bool delivered = 8 [json_name = "delivered"];
+  bool video = 9 [json_name = "video"];
+}
+
+// calls.reject — POST /v1/calls/{id}/reject (Reject).
+message CallsRejectRequest {
+  string call = 1 [json_name = "call"]; // path parameter {id}
+}
+
+// calls.reject — answer of POST /v1/calls/{id}/reject.
+message CallsRejectResponse {
+}
+
+// calls.rejoin — POST /v1/calls/{id}/rejoin (Fresh SFU credentials (ICE restart / network change)).
+message CallsRejoinRequest {
+  string call = 1 [json_name = "call"]; // path parameter {id}
+}
+
+// calls.rejoin — answer of POST /v1/calls/{id}/rejoin.
+message CallsRejoinResponse {
+  Join body = 1 [json_name = "body"]; // the HTTP body itself
+}
+
+// calls.ringing — POST /v1/calls/{id}/ringing (Callee: this device is ringing (caller sees «ringing»)).
+message CallsRingingRequest {
+  string call = 1 [json_name = "call"]; // path parameter {id}
+}
+
+// calls.ringing — answer of POST /v1/calls/{id}/ringing.
+message CallsRingingResponse {
+}
+
 // chat.accept — POST /v1/chats/{id}/accept (Accept a message request).
 message ChatAcceptRequest {
   string chat = 1 [json_name = "chat"]; // path parameter {id}
@@ -286,6 +400,8 @@ message ChatSendRequest {
   ForwardIn forward_from = 11 [json_name = "forward_from"]; // body
   repeated Entity entities = 12 [json_name = "entities"]; // body
   bool media_spoiler = 13 [json_name = "media_spoiler"]; // body
+  string album = 19 [json_name = "album"]; // body
+  bool caption_above = 20 [json_name = "caption_above"]; // body
   Quote quote = 14 [json_name = "quote"]; // body
   string link_preview = 15 [json_name = "link_preview"]; // body
   string sticker = 16 [json_name = "sticker"]; // body
@@ -439,6 +555,21 @@ message GroupsAdminUnsetResponse {
   GroupMember body = 1 [json_name = "body"]; // the HTTP body itself
 }
 
+// groups.admin_log — GET /v1/groups/{id}/admin-log (Administrative actions in the group, newest first (owner and admins); admin= one admin, actions= a comma list of action names).
+message GroupsAdminLogRequest {
+  string group = 1 [json_name = "group"]; // path parameter {id}
+  string admin = 2 [json_name = "admin"]; // query parameter
+  string actions = 3 [json_name = "actions"]; // query parameter
+  string cursor = 4 [json_name = "cursor"]; // query parameter
+  string limit = 5 [json_name = "limit"]; // query parameter
+}
+
+// groups.admin_log — answer of GET /v1/groups/{id}/admin-log.
+message GroupsAdminLogResponse {
+  repeated GroupAdminLogEntry entries = 1 [json_name = "entries"];
+  string next_cursor = 2 [json_name = "next_cursor"];
+}
+
 // groups.ban — POST /v1/groups/{id}/members/{user}/ban (Ban a person from the group (ban_users); delete_messages also deletes everything they wrote (delete_messages)).
 message GroupsBanRequest {
   string group = 1 [json_name = "group"]; // path parameter {id}
@@ -557,6 +688,17 @@ message GroupsGetResponse {
   GroupView body = 1 [json_name = "body"]; // the HTTP body itself
 }
 
+// groups.hide_members — PUT /v1/groups/{id}/hide-members (Hide the member list from ordinary members, or show it again (ban_users; hidden false or absent = visible)).
+message GroupsHideMembersRequest {
+  string group = 1 [json_name = "group"]; // path parameter {id}
+  bool hidden = 2 [json_name = "hidden"]; // body
+}
+
+// groups.hide_members — answer of PUT /v1/groups/{id}/hide-members.
+message GroupsHideMembersResponse {
+  GroupView body = 1 [json_name = "body"]; // the HTTP body itself
+}
+
 // groups.history — GET /v1/groups/{id}/messages (History page (before|after|around seq; newest first except after)).
 message GroupsHistoryRequest {
   string group = 1 [json_name = "group"]; // path parameter {id}
@@ -592,9 +734,10 @@ message GroupsInvitePreviewResponse {
   GroupInvitePreview body = 1 [json_name = "body"]; // the HTTP body itself
 }
 
-// groups.invites — GET /v1/groups/{id}/invites (Invite links of the group that were not revoked (invite_users)).
+// groups.invites — GET /v1/groups/{id}/invites (Invite links of the group that were not revoked (invite_users); state=revoked lists the revoked ones).
 message GroupsInvitesRequest {
   string group = 1 [json_name = "group"]; // path parameter {id}
+  string state = 2 [json_name = "state"]; // query parameter
 }
 
 // groups.invites — answer of GET /v1/groups/{id}/invites.
@@ -616,6 +759,31 @@ message GroupsInvitesCreateResponse {
   GroupInvite body = 1 [json_name = "body"]; // the HTTP body itself
 }
 
+// groups.invites.get — GET /v1/groups/{id}/invites/{link} (One invite link of the group, revoked or not (invite_users)).
+message GroupsInvitesGetRequest {
+  string group = 1 [json_name = "group"]; // path parameter {id}
+  string link = 2 [json_name = "link"]; // path parameter {link}
+}
+
+// groups.invites.get — answer of GET /v1/groups/{id}/invites/{link}.
+message GroupsInvitesGetResponse {
+  GroupInvite body = 1 [json_name = "body"]; // the HTTP body itself
+}
+
+// groups.invites.members — GET /v1/groups/{id}/invites/{link}/members (The people who joined through an invite link and are members now, in the order they joined (invite_users)).
+message GroupsInvitesMembersRequest {
+  string group = 1 [json_name = "group"]; // path parameter {id}
+  string link = 2 [json_name = "link"]; // path parameter {link}
+  string cursor = 3 [json_name = "cursor"]; // query parameter
+  string limit = 4 [json_name = "limit"]; // query parameter
+}
+
+// groups.invites.members — answer of GET /v1/groups/{id}/invites/{link}/members.
+message GroupsInvitesMembersResponse {
+  repeated GroupInviteMember members = 1 [json_name = "members"];
+  string next_cursor = 2 [json_name = "next_cursor"];
+}
+
 // groups.invites.revoke — DELETE /v1/groups/{id}/invites/{link} (Revoke an invite link (invite_users)).
 message GroupsInvitesRevokeRequest {
   string group = 1 [json_name = "group"]; // path parameter {id}
@@ -626,9 +794,10 @@ message GroupsInvitesRevokeRequest {
 message GroupsInvitesRevokeResponse {
 }
 
-// groups.join_requests — GET /v1/groups/{id}/join-requests (Undecided requests to join, oldest first (ban_users)).
+// groups.join_requests — GET /v1/groups/{id}/join-requests (Undecided requests to join, oldest first (ban_users); link= only the ones made through that invite link).
 message GroupsJoinRequestsRequest {
   string group = 1 [json_name = "group"]; // path parameter {id}
+  string link = 4 [json_name = "link"]; // query parameter
   string cursor = 2 [json_name = "cursor"]; // query parameter
   string limit = 3 [json_name = "limit"]; // query parameter
 }
@@ -649,6 +818,18 @@ message GroupsJoinRequestsApproveRequest {
 message GroupsJoinRequestsApproveResponse {
 }
 
+// groups.join_requests.approve_many — POST /v1/groups/{id}/join-requests/approve (Admit several people who asked to join (ban_users); who could not be admitted comes back with the reason).
+message GroupsJoinRequestsApproveManyRequest {
+  string group = 1 [json_name = "group"]; // path parameter {id}
+  repeated string users = 2 [json_name = "users"]; // body
+}
+
+// groups.join_requests.approve_many — answer of POST /v1/groups/{id}/join-requests/approve.
+message GroupsJoinRequestsApproveManyResponse {
+  repeated string done = 1 [json_name = "done"];
+  repeated GroupDecideFailure failed = 2 [json_name = "failed"];
+}
+
 // groups.join_requests.decline — POST /v1/groups/{id}/join-requests/{user}/decline (Decline a request to join (ban_users)).
 message GroupsJoinRequestsDeclineRequest {
   string group = 1 [json_name = "group"]; // path parameter {id}
@@ -657,6 +838,18 @@ message GroupsJoinRequestsDeclineRequest {
 
 // groups.join_requests.decline — answer of POST /v1/groups/{id}/join-requests/{user}/decline.
 message GroupsJoinRequestsDeclineResponse {
+}
+
+// groups.join_requests.decline_many — POST /v1/groups/{id}/join-requests/decline (Decline several requests to join (ban_users)).
+message GroupsJoinRequestsDeclineManyRequest {
+  string group = 1 [json_name = "group"]; // path parameter {id}
+  repeated string users = 2 [json_name = "users"]; // body
+}
+
+// groups.join_requests.decline_many — answer of POST /v1/groups/{id}/join-requests/decline.
+message GroupsJoinRequestsDeclineManyResponse {
+  repeated string done = 1 [json_name = "done"];
+  repeated GroupDecideFailure failed = 2 [json_name = "failed"];
 }
 
 // groups.leave — POST /v1/groups/{id}/leave (Leave the group).
@@ -680,6 +873,19 @@ message GroupsListResponse {
   string next_cursor = 2 [json_name = "next_cursor"];
 }
 
+// groups.media — GET /v1/groups/{id}/media (Shared media of the group by kind, newest first: kinds= a comma list of photo|video|gif|file|voice|video_note|audio|link).
+message GroupsMediaRequest {
+  string group = 1 [json_name = "group"]; // path parameter {id}
+  string kinds = 2 [json_name = "kinds"]; // query parameter
+  string before = 3 [json_name = "before"]; // query parameter
+  string limit = 4 [json_name = "limit"]; // query parameter
+}
+
+// groups.media — answer of GET /v1/groups/{id}/media.
+message GroupsMediaResponse {
+  GroupMediaPage body = 1 [json_name = "body"]; // the HTTP body itself
+}
+
 // groups.member — PATCH /v1/groups/{id}/member (My settings of the group: mute (timed: mute_for), notify level, archive, clear history for me, hide one message).
 message GroupsMemberRequest {
   string group = 1 [json_name = "group"]; // path parameter {id}
@@ -695,7 +901,7 @@ message GroupsMemberRequest {
 message GroupsMemberResponse {
 }
 
-// groups.members — GET /v1/groups/{id}/members (Members, longest standing first (filter=all|admins; restricted|banned need ban_users)).
+// groups.members — GET /v1/groups/{id}/members (Members, longest standing first (filter=all|admins; restricted|banned need ban_users). In a group that hides its members an ordinary member gets the owner and the admins).
 message GroupsMembersRequest {
   string group = 1 [json_name = "group"]; // path parameter {id}
   string filter = 2 [json_name = "filter"]; // query parameter
@@ -707,6 +913,7 @@ message GroupsMembersRequest {
 message GroupsMembersResponse {
   repeated GroupMember members = 1 [json_name = "members"];
   string next_cursor = 2 [json_name = "next_cursor"];
+  bool members_hidden = 3 [json_name = "members_hidden"];
 }
 
 // groups.members.add — POST /v1/groups/{id}/members (Add people to the group).
@@ -719,6 +926,16 @@ message GroupsMembersAddRequest {
 message GroupsMembersAddResponse {
   repeated string added = 1 [json_name = "added"];
   repeated GroupNotAdded not_added = 2 [json_name = "not_added"];
+}
+
+// groups.members.delete_messages — POST /v1/groups/{id}/members/{user}/delete-messages (Delete everything a person wrote in the group, for everyone, without banning them (delete_messages)).
+message GroupsMembersDeleteMessagesRequest {
+  string group = 1 [json_name = "group"]; // path parameter {id}
+  string user = 2 [json_name = "user"]; // path parameter {user}
+}
+
+// groups.members.delete_messages — answer of POST /v1/groups/{id}/members/{user}/delete-messages.
+message GroupsMembersDeleteMessagesResponse {
 }
 
 // groups.members.remove — DELETE /v1/groups/{id}/members/{user} (Remove a member (ban_users; an admin only by the owner)).
@@ -816,6 +1033,21 @@ message GroupsReactRequest {
 message GroupsReactResponse {
 }
 
+// groups.reactions — GET /v1/groups/{id}/messages/{seq}/reactions (Who reacted to a message (emoji= only that reaction)).
+message GroupsReactionsRequest {
+  string group = 1 [json_name = "group"]; // path parameter {id}
+  int64 seq = 2 [json_name = "seq"]; // path parameter {seq}
+  string emoji = 3 [json_name = "emoji"]; // query parameter
+  string cursor = 4 [json_name = "cursor"]; // query parameter
+  string limit = 5 [json_name = "limit"]; // query parameter
+}
+
+// groups.reactions — answer of GET /v1/groups/{id}/messages/{seq}/reactions.
+message GroupsReactionsResponse {
+  repeated GroupReactionEntry reactions = 1 [json_name = "reactions"];
+  string next_cursor = 2 [json_name = "next_cursor"];
+}
+
 // groups.read — POST /v1/groups/{id}/read (Mark read up to seq).
 message GroupsReadRequest {
   string group = 1 [json_name = "group"]; // path parameter {id}
@@ -854,6 +1086,8 @@ message GroupsSendRequest {
   ForwardIn forward_from = 10 [json_name = "forward_from"]; // body
   repeated Entity entities = 11 [json_name = "entities"]; // body
   bool media_spoiler = 12 [json_name = "media_spoiler"]; // body
+  string album = 17 [json_name = "album"]; // body
+  bool caption_above = 18 [json_name = "caption_above"]; // body
   Quote quote = 13 [json_name = "quote"]; // body
   string link_preview = 14 [json_name = "link_preview"]; // body
   string sticker = 15 [json_name = "sticker"]; // body
@@ -867,6 +1101,17 @@ message GroupsSendResponse {
   int64 pts = 3 [json_name = "pts"];
   int64 created_at = 4 [json_name = "created_at"];
   bool duplicate = 5 [json_name = "duplicate"];
+}
+
+// groups.slow_mode — PUT /v1/groups/{id}/slow-mode (Set how long an ordinary member waits between two messages (ban_users; one of groups.slow_mode.values, 0 = off)).
+message GroupsSlowModeRequest {
+  string group = 1 [json_name = "group"]; // path parameter {id}
+  int64 seconds = 2 [json_name = "seconds"]; // body
+}
+
+// groups.slow_mode — answer of PUT /v1/groups/{id}/slow-mode.
+message GroupsSlowModeResponse {
+  GroupView body = 1 [json_name = "body"]; // the HTTP body itself
 }
 
 // groups.sync — POST /v1/groups/sync (Which of my groups changed: send the pts I know of each, get the ones that differ and the ones I am no longer in).
@@ -951,6 +1196,16 @@ message MeGetResponse {
   bool deleted = 22 [json_name = "deleted"];
 }
 
+// me.settings — GET /v1/me/settings (Settings (synced across devices); ETag: <version>).
+message MeSettingsRequest {
+}
+
+// me.settings — answer of GET /v1/me/settings.
+message MeSettingsResponse {
+  int64 version = 1 [json_name = "version"];
+  Doc settings = 2 [json_name = "settings"];
+}
+
 // notif.list — GET /v1/notifications (Notifications (tab=all|mentions|requests)).
 message NotifListRequest {
   string tab = 1 [json_name = "tab"]; // query parameter
@@ -988,6 +1243,244 @@ message PresenceRequest {
 // presence — answer of POST /v1/presence.
 message PresenceResponse {
   repeated PresenceOut presence = 1 [json_name = "presence"];
+}
+
+// push.register — PUT /v1/push/token (Register this device's push token (apns | fcm | webpush for alerts; apns_voip for iOS calls, kept alongside)).
+message PushRegisterRequest {
+  string provider = 1 [json_name = "provider"]; // body
+  string token = 2 [json_name = "token"]; // body
+  string push_key = 3 [json_name = "push_key"]; // body
+}
+
+// push.register — answer of PUT /v1/push/token.
+message PushRegisterResponse {
+}
+
+// push.unregister — DELETE /v1/push/token (Forget this device's push token (provider=apns_voip for the VoIP token; none for both)).
+message PushUnregisterRequest {
+  string provider = 1 [json_name = "provider"]; // query parameter
+}
+
+// push.unregister — answer of DELETE /v1/push/token.
+message PushUnregisterResponse {
+}
+
+// stories.close_friend_add — PUT /v1/me/close-friends/{user} (Add a user to my close-friends list (at most stories.close_friends_max people; they are not told)).
+message StoriesCloseFriendAddRequest {
+  string user = 1 [json_name = "user"]; // path parameter {user}
+}
+
+// stories.close_friend_add — answer of PUT /v1/me/close-friends/{user}.
+message StoriesCloseFriendAddResponse {
+}
+
+// stories.close_friend_remove — DELETE /v1/me/close-friends/{user} (Remove a user from my close-friends list: my close-friends stories are hidden from them at once).
+message StoriesCloseFriendRemoveRequest {
+  string user = 1 [json_name = "user"]; // path parameter {user}
+}
+
+// stories.close_friend_remove — answer of DELETE /v1/me/close-friends/{user}.
+message StoriesCloseFriendRemoveResponse {
+}
+
+// stories.close_friends — GET /v1/me/close-friends (My close-friends list (stories with audience close_friends are shown only to them), most recently added first).
+message StoriesCloseFriendsRequest {
+  string cursor = 1 [json_name = "cursor"]; // query parameter
+}
+
+// stories.close_friends — answer of GET /v1/me/close-friends.
+message StoriesCloseFriendsResponse {
+  repeated StoryUser users = 1 [json_name = "users"];
+  optional string next_cursor = 2 [json_name = "next_cursor"];
+}
+
+// stories.close_friends_bulk — POST /v1/me/close-friends (Add and remove close friends in one go (add + remove at most stories.close_friends_bulk_max ids; all or nothing): 204; 400 story.invalid (own id, an id in both lists, too many ids), 429 story.rate_limited (list over stories.close_friends_max)).
+message StoriesCloseFriendsBulkRequest {
+  repeated string add = 1 [json_name = "add"]; // body
+  repeated string remove = 2 [json_name = "remove"]; // body
+}
+
+// stories.close_friends_bulk — answer of POST /v1/me/close-friends.
+message StoriesCloseFriendsBulkResponse {
+}
+
+// stories.create — POST /v1/stories (Post a story (docs/stories.md): {media_id} of an upload of purpose story (kind image or video, ready) or {post_id} of an Eli post the author can see, with an optional caption (stories.caption_max_chars) and audience (everyone by default, or close_friends: only the people on my close-friends list at read time). 201 with the Story. Errors: story.invalid (both/neither id, unknown audience), story.media_invalid, story.too_long (caption or video), story.post_unavailable, story.rate_limited (stories.max_active_per_user showing), media.not_ready (retry), story.disabled).
+message StoriesCreateRequest {
+  string media_id = 1 [json_name = "media_id"]; // body
+  string caption = 2 [json_name = "caption"]; // body
+  optional string post_id = 3 [json_name = "post_id"]; // body
+  string audience = 4 [json_name = "audience"]; // body
+}
+
+// stories.create — answer of POST /v1/stories.
+message StoriesCreateResponse {
+  string id = 1 [json_name = "id"];
+  string kind = 2 [json_name = "kind"];
+  StoryMediaOut media = 3 [json_name = "media"];
+  StoryPostOut post = 4 [json_name = "post"];
+  optional string caption = 5 [json_name = "caption"];
+  int64 created_at = 6 [json_name = "created_at"];
+  int64 expires_at = 7 [json_name = "expires_at"];
+  bool seen = 8 [json_name = "seen"];
+  optional string my_reaction = 9 [json_name = "my_reaction"];
+  optional int64 viewer_count = 10 [json_name = "viewer_count"];
+  string audience = 11 [json_name = "audience"];
+  bool can_reply = 12 [json_name = "can_reply"];
+}
+
+// stories.delete — DELETE /v1/stories/{id} (Delete my story now (owner only)).
+message StoriesDeleteRequest {
+  string story = 1 [json_name = "story"]; // path parameter {id}
+}
+
+// stories.delete — answer of DELETE /v1/stories/{id}.
+message StoriesDeleteResponse {
+}
+
+// stories.hidden — GET /v1/me/story-hidden (The people I hide my stories from, most recently hidden first).
+message StoriesHiddenRequest {
+  string cursor = 1 [json_name = "cursor"]; // query parameter
+}
+
+// stories.hidden — answer of GET /v1/me/story-hidden.
+message StoriesHiddenResponse {
+  repeated StoryUser users = 1 [json_name = "users"];
+  optional string next_cursor = 2 [json_name = "next_cursor"];
+}
+
+// stories.hide — PUT /v1/me/story-hidden/{user} (Hide my stories from a user (at most stories.hidden_max_per_user people)).
+message StoriesHideRequest {
+  string user = 1 [json_name = "user"]; // path parameter {user}
+}
+
+// stories.hide — answer of PUT /v1/me/story-hidden/{user}.
+message StoriesHideResponse {
+}
+
+// stories.mute — PUT /v1/me/story-mutes/{user} (Mute a user's stories: their circle moves to the end of my tray and out of the unseen group).
+message StoriesMuteRequest {
+  string user = 1 [json_name = "user"]; // path parameter {user}
+}
+
+// stories.mute — answer of PUT /v1/me/story-mutes/{user}.
+message StoriesMuteResponse {
+}
+
+// stories.react — PUT /v1/stories/{id}/reaction (React to a story with one of stories.reactions; setting one where there was none also sends a story_reaction message to the owner's 1:1 chat when their message setting allows (the reaction is recorded either way)).
+message StoriesReactRequest {
+  string story = 1 [json_name = "story"]; // path parameter {id}
+  string emoji = 2 [json_name = "emoji"]; // body
+}
+
+// stories.react — answer of PUT /v1/stories/{id}/reaction.
+message StoriesReactResponse {
+}
+
+// stories.reply — POST /v1/stories/{id}/reply (Reply to a story: a story_reply message in the 1:1 chat with its owner (opened if needed, as a message request where their setting asks for one). 201 {chat, seq}; 403 story.replies_off when the owner turned replies off, story.reply_not_allowed when the owner's reply setting (following) or message setting does not let me write).
+message StoriesReplyRequest {
+  string story = 1 [json_name = "story"]; // path parameter {id}
+  string text = 2 [json_name = "text"]; // body
+}
+
+// stories.reply — answer of POST /v1/stories/{id}/reply.
+message StoriesReplyResponse {
+  string chat = 1 [json_name = "chat"];
+  int64 seq = 2 [json_name = "seq"];
+}
+
+// stories.seen — POST /v1/stories/seen (Mark stories seen (at most stories.seen_batch_max ids; idempotent; ids I may not see are ignored)).
+message StoriesSeenRequest {
+  repeated string ids = 1 [json_name = "ids"]; // body
+}
+
+// stories.seen — answer of POST /v1/stories/seen.
+message StoriesSeenResponse {
+}
+
+// stories.settings — GET /v1/me/story-settings (My story settings: replies (who may reply and react: everyone, following = people I follow, off) and the sizes of my hide-from and close-friends lists).
+message StoriesSettingsRequest {
+}
+
+// stories.settings — answer of GET /v1/me/story-settings.
+message StoriesSettingsResponse {
+  string replies = 1 [json_name = "replies"];
+  int64 hidden_count = 2 [json_name = "hidden_count"];
+  int64 close_friends_count = 3 [json_name = "close_friends_count"];
+}
+
+// stories.settings_update — PATCH /v1/me/story-settings (Change my story settings ({replies}); answers the settings. 400 story.invalid for an unknown value).
+message StoriesSettingsUpdateRequest {
+  optional string replies = 1 [json_name = "replies"]; // body
+}
+
+// stories.settings_update — answer of PATCH /v1/me/story-settings.
+message StoriesSettingsUpdateResponse {
+  string replies = 1 [json_name = "replies"];
+  int64 hidden_count = 2 [json_name = "hidden_count"];
+  int64 close_friends_count = 3 [json_name = "close_friends_count"];
+}
+
+// stories.tray — GET /v1/stories/tray (The story tray: my own circle (me, count 0 without a story), then the followed accounts with stories I may see: unseen first, then seen, muted last, each by newest story; stories.tray_page_size per page).
+message StoriesTrayRequest {
+  string cursor = 1 [json_name = "cursor"]; // query parameter
+}
+
+// stories.tray — answer of GET /v1/stories/tray.
+message StoriesTrayResponse {
+  TrayMeOut me = 1 [json_name = "me"];
+  repeated TrayItemOut items = 2 [json_name = "items"];
+  optional string next_cursor = 3 [json_name = "next_cursor"];
+}
+
+// stories.unhide — DELETE /v1/me/story-hidden/{user} (Show my stories to a user again).
+message StoriesUnhideRequest {
+  string user = 1 [json_name = "user"]; // path parameter {user}
+}
+
+// stories.unhide — answer of DELETE /v1/me/story-hidden/{user}.
+message StoriesUnhideResponse {
+}
+
+// stories.unmute — DELETE /v1/me/story-mutes/{user} (Unmute a user's stories).
+message StoriesUnmuteRequest {
+  string user = 1 [json_name = "user"]; // path parameter {user}
+}
+
+// stories.unmute — answer of DELETE /v1/me/story-mutes/{user}.
+message StoriesUnmuteResponse {
+}
+
+// stories.unreact — DELETE /v1/stories/{id}/reaction (Remove my reaction to a story).
+message StoriesUnreactRequest {
+  string story = 1 [json_name = "story"]; // path parameter {id}
+}
+
+// stories.unreact — answer of DELETE /v1/stories/{id}/reaction.
+message StoriesUnreactResponse {
+}
+
+// stories.user — GET /v1/users/{id}/stories (A user's showing stories, oldest first (none when I may not see them; 404 user.unavailable when blocked either way)).
+message StoriesUserRequest {
+  string user = 1 [json_name = "user"]; // path parameter {id}
+}
+
+// stories.user — answer of GET /v1/users/{id}/stories.
+message StoriesUserResponse {
+  StoryUser user = 1 [json_name = "user"];
+  repeated StoryOut stories = 2 [json_name = "stories"];
+}
+
+// stories.viewers — GET /v1/stories/{id}/viewers (Who viewed my story, most recent first, with their reaction (owner only; 404 story.not_found for anyone else)).
+message StoriesViewersRequest {
+  string story = 1 [json_name = "story"]; // path parameter {id}
+  string cursor = 2 [json_name = "cursor"]; // query parameter
+}
+
+// stories.viewers — answer of GET /v1/stories/{id}/viewers.
+message StoriesViewersResponse {
+  repeated StoryViewerOut viewers = 1 [json_name = "viewers"];
+  optional string next_cursor = 2 [json_name = "next_cursor"];
+  int64 total = 3 [json_name = "total"];
 }
 
 // sync.difference — GET /v1/sync/difference (Updates after pts).
@@ -1050,6 +1543,19 @@ message UsersGetResponse {
   BirthdayOut birthday = 20 [json_name = "birthday"];
   bool is_bot = 21 [json_name = "is_bot"];
   bool deleted = 22 [json_name = "deleted"];
+}
+
+// Join (github.com/haznetiv/eleza-backend/internal/voice).
+message Join {
+  string call = 1 [json_name = "call"];
+  string state = 2 [json_name = "state"];
+  string sfu_url = 3 [json_name = "sfu_url"];
+  string token = 4 [json_name = "token"];
+  int64 token_expires_at = 5 [json_name = "token_expires_at"];
+  TURNCredential turn = 6 [json_name = "turn"];
+  string peer = 7 [json_name = "peer"];
+  bool relay_only = 8 [json_name = "relay_only"];
+  bool video = 9 [json_name = "video"];
 }
 
 // CallbackAnswer (github.com/haznetiv/eleza-backend/internal/chat).
@@ -1216,6 +1722,16 @@ message GroupMember {
   string invited_by = 9 [json_name = "invited_by"];
 }
 
+// GroupAdminLogEntry (github.com/haznetiv/eleza-backend/internal/chat).
+message GroupAdminLogEntry {
+  string id = 1 [json_name = "id"];
+  int64 at = 2 [json_name = "at"];
+  string actor = 3 [json_name = "actor"];
+  string action = 4 [json_name = "action"];
+  string target = 5 [json_name = "target"];
+  GroupAdminLogDetail detail = 6 [json_name = "detail"];
+}
+
 // GroupView (github.com/haznetiv/eleza-backend/internal/chat).
 message GroupView {
   string group = 1 [json_name = "group"];
@@ -1223,6 +1739,7 @@ message GroupView {
   string about = 3 [json_name = "about"];
   string photo = 4 [json_name = "photo"];
   int64 member_count = 5 [json_name = "member_count"];
+  int64 admin_count = 33 [json_name = "admin_count"];
   string state = 6 [json_name = "state"];
   string status = 7 [json_name = "status"];
   string role = 8 [json_name = "role"];
@@ -1235,6 +1752,8 @@ message GroupView {
   int64 slow_mode_s = 14 [json_name = "slow_mode_s"];
   int64 slow_mode_wait_s = 15 [json_name = "slow_mode_wait_s"];
   bool history_visible = 16 [json_name = "history_visible"];
+  bool hide_members = 34 [json_name = "hide_members"];
+  bool members_hidden = 35 [json_name = "members_hidden"];
   int64 last_seq = 17 [json_name = "last_seq"];
   int64 pts = 18 [json_name = "pts"];
   int64 last_read_seq = 19 [json_name = "last_read_seq"];
@@ -1286,11 +1805,14 @@ message MessageView {
   string my_reaction = 24 [json_name = "my_reaction"];
   repeated Entity entities = 25 [json_name = "entities"];
   bool media_spoiler = 26 [json_name = "media_spoiler"];
+  string album = 32 [json_name = "album"];
+  bool caption_above = 33 [json_name = "caption_above"];
   Quote quote = 27 [json_name = "quote"];
   LinkPreview link_preview = 28 [json_name = "link_preview"];
   StickerView sticker = 29 [json_name = "sticker"];
   ClientMarkup reply_markup = 30 [json_name = "reply_markup"];
   ViaBotView via_bot = 31 [json_name = "via_bot"];
+  StoryRefView story = 34 [json_name = "story"];
 }
 
 // GroupPage (github.com/haznetiv/eleza-backend/internal/chat).
@@ -1310,6 +1832,7 @@ message GroupInvitePreview {
   int64 member_count = 5 [json_name = "member_count"];
   bool requires_approval = 6 [json_name = "requires_approval"];
   string status = 7 [json_name = "status"];
+  repeated string members = 8 [json_name = "members"];
 }
 
 // GroupInvite (github.com/haznetiv/eleza-backend/internal/chat).
@@ -1327,11 +1850,23 @@ message GroupInvite {
   int64 created_at = 11 [json_name = "created_at"];
 }
 
+// GroupInviteMember (github.com/haznetiv/eleza-backend/internal/chat).
+message GroupInviteMember {
+  string user = 1 [json_name = "user"];
+  int64 joined_at = 2 [json_name = "joined_at"];
+}
+
 // GroupJoinRequest (github.com/haznetiv/eleza-backend/internal/chat).
 message GroupJoinRequest {
   string user = 1 [json_name = "user"];
   int64 created_at = 2 [json_name = "created_at"];
   string link_name = 3 [json_name = "link_name"];
+}
+
+// GroupDecideFailure (github.com/haznetiv/eleza-backend/internal/chat).
+message GroupDecideFailure {
+  string user = 1 [json_name = "user"];
+  string reason = 2 [json_name = "reason"];
 }
 
 // GroupEntry (github.com/haznetiv/eleza-backend/internal/chat).
@@ -1342,12 +1877,25 @@ message GroupEntry {
   DraftView draft = 4 [json_name = "draft"];
 }
 
+// GroupMediaPage (github.com/haznetiv/eleza-backend/internal/chat).
+message GroupMediaPage {
+  repeated MessageView messages = 1 [json_name = "messages"];
+  bool has_more_before = 2 [json_name = "has_more_before"];
+}
+
 // GroupPin (github.com/haznetiv/eleza-backend/internal/chat).
 message GroupPin {
   int64 seq = 1 [json_name = "seq"];
   string pinned_by = 2 [json_name = "pinned_by"];
   int64 pinned_at = 3 [json_name = "pinned_at"];
   MessageView message = 4 [json_name = "message"];
+}
+
+// GroupReactionEntry (github.com/haznetiv/eleza-backend/internal/chat).
+message GroupReactionEntry {
+  string user = 1 [json_name = "user"];
+  string emoji = 2 [json_name = "emoji"];
+  int64 at = 3 [json_name = "at"];
 }
 
 // groupKnownIn (github.com/haznetiv/eleza-backend/internal/chat).
@@ -1376,6 +1924,16 @@ message BirthdayOut {
   bool today = 5 [json_name = "today"];
 }
 
+// Doc (github.com/haznetiv/eleza-backend/pkg/settings).
+message Doc {
+  DocPrivacy privacy = 1 [json_name = "privacy"];
+  DocDiscovery discovery = 2 [json_name = "discovery"];
+  DocNotifications notifications = 3 [json_name = "notifications"];
+  DocMessages messages = 4 [json_name = "messages"];
+  DocMedia media = 5 [json_name = "media"];
+  DocAccessibility accessibility = 6 [json_name = "accessibility"];
+}
+
 // Entry (github.com/haznetiv/eleza-backend/internal/notification).
 message Entry {
   string id = 1 [json_name = "id"];
@@ -1393,6 +1951,77 @@ message PresenceOut {
   string user = 1 [json_name = "user"];
   string status = 2 [json_name = "status"];
   int64 last_seen_at = 3 [json_name = "last_seen_at"];
+}
+
+// StoryUser (github.com/haznetiv/eleza-backend/internal/post).
+message StoryUser {
+  string id = 1 [json_name = "id"];
+  string handle = 2 [json_name = "handle"];
+  string display_name = 3 [json_name = "display_name"];
+  string avatar_id = 4 [json_name = "avatar_id"];
+  bool verified = 5 [json_name = "verified"];
+  bool deleted = 6 [json_name = "deleted"];
+}
+
+// StoryMediaOut (github.com/haznetiv/eleza-backend/internal/post).
+message StoryMediaOut {
+  string url = 1 [json_name = "url"];
+  string thumb_url = 2 [json_name = "thumb_url"];
+  int32 width = 3 [json_name = "width"];
+  int32 height = 4 [json_name = "height"];
+  int64 duration_ms = 5 [json_name = "duration_ms"];
+  string blurhash = 6 [json_name = "blurhash"];
+}
+
+// StoryPostOut (github.com/haznetiv/eleza-backend/internal/post).
+message StoryPostOut {
+  string id = 1 [json_name = "id"];
+  StoryUser author = 2 [json_name = "author"];
+  string text_excerpt = 3 [json_name = "text_excerpt"];
+  optional string thumb_url = 4 [json_name = "thumb_url"];
+  bool available = 5 [json_name = "available"];
+}
+
+// TrayMeOut (github.com/haznetiv/eleza-backend/internal/post).
+message TrayMeOut {
+  StoryUser user = 1 [json_name = "user"];
+  int64 count = 2 [json_name = "count"];
+  bool has_unseen_by_me = 3 [json_name = "has_unseen_by_me"];
+  int64 latest_at = 4 [json_name = "latest_at"];
+  bool close_friends = 5 [json_name = "close_friends"];
+}
+
+// TrayItemOut (github.com/haznetiv/eleza-backend/internal/post).
+message TrayItemOut {
+  StoryUser user = 1 [json_name = "user"];
+  int64 count = 2 [json_name = "count"];
+  int64 unseen = 3 [json_name = "unseen"];
+  int64 latest_at = 4 [json_name = "latest_at"];
+  bool muted = 5 [json_name = "muted"];
+  bool close_friends = 6 [json_name = "close_friends"];
+}
+
+// StoryOut (github.com/haznetiv/eleza-backend/internal/post).
+message StoryOut {
+  string id = 1 [json_name = "id"];
+  string kind = 2 [json_name = "kind"];
+  StoryMediaOut media = 3 [json_name = "media"];
+  StoryPostOut post = 4 [json_name = "post"];
+  optional string caption = 5 [json_name = "caption"];
+  int64 created_at = 6 [json_name = "created_at"];
+  int64 expires_at = 7 [json_name = "expires_at"];
+  bool seen = 8 [json_name = "seen"];
+  optional string my_reaction = 9 [json_name = "my_reaction"];
+  optional int64 viewer_count = 10 [json_name = "viewer_count"];
+  string audience = 11 [json_name = "audience"];
+  bool can_reply = 12 [json_name = "can_reply"];
+}
+
+// StoryViewerOut (github.com/haznetiv/eleza-backend/internal/post).
+message StoryViewerOut {
+  StoryUser user = 1 [json_name = "user"];
+  int64 viewed_at = 2 [json_name = "viewed_at"];
+  optional string reaction = 3 [json_name = "reaction"];
 }
 
 // Update (github.com/haznetiv/eleza-backend/internal/chat).
@@ -1530,6 +2159,64 @@ message GroupSelfData {
   DraftView draft = 10 [json_name = "draft"]; // typed by the gateway
 }
 
+// GroupSignal (github.com/haznetiv/eleza-backend/internal/realtime/rtviews).
+message GroupSignal {
+  string group = 1 [json_name = "group"];
+  int64 pts = 2 [json_name = "pts"];
+  string kind = 3 [json_name = "kind"];
+  GroupSignalData data = 4 [json_name = "data"];
+}
+
+// GroupSignalData (github.com/haznetiv/eleza-backend/internal/realtime/rtviews).
+message GroupSignalData {
+  MessageView message = 1 [json_name = "message"]; // typed by the gateway
+  GroupReactionData reaction = 2 [json_name = "reaction"];
+  GroupInfoData info = 3 [json_name = "info"];
+  GroupSeqsData deleted_many = 4 [json_name = "deleted_many"];
+  GroupSeqData unpinned = 5 [json_name = "unpinned"];
+}
+
+// GroupReactionData (github.com/haznetiv/eleza-backend/internal/realtime/rtviews).
+message GroupReactionData {
+  string group = 1 [json_name = "group"];
+  int64 seq = 2 [json_name = "seq"];
+  map<string, int64> reactions = 3 [json_name = "reactions"];
+}
+
+// GroupInfoData (github.com/haznetiv/eleza-backend/internal/realtime/rtviews).
+message GroupInfoData {
+  string group = 1 [json_name = "group"];
+  int64 member_count = 2 [json_name = "member_count"];
+  repeated string changed = 3 [json_name = "changed"];
+  string about = 4 [json_name = "about"];
+  string owner = 5 [json_name = "owner"];
+  GroupMember member = 6 [json_name = "member"]; // typed by the gateway
+  repeated string default_permissions = 7 [json_name = "default_permissions"];
+  bool history_visible = 8 [json_name = "history_visible"];
+  int64 slow_mode_s = 9 [json_name = "slow_mode_s"];
+  bool hide_members = 10 [json_name = "hide_members"];
+}
+
+// GroupSeqsData (github.com/haznetiv/eleza-backend/internal/realtime/rtviews).
+message GroupSeqsData {
+  string group = 1 [json_name = "group"];
+  repeated int64 seqs = 2 [json_name = "seqs"];
+}
+
+// GroupSeqData (github.com/haznetiv/eleza-backend/internal/realtime/rtviews).
+message GroupSeqData {
+  string group = 1 [json_name = "group"];
+  int64 seq = 2 [json_name = "seq"];
+}
+
+// TURNCredential (github.com/haznetiv/eleza-backend/pkg/sfu).
+message TURNCredential {
+  string username = 1 [json_name = "username"];
+  string credential = 2 [json_name = "credential"];
+  repeated string urls = 3 [json_name = "urls"];
+  int64 expires_at = 4 [json_name = "expires_at"];
+}
+
 // Participant (github.com/haznetiv/eleza-backend/internal/chat).
 message Participant {
   string ref = 1 [json_name = "ref"];
@@ -1549,6 +2236,23 @@ message DraftView {
   int64 reply_to_seq = 2 [json_name = "reply_to_seq"];
   repeated Entity entities = 3 [json_name = "entities"];
   int64 updated_at = 4 [json_name = "updated_at"];
+}
+
+// GroupAdminLogDetail (github.com/haznetiv/eleza-backend/internal/chat).
+message GroupAdminLogDetail {
+  int64 seq = 1 [json_name = "seq"];
+  repeated int64 seqs = 2 [json_name = "seqs"];
+  repeated string rights = 3 [json_name = "rights"];
+  string admin_title = 4 [json_name = "admin_title"];
+  repeated string denied = 5 [json_name = "denied"];
+  int64 until = 6 [json_name = "until"];
+  repeated string default_permissions = 7 [json_name = "default_permissions"];
+  bool history_visible = 8 [json_name = "history_visible"];
+  int64 slow_mode_s = 9 [json_name = "slow_mode_s"];
+  bool hide_members = 13 [json_name = "hide_members"];
+  string link_name = 10 [json_name = "link_name"];
+  bool requires_approval = 11 [json_name = "requires_approval"];
+  bool delete_messages = 12 [json_name = "delete_messages"];
 }
 
 // MediaMeta (github.com/haznetiv/eleza-backend/internal/chat).
@@ -1625,6 +2329,69 @@ message ViaBotView {
   string name = 3 [json_name = "name"];
 }
 
+// StoryRefView (github.com/haznetiv/eleza-backend/internal/chat).
+message StoryRefView {
+  string story_id = 1 [json_name = "story_id"];
+  string owner = 2 [json_name = "owner"];
+  string thumb_url = 3 [json_name = "thumb_url"];
+  string kind = 4 [json_name = "kind"];
+  int64 expires_at = 5 [json_name = "expires_at"];
+  string emoji = 6 [json_name = "emoji"];
+}
+
+//  ().
+message DocPrivacy {
+  bool private_account = 1 [json_name = "private_account"];
+  string reply_default = 2 [json_name = "reply_default"];
+  string mentions = 3 [json_name = "mentions"];
+  string messages = 4 [json_name = "messages"];
+  string conversation_join = 5 [json_name = "conversation_join"];
+  bool conversation_masked_join_allowed = 6 [json_name = "conversation_masked_join_allowed"];
+  bool show_in_suggestions = 7 [json_name = "show_in_suggestions"];
+  bool show_conversations_on_profile = 8 [json_name = "show_conversations_on_profile"];
+  bool read_receipts_and_online = 9 [json_name = "read_receipts_and_online"];
+  string last_seen = 10 [json_name = "last_seen"];
+  string birthday_visibility = 11 [json_name = "birthday_visibility"];
+  bool birthday_show_year = 12 [json_name = "birthday_show_year"];
+  string calls = 13 [json_name = "calls"];
+  string phone_number = 14 [json_name = "phone_number"];
+  string find_by_phone = 15 [json_name = "find_by_phone"];
+  string group_add = 16 [json_name = "group_add"];
+}
+
+//  ().
+message DocDiscovery {
+  string region_mode = 1 [json_name = "region_mode"];
+  string province_code = 2 [json_name = "province_code"];
+  bool show_province_on_profile = 3 [json_name = "show_province_on_profile"];
+}
+
+//  ().
+message DocNotifications {
+  DocNotificationsConversations conversations = 1 [json_name = "conversations"];
+  DocNotificationsEli eli = 2 [json_name = "eli"];
+  DocNotificationsGeneral general = 3 [json_name = "general"];
+  QuietHours quiet_hours = 4 [json_name = "quiet_hours"];
+  DocNotificationsContacts contacts = 5 [json_name = "contacts"];
+}
+
+//  ().
+message DocMessages {
+  bool suggest_continue = 1 [json_name = "suggest_continue"];
+}
+
+//  ().
+message DocMedia {
+  bool autodownload_wifi_only = 1 [json_name = "autodownload_wifi_only"];
+  bool autoplay_video_notes = 2 [json_name = "autoplay_video_notes"];
+  string autoplay_videos = 3 [json_name = "autoplay_videos"];
+}
+
+//  ().
+message DocAccessibility {
+  bool auto_transcription = 1 [json_name = "auto_transcription"];
+}
+
 // GroupSelfSettings (github.com/haznetiv/eleza-backend/internal/realtime/rtviews).
 message GroupSelfSettings {
   bool muted = 1 [json_name = "muted"];
@@ -1652,5 +2419,42 @@ message ClientButton {
 // KeyButton (github.com/haznetiv/eleza-backend/pkg/botmarkup).
 message KeyButton {
   string text = 1 [json_name = "text"];
+}
+
+//  ().
+message DocNotificationsConversations {
+  bool enabled = 1 [json_name = "enabled"];
+  bool joined = 2 [json_name = "joined"];
+  bool new_message = 3 [json_name = "new_message"];
+  bool one_hour_left = 4 [json_name = "one_hour_left"];
+}
+
+//  ().
+message DocNotificationsEli {
+  bool likes = 1 [json_name = "likes"];
+  bool replies_mentions = 2 [json_name = "replies_mentions"];
+  bool reposts_quotes = 3 [json_name = "reposts_quotes"];
+  bool new_followers = 4 [json_name = "new_followers"];
+  bool subscribed_posts = 5 [json_name = "subscribed_posts"];
+}
+
+//  ().
+message DocNotificationsGeneral {
+  bool sound = 1 [json_name = "sound"];
+  bool vibrate = 2 [json_name = "vibrate"];
+  bool lock_screen_preview = 3 [json_name = "lock_screen_preview"];
+}
+
+// QuietHours (github.com/haznetiv/eleza-backend/pkg/settings).
+message QuietHours {
+  bool enabled = 1 [json_name = "enabled"];
+  string start = 2 [json_name = "start"];
+  string end = 3 [json_name = "end"];
+  string tz = 4 [json_name = "tz"];
+}
+
+//  ().
+message DocNotificationsContacts {
+  bool joined = 1 [json_name = "joined"];
 }
 

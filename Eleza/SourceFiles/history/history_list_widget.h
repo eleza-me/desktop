@@ -72,6 +72,9 @@ public:
 	// Whether I can write to the chat (reply / edit / reactions make sense).
 	void setCanWrite(bool canWrite);
 	void setCanReact(bool canReact);
+	// A chat with a bot: «/command» in the text is a link, buttons that
+	// switch to inline mode use `botHandle` when the message names no bot.
+	void setBotChat(bool bot, const QString &botHandle);
 
 	// ---- navigation
 	void jumpTo(qint64 seq, const std::optional<Data::Quote> &quote = std::nullopt);
@@ -141,6 +144,11 @@ Q_SIGNALS:
 	void stateChanged();
 	// Something the user did should put the caret back into the composer.
 	void focusRequested();
+	// A «/command» in a bot's message was clicked: it is sent.
+	void botCommandRequested(const QString &command);
+	// «@bot query» for a composer: this chat's, or (pickChat) one the user
+	// picks (a «switch inline» button, a «via @bot» label).
+	void inlineQueryRequested(const QString &text, bool pickChat);
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -196,6 +204,7 @@ private:
 	bool elementRevealed(const QString &key) override;
 	bool elementButtonLoading(const Data::Message &message, int row, int column) override;
 	bool elementGroup() override;
+	bool elementBotCommands() override;
 	View::SenderInfo elementSender(const Data::Message &message) override;
 	void elementPaintUserpic(Painter &p, const QRect &rect, const QString &userId) override;
 	QString elementServiceText(const Data::Message &message) override;
@@ -260,6 +269,8 @@ private:
 	void revealSpoiler(const QString &key);
 	void openMedia(const Data::Message &message);
 	void openPhoto(const Data::Message &message);
+	// The media that shows `message` (an album's tile for its item).
+	[[nodiscard]] View::Media *mediaFor(const Data::Message &message) const;
 	void playVideo(const Data::Message &message);
 	void toggleInlineVideo(const Data::Message &message);
 	void toggleVoice(const Data::Message &message);
@@ -333,6 +344,8 @@ private:
 	bool _canWrite = true;
 	bool _canReact = true;
 	bool _anonymousPeer = false;
+	bool _botChat = false;
+	QString _botHandle;
 	bool _positioned = false; // the first scroll position was chosen
 	qint64 _firstUnreadSeq = 0;
 	bool _unreadResolved = false; // the chat row was there to tell

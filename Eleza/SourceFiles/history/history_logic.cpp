@@ -279,6 +279,8 @@ bool SameLayout(const Data::Message &a, const Data::Message &b) {
 		&& (a.forwardedPost == b.forwardedPost)
 		&& (a.system == b.system)
 		&& (a.mediaSpoiler == b.mediaSpoiler)
+		&& (a.album == b.album)
+		&& (a.captionAbove == b.captionAbove)
 		&& (a.underReview == b.underReview)
 		&& (a.createdAt == b.createdAt)
 		&& (failedA == failedB)
@@ -342,12 +344,14 @@ Ui::Text::Entities ConvertEntities(
 	return Ui::Text::NormalizeEntities(text, std::move(result));
 }
 
-Ui::Text::TextWithEntities TextForMessage(const Data::Message &message) {
+Ui::Text::TextWithEntities TextForMessage(
+		const Data::Message &message,
+		bool botCommands) {
 	// For showing: links are isolated (Ui::Text::IsolateLinks), so quoting and
 	// copying go through Ui::Text::SourceSelection / StripIsolates.
 	return Ui::Text::IsolateLinks(Ui::Text::ParseEntities(
 		message.text,
-		Ui::Text::ParseAll,
+		Ui::Text::ParseAll | (botCommands ? Ui::Text::ParseBotCommands : 0u),
 		ConvertEntities(message.text, message.entities)));
 }
 
@@ -759,6 +763,7 @@ bool HasCopyableText(const Data::Message &message) {
 	case Data::MessageKind::Video:
 	case Data::MessageKind::Gif:
 	case Data::MessageKind::ForwardedPost:
+	case Data::MessageKind::StoryReply:
 		return !message.text.trimmed().isEmpty();
 	default:
 		return false;
@@ -773,6 +778,8 @@ bool CanForward(const Data::Message &message) {
 	case Data::MessageKind::System:
 	case Data::MessageKind::Call:
 	case Data::MessageKind::LiveLocation:
+	case Data::MessageKind::StoryReply:
+	case Data::MessageKind::StoryReaction:
 	case Data::MessageKind::Unknown:
 		return false;
 	default:

@@ -38,6 +38,9 @@ public:
 	[[nodiscard]] bool loaded() const {
 		return _loaded;
 	}
+	// The document's "version" (0 when it has none): the realtime `config`
+	// signal names the server's, a different one is read again.
+	[[nodiscard]] qint64 version() const;
 
 	// ---- raw access
 	[[nodiscard]] QJsonValue value(const QString &dotted) const;
@@ -61,6 +64,9 @@ public:
 	// The second release of groups (admins, invite links, pins, mentions).
 	[[nodiscard]] bool groupsAdministration() const;    // groups.max_admins is listed
 	[[nodiscard]] bool videoCallsEnabled() const;       // feature.video_calls (absent: off)
+	[[nodiscard]] bool botsEnabled() const;             // feature.bots (absent: on)
+	[[nodiscard]] bool botsInlineEnabled() const;       // feature.bots and bots.inline.enabled
+	[[nodiscard]] int botsInlineQueryMaxChars() const;  // bots.inline.query_max_chars
 	[[nodiscard]] bool deleteChatForBothEnabled() const;
 
 	// ---- sign-in and profile
@@ -100,6 +106,8 @@ public:
 	[[nodiscard]] int postMaxTextChars() const;
 	[[nodiscard]] int postMaxThreadParts() const;
 	[[nodiscard]] int postMaxAlbumItems() const;
+	// Items of one chat album (messaging.max_album_items, 2..20).
+	[[nodiscard]] int maxAlbumItems() const;
 	[[nodiscard]] int pollMinOptions() const;
 	[[nodiscard]] int pollMaxOptions() const;
 	[[nodiscard]] qint64 postEditWindow() const;        // seconds

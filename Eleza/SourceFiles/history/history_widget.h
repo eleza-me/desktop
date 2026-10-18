@@ -2,6 +2,11 @@
 // conversation banner, the message list and the composer (or the notice
 // that replaces it when one cannot write).
 //
+// A chat with a bot that has no message yet shows the bot's description in
+// the middle and «شروع» instead of the composer until the first message;
+// opened from a deep link (eleza.me/<bot>?start=<payload>) it shows «شروع»
+// even when it has messages, and the button sends "/start <payload>".
+//
 //   controller->showMainSection(History::Factory(chatId, seq), { .tab = Window::Tab::Chats });
 #pragma once
 
@@ -10,6 +15,8 @@
 
 #include <QtCore/QPointer>
 #include <QtCore/QTimer>
+
+#include <optional>
 
 namespace Main {
 class Session;
@@ -22,6 +29,7 @@ class ScrollArea;
 
 namespace History {
 
+class BotIntroCard;
 class BottomNotice;
 class ComposeControls;
 class ConversationBanner;
@@ -30,7 +38,11 @@ class PinnedBar;
 class SearchBar;
 class TopBar;
 
-[[nodiscard]] Window::SectionFactory Factory(const QString &chatId, qint64 seq = 0);
+// `botStart`: opened from a bot's deep link (its payload, may be empty).
+[[nodiscard]] Window::SectionFactory Factory(
+	const QString &chatId,
+	qint64 seq = 0,
+	std::optional<QString> botStart = std::nullopt);
 
 class Widget final : public Window::SectionWidget {
 	Q_OBJECT
@@ -40,7 +52,8 @@ public:
 		QWidget *parent,
 		Window::SessionController *controller,
 		const QString &chatId,
-		qint64 aroundSeq = 0);
+		qint64 aroundSeq = 0,
+		std::optional<QString> botStart = std::nullopt);
 	~Widget();
 
 	[[nodiscard]] QString sectionKey() const override;
@@ -54,6 +67,8 @@ public:
 	}
 	// The chat is already open and a route asks for a message in it.
 	void showMessage(qint64 seq);
+	// The chat is already open and a deep link asks to start its bot.
+	void startBot(const QString &payload);
 
 	// ---- debug hooks (screenshots, the stress test)
 	[[nodiscard]] ListWidget *list() const {
@@ -98,6 +113,7 @@ private:
 		Readonly,
 		GroupRestricted, // a group: I may not send here (maybe until a time)
 		GroupWait,       // a group: slow mode, I still wait
+		BotStart,        // a bot that was not started here: «شروع»
 	};
 
 	void setupList();
@@ -119,6 +135,10 @@ private:
 	void copySelection();
 	void forwardSelection();
 	void deleteSelection();
+	void pressBotStart();
+	void refreshBotInfo();
+	void showSwitchInline(const QString &text);
+	void inlineQueryRequested(const QString &text, bool pickChat);
 	[[nodiscard]] bool canAttach() const;
 
 	Main::Session *_session = nullptr;
@@ -136,6 +156,7 @@ private:
 	DownButton *_down = nullptr;
 	DropArea *_drop = nullptr;
 	StateView *_state = nullptr;
+	BotIntroCard *_botIntro = nullptr;
 	QPointer<Ui::PopupMenu> _menu;
 
 	Bottom _bottom = Bottom::None;
@@ -149,6 +170,12 @@ private:
 	bool _group = false;
 	QTimer _groupTimer; // the countdown of slow mode / a restriction
 	QString _groupNotice;
+
+	// ---- a chat with a bot
+	bool _botStartPending = false; // opened from a deep link
+	QString _botStartPayload;
+	bool _botStartSent = false;
+	QString _botId;
 
 };
 

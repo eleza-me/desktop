@@ -105,6 +105,15 @@ private Q_SLOTS:
 		QCOMPARE(Routes::NewGroup(), QStringLiteral("group/new"));
 		QCOMPARE(Routes::Group("j1team"), QStringLiteral("group/j1team"));
 		QVERIFY(!ParseRoute("group").valid());
+		// Its sections: the shared media, the admin log, who reacted.
+		QCOMPARE(Routes::GroupMedia("j1team"), QStringLiteral("group/j1team?show=media"));
+		QCOMPARE(Routes::GroupAdminLog("j1team"), QStringLiteral("group/j1team?show=log"));
+		const auto reactions = ParseRoute(Routes::GroupReactions("j1team", 42));
+		QCOMPARE(reactions.type, RouteType::Group);
+		QCOMPARE(reactions.id, QStringLiteral("j1team"));
+		QCOMPARE(reactions.queryValue("show"), QStringLiteral("reactions"));
+		QCOMPARE(reactions.seq(), qint64(42));
+		QCOMPARE(ParseRoute(Routes::GroupMedia("j1team")).queryValue("show"), QStringLiteral("media"));
 		const auto token = QStringLiteral("j1team.AAAAAAAAAAAAAAAAAAAAAA");
 		QCOMPARE(RouteFromWebPath("/g/" + token)->type, RouteType::GroupInvite);
 		QCOMPARE(RouteFromWebPath("/g/" + token)->id, token);
@@ -126,6 +135,48 @@ private Q_SLOTS:
 		QVERIFY(!RouteFromWebPath("/s").has_value());
 		QVERIFY(!RouteFromWebPath("/p").has_value());
 		QVERIFY(!RouteFromWebPath("/eli/sound/x").has_value());
+	}
+
+	void botDeepLinks() {
+		// eleza.me/<bot>?start=<payload>: the handle route keeps the payload.
+		const auto link = RouteFromWebPath("/Weather_Bot", "start=promo42");
+		QVERIFY(link.has_value());
+		QCOMPARE(link->type, RouteType::Handle);
+		QCOMPARE(link->id, QStringLiteral("weather_bot"));
+		QCOMPARE(link->botStart(), std::optional<QString>(QStringLiteral("promo42")));
+		QCOMPARE(link->toString(), QStringLiteral("u/weather_bot?start=promo42"));
+		// An empty payload is still a start.
+		QCOMPARE(
+			RouteFromWebPath("/weather_bot", "start=")->botStart(),
+			std::optional<QString>(QString()));
+		QCOMPARE(
+			RouteFromWebPath("/u/weather_bot", "start=x")->botStart(),
+			std::optional<QString>(QStringLiteral("x")));
+		QCOMPARE(
+			RouteFromWebPath("/@weather_bot", "start=x")->botStart(),
+			std::optional<QString>(QStringLiteral("x")));
+		// Other parameters are not kept; a bare handle is a profile.
+		QCOMPARE(RouteFromWebPath("/sara", "utm=1")->toString(), QStringLiteral("u/sara"));
+		QVERIFY(!RouteFromWebPath("/sara")->botStart().has_value());
+		// Pages of the site are never handles.
+		QVERIFY(!RouteFromWebPath("/terms", "start=x").has_value());
+		QVERIFY(!RouteFromWebPath("/FAQ").has_value());
+		QVERIFY(!RouteFromWebPath("/a").has_value());
+		QVERIFY(!RouteFromWebPath("/not a handle").has_value());
+
+		// The builders.
+		QCOMPARE(
+			Routes::HandleStart(QStringLiteral("@Weather_Bot"), QStringLiteral("p-1")),
+			QStringLiteral("u/weather_bot?start=p-1"));
+		QCOMPARE(
+			Routes::BotStart(QStringLiteral("c1"), QStringLiteral("p_1")),
+			QStringLiteral("chat/c1?start=p_1"));
+		const auto chat = ParseRoute(Routes::BotStart(QStringLiteral("c1"), QString()));
+		QCOMPARE(chat.type, RouteType::Chat);
+		QCOMPARE(chat.botStart(), std::optional<QString>(QString()));
+		QVERIFY(!ParseRoute("chat/c1").botStart().has_value());
+		// Only chats and handles start a bot.
+		QVERIFY(!ParseRoute("eli/post/p1?start=x").botStart().has_value());
 	}
 };
 

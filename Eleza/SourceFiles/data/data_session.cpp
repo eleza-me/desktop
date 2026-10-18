@@ -1,6 +1,7 @@
 #include "data/data_session.h"
 
 #include "api/api_client_config.h"
+#include "data/data_bots.h"
 #include "data/data_calls.h"
 #include "data/data_chats.h"
 #include "data/data_conversations.h"
@@ -12,6 +13,7 @@
 #include "data/data_notifications.h"
 #include "data/data_outbox.h"
 #include "data/data_stickers.h"
+#include "data/data_stories.h"
 #include "data/data_sync.h"
 #include "data/data_transport.h"
 #include "data/data_upload.h"
@@ -40,6 +42,8 @@ Session::Session(Config config, QObject *parent)
 	_feed = new Feed(this);
 	_graph = new Graph(this);
 	_calls = new Calls(this);
+	_bots = new Bots(this);
+	_stories = new Stories(this);
 
 	// A card that arrives or changes renames the rows that show it.
 	connect(_users, &Users::changed, _chats, [this](const QStringList &ids) {
@@ -96,6 +100,7 @@ void Session::stop() {
 	}
 	_started = false;
 	_feed->flushViews();
+	_stories->flushSeen();
 	_sync->stop();
 	_groups->stop();
 	_outbox->stop();

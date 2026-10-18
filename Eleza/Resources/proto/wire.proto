@@ -117,6 +117,25 @@ message UpdateFrame {
 //   feed_new        FeedNewSignal     (server → client)
 //   state           StateSignal       (client → server: background/foreground)
 //   call.*          CallSignal        (server → client; JSON of the voice service)
+//   group           CallSignal        (server → client; a change of a group as JSON —
+//                                      the form every client since the first release of groups reads)
+//   group_change    GroupSignal       (server → client; the same change, typed (views.proto). Sent
+//                                      instead of "group" to a connection whose Auth.features has
+//                                      "group_signal", for the kinds the schema knows; any other
+//                                      change still arrives as "group")
+//   group_typing    GroupTypingSignal (both directions)
+//   group_admin     GroupAdminSignal  (server → client; for the admins of a group)
+//   config          CallSignal        (server → client; {"version"}: right after Hello and on every
+//                                      change of the client-visible configuration; the app refetches
+//                                      GET /v1/client-config only when the version differs from its own)
+//   media           CallSignal        (server → client; {"media","state":"ready"|"rejected","reason"}:
+//                                      one of the user's uploads finished processing)
+//   settings        CallSignal        (server → client; {"version"}: the settings document changed)
+//   story           CallSignal        (server → client, to connections holding a feed_sub;
+//                                      {"user","action":"new"|"deleted"}: an account the user follows
+//                                      posted or deleted a story; without "user" when several did or
+//                                      a high-follower account did — refresh the story tray)
+//   (right after Hello the gateway also sends call.incoming when a call is ringing for the user)
 //   resumed, resync (server → client; no body)
 //   presence_reset  (server → client; re-subscribe presence)
 message Signal {
@@ -130,6 +149,27 @@ message TypingSignal {
   string chat = 2;        // server → client: chat id
   string kind = 3;        // typing | recording_voice | … | cancel
   uint32 ttl_s = 4;       // server → client
+}
+
+// GroupTypingSignal: an activity indicator in a group. Client → server: group
+// and kind (no capability: the connection's own subscription to the group is
+// the proof of membership). Server → client: who, what, for how long.
+message GroupTypingSignal {
+  string group = 1;       // group id
+  string kind = 2;        // typing | recording_voice | … | cancel
+  uint32 ttl_s = 3;       // server → client; absent on cancel
+  string user = 4;        // server → client: the member
+}
+
+// GroupAdminSignal: something only the admins of a group are told, live and
+// never stored. kind "join_requests": the number of undecided requests to
+// join changed (join_requests = the number now); user is the person whose new
+// request caused it, absent when a request was decided.
+message GroupAdminSignal {
+  string group = 1;
+  string kind = 2;
+  uint32 join_requests = 3;
+  string user = 4;
 }
 
 message PresenceSub { repeated string users = 1; }
@@ -161,7 +201,13 @@ message TopicsSub { string category = 1; string province = 2; }
 message TopicsSignal { bool changed = 1; string category = 2; }
 
 message FeedSub { int64 since = 1; }
-message FeedNewSignal { uint32 count = 1; int64 since = 2; }
+// count: new Following entries since the last feed_new on this connection
+// (the gateway reads the timeline every realtime.feed_hint_interval and sends
+// one feed_new for everything new; the user's own posts are not counted, nor
+// are high-follower authors, which are read-merged instead of fanned out);
+// authors: their distinct authors' public ids (at most 3: the pill's faces);
+// post: the newest entry's post id.
+message FeedNewSignal { uint32 count = 1; int64 since = 2; repeated string authors = 3; string post = 4; }
 
 message StateSignal { bool background = 1; }
 
@@ -191,6 +237,10 @@ message Auth {
   string device = 4;      // device id (diagnostics)
   string app = 5;         // "android/1.2.3"
   string lang = 6;        // Accept-Language for bridged calls ("fa", "en")
+  // features: what this client implements beyond the base protocol. Unknown
+  // names are ignored. "group_signal": changes of groups may be sent as
+  // Signal t:"group_change" (GroupSignal) instead of t:"group" (JSON).
+  repeated string features = 7;
 }
 message AuthResult { int64 expires_at = 1; }
 message Challenge { bytes nonce = 1; }

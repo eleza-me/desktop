@@ -77,7 +77,7 @@ jobs:
           New-Item -ItemType Directory -Force $cache | Out-Null
           "VCPKG_DEFAULT_BINARY_CACHE=$cache" >> $env:GITHUB_ENV
 
-      - name: Cache vcpkg packages (OpenSSL)
+      - name: Cache vcpkg packages (OpenSSL, rlottie)
         uses: actions/cache@v4
         with:
           path: .vcpkg-cache
@@ -137,6 +137,8 @@ jobs:
           # OpenSSL 3: our own crypto and Qt's TLS backend (tls/qopensslbackend.dll).
           $ssl = "$build/vcpkg_installed/x64-windows/bin"
           Copy-Item "$ssl/libcrypto-3-x64.dll", "$ssl/libssl-3-x64.dll" $dist
+          # rlottie: Lottie (.tgs) stickers (the executable links it).
+          Copy-Item "$ssl/rlottie.dll" $dist
           # The FFmpeg libraries of the multimedia backend, when windeployqt left them out.
           Get-ChildItem "$env:QT_ROOT_DIR/bin" -Filter '*.dll' |
             Where-Object { $_.Name -match '^(avcodec|avformat|avutil|swresample|swscale)-' } |
@@ -144,7 +146,7 @@ jobs:
           # The C++ runtime next to the executable: the portable build needs no installer.
           $crt = Join-Path $env:VCToolsRedistDir 'x64/Microsoft.VC143.CRT'
           if (Test-Path $crt) { Copy-Item "$crt/*.dll" $dist }
-          foreach ($required in 'Updater.exe', 'livekit_ffi.dll', 'livekit_ffi-LICENSE.md', 'Qt6Core.dll', 'Qt6Widgets.dll', 'Qt6Multimedia.dll', 'Qt6WebSockets.dll', 'Qt6Sql.dll', 'Qt6Svg.dll', 'platforms/qwindows.dll', 'sqldrivers/qsqlite.dll', 'imageformats/qwebp.dll', 'imageformats/qsvg.dll', 'tls/qopensslbackend.dll') {
+          foreach ($required in 'Updater.exe', 'rlottie.dll', 'livekit_ffi.dll', 'livekit_ffi-LICENSE.md', 'Qt6Core.dll', 'Qt6Widgets.dll', 'Qt6Multimedia.dll', 'Qt6WebSockets.dll', 'Qt6Sql.dll', 'Qt6Svg.dll', 'platforms/qwindows.dll', 'sqldrivers/qsqlite.dll', 'imageformats/qwebp.dll', 'imageformats/qsvg.dll', 'tls/qopensslbackend.dll') {
             if (-not (Test-Path "$dist/$required")) { throw "The deployed build misses $required" }
           }
           Get-ChildItem -Recurse $dist | Measure-Object -Property Length -Sum | ForEach-Object { 'Deployed {0:N1} MB' -f ($_.Sum / 1MB) }
@@ -233,6 +235,7 @@ jobs:
             qt6-base-dev qt6-base-dev-tools qt6-svg-dev qt6-multimedia-dev qt6-websockets-dev \
             libqt6sql6-sqlite qt6-image-formats-plugins \
             libssl-dev libgl1-mesa-dev libxkbcommon-dev \
+            librlottie-dev \
             xvfb dpkg-dev
 
       - name: Configure

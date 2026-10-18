@@ -81,6 +81,9 @@ enum ParseFlag : uint {
 	ParseMentions = 0x02, // @username
 	ParseHashtags = 0x04, // #tag
 	ParseAll = ParseLinks | ParseMentions | ParseHashtags,
+	// «/start», «/help@some_bot»: only where a bot reads the chat (not in
+	// ParseAll). Not a slash inside a word, a path, a date or a fraction.
+	ParseBotCommands = 0x08,
 };
 
 // Detects links / mentions / hashtags in plain text and merges them with `existing`

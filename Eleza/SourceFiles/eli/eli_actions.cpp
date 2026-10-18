@@ -6,17 +6,21 @@
 #include "data/data_graph.h"
 #include "data/data_outbox.h"
 #include "data/data_session.h"
+#include "data/data_stories.h"
 #include "data/data_users.h"
 #include "eli/eli_post_card.h"
+#include "lang/lang_format.h"
 #include "lang_auto.h"
 #include "main/main_account.h"
 #include "main/main_session.h"
+#include "stories/stories_boxes.h"
 #include "support/error_text.h"
 #include "ui/layers/generic_box.h"
 #include "ui/widgets/popup_menu.h"
 #include "window/window_routes.h"
 #include "window/window_session_controller.h"
 #include "styles/style_eli.h"
+#include "styles/style_stories.h"
 
 #include <QtCore/QDateTime>
 #include <QtGui/QClipboard>
@@ -76,6 +80,25 @@ struct PolicyOption {
 	};
 }
 
+void ConfirmRevokeShareLinks(
+		Window::SessionController *controller,
+		const QString &id) {
+	auto args = Ui::ConfirmBoxArgs();
+	args.title = tr::lng_eli_revoke_links(tr::now);
+	args.text = tr::lng_eli_revoke_links_sure(tr::now);
+	args.confirmText = tr::lng_eli_revoke_links(tr::now);
+	args.destructive = true;
+	args.confirmed = [=](std::function<void()> close) {
+		close();
+		controller->session().data().feed().revokeShareLinks(
+			id,
+			base::Guard(controller),
+			[=] { controller->showToast(tr::lng_eli_links_revoked(tr::now)); },
+			[=](const Api::Error &error) { Support::ShowError(controller, error); });
+	};
+	controller->show(Ui::MakeConfirmBox(std::move(args)));
+}
+
 void FillMore(
 		Ui::PopupMenu *menu,
 		Window::SessionController *controller,
@@ -95,6 +118,12 @@ void FillMore(
 		tr::lng_eli_send_in_chat(tr::now),
 		[=] { SendPostToChats(controller, id); },
 		&st::eliMenuIconSend);
+	if (!post.deleted && controller->session().data().stories().enabled()) {
+		menu->addAction(
+			tr::lng_stories_share(tr::now),
+			[=] { Stories::ShareToStory(controller, id); },
+			&st::storiesMenuIconStory);
+	}
 	if (!post.text.isEmpty()) {
 		const auto text = post.text;
 		menu->addAction(
@@ -153,6 +182,10 @@ void FillMore(
 					: tr::lng_eli_pinned_toast(tr::now));
 			},
 			&st::menuIconPin);
+		menu->addAction(
+			tr::lng_eli_revoke_links(tr::now),
+			[=] { ConfirmRevokeShareLinks(controller, id); },
+			&st::menuIconLink);
 		auto remove = Ui::MenuItem();
 		remove.text = tr::lng_eli_delete_post(tr::now);
 		remove.icon = &st::menuIconDelete;
@@ -183,6 +216,18 @@ void FillMore(
 					handle.isEmpty() ? tr::lng_eli_this_user(tr::now) : handle));
 			},
 			&st::menuIconMute);
+		menu->addAction(
+			tr::lng_profile_hide_posts(tr::now),
+			[=] {
+				controller->session().data().graph().hide(author);
+				controller->showToast(tr::lng_profile_hidden_toast(
+					tr::now,
+					lt_name,
+					Lang::Isolated(user.displayName.isEmpty()
+						? tr::lng_eli_this_user(tr::now)
+						: user.displayName)));
+			},
+			&st::eliMenuIconEyeOff);
 		auto block = Ui::MenuItem();
 		block.text = tr::lng_block_user(tr::now);
 		block.icon = &st::menuIconBlock;

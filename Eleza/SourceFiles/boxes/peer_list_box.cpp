@@ -502,6 +502,9 @@ public:
 		}
 		auto hasSaved = false;
 		for (const auto &chat : list) {
+			if (chat.isGroup && !_args.includeGroups) {
+				continue;
+			}
 			if (chat.saved) {
 				hasSaved = true;
 				if (!_args.includeSaved) {

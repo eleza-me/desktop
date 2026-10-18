@@ -148,6 +148,11 @@ void ImageViewer::showItem(int index) {
 		_imageFinal = true;
 		updateVideoGeometry();
 		_video->play();
+	} else if (current.loadVideo) {
+		if (!current.videoPoster.isNull()) {
+			setImage(current.videoPoster, false);
+		}
+		loadVideo(index);
 	} else if (!current.image.isNull()) {
 		setImage(current.image, true);
 	} else if (!current.filePath.isEmpty()) {
@@ -225,6 +230,30 @@ void ImageViewer::loadFile(const QString &path, int index) {
 				weak->setImage(image, true);
 			}
 		}, Qt::QueuedConnection);
+	});
+}
+
+void ImageViewer::loadVideo(int index) {
+	const auto weak = QPointer<ImageViewer>(this);
+	_items[index].loadVideo(this, [=](const QString &path) {
+		if (!weak || index < 0 || index >= int(weak->_items.size())) {
+			return;
+		} else if (path.isEmpty()) {
+			if (weak->_index == index) {
+				weak->_failed = true;
+				weak->_loading.stop();
+				weak->update();
+			}
+			return;
+		}
+		auto &item = weak->_items[index];
+		item.videoPath = path;
+		item.loadVideo = nullptr;
+		if (weak->_index == index) {
+			// Shown again, now as the player.
+			weak->_index = -1;
+			weak->showItem(index);
+		}
 	});
 }
 

@@ -111,6 +111,8 @@ historyForwardedIcon: icon {{ "forward:mirror-ltr", brandText, 14px }};
 historyMediaPadding: 2px;
 historyMediaRadius: 14px;
 historyMediaRadiusSmall: 5px;
+historyAlbumGap: 2px;
+historyAlbumInnerRadius: 4px;
 historyMediaMaxWidth: 360px;
 historyMediaCaptionMinWidth: 240px;
 historyMediaCaptionSkip: 5px;
@@ -168,6 +170,8 @@ historyCallMissedFg: statusError;
 
 // stickers, locations, shared posts
 historyStickerSize: 168px;
+historyStickerPreviewSize: 256px;
+historyStickerPreviewSkip: 24px;
 historyLocationSize: size(260px, 150px);
 historyLocationRadius: 12px;
 historyLocationPinIcon: icon {{ "location", statusError, 34px }};
@@ -190,6 +194,9 @@ historyPostTextStyle: TextStyle(defaultTextStyle) {
 historyPostTextLines: 4;
 historyPostThumb: 64px;
 historyPostThumbRadius: 8px;
+historyStoryWidth: 240px;
+historyStoryThumb: size(44px, 78px);
+historyStoryEmojiFont: font(26px);
 
 // link preview card
 historyPreviewPadding: margins(10px, 6px, 8px, 7px);
@@ -301,6 +308,7 @@ menuIconUnpin: icon {{ "pin", menuIconFg, 20px }};
 menuIconFile: icon {{ "file", menuIconFg, 20px }};
 menuIconLocation: icon {{ "location", menuIconFg, 20px }};
 menuIconStop: icon {{ "close-circle", menuIconFg, 20px }};
+menuIconReactions: icon {{ "like", menuIconFg, 20px }};
 
 // ---- bars under the top bar
 historyBarHeight: 46px;
@@ -590,3 +598,51 @@ historyMentionNameFont: font(14px semibold);
 historyMentionHandleFont: font(12px);
 historyMentionSelectedBg: inputBgSunken;
 historyMentionFg: brandText;
+
+// ---- bots: the command menu, inline mode, the reply keyboard, «شروع»
+historyBotCommandsButton: IconButton(historyComposeButton) {
+	icon: icon {{ "bot-commands", iconButtonFg }};
+	iconOver: icon {{ "bot-commands", iconButtonFgOver }};
+}
+historyBotCommandsActiveIcon: icon {{ "bot-commands", brandPrimary }};
+historyBotKeyboardToggle: IconButton(historyComposeButton) {
+	icon: icon {{ "keyboard", iconButtonFg }};
+	iconOver: icon {{ "keyboard", iconButtonFgOver }};
+}
+historyBotKeyboardHideIcon: icon {{ "chevron-down", iconButtonFg }};
+historyBotKeyboardHideIconOver: icon {{ "chevron-down", iconButtonFgOver }};
+// Without resize_keyboard the keys are as tall as a keyboard's keys.
+historyBotKeyboardButtonHeightTall: 46px;
+historyBotStartButton: RoundButton(defaultRoundButton) {
+	minWidth: 220px;
+}
+historyBotPanelMaxHeight: 268px;
+historyBotPanelMaxWidth: 520px;
+historyBotPanelPadding: margins(4px, 4px, 4px, 4px);
+historyBotPanelHeaderHeight: 34px;
+historyBotPanelCommandHeight: 44px;
+historyBotPanelResultHeight: 56px;
+historyBotPanelRowSkip: 10px;
+historyBotPanelThumb: 40px;
+historyBotPanelThumbRadius: 8px;
+historyBotPanelHeaderFont: font(13px);
+historyBotPanelHeaderFg: textSecondary;
+historyBotPanelCommandFont: font(14px semibold);
+historyBotPanelCommandFg: brandText;
+historyBotPanelTitleFont: font(14px semibold);
+historyBotPanelTextFont: font(13px);
+historyBotPanelTextFg: textSecondary;
+historyBotPanelLetterFont: font(17px semibold);
+historyBotPanelLetterBg: bgSunken;
+historyBotIntroMaxWidth: 340px;
+historyBotIntroMargin: 24px;
+historyBotIntroPadding: margins(18px, 14px, 18px, 16px);
+historyBotIntroRadius: 14px;
+historyBotIntroTitleFont: font(14px semibold);
+historyBotIntroTitleSkip: 8px;
+historyBotIntroTextStyle: TextStyle(defaultTextStyle) {
+	font: font(13px);
+	lineHeight: 20px;
+	linkFg: staticWhite;
+	linkUnderline: true;
+}

@@ -115,6 +115,7 @@ QString Upload::PurposeName(UploadPurpose purpose) {
 	case UploadPurpose::Post: return u"post"_s;
 	case UploadPurpose::Chat: return u"chat"_s;
 	case UploadPurpose::Conversation: return u"conversation"_s;
+	case UploadPurpose::Story: return u"story"_s;
 	}
 	return u"chat"_s;
 }
@@ -596,9 +597,66 @@ void Upload::complete(Id id) {
 		.send());
 }
 
+void Upload::mediaProcessed(
+		const QString &mediaId,
+		const QString &state,
+		const QString &reason) {
+	if (mediaId.isEmpty() || (state != u"ready" && state != u"rejected")) {
+		return;
+	}
+	_processed.erase(std::remove_if(_processed.begin(), _processed.end(), [&](const auto &entry) {
+		return entry.first == mediaId;
+	}), _processed.end());
+	_processed.push_back({ mediaId, { state, reason } });
+	if (_processed.size() > size_t(kRememberProcessed)) {
+		_processed.erase(_processed.begin());
+	}
+	for (const auto &[id, current] : _jobs) {
+		if (current->mediaId == mediaId && current->readyAttempt > 0) {
+			// Waiting between polls (or for one): the answer is here.
+			applyProcessed(id);
+			return;
+		}
+	}
+}
+
+bool Upload::applyProcessed(Id id) {
+	const auto current = job(id);
+	if (!current || current->mediaId.isEmpty()) {
+		return false;
+	}
+	const auto i = std::find_if(_processed.begin(), _processed.end(), [&](const auto &entry) {
+		return entry.first == current->mediaId;
+	});
+	if (i == _processed.end()) {
+		return false;
+	}
+	const auto [state, reason] = i->second;
+	_processed.erase(i);
+	if (state == u"ready") {
+		finish(id);
+	} else {
+		qInfo("Data: media %s rejected: %s", qPrintable(current->mediaId), qPrintable(reason));
+		fail(id, Api::Error::Local(422, u"media.rejected"_s, u"this file cannot be sent"_s));
+	}
+	return true;
+}
+
 void Upload::waitUntilReady(Id id) {
 	const auto current = job(id);
 	if (!current) {
+		return;
+	}
+	const auto known = std::any_of(_processed.cbegin(), _processed.cend(), [&](const auto &entry) {
+		return entry.first == current->mediaId;
+	});
+	if (known) {
+		// The signal came first. Not from inside the poll timer's own
+		// callback: finishing destroys the job and its timer.
+		++current->readyAttempt;
+		QTimer::singleShot(0, this, [=, this] {
+			applyProcessed(id);
+		});
 		return;
 	}
 	if (current->readyAttempt >= kReadyAttempts) {

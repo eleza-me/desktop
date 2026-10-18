@@ -1,5 +1,6 @@
 // A bot's reply keyboard: rows of buttons under the message field. Pressing
-// one sends its text as a message.
+// one sends its text as a message. Without `resize_keyboard` the keys are as
+// tall as a keyboard's keys; with it they fit their text.
 //
 //   _keyboard = Ui::CreateChild<BotKeyboard>(this);
 //   _keyboard->setRows(markup.keyboard);
@@ -22,6 +23,7 @@ public:
 	explicit BotKeyboard(QWidget *parent);
 
 	void setRows(const QVector<QStringList> &rows);
+	void setResize(bool resize);
 	[[nodiscard]] bool empty() const {
 		return _buttons.empty();
 	}
@@ -50,6 +52,7 @@ private:
 	void setHovered(int index);
 
 	QVector<QStringList> _rows;
+	bool _resize = true;
 	std::vector<Button> _buttons;
 	Fn<void(const QString &text)> _pressedCallback;
 	int _hovered = -1;

@@ -10,6 +10,27 @@
   "CallbackAnswer": [
     "answered"
   ],
+  "CallsActiveResponse": [
+    "call",
+    "created_at",
+    "peer",
+    "role",
+    "state"
+  ],
+  "CallsGetResponse": [
+    "call",
+    "created_at",
+    "outgoing",
+    "peer",
+    "state"
+  ],
+  "CallsIncomingResponse": [
+    "call",
+    "created_at",
+    "outgoing",
+    "peer",
+    "state"
+  ],
   "CardOut": [
     "display_name"
   ],
@@ -84,6 +105,76 @@
     "state",
     "topic"
   ],
+  "Doc": [
+    "accessibility",
+    "discovery",
+    "media",
+    "messages",
+    "notifications",
+    "privacy"
+  ],
+  "DocAccessibility": [
+    "auto_transcription"
+  ],
+  "DocDiscovery": [
+    "province_code",
+    "region_mode",
+    "show_province_on_profile"
+  ],
+  "DocMedia": [
+    "autodownload_wifi_only",
+    "autoplay_video_notes",
+    "autoplay_videos"
+  ],
+  "DocMessages": [
+    "suggest_continue"
+  ],
+  "DocNotifications": [
+    "contacts",
+    "conversations",
+    "eli",
+    "general",
+    "quiet_hours"
+  ],
+  "DocNotificationsContacts": [
+    "joined"
+  ],
+  "DocNotificationsConversations": [
+    "enabled",
+    "joined",
+    "new_message",
+    "one_hour_left"
+  ],
+  "DocNotificationsEli": [
+    "likes",
+    "new_followers",
+    "replies_mentions",
+    "reposts_quotes",
+    "subscribed_posts"
+  ],
+  "DocNotificationsGeneral": [
+    "lock_screen_preview",
+    "sound",
+    "vibrate"
+  ],
+  "DocPrivacy": [
+    "birthday_show_year",
+    "birthday_visibility",
+    "calls",
+    "conversation_join",
+    "conversation_masked_join_allowed",
+    "find_by_phone",
+    "group_add",
+    "last_seen",
+    "mentions",
+    "messages",
+    "phone_number",
+    "private_account",
+    "read_receipts_and_online",
+    "reply_default",
+    "show_conversations_on_profile",
+    "show_in_suggestions"
+  ],
   "DraftUpdate": [
     "chat"
   ],
@@ -109,9 +200,23 @@
     "chat",
     "seq"
   ],
+  "GroupAdminLogEntry": [
+    "action",
+    "actor",
+    "at",
+    "id"
+  ],
+  "GroupDecideFailure": [
+    "reason",
+    "user"
+  ],
   "GroupEntry": [
     "group",
     "last_activity_at"
+  ],
+  "GroupInfoData": [
+    "group",
+    "member_count"
   ],
   "GroupInvite": [
     "created_at",
@@ -119,6 +224,10 @@
     "link",
     "url",
     "uses"
+  ],
+  "GroupInviteMember": [
+    "joined_at",
+    "user"
   ],
   "GroupInvitePreview": [
     "member_count",
@@ -132,6 +241,9 @@
   "GroupKnownIn": [
     "group",
     "pts"
+  ],
+  "GroupMediaPage": [
+    "messages"
   ],
   "GroupMember": [
     "rights",
@@ -152,6 +264,15 @@
     "pinned_by",
     "seq"
   ],
+  "GroupReactionData": [
+    "group",
+    "seq"
+  ],
+  "GroupReactionEntry": [
+    "at",
+    "emoji",
+    "user"
+  ],
   "GroupSelfData": [
     "group"
   ],
@@ -166,7 +287,21 @@
     "notify",
     "pinned"
   ],
+  "GroupSeqData": [
+    "group",
+    "seq"
+  ],
+  "GroupSeqsData": [
+    "group",
+    "seqs"
+  ],
+  "GroupSignal": [
+    "group",
+    "kind",
+    "pts"
+  ],
   "GroupView": [
+    "admin_count",
     "can_send",
     "created_at",
     "default_permissions",
@@ -187,6 +322,9 @@
     "title",
     "unread",
     "unread_mentions"
+  ],
+  "GroupsAdminLogResponse": [
+    "entries"
   ],
   "GroupsAdminSetRequest": [
     "rights"
@@ -219,8 +357,25 @@
   "GroupsEditRequest": [
     "text"
   ],
+  "GroupsInvitesMembersResponse": [
+    "members"
+  ],
   "GroupsInvitesResponse": [
     "invites"
+  ],
+  "GroupsJoinRequestsApproveManyRequest": [
+    "users"
+  ],
+  "GroupsJoinRequestsApproveManyResponse": [
+    "done",
+    "failed"
+  ],
+  "GroupsJoinRequestsDeclineManyRequest": [
+    "users"
+  ],
+  "GroupsJoinRequestsDeclineManyResponse": [
+    "done",
+    "failed"
   ],
   "GroupsJoinRequestsResponse": [
     "requests"
@@ -243,6 +398,9 @@
   ],
   "GroupsPinsResponse": [
     "pins"
+  ],
+  "GroupsReactionsResponse": [
+    "reactions"
   ],
   "GroupsRestrictRequest": [
     "denied"
@@ -281,6 +439,12 @@
     "query_id",
     "result_id"
   ],
+  "Join": [
+    "call",
+    "peer",
+    "relay_only",
+    "state"
+  ],
   "KeyButton": [
     "text"
   ],
@@ -311,6 +475,10 @@
     "posts",
     "verified",
     "visibility"
+  ],
+  "MeSettingsResponse": [
+    "settings",
+    "version"
   ],
   "MemberData": [
     "archived",
@@ -390,6 +558,16 @@
     "verified",
     "visibility"
   ],
+  "PushRegisterRequest": [
+    "provider",
+    "token"
+  ],
+  "QuietHours": [
+    "enabled",
+    "end",
+    "start",
+    "tz"
+  ],
   "Quote": [
     "offset",
     "text"
@@ -412,6 +590,91 @@
     "url",
     "width"
   ],
+  "StoriesCloseFriendsResponse": [
+    "users"
+  ],
+  "StoriesCreateResponse": [
+    "audience",
+    "can_reply",
+    "created_at",
+    "expires_at",
+    "id",
+    "kind",
+    "seen"
+  ],
+  "StoriesHiddenResponse": [
+    "users"
+  ],
+  "StoriesReactRequest": [
+    "emoji"
+  ],
+  "StoriesReplyRequest": [
+    "text"
+  ],
+  "StoriesReplyResponse": [
+    "chat",
+    "seq"
+  ],
+  "StoriesSeenRequest": [
+    "ids"
+  ],
+  "StoriesSettingsResponse": [
+    "close_friends_count",
+    "hidden_count",
+    "replies"
+  ],
+  "StoriesSettingsUpdateResponse": [
+    "close_friends_count",
+    "hidden_count",
+    "replies"
+  ],
+  "StoriesTrayResponse": [
+    "items",
+    "me"
+  ],
+  "StoriesUserResponse": [
+    "stories",
+    "user"
+  ],
+  "StoriesViewersResponse": [
+    "total",
+    "viewers"
+  ],
+  "StoryMediaOut": [
+    "duration_ms",
+    "height",
+    "thumb_url",
+    "url",
+    "width"
+  ],
+  "StoryOut": [
+    "audience",
+    "can_reply",
+    "created_at",
+    "expires_at",
+    "id",
+    "kind",
+    "seen"
+  ],
+  "StoryPostOut": [
+    "available",
+    "id",
+    "text_excerpt"
+  ],
+  "StoryRefView": [
+    "expires_at",
+    "kind",
+    "owner",
+    "story_id"
+  ],
+  "StoryUser": [
+    "display_name",
+    "id"
+  ],
+  "StoryViewerOut": [
+    "user",
+    "viewed_at"
+  ],
   "SyncDifferenceResponse": [
     "pts",
     "too_long",
@@ -419,6 +682,27 @@
   ],
   "SyncStateResponse": [
     "pts"
+  ],
+  "TURNCredential": [
+    "credential",
+    "expires_at",
+    "urls",
+    "username"
+  ],
+  "TrayItemOut": [
+    "close_friends",
+    "count",
+    "latest_at",
+    "muted",
+    "unseen",
+    "user"
+  ],
+  "TrayMeOut": [
+    "close_friends",
+    "count",
+    "has_unseen_by_me",
+    "latest_at",
+    "user"
   ],
   "Update": [
     "chat",

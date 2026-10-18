@@ -9,6 +9,7 @@ nothing else is downloaded during the build.
 | Compiler | GCC 13 (Ubuntu 24.04) | MSVC 2022 (v143), x64 |
 | Qt | the distribution's Qt 6 (6.4.2 on Ubuntu 24.04) | 6.7.3, the `msvc2019_64` kit |
 | OpenSSL | `libssl-dev` | vcpkg manifest (`vcpkg.json`) |
+| rlottie (optional) | `librlottie-dev` | vcpkg manifest (`vcpkg.json`) |
 | Status | built, run and tested by the authors | **built and tested only by CI** (see below) |
 
 **About the Windows build.** The Windows steps below are the ones the CI job runs
@@ -47,6 +48,26 @@ The Linux binary needs glibc 2.28 or newer and the usual `libstdc++` / `libgcc_s
 one imports system DLLs only (no C++ runtime DLLs). Sound devices are Qt Multimedia's: the
 audio server of the system (PipeWire / PulseAudio, WASAPI).
 
+## Animated stickers: rlottie (optional)
+
+Stickers come in three kinds (the server's ADR-0039): a still picture, an animated WebP and
+a Lottie animation (`.tgs`, gzipped JSON). The app tells them apart from the bytes
+(`data/data_sticker_decode.h`). Still pictures and animated WebP need nothing beyond Qt's
+WebP plugin (`qt6-image-formats-plugins` / `qtimageformats`): the app composes the WebP
+frames itself. Lottie needs [rlottie](https://github.com/Samsung/rlottie) (MIT / LGPL-2.1
+parts, a shared library):
+
+* CMake looks for it while configuring (`find_package(rlottie CONFIG)`, then
+  `pkg-config rlottie`) and says `Lottie stickers: rlottie found` or `… not found`;
+* found: `ElezaCore` links it and is compiled with `ELEZA_HAVE_RLOTTIE`;
+* not found, or `-DELEZA_ENABLE_RLOTTIE=OFF`: the build goes on, a Lottie sticker shows its
+  emoji (the log says once that this build has no rlottie), animated WebP still plays.
+
+The test `test_sticker_decode` plays a small `.tgs` fixture when rlottie is there and skips
+that case otherwise. A build that has rlottie needs the library at run time: the `.deb`
+depends on it (`dpkg-shlibdeps`), the portable Linux build expects the system's
+`librlottie0-1`, the Windows folder carries `rlottie.dll` (below).
+
 ## Linux
 
 ### Packages (Ubuntu 24.04)
@@ -56,13 +77,16 @@ sudo apt-get install \
   build-essential cmake ninja-build \
   qt6-base-dev qt6-base-dev-tools qt6-svg-dev qt6-multimedia-dev qt6-websockets-dev \
   libqt6sql6-sqlite qt6-image-formats-plugins \
-  libssl-dev libgl1-mesa-dev libxkbcommon-dev
+  libssl-dev libgl1-mesa-dev libxkbcommon-dev \
+  librlottie-dev
 ```
 
 * `libqt6sql6-sqlite` is the SQLite driver of Qt SQL (the local cache); it is a run-time
   plugin, the build does not notice when it is missing.
 * `qt6-image-formats-plugins` brings the WebP decoder: the server stores stickers as WebP.
   Without it stickers stay empty.
+* `librlottie-dev` is optional: it plays Lottie (`.tgs`) stickers ("Animated stickers"
+  above).
 * `xvfb` is only needed to run the GUI tests under a real X server; they run on the
   `offscreen` platform by default.
 * `ccache` is optional: add `-DCMAKE_CXX_COMPILER_LAUNCHER=ccache`.
@@ -189,7 +213,7 @@ package manager and only announces new versions.
    The kit is called `msvc2019_64` up to Qt 6.7 and is the one to use with MSVC 2022 (the
    two are binary compatible); from Qt 6.8 on it is `msvc2022_64`. Qt SVG is part of the
    base package in Qt 6: there is no `qtsvg` module to add.
-3. **vcpkg** for OpenSSL:
+3. **vcpkg** for OpenSSL and rlottie:
 
    ```bat
    git clone https://github.com/microsoft/vcpkg C:\vcpkg
@@ -198,7 +222,7 @@ package manager and only announces new versions.
 
    Nothing has to be installed by hand: the manifest (`vcpkg.json`) is resolved while CMake
    configures, into `build\windows-msvc-release\vcpkg_installed`. The first configure builds
-   OpenSSL and takes several minutes.
+   OpenSSL and rlottie and takes several minutes.
 
 ### Build and test
 
@@ -246,13 +270,16 @@ copy build\windows-msvc-release\Eleza\livekit_ffi-LICENSE.md dist\Eleza\
 windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw --no-compiler-runtime dist\Eleza\Eleza.exe
 copy build\windows-msvc-release\vcpkg_installed\x64-windows\bin\libcrypto-3-x64.dll dist\Eleza\
 copy build\windows-msvc-release\vcpkg_installed\x64-windows\bin\libssl-3-x64.dll dist\Eleza\
+copy build\windows-msvc-release\vcpkg_installed\x64-windows\bin\rlottie.dll dist\Eleza\
 copy "%VCToolsRedistDir%x64\Microsoft.VC143.CRT\*.dll" dist\Eleza\
 ```
 
 `Updater.exe` is the small program that swaps the files when the app updates itself
 (`lib/install`, no Qt, static C++ runtime: it must not need the DLLs it replaces).
 `livekit_ffi.dll` is the media library of voice calls ("Voice calls: the media library"
-above); a folder without it works, with calls reported as unavailable. Then:
+above); a folder without it works, with calls reported as unavailable. `rlottie.dll` plays
+Lottie stickers; the executable links it, so it must be there whenever the build found it
+(configure with `-DELEZA_ENABLE_RLOTTIE=OFF` for a build without it). Then:
 
 ```bat
 python packaging\make-package.py dist\Eleza dist\Eleza-0.4.0-windows-x64.zip

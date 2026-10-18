@@ -282,6 +282,13 @@ eliEntryIconImage: icon {{ "image", brandPrimary, 22px }};
 eliEntryIconPoll: icon {{ "poll", brandPrimary, 22px }};
 eliEntryIconSkip: 10px;
 
+eliTopSize: 42px;
+eliTopMargin: margins(0px, 0px, 16px, 16px);
+eliTopBg: bgRaised;
+eliTopIcon: icon {{ "chevron-up", textSecondary, 26px }};
+eliTopIconOver: icon {{ "chevron-up", textPrimary, 26px }};
+eliTopShowAfter: 600px;
+
 eliPillHeight: 36px;
 eliPillTop: 12px;
 eliPillPadding: 14px;

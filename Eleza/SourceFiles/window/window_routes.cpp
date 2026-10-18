@@ -1,5 +1,6 @@
 #include "window/window_routes.h"
 
+#include <QtCore/QRegularExpression>
 #include <QtCore/QStringList>
 #include <QtCore/QUrl>
 #include <QtCore/QUrlQuery>
@@ -28,6 +29,39 @@ namespace {
 		}
 	}
 	return result;
+}
+
+const auto kStart = QStringLiteral("start");
+
+// First path segments of eleza.me that are never a handle: pages of the site
+// and the link kinds of the apps.
+[[nodiscard]] bool SitePage(const QString &segment) {
+	static const auto kPages = QStringList{
+		QStringLiteral("terms"), QStringLiteral("privacy"), QStringLiteral("download"),
+		QStringLiteral("help"), QStringLiteral("about"), QStringLiteral("support"),
+		QStringLiteral("contact"), QStringLiteral("faq"), QStringLiteral("rules"),
+		QStringLiteral("blog"), QStringLiteral("press"), QStringLiteral("jobs"),
+		QStringLiteral("app"), QStringLiteral("apps"), QStringLiteral("android"),
+		QStringLiteral("ios"), QStringLiteral("legal"), QStringLiteral("security"),
+		QStringLiteral("status"), QStringLiteral("index.html"), QStringLiteral("robots.txt"),
+		QStringLiteral("favicon.ico"), QStringLiteral(".well-known"),
+		QStringLiteral("guidelines"), QStringLiteral("transparency"),
+		QStringLiteral("copyright"), QStringLiteral("bots"), QStringLiteral("delete-account"),
+		QStringLiteral("fa"), QStringLiteral("en"), QStringLiteral("tr"), QStringLiteral("fr"),
+		QStringLiteral("de"), QStringLiteral("ar"), QStringLiteral("_nuxt"),
+		QStringLiteral("addstickers"), QStringLiteral("tag"), QStringLiteral("c"),
+		QStringLiteral("i"), QStringLiteral("p"), QStringLiteral("s"), QStringLiteral("g"),
+		QStringLiteral("u"), QStringLiteral("chats"), QStringLiteral("eli"),
+		QStringLiteral("search"), QStringLiteral("me"), QStringLiteral("settings"),
+		QStringLiteral("login"), QStringLiteral("signup"), QStringLiteral("invite"),
+	};
+	return kPages.contains(segment.toLower());
+}
+
+[[nodiscard]] bool LooksLikeHandle(const QString &text) {
+	static const auto kHandle = QRegularExpression(
+		QStringLiteral("^@?[A-Za-z0-9_.]{2,32}$"));
+	return kHandle.match(text).hasMatch();
 }
 
 [[nodiscard]] Route Make(RouteType type, const QString &id = QString()) {
@@ -72,6 +106,15 @@ namespace {
 qint64 Route::seq() const {
 	const auto value = query.value(QStringLiteral("seq")).toLongLong();
 	return (value > 0) ? value : 0;
+}
+
+std::optional<QString> Route::botStart() const {
+	const auto i = query.constFind(kStart);
+	if (i == query.cend()
+		|| (type != RouteType::Chat && type != RouteType::Handle)) {
+		return std::nullopt;
+	}
+	return *i;
 }
 
 QString Route::toString() const {
@@ -203,6 +246,9 @@ std::optional<Route> RouteFromWebPath(
 	} else if (parts[0].startsWith(QLatin1Char('@')) && count == 1) {
 		// The public address of a profile: "/@sara".
 		result = ParseRoute(QStringLiteral("u/") + Encode(parts[0].mid(1)));
+	} else if (count == 1 && !SitePage(parts[0]) && LooksLikeHandle(parts[0])) {
+		// "/sara", and a bot's deep link "/weather_bot?start=promo".
+		result = ParseRoute(QStringLiteral("u/") + Encode(parts[0]));
 	} else if (parts[0] == QStringLiteral("p") && count == 2) {
 		// The public address of a post.
 		result = Make(RouteType::Post, parts[1]);
@@ -237,6 +283,8 @@ std::optional<Route> RouteFromWebPath(
 			result.query.insert(
 				QStringLiteral("seq"),
 				parsed.value(QStringLiteral("seq")));
+		} else if (result.type == RouteType::Handle && parsed.contains(kStart)) {
+			result.query.insert(kStart, parsed.value(kStart));
 		} else if (result.type == RouteType::Search
 			&& parsed.contains(QStringLiteral("q"))) {
 			result.query.insert(
@@ -271,6 +319,21 @@ QString Handle(const QString &handle) {
 		clean.remove(0, 1);
 	}
 	return Make(RouteType::Handle, clean.toLower()).toString();
+}
+
+QString HandleStart(const QString &handle, const QString &payload) {
+	auto route = ParseRoute(Handle(handle));
+	if (!route.valid()) {
+		return QString();
+	}
+	route.query.insert(kStart, payload);
+	return route.toString();
+}
+
+QString BotStart(const QString &chatId, const QString &payload) {
+	auto route = Make(RouteType::Chat, chatId);
+	route.query.insert(kStart, payload);
+	return route.toString();
 }
 
 QString Eli() {
@@ -327,6 +390,25 @@ QString NewGroup() {
 
 QString Group(const QString &groupId) {
 	return Make(RouteType::Group, groupId).toString();
+}
+
+QString GroupMedia(const QString &groupId) {
+	auto result = Make(RouteType::Group, groupId);
+	result.query.insert(QStringLiteral("show"), QStringLiteral("media"));
+	return result.toString();
+}
+
+QString GroupAdminLog(const QString &groupId) {
+	auto result = Make(RouteType::Group, groupId);
+	result.query.insert(QStringLiteral("show"), QStringLiteral("log"));
+	return result.toString();
+}
+
+QString GroupReactions(const QString &groupId, qint64 seq) {
+	auto result = Make(RouteType::Group, groupId);
+	result.query.insert(QStringLiteral("show"), QStringLiteral("reactions"));
+	result.query.insert(QStringLiteral("seq"), QString::number(seq));
+	return result.toString();
 }
 
 QString GroupInvite(const QString &token) {

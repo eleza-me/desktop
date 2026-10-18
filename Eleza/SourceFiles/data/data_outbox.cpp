@@ -73,6 +73,8 @@ void Outbox::stop() {
 	}
 	_uploads.clear();
 	_running.clear();
+	_sending.clear();
+	_albumUploadFailed.clear();
 	qDeleteAll(_retryTimers);
 	_retryTimers.clear();
 }
@@ -85,6 +87,12 @@ int Outbox::pendingCount(const QString &chat) const {
 		}
 	}
 	return result;
+}
+
+bool Outbox::holds(const QString &chat) const {
+	return std::any_of(_items.cbegin(), _items.cend(), [&](const OutboxItem &item) {
+		return item.chat == chat;
+	});
 }
 
 QVector<OutboxItem> Outbox::items() const {
@@ -154,6 +162,18 @@ QString Outbox::sendFile(const QString &chat, const QString &filePath, const Fil
 	Json::Put(item.body, "entities"_L1, Json::Array(options.entities));
 	Json::Put(item.body, "reply_to_seq"_L1, options.replyToSeq);
 	Json::Put(item.body, "media_spoiler"_L1, options.spoiler);
+	if (!options.album.isEmpty()) {
+		item.body.insert("album"_L1, options.album.toLower());
+		item.clientMessageId = AlbumClientMessageId(options.album);
+	}
+	// Only a caption of a photo / video may sit above it.
+	const auto visual = (messageKind == u"photo")
+		|| (messageKind == u"video")
+		|| (messageKind == u"gif");
+	Json::Put(
+		item.body,
+		"caption_above"_L1,
+		options.captionAbove && visual && !options.caption.isEmpty());
 	if (messageKind == u"file" && options.caption.isEmpty()) {
 		// A file shows its name.
 		item.body.insert("text"_L1, item.fileName);
@@ -200,7 +220,23 @@ QString Outbox::sendPost(const QString &chat, const QString &postId) {
 	return enqueue(std::move(item));
 }
 
-QString Outbox::forward(const QString &toChat, const Message &source) {
+QString Outbox::NewAlbumId() {
+	return base::RandomUuid();
+}
+
+QString Outbox::AlbumClientMessageId(const QString &album) {
+	const auto id = album.toLower();
+	const auto random = base::RandomUuid();
+	if (id.size() != 36 || random.size() != 36) {
+		return random;
+	}
+	return id.left(19) + u"a1b"_s + id.mid(22, 1) + random.mid(23);
+}
+
+QString Outbox::forward(
+		const QString &toChat,
+		const Message &source,
+		const QString &album) {
 	switch (source.kind) {
 	case MessageKind::Sticker:
 		return source.sticker ? sendSticker(toChat, source.sticker->id) : QString();
@@ -237,6 +273,21 @@ QString Outbox::forward(const QString &toChat, const Message &source) {
 	Json::Put(item.body, "text"_L1, source.text);
 	Json::Put(item.body, "entities"_L1, Json::Array(source.entities));
 	Json::Put(item.body, "media_spoiler"_L1, source.mediaSpoiler);
+	if (!album.isEmpty()) {
+		// Several items of an album forwarded together stay one there too.
+		const auto kind = source.kind;
+		if (kind == MessageKind::Photo
+			|| kind == MessageKind::Video
+			|| kind == MessageKind::File
+			|| kind == MessageKind::Audio) {
+			item.body.insert("album"_L1, album.toLower());
+			item.clientMessageId = AlbumClientMessageId(album);
+			Json::Put(
+				item.body,
+				"caption_above"_L1,
+				source.captionAbove && !source.text.isEmpty());
+		}
+	}
 	if (source.audio) {
 		Json::Put(item.body, "audio"_L1, source.audio->toJson());
 	}
@@ -254,10 +305,13 @@ QString Outbox::sendInlineResult(
 		const QString &chat,
 		const QString &bot,
 		const QString &queryId,
-		const QString &resultId) {
+		const QString &resultId,
+		const QString &previewText,
+		qint64 replyToSeq) {
 	auto item = OutboxItem();
 	item.chat = chat;
 	item.kind = u"text"_s;
+	item.previewText = previewText;
 	// The content comes from the bot's answer: kind and text must be absent.
 	item.body = QJsonObject{
 		{ u"inline_result"_s, QJsonObject{
@@ -266,11 +320,14 @@ QString Outbox::sendInlineResult(
 			{ u"result_id"_s, resultId },
 		} },
 	};
+	Json::Put(item.body, "reply_to_seq"_L1, replyToSeq);
 	return enqueue(std::move(item));
 }
 
 QString Outbox::enqueue(OutboxItem item) {
-	item.clientMessageId = base::RandomUuid();
+	if (item.clientMessageId.isEmpty() || _items.contains(item.clientMessageId)) {
+		item.clientMessageId = base::RandomUuid();
+	}
 	item.createdAt = base::unixtime::nowMs();
 	// Strictly increasing within the queue, whatever the clock does.
 	if (!_order.isEmpty()) {
@@ -303,9 +360,14 @@ void Outbox::show(const OutboxItem &item) {
 	message.kindName = item.kind;
 	message.kind = MessageKindFromString(item.kind);
 	message.text = Json::String(item.body, "text"_L1);
+	if (message.text.isEmpty()) {
+		message.text = item.previewText;
+	}
 	message.replyToSeq = Json::Int64(item.body, "reply_to_seq"_L1);
 	message.createdAt = item.createdAt;
 	message.mediaSpoiler = Json::Bool(item.body, "media_spoiler"_L1);
+	message.album = Json::String(item.body, "album"_L1);
+	message.captionAbove = Json::Bool(item.body, "caption_above"_L1);
 	message.entities = Json::List<Entity>(item.body.value("entities"_L1));
 	message.quote = Json::Optional<Quote>(item.body, "quote"_L1);
 	message.location = Json::Optional<Location>(item.body, "location"_L1);
@@ -386,6 +448,7 @@ void Outbox::retry(const QString &clientMessageId) {
 	i->errorCode = QString();
 	i->errorText = QString();
 	i->attempts = 0;
+	_albumUploadFailed.remove(clientMessageId);
 	persist(*i);
 	setStatus(*i, MessageStatus::Queued);
 	pumpChat(i->chat);
@@ -404,6 +467,8 @@ void Outbox::discard(const QString &clientMessageId) {
 		_session->upload().abandon(item.uploadId);
 	}
 	delete _retryTimers.take(clientMessageId);
+	_sending.remove(clientMessageId);
+	_albumUploadFailed.remove(clientMessageId);
 	_items.erase(i);
 	_order.removeAll(clientMessageId);
 	if (_running.value(item.chat) == clientMessageId) {
@@ -431,6 +496,8 @@ void Outbox::discardChat(const QString &chat) {
 			_session->upload().abandon(i->uploadId);
 		}
 		delete _retryTimers.take(id);
+		_sending.remove(id);
+		_albumUploadFailed.remove(id);
 		_items.erase(i);
 		_order.removeAll(id);
 		if (const auto db = _session->local()) {
@@ -491,11 +558,76 @@ void Outbox::pump(const QString &clientMessageId) {
 	}
 	_running.insert(i->chat, clientMessageId);
 	setStatus(*i, MessageStatus::Sending);
-	if (!i->filePath.isEmpty() && i->mediaId.isEmpty()) {
+	if (!Json::String(i->body, "album"_L1).isEmpty()) {
+		// The head tries its own upload again, whatever happened before.
+		_albumUploadFailed.remove(clientMessageId);
+		pumpAlbum(clientMessageId);
+	} else if (needsUpload(*i)) {
 		uploadFile(clientMessageId);
 	} else {
 		send(clientMessageId);
 	}
+}
+
+bool Outbox::needsUpload(const OutboxItem &item) const {
+	return !item.filePath.isEmpty() && item.mediaId.isEmpty();
+}
+
+void Outbox::pumpAlbum(const QString &clientMessageId) {
+	const auto i = _items.constFind(clientMessageId);
+	if (!_started
+		|| i == _items.cend()
+		|| i->failed
+		|| _sending.contains(clientMessageId)
+		|| _running.value(i->chat) != clientMessageId) {
+		return;
+	}
+	const auto chat = i->chat;
+	const auto album = Json::String(i->body, "album"_L1);
+	// The items of this album waiting behind the head, in queue order (an
+	// album is queued in one go: the run ends at the first other message).
+	auto members = QVector<QString>();
+	auto started = false;
+	for (const auto &id : chatQueue(chat)) {
+		const auto &other = _items[id];
+		if (id == clientMessageId) {
+			started = true;
+		}
+		if (!started || other.failed) {
+			continue;
+		} else if (Json::String(other.body, "album"_L1) != album) {
+			break;
+		}
+		members.push_back(id);
+	}
+	auto running = 0;
+	for (const auto &id : members) {
+		if (_uploads.contains(id)) {
+			++running;
+		}
+	}
+	// Uploads first, the head before the others.
+	for (const auto &id : members) {
+		if (running >= kAlbumParallelUploads) {
+			break;
+		}
+		const auto &other = _items[id];
+		if (!needsUpload(other)
+			|| _uploads.contains(id)
+			|| _albumUploadFailed.contains(id)
+			|| _retryTimers.contains(id)) {
+			continue;
+		}
+		if (id != clientMessageId) {
+			setStatus(other, MessageStatus::Sending);
+		}
+		uploadFile(id);
+		++running;
+	}
+	if (needsUpload(_items[clientMessageId]) || running > 0) {
+		return; // the rest when an upload ends
+	}
+	send(clientMessageId);
 }
 
 void Outbox::uploadFile(const QString &clientMessageId) {
@@ -534,11 +666,27 @@ void Outbox::uploadFile(const QString &clientMessageId) {
 		i->mediaId = result.mediaId;
 		i->body.insert("attachment"_L1, result.mediaId);
 		persist(*i);
-		send(clientMessageId);
+		if (Json::String(i->body, "album"_L1).isEmpty()) {
+			send(clientMessageId);
+		} else if (const auto head = _running.value(chat); !head.isEmpty()) {
+			pumpAlbum(head);
+		}
 	};
 	callbacks.fail = [=, this](const Api::Error &error) {
 		_uploads.remove(clientMessageId);
-		errored(clientMessageId, error);
+		const auto head = _running.value(chat);
+		if (head.isEmpty() || head == clientMessageId) {
+			errored(clientMessageId, error);
+			return;
+		}
+		// Another item of the album being sent: it tries again (and fails
+		// on its own) when its turn comes; the album goes on without it.
+		_albumUploadFailed.insert(clientMessageId);
+		const auto i = _items.constFind(clientMessageId);
+		if (i != _items.cend()) {
+			setStatus(*i, MessageStatus::Queued);
+		}
+		pumpAlbum(head);
 	};
 	_uploads.insert(clientMessageId, _session->upload().start(request, this, std::move(callbacks)));
 }
@@ -553,6 +701,7 @@ void Outbox::send(const QString &clientMessageId) {
 	const auto group = IsGroupId(i->chat);
 	body.insert(group ? "group"_L1 : "chat"_L1, i->chat);
 	body.insert("client_message_id"_L1, clientMessageId);
+	_sending.insert(clientMessageId);
 	// Over the connection or HTTP: the same id either way, so the server
 	// answers a repeat with `duplicate` instead of a second message.
 	_session->transport().rpc(group ? u"groups.send"_s : u"chat.send"_s)
@@ -569,6 +718,7 @@ void Outbox::send(const QString &clientMessageId) {
 }
 
 void Outbox::succeeded(const QString &clientMessageId, const QJsonObject &result) {
+	_sending.remove(clientMessageId);
 	const auto i = _items.find(clientMessageId);
 	if (i == _items.end()) {
 		return;
@@ -625,6 +775,7 @@ void Outbox::succeeded(const QString &clientMessageId, const QJsonObject &result
 }
 
 void Outbox::errored(const QString &clientMessageId, const Api::Error &error) {
+	_sending.remove(clientMessageId);
 	auto i = _items.find(clientMessageId);
 	if (i == _items.end()) {
 		return;

@@ -139,6 +139,7 @@ to answer every "open" dialog at once and `ELEZA_DEBUG_SAVE=/path/out.bin` for "
 | `debug/crop`, `debug/about`, `debug/peers`, `debug/peers-multi` | the shared boxes |
 | `debug/logout`, `debug/link`, `debug/error`, `debug/upgrade` | sign-out confirmation, external link confirmation, an error toast, the "update required" screen |
 | `debug/session-expired` | ends the session as the server would |
+| `debug/stories-sample`, `debug/stories/<user>`, `debug/story/<owner>/<story>`, `debug/story-compose?file=<path>`, `debug/story-share/<post>`, `debug/story-viewers/<story>`, `debug/story-settings` | stories: a made-up tray and stories (no server), the viewer, the boxes, the settings page |
 | `debug/calls/<state>` | a voice call in a given state: the bar, the call view, the incoming window (section 12) |
 
 Add your own in your module's route handler (`route.startsWith(u"debug/…")`), inside
@@ -371,8 +372,10 @@ One string per place (`window/window_routes.h`). Never build them by hand: use
 | --- | --- | --- | --- |
 | `chats` | `Routes::Chats()` | Chats | dialogs |
 | `chat/<chatId>[?seq=N]` | `Routes::Chat(id, seq)` | Chats | history |
+| `chat/<chatId>?start=<payload>` | `Routes::BotStart(id, payload)` | Chats | history (a bot's chat with «شروع» waiting) |
 | `user/<userId>` | `Routes::User(id)` | current | profile |
 | `u/<handle>` | `Routes::Handle(handle)` | current | profile |
+| `u/<handle>?start=<payload>` | `Routes::HandleStart(handle, payload)` | Chats | profile (a bot's deep link `eleza.me/<bot>?start=…`: resolves the handle, opens the chat with «شروع»; a person's profile otherwise) |
 | `eli` | `Routes::Eli()` | Eli | eli |
 | `eli/post/<postId>` | `Routes::Post(id)` | Eli | eli |
 | `eli/share/<slug>` | `Routes::SharedPost(slug)` | Eli | eli (resolves the share link, then opens the post) |
@@ -620,6 +623,17 @@ void Conversations::end(id, …);  requestContinue(id, guard, done, fail);  bloc
 void Conversations::findChat(const QString &conversationId, base::Guard guard, Fn<void(const QString &)> done, int timeoutMs = 6000);
 signals: stateChanged(chat, state, event), openListChanged(category)
 
+// ---- stories (data/data_stories.h): rt `stories.*`, media through MediaRef::Story
+bool Stories::enabled() const;   // client-config `feature.stories`
+const StoryTrayMe &me() const;  const QVector<StoryTrayItem> &tray() const;  refreshTray();  loadMoreTray();
+StoryRing ring(userId) const;   // tray > loaded stories > feed author hints; ringsChanged(ids)
+void loadUser(userId, guard, done(const UserStories &), fail);  markSeen(storyId);  flushSeen();
+react / unreact / reply / viewers / deleteStory / create / post(PostStoryRequest) / setMuted / hidden / setHidden
+closeFriends / setCloseFriend / updateCloseFriends / settings / updateSettings
+signals: trayChanged(), ringsChanged(ids), userStoriesChanged(userId), postingChanged(), posted(story)
+// UI: Stories::OpenUserStories(controller, userId, queue), Stories::OpenStory, Stories::ShowComposeBox,
+// Stories::ShareToStory, Stories::PaintRing (stories/).
+
 // ---- notifications (data/data_notifications.h)
 int Notifications::unread() const;   int kind(const QString &name) const;
 void Notifications::load(const QString &tab, qint64 before, base::Guard guard, Fn<void(const QVector<NotificationEntry> &)> done, FailCallback fail = nullptr);  // "" | "mentions" | "requests"
@@ -629,6 +643,16 @@ void Notifications::markAllRead();        signal: unreadChanged()
 void Stickers::load(base::Guard guard = {}, Fn<void()> done = nullptr);
 const QVector<StickerPack> &Stickers::packs() const;  QVector<StickerPack> installedPacks() const;  const QVector<Sticker> &recent() const;
 void Stickers::setInstalled(const QString &packId, bool installed);  noteUsed(const Sticker &sticker);     signal: changed()
+
+// ---- bots (data/data_bots.h; HTTP only)
+const BotInfo *Bots::info(const QString &botId) const;     // GET /v1/bots/{id}, cached (refreshed after 10 min)
+void Bots::load(botId, guard, Fn<void(const BotInfo &)> done, FailCallback fail = nullptr);
+HandleState Bots::handleState(handle) const;  const BotInfo *byHandle(handle) const;  void resolve(handle, guard, done);
+void Bots::inlineQuery(botId, query, offset, guard, Fn<void(const InlineResults &)> done, FailCallback fail = nullptr);
+QString Outbox::sendInlineResult(chat, bot, queryId, resultId, previewText = {}, replyToSeq = 0);   // inline_result
+signal: changed(botId)
+// The chat screen's rules for bots (inline queries, commands, «شروع», buttons) are plain
+// functions in history/history_bot_logic.h (tests/app/test_history_bots.cpp).
 
 // ---- sync (data/data_sync.h)
 bool Sync::updating() const;     signals: updatingChanged(bool), messageReceived(const Data::Message &)

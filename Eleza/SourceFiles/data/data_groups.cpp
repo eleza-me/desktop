@@ -435,6 +435,9 @@ bool Groups::applyFrame(
 		const auto owner = Json::String(data, "owner"_L1);
 		const auto member = data.value("member"_L1).toObject();
 		const auto defaults = data.contains("default_permissions"_L1);
+		const auto slow = data.contains("slow_mode_s"_L1);
+		// `members_hidden` is mine alone: the header says it.
+		const auto hide = data.contains("hide_members"_L1);
 		chats.patch(group, [&](Chat &c) {
 			if (!c.group) {
 				return;
@@ -451,18 +454,30 @@ bool Groups::applyFrame(
 			if (defaults) {
 				c.group->defaultPermissions = Json::Strings(data.value("default_permissions"_L1));
 			}
+			if (data.contains("slow_mode_s"_L1)) {
+				c.group->slowModeS = Json::Int(data, "slow_mode_s"_L1);
+			}
+			if (hide) {
+				c.group->hideMembers = Json::Bool(data, "hide_members"_L1);
+			}
 		});
 		// The ownership moved, my own role changed, or the defaults did:
 		// what they leave me is in the header.
 		headerDirty = !owner.isEmpty()
 			|| (Json::String(member, "user"_L1) == me && !me.isEmpty())
-			|| defaults;
+			|| defaults
+			|| slow
+			|| hide;
 		// A list on screen reads itself again for a new owner, a new or
 		// former admin and — when the frame names nothing — a join / leave
 		// in a group too large for notes.
 		people = !owner.isEmpty()
 			|| !member.isEmpty()
-			|| (!data.contains("about"_L1) && !data.contains("history_visible"_L1) && !defaults);
+			|| hide
+			|| (!data.contains("about"_L1)
+				&& !data.contains("history_visible"_L1)
+				&& !defaults
+				&& !slow);
 	} else if (kind == u"purged") {
 		// The group was deleted: its last frame. Nothing of it stays.
 		drop(group, u"deleted"_s);
@@ -505,7 +520,8 @@ void Groups::applyMessageFrame(const QString &group, const QJsonObject &data, bo
 	const auto mine = message.mine;
 	const auto isNew = message.seq > row->lastSeq;
 	const auto visible = message.visible();
-	const auto onScreen = (chats.visibleChat() == group);
+	// On screen with its newest message in view: read as it comes.
+	const auto onScreen = chats.readingLive(group);
 	const auto service = (message.kind == MessageKind::System);
 	const auto delta = service ? GroupRules::MemberDelta(message.system) : 0;
 	const auto pinned = service ? GroupRules::NotePinnedSeq(message.system) : 0;
@@ -792,7 +808,8 @@ void Groups::applyDifference(
 	const auto lastSeqBefore = row->lastSeq;
 	const auto lastReadBefore = row->lastReadSeq;
 	const auto rowBehind = (newPts > row->groupPts);
-	const auto onScreen = (chats.visibleChat() == group);
+	// On screen with its newest message in view: read as it comes.
+	const auto onScreen = chats.readingLive(group);
 	auto changes = QVector<GroupRules::Change>();
 	auto changed = QVector<Message>();
 	auto gone = QVector<qint64>();
@@ -1440,6 +1457,26 @@ void Groups::historyPage(const Group &header, bool newest) {
 	}
 }
 
+void Groups::applyAdminSignal(
+		const QString &group,
+		const QString &kind,
+		int count,
+		const QString &user) {
+	if (!_started || !enabled() || !held(group)) {
+		return;
+	} else if (kind != u"join_requests") {
+		// Something newer than this client knows: the header tells.
+		refreshHeader(group);
+		return;
+	}
+	_session->chats().patch(group, [&](Chat &c) {
+		if (c.group) {
+			c.group->joinRequests = std::max(count, 0);
+		}
+	});
+	Q_EMIT joinRequestsChanged(group, user);
+}
+
 void Groups::refreshHeader(const QString &group) {
 	if (!_started || !enabled() || !IsGroupId(group) || _headerRequests.contains(group)) {
 		return;
@@ -1766,6 +1803,7 @@ void Groups::loadMembers(
 		auto page = GroupMembersPage();
 		page.members = Json::List<GroupMember>(result.value("members"_L1));
 		page.nextCursor = Json::String(result, "next_cursor"_L1);
+		page.membersHidden = Json::Bool(result, "members_hidden"_L1);
 		auto ids = QStringList();
 		for (const auto &member : std::as_const(page.members)) {
 			ids.push_back(member.user);
@@ -2152,6 +2190,260 @@ void Groups::decideJoinRequest(
 		if (done) {
 			done();
 		}
+	}, std::move(fail));
+}
+
+// ---- the third release
+
+bool Groups::thirdRelease() const {
+	const auto config = _session->clientConfig();
+	if (!config || !administration()) {
+		return false;
+	}
+	const auto found = config->value(u"groups.admin_log.page_size"_s);
+	return !found.isUndefined() && !found.isNull();
+}
+
+QVector<int> Groups::slowModeSteps() const {
+	const auto config = _session->clientConfig();
+	return GroupAdminLog::SlowModeSteps(config
+		? config->strings(u"groups.slow_mode.values"_s)
+		: QStringList());
+}
+
+int Groups::joinRequestsBulkMax() const {
+	const auto config = _session->clientConfig();
+	const auto value = config
+		? int(config->integer(u"groups.join_requests.bulk_max"_s, 100))
+		: 100;
+	return std::clamp(value, 1, 500);
+}
+
+void Groups::setSlowMode(
+		const QString &group,
+		int seconds,
+		base::Guard guard,
+		Fn<void(const Group &)> done,
+		Fail fail) {
+	auto body = QJsonObject{ { u"group"_s, group } };
+	Json::Put(body, "seconds"_L1, std::max(seconds, 0));
+	call(u"groups.slow_mode"_s, group, body, guard, [=, this](const QJsonObject &result) {
+		const auto header = Group::FromJson(result);
+		if (header.valid()) {
+			applyHeader(header);
+		} else {
+			refreshHeader(group);
+		}
+		if (done) {
+			done(header);
+		}
+	}, std::move(fail));
+}
+
+void Groups::setHideMembers(
+		const QString &group,
+		bool hidden,
+		base::Guard guard,
+		Fn<void(const Group &)> done,
+		Fail fail) {
+	auto body = QJsonObject{ { u"group"_s, group } };
+	Json::Put(body, "hidden"_L1, hidden);
+	call(u"groups.hide_members"_s, group, body, guard, [=, this](const QJsonObject &result) {
+		const auto header = Group::FromJson(result);
+		if (header.valid()) {
+			applyHeader(header);
+		} else {
+			refreshHeader(group);
+		}
+		Q_EMIT membersChanged(group);
+		if (done) {
+			done(header);
+		}
+	}, std::move(fail));
+}
+
+void Groups::loadAdminLog(
+		const QString &group,
+		const QString &admin,
+		const QString &actions,
+		const QString &cursor,
+		base::Guard guard,
+		Fn<void(const GroupAdminLogPage &)> done,
+		Fail fail) {
+	auto body = QJsonObject{ { u"group"_s, group } };
+	Json::Put(body, "admin"_L1, admin);
+	Json::Put(body, "actions"_L1, actions);
+	Json::Put(body, "cursor"_L1, cursor);
+	call(u"groups.admin_log"_s, group, body, guard, [=, this](const QJsonObject &result) {
+		auto page = GroupAdminLogPage();
+		page.entries = Json::List<GroupAdminLogEntry>(result.value("entries"_L1));
+		page.nextCursor = Json::String(result, "next_cursor"_L1);
+		auto ids = QStringList();
+		for (const auto &entry : std::as_const(page.entries)) {
+			ids.push_back(entry.actor);
+			if (!entry.target.isEmpty()) {
+				ids.push_back(entry.target);
+			}
+		}
+		ids.removeDuplicates();
+		ids.removeAll(QString());
+		_session->users().ensure(ids, guard, [=] {
+			if (done) {
+				done(page);
+			}
+		});
+	}, std::move(fail));
+}
+
+void Groups::loadMedia(
+		const QString &group,
+		const QStringList &kinds,
+		qint64 before,
+		base::Guard guard,
+		Fn<void(const GroupMediaPage &)> done,
+		Fail fail) {
+	auto body = QJsonObject{
+		{ u"group"_s, group },
+		{ u"kinds"_s, kinds.join(u',') },
+	};
+	if (before > 0) {
+		body.insert(u"before"_s, QString::number(before));
+	}
+	call(u"groups.media"_s, group, body, guard, [=, this](const QJsonObject &result) {
+		auto page = GroupMediaPage();
+		page.hasMoreBefore = Json::Bool(result, "has_more_before"_L1);
+		const auto row = _session->chats().chat(group);
+		const auto info = row ? row->info : InfoFor(Group());
+		const auto me = _session->userId();
+		for (const auto &item : result.value("messages"_L1).toArray()) {
+			auto message = Message::FromJson(item.toObject());
+			if (message.seq <= 0 || !message.visible()) {
+				continue;
+			}
+			if (message.chat.isEmpty()) {
+				message.chat = group;
+			}
+			message.resolveLocal(&info, me);
+			page.messages.push_back(std::move(message));
+		}
+		if (done) {
+			done(page);
+		}
+	}, std::move(fail));
+}
+
+void Groups::loadReactions(
+		const QString &group,
+		qint64 seq,
+		const QString &emoji,
+		const QString &cursor,
+		base::Guard guard,
+		Fn<void(const GroupReactionsPage &)> done,
+		Fail fail) {
+	auto body = QJsonObject{
+		{ u"group"_s, group },
+		{ u"seq"_s, QString::number(seq) },
+	};
+	Json::Put(body, "emoji"_L1, emoji);
+	Json::Put(body, "cursor"_L1, cursor);
+	call(u"groups.reactions"_s, group, body, guard, [=, this](const QJsonObject &result) {
+		auto page = GroupReactionsPage();
+		page.reactions = Json::List<GroupReaction>(result.value("reactions"_L1));
+		page.nextCursor = Json::String(result, "next_cursor"_L1);
+		auto ids = QStringList();
+		for (const auto &reaction : std::as_const(page.reactions)) {
+			ids.push_back(reaction.user);
+		}
+		_session->users().ensure(ids, guard, [=] {
+			if (done) {
+				done(page);
+			}
+		});
+	}, std::move(fail));
+}
+
+void Groups::decideJoinRequests(
+		const QString &group,
+		const QStringList &users,
+		bool approve,
+		base::Guard guard,
+		Fn<void(const GroupDecideResult &)> done,
+		Fail fail) {
+	auto unique = users;
+	unique.removeDuplicates();
+	unique.removeAll(QString());
+	const auto method = approve
+		? u"groups.join_requests.approve_many"_s
+		: u"groups.join_requests.decline_many"_s;
+	const auto limit = joinRequestsBulkMax();
+	const auto total = std::make_shared<GroupDecideResult>();
+	using Step = Fn<void(QStringList)>;
+	const auto step = std::make_shared<Step>();
+	// The pending request holds the step; the step itself only a weak
+	// reference (a dropped request frees everything).
+	*step = [=, this, weak = std::weak_ptr<Step>(step)](QStringList left) {
+		if (left.isEmpty()) {
+			// The count of the waiting requests is the header's.
+			refreshHeader(group);
+			if (approve && !total->done.isEmpty()) {
+				Q_EMIT membersChanged(group);
+			}
+			if (done) {
+				done(*total);
+			}
+			return;
+		}
+		const auto strong = weak.lock();
+		if (!strong) {
+			return;
+		}
+		const auto batch = left.mid(0, limit);
+		const auto rest = left.mid(limit);
+		const auto body = QJsonObject{
+			{ u"group"_s, group },
+			{ u"users"_s, Json::Array(batch) },
+		};
+		call(method, group, body, guard, [=](const QJsonObject &result) {
+			total->done += Json::Strings(result.value("done"_L1));
+			total->failed += Json::List<GroupDecideFailure>(result.value("failed"_L1));
+			(*strong)(rest);
+		}, [=, this](const Api::Error &error) {
+			if (!total->done.isEmpty()) {
+				refreshHeader(group);
+			}
+			if (fail) {
+				fail(error);
+			}
+		});
+	};
+	(*step)(unique);
+}
+
+void Groups::loadInviteMembers(
+		const QString &group,
+		const QString &link,
+		const QString &cursor,
+		base::Guard guard,
+		Fn<void(const GroupInviteMembersPage &)> done,
+		Fail fail) {
+	auto body = QJsonObject{
+		{ u"group"_s, group },
+		{ u"link"_s, link },
+	};
+	Json::Put(body, "cursor"_L1, cursor);
+	call(u"groups.invites.members"_s, group, body, guard, [=, this](const QJsonObject &result) {
+		auto page = GroupInviteMembersPage();
+		page.members = Json::List<GroupInviteMember>(result.value("members"_L1));
+		page.nextCursor = Json::String(result, "next_cursor"_L1);
+		auto ids = QStringList();
+		for (const auto &member : std::as_const(page.members)) {
+			ids.push_back(member.user);
+		}
+		_session->users().ensure(ids, guard, [=] {
+			if (done) {
+				done(page);
+			}
+		});
 	}, std::move(fail));
 }
 
