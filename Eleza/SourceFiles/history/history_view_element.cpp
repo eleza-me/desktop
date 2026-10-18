@@ -298,7 +298,8 @@ void Element::ensureLoaded() {
 	const auto captionKind = (kind == Data::MessageKind::Photo)
 		|| (kind == Data::MessageKind::Video)
 		|| (kind == Data::MessageKind::Gif)
-		|| (kind == Data::MessageKind::ForwardedPost);
+		|| (kind == Data::MessageKind::ForwardedPost)
+		|| (kind == Data::MessageKind::StoryReply);
 	if (kind == Data::MessageKind::Unknown && _data.text.trimmed().isEmpty()) {
 		_text.setText(st::historyTextStyle, tr::lng_history_unsupported(tr::now));
 	} else if ((textKind || captionKind) && !_data.text.isEmpty()) {
@@ -488,6 +489,10 @@ int Element::estimateHeight(int width) const {
 		break;
 	case Data::MessageKind::ForwardedPost:
 		result += 110;
+		break;
+	case Data::MessageKind::StoryReply:
+	case Data::MessageKind::StoryReaction:
+		result += st::historyStoryThumb.height() + 24;
 		break;
 	case Data::MessageKind::Text:
 	case Data::MessageKind::Unknown:

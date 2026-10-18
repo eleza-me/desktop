@@ -759,6 +759,7 @@ bool HasCopyableText(const Data::Message &message) {
 	case Data::MessageKind::Video:
 	case Data::MessageKind::Gif:
 	case Data::MessageKind::ForwardedPost:
+	case Data::MessageKind::StoryReply:
 		return !message.text.trimmed().isEmpty();
 	default:
 		return false;
@@ -773,6 +774,8 @@ bool CanForward(const Data::Message &message) {
 	case Data::MessageKind::System:
 	case Data::MessageKind::Call:
 	case Data::MessageKind::LiveLocation:
+	case Data::MessageKind::StoryReply:
+	case Data::MessageKind::StoryReaction:
 	case Data::MessageKind::Unknown:
 		return false;
 	default:
