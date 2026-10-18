@@ -213,15 +213,7 @@ private Q_SLOTS:
 	}
 
 	void markupParsing() {
-		const auto markup = Data::ReplyMarkup::FromJson(QJsonDocument::fromJson(R"({
-			"inline_keyboard": [[
-				{"text":"Share","kind":"switch_inline","query":"tehran"},
-				{"text":"Here","kind":"switch_inline_current","query":""}
-			]],
-			"keyboard": [[{"text":"Today"},{"text":"Week"}]],
-			"resize": true, "persistent": true, "one_time": true,
-			"placeholder": "Pick one"
-		})").object());
+		const auto markup = Data::ReplyMarkup::FromJson(QJsonDocument::fromJson(QByteArray("{ \"inline_keyboard\": [[ {\"text\":\"Share\",\"kind\":\"switch_inline\",\"query\":\"tehran\"}, {\"text\":\"Here\",\"kind\":\"switch_inline_current\",\"query\":\"\"} ]], \"keyboard\": [[{\"text\":\"Today\"},{\"text\":\"Week\"}]], \"resize\": true, \"persistent\": true, \"one_time\": true, \"placeholder\": \"Pick one\" }")).object());
 		QCOMPARE(markup.inlineKeyboard.size(), 1);
 		QCOMPARE(
 			History::ButtonActionFor(markup.inlineKeyboard[0][0]),
@@ -237,14 +229,7 @@ private Q_SLOTS:
 	}
 
 	void botInfoParsing() {
-		const auto info = Data::BotInfo::FromJson(QJsonDocument::fromJson(R"({
-			"id":"u1","handle":"weather_bot","name":"Weather",
-			"about":"Forecasts","description":"I tell the weather.",
-			"verified":true,
-			"commands":[{"command":"today","description":"Today"},{"command":"","description":"x"},
-				{"command":"/week","description":"Week"}],
-			"inline":{"enabled":true,"placeholder":"City…"}
-		})").object());
+		const auto info = Data::BotInfo::FromJson(QJsonDocument::fromJson(QByteArray("{ \"id\":\"u1\",\"handle\":\"weather_bot\",\"name\":\"Weather\", \"about\":\"Forecasts\",\"description\":\"I tell the weather.\", \"verified\":true, \"commands\":[{\"command\":\"today\",\"description\":\"Today\"},{\"command\":\"\",\"description\":\"x\"}, {\"command\":\"/week\",\"description\":\"Week\"}], \"inline\":{\"enabled\":true,\"placeholder\":\"City…\"} }")).object());
 		QCOMPARE(info.id, u"u1"_s);
 		QCOMPARE(info.handle, u"weather_bot"_s);
 		QCOMPARE(info.description, u"I tell the weather."_s);
@@ -254,11 +239,7 @@ private Q_SLOTS:
 		QVERIFY(info.inlineEnabled);
 		QCOMPARE(info.inlinePlaceholder, u"City…"_s);
 
-		const auto page = Data::InlineResults::FromJson(QJsonDocument::fromJson(R"({
-			"query_id":"q1","next_offset":"20","answered":true,
-			"results":[{"type":"article","id":"thr","title":"Tehran","thumb_url":"https://x/t.png"},
-				{"type":"article","id":"","title":"broken"}]
-		})").object());
+		const auto page = Data::InlineResults::FromJson(QJsonDocument::fromJson(QByteArray("{ \"query_id\":\"q1\",\"next_offset\":\"20\",\"answered\":true, \"results\":[{\"type\":\"article\",\"id\":\"thr\",\"title\":\"Tehran\",\"thumb_url\":\"https://x/t.png\"}, {\"type\":\"article\",\"id\":\"\",\"title\":\"broken\"}] }")).object());
 		QCOMPARE(page.queryId, u"q1"_s);
 		QCOMPARE(page.results.size(), 1);
 		QCOMPARE(page.results[0].thumbUrl, u"https://x/t.png"_s);
