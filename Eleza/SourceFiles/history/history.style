@@ -170,6 +170,8 @@ historyCallMissedFg: statusError;
 
 // stickers, locations, shared posts
 historyStickerSize: 168px;
+historyStickerPreviewSize: 256px;
+historyStickerPreviewSkip: 24px;
 historyLocationSize: size(260px, 150px);
 historyLocationRadius: 12px;
 historyLocationPinIcon: icon {{ "location", statusError, 34px }};

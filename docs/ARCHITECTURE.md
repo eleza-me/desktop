@@ -17,7 +17,8 @@ codegen/
   lang/                   host tool: lang.strings              ->  lang_auto.h/.cpp
   scripts/                dev-time generators (python): rt schema from views.proto, icons from icons.json
 third_party/
-  miniz/                  zip reading for the update packages (MIT), built from source
+  miniz/                  zip reading for the update packages, gunzip of Lottie stickers
+                          (MIT), built from source
   livekit/                notices of the media library of voice calls (a prebuilt binary that
                           the build downloads and the app loads at run time; nothing is built)
 lib/
@@ -36,7 +37,8 @@ Eleza/
     crypto/               OpenSSL wrappers: x25519, chacha20-poly1305, sha256/hmac/hkdf, device key
     storage/              per-account SQLite cache + key/value, secure blob for tokens / device key
     data/                 typed models + stores: chats, messages, users, sync (pts), outbox, media,
-                          upload, feed, graph, conversations, notifications, stickers, calls,
+                          upload, feed, graph, conversations, notifications, stickers (and
+                          the decoders of animated ones: data_sticker_decode.h), calls,
                           groups (their own sync track: data_groups.h; the decisions as plain
                           functions: data_group_rules.h)
     lang/                 lang runtime (fa / en), number + date formatting (Persian digits, Jalali)
@@ -58,7 +60,8 @@ Eleza/
     calls/                voice and video calls (ELEZA_ENABLE_CALLS): the call state machine, the
                           media layer over the LiveKit library, the camera, the call bar / view /
                           incoming window
-    support/              shared session helpers: media images / userpics, error texts, links,
+    support/              shared session helpers: media images / userpics, sticker players
+                          (still / animated WebP / Lottie), error texts, links,
                           connection label, desktop notifications, file dialogs
 tests/                    unit tests (noise vectors, proto codec, frames, style codegen)
 ```
@@ -102,7 +105,8 @@ through `window/window_update.*`, the settings page `settings/settings_update.cp
 ## Threads
 
 Everything runs on the main (GUI) thread except: SQLite writes (one worker thread behind
-`Storage::Database`), image decoding / scaling (`QThreadPool`), file hashing for uploads, and the
+`Storage::Database`), image decoding / scaling (`QThreadPool`), the frames of animated stickers
+(two threads of `Support::StickerPlayer`), file hashing for uploads, and the
 audio of a call (one "Calls media" thread that owns the microphone, the loudspeaker and every
 call into the media library; `calls/calls_media_livekit.cpp`).
 

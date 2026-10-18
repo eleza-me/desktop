@@ -15,6 +15,7 @@
 #include "lang_auto.h"
 #include "main/main_session.h"
 #include "support/media_image.h"
+#include "support/sticker_player.h"
 #include "ui/effects/radial_animation.h"
 #include "ui/image/image_prepare.h"
 #include "ui/painter.h"
@@ -1005,18 +1006,18 @@ public:
 		return true;
 	}
 
-	std::shared_ptr<Ui::ImageSource> imageSource() const override {
-		return _source;
-	}
-
 	QImage currentImage() const override {
 		return _last;
 	}
 
 	void unload() override {
-		_source = nullptr;
-		_prepared = QImage();
+		QObject::disconnect(_watching);
+		_player = nullptr;
 		_last = QImage();
+	}
+
+	~StickerMedia() override {
+		QObject::disconnect(_watching);
 	}
 
 	// A sticker that is still being sent is known by its id alone: the
@@ -1035,20 +1036,29 @@ public:
 
 	void paint(Painter &p, const QRect &rect, const MediaPaint &context) override {
 		const auto sticker = resolved();
-		if (!_source && sticker && !sticker->url.isEmpty()) {
-			auto options = Support::ImageOptions();
-			options.fit = QSize(512, 512);
-			_source = Support::MakeImageSource(
-				delegate()->elementSession(),
-				Data::MediaRef::Url(sticker->url),
-				Data::MediaVariant::Full,
-				options);
-			watch(_source);
-		}
 		const auto ratio = delegate()->elementRatio();
-		const auto image = _source
-			? _source->request(rect.size() * ratio)
-			: QImage();
+		const auto size = rect.size() * ratio;
+		if (sticker
+			&& !sticker->url.isEmpty()
+			&& (!_player || _player->size() != size)) {
+			// Still, animated WebP or Lottie: rendered at the shown size,
+			// moving while the row is painted.
+			QObject::disconnect(_watching);
+			_player = Support::StickerPlayer::Get(
+				delegate()->elementSession(),
+				sticker->url,
+				size);
+			if (_player) {
+				const auto delegate = this->delegate();
+				const auto parent = this->parent();
+				_watching = QObject::connect(
+					_player.get(),
+					&Support::StickerPlayer::updated,
+					delegate->elementGuard(),
+					[=] { delegate->elementRepaint(parent); });
+			}
+		}
+		const auto image = _player ? _player->frame() : QImage();
 		if (image.isNull()) {
 			// The emoji the sticker stands for, until the picture arrives.
 			if (sticker && !sticker->emoji.isEmpty()) {
@@ -1062,23 +1072,15 @@ public:
 			}
 			return;
 		}
-		if (_prepared.isNull()
-			|| _preparedKey != image.cacheKey()
-			|| _prepared.size() != rect.size() * ratio) {
-			_prepared = image.scaled(
-				rect.size() * ratio,
-				Qt::KeepAspectRatio,
-				Qt::SmoothTransformation);
-			_prepared.setDevicePixelRatio(ratio);
-			_preparedKey = image.cacheKey();
-			_last = image;
-		}
-		const auto size = _prepared.size() / _prepared.devicePixelRatio();
+		_last = image;
+		const auto shown = QSizeF(image.size()) / ratio;
 		p.drawImage(
-			QPointF(
-				rect.x() + (rect.width() - size.width()) / 2.,
-				rect.y() + (rect.height() - size.height()) / 2.),
-			_prepared);
+			QRectF(
+				rect.x() + (rect.width() - shown.width()) / 2.,
+				rect.y() + (rect.height() - shown.height()) / 2.,
+				shown.width(),
+				shown.height()),
+			image);
 		if (context.selected) {
 			auto hq = PainterHighQualityEnabler(p);
 			p.setPen(Qt::NoPen);
@@ -1088,9 +1090,8 @@ public:
 	}
 
 private:
-	std::shared_ptr<Ui::ImageSource> _source;
-	QImage _prepared;
-	qint64 _preparedKey = 0;
+	std::shared_ptr<Support::StickerPlayer> _player;
+	QMetaObject::Connection _watching;
 	QImage _last;
 
 };
