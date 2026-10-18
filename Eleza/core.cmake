@@ -70,6 +70,10 @@ set(_eleza_core_files
 	data/data_social_types.h
 	data/data_stickers.cpp
 	data/data_stickers.h
+	data/data_stories.cpp
+	data/data_stories.h
+	data/data_story_types.cpp
+	data/data_story_types.h
 	data/data_sync.cpp
 	data/data_sync.h
 	data/data_transport.cpp

@@ -13,6 +13,7 @@
 #include "media/media_audio_player.h"
 #include "media/media_image_viewer.h"
 #include "media/media_video_player.h"
+#include "stories/stories_viewer.h"
 #include "support/chat_text.h"
 #include "support/error_text.h"
 #include "support/file_dialogs.h"
@@ -61,6 +62,7 @@ constexpr auto kMaxInlineGifs = 2;
 	case Zone::Location:
 	case Zone::LiveStop:
 	case Zone::Post:
+	case Zone::Story:
 	case Zone::Preview:
 	case Zone::Reaction:
 	case Zone::Button:
@@ -403,6 +405,11 @@ void ListWidget::activate(const MouseTarget &target, Qt::MouseButton button) {
 	case Zone::Post:
 		if (!message.forwardedPost.isEmpty()) {
 			_controller->openRoute(Window::Routes::Post(message.forwardedPost));
+		}
+		break;
+	case Zone::Story:
+		if (message.story) {
+			Stories::OpenStory(_controller, message.story->owner, message.story->storyId);
 		}
 		break;
 	case Zone::Preview:

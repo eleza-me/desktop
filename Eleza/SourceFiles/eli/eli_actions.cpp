@@ -6,18 +6,21 @@
 #include "data/data_graph.h"
 #include "data/data_outbox.h"
 #include "data/data_session.h"
+#include "data/data_stories.h"
 #include "data/data_users.h"
 #include "eli/eli_post_card.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
 #include "main/main_account.h"
 #include "main/main_session.h"
+#include "stories/stories_boxes.h"
 #include "support/error_text.h"
 #include "ui/layers/generic_box.h"
 #include "ui/widgets/popup_menu.h"
 #include "window/window_routes.h"
 #include "window/window_session_controller.h"
 #include "styles/style_eli.h"
+#include "styles/style_stories.h"
 
 #include <QtCore/QDateTime>
 #include <QtGui/QClipboard>
@@ -115,6 +118,12 @@ void FillMore(
 		tr::lng_eli_send_in_chat(tr::now),
 		[=] { SendPostToChats(controller, id); },
 		&st::eliMenuIconSend);
+	if (!post.deleted && controller->session().data().stories().enabled()) {
+		menu->addAction(
+			tr::lng_stories_share(tr::now),
+			[=] { Stories::ShareToStory(controller, id); },
+			&st::storiesMenuIconStory);
+	}
 	if (!post.text.isEmpty()) {
 		const auto text = post.text;
 		menu->addAction(

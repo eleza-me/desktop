@@ -54,6 +54,7 @@ struct MediaRef {
 		GroupPhoto, // id = group id, version = photo id
 		InvitePhoto, // id = an invite token, version = photo id (not a member yet)
 		Url,        // id = an absolute URL (stickers, link previews): fetched without the token
+		Story,      // id = a story id: its media while I may see it (404 once gone)
 	};
 	Type type = Type::None;
 	QString id;
@@ -66,6 +67,10 @@ struct MediaRef {
 	[[nodiscard]] static MediaRef GroupPhoto(const QString &groupId, const QString &photoId);
 	[[nodiscard]] static MediaRef InvitePhoto(const QString &token, const QString &photoId);
 	[[nodiscard]] static MediaRef Url(const QString &url);
+	// GET /v1/stories/{id}/media?variant=full|feed|thumb|micro|mp4|poster
+	// (a photo story's Full / Thumb, a video story's Mp4 / Poster, a shared
+	// post's Thumb).
+	[[nodiscard]] static MediaRef Story(const QString &storyId);
 
 	[[nodiscard]] bool valid() const;
 	// The API path (or the absolute URL) the bytes come from.

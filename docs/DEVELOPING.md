@@ -139,6 +139,7 @@ to answer every "open" dialog at once and `ELEZA_DEBUG_SAVE=/path/out.bin` for "
 | `debug/crop`, `debug/about`, `debug/peers`, `debug/peers-multi` | the shared boxes |
 | `debug/logout`, `debug/link`, `debug/error`, `debug/upgrade` | sign-out confirmation, external link confirmation, an error toast, the "update required" screen |
 | `debug/session-expired` | ends the session as the server would |
+| `debug/stories-sample`, `debug/stories/<user>`, `debug/story/<owner>/<story>`, `debug/story-compose?file=<path>`, `debug/story-share/<post>`, `debug/story-viewers/<story>`, `debug/story-settings` | stories: a made-up tray and stories (no server), the viewer, the boxes, the settings page |
 | `debug/calls/<state>` | a voice call in a given state: the bar, the call view, the incoming window (section 12) |
 
 Add your own in your module's route handler (`route.startsWith(u"debug/…")`), inside
@@ -621,6 +622,17 @@ void Conversations::join(const QString &id, bool masked, base::Guard guard, Fn<v
 void Conversations::end(id, …);  requestContinue(id, guard, done, fail);  block(id, …);   // end / block mark the chat row ended at once
 void Conversations::findChat(const QString &conversationId, base::Guard guard, Fn<void(const QString &)> done, int timeoutMs = 6000);
 signals: stateChanged(chat, state, event), openListChanged(category)
+
+// ---- stories (data/data_stories.h): rt `stories.*`, media through MediaRef::Story
+bool Stories::enabled() const;   // client-config `feature.stories`
+const StoryTrayMe &me() const;  const QVector<StoryTrayItem> &tray() const;  refreshTray();  loadMoreTray();
+StoryRing ring(userId) const;   // tray > loaded stories > feed author hints; ringsChanged(ids)
+void loadUser(userId, guard, done(const UserStories &), fail);  markSeen(storyId);  flushSeen();
+react / unreact / reply / viewers / deleteStory / create / post(PostStoryRequest) / setMuted / hidden / setHidden
+closeFriends / setCloseFriend / updateCloseFriends / settings / updateSettings
+signals: trayChanged(), ringsChanged(ids), userStoriesChanged(userId), postingChanged(), posted(story)
+// UI: Stories::OpenUserStories(controller, userId, queue), Stories::OpenStory, Stories::ShowComposeBox,
+// Stories::ShareToStory, Stories::PaintRing (stories/).
 
 // ---- notifications (data/data_notifications.h)
 int Notifications::unread() const;   int kind(const QString &name) const;

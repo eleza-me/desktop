@@ -24,6 +24,10 @@ namespace Support {
 class ConnectionTitle;
 } // namespace Support
 
+namespace Stories {
+class Tray;
+} // namespace Stories
+
 namespace Eli {
 
 class PostList;
@@ -55,6 +59,7 @@ private:
 	struct Pane {
 		Ui::ScrollArea *scroll = nullptr;
 		Ui::VerticalLayout *content = nullptr;
+		Stories::Tray *stories = nullptr;
 		Entry *entry = nullptr;
 		PostList *list = nullptr;
 		int lastScrollTop = 0;

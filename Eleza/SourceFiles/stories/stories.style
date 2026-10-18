@@ -1,0 +1,206 @@
+// Stories: the tray on top of the feed, the rings around faces, the
+// full-window viewer and its sheets. The viewer lives on top of media, so its
+// colors do not follow the light / dark palette.
+using "ui/basic.style";
+using "ui/widgets/widgets.style";
+using "ui/layers/layers.style";
+
+// ---- rings (tray circles, feed and profile avatars)
+storiesRingUnseen: brandPrimary;
+storiesRingSeen: borderStrong;
+storiesRingCloseStart: #f2a900;
+storiesRingCloseEnd: #ffd24d;
+storiesRingStar: #ffffff;
+storiesRingWidth: 2px;
+storiesRingGap: 2px;       // between the ring and the face
+storiesRingProgressBg: borderSubtle;
+
+// ---- the tray
+storiesTrayPadding: margins(8px, 10px, 8px, 6px);
+storiesTrayItemWidth: 76px;
+storiesTrayUserpic: 58px;
+storiesTrayNameTop: 6px;
+storiesTrayNameFont: font(12px);
+storiesTrayNameFg: textPrimary;
+storiesTrayNameFgSeen: textTertiary;
+storiesTrayNameFgFailed: statusError;
+storiesTrayBgOver: stateHover;
+storiesTrayLineFg: borderSubtle;
+storiesTrayPlusSize: 20px;
+storiesTrayPlusBg: brandPrimary;
+storiesTrayPlusBorder: 2px;
+storiesTrayPlusIcon: icon {{ "plus", textOnBrand, 14px }};
+storiesTrayFailedIcon: icon {{ "warning", textOnBrand, 12px }};
+storiesTrayFailedBg: statusError;
+storiesTrayArrowSize: 28px;
+storiesTrayArrowBg: bgRaised;
+storiesTrayArrowLeft: icon {{ "chevron-left", textSecondary, 18px }};
+storiesTrayArrowRight: icon {{ "chevron-right", textSecondary, 18px }};
+
+// ---- the viewer
+storiesOverFg: #ffffff;
+storiesOverFgDim: #ffffffb3;
+storiesOverBgOver: #ffffff29;
+storiesOverRipple: RippleAnimation(defaultRipple) {
+	color: #ffffff2e;
+}
+storiesViewerBg: #050806f5;
+storiesStageBg: #111411;
+storiesStageMargin: 16px;
+storiesStageMinWidth: 260px;
+storiesStageRadius: 12px;
+storiesShadeTop: 120px;
+storiesShadeBottom: 200px;
+storiesShadeFg: #00000099;
+
+storiesProgressTop: 10px;
+storiesProgressSide: 10px;
+storiesProgressHeight: 3px;
+storiesProgressSkip: 4px;
+storiesProgressBg: #ffffff4d;
+storiesProgressFg: #ffffff;
+
+storiesHeaderTop: 22px;
+storiesHeaderSide: 12px;
+storiesHeaderUserpic: 36px;
+storiesHeaderSkip: 10px;
+storiesHeaderNameFont: font(14px semibold);
+storiesHeaderTimeFont: font(13px);
+storiesChipFont: font(11px semibold);
+storiesChipFg: #241a00;
+storiesChipPadding: 7px;
+storiesChipHeight: 18px;
+
+storiesButton: IconButton(defaultIconButton) {
+	width: 40px;
+	height: 40px;
+	icon: icon {{ "more", storiesOverFg }};
+	iconOver: icon {{ "more", storiesOverFg }};
+	rippleSize: 36px;
+	bgOver: storiesOverBgOver;
+	ripple: storiesOverRipple;
+}
+storiesMore: IconButton(storiesButton) {
+}
+storiesClose: IconButton(storiesButton) {
+	icon: icon {{ "close", storiesOverFg }};
+	iconOver: icon {{ "close", storiesOverFg }};
+}
+storiesPauseIcon: icon {{ "pause", storiesOverFg }};
+storiesPlayIcon: icon {{ "play", storiesOverFg }};
+storiesPause: IconButton(storiesButton) {
+	icon: storiesPauseIcon;
+	iconOver: storiesPauseIcon;
+}
+storiesSend: IconButton(storiesButton) {
+	icon: icon {{ "send:mirror-ltr", storiesOverFg }};
+	iconOver: icon {{ "send:mirror-ltr", storiesOverFg }};
+}
+storiesNavPrevious: IconButton(storiesButton) {
+	width: 48px;
+	height: 48px;
+	icon: icon {{ "chevron-left", storiesOverFg, 28px }};
+	iconOver: icon {{ "chevron-left", storiesOverFg, 28px }};
+	rippleSize: 48px;
+}
+storiesNavNext: IconButton(storiesNavPrevious) {
+	icon: icon {{ "chevron-right", storiesOverFg, 28px }};
+	iconOver: icon {{ "chevron-right", storiesOverFg, 28px }};
+}
+storiesNavSkip: 16px;
+storiesNavBg: #ffffff1f;
+
+storiesCaptionStyle: TextStyle(defaultTextStyle) {
+	font: font(15px);
+	lineHeight: 22px;
+	linkFg: #7fdda5;
+}
+storiesCaptionPadding: margins(16px, 0px, 16px, 12px);
+storiesCaptionLines: 5;
+storiesErrorFont: font(14px);
+storiesSpinnerSize: 36px;
+
+storiesReplyField: InputField(defaultInputField) {
+	textBg: #ffffff14;
+	textFg: storiesOverFg;
+	textMargins: margins(16px, 11px, 16px, 11px);
+	placeholderFg: storiesOverFgDim;
+	placeholderFgActive: storiesOverFgDim;
+	border: 1.;
+	borderActive: 1.5;
+	borderFg: #ffffff59;
+	borderFgActive: #ffffffd9;
+	radius: 22px;
+	heightMin: 44px;
+	heightMax: 44px;
+}
+storiesReplyPadding: margins(12px, 8px, 12px, 12px);
+storiesReplyClosedFont: font(13px);
+storiesReactionSize: 42px;
+storiesReactionFont: font(24px);
+storiesReactionBgOver: #ffffff29;
+storiesReactionActiveBg: #ffffff40;
+storiesReactionsSkip: 6px;
+
+storiesViewersButtonFont: font(14px semibold);
+storiesViewersIcon: icon {{ "eye", storiesOverFg, 20px }};
+storiesViewersHeight: 40px;
+
+storiesPostCardRadius: 14px;
+storiesPostCardBg: #ffffffeb;
+storiesPostCardFg: #161a17;
+storiesPostCardFgDim: #4d524b;
+storiesPostCardPadding: margins(14px, 12px, 14px, 12px);
+storiesPostCardUserpic: 28px;
+storiesPostCardNameFont: font(13px semibold);
+storiesPostCardTextStyle: TextStyle(defaultTextStyle) {
+	font: font(14px);
+	lineHeight: 21px;
+}
+storiesPostCardTextLines: 6;
+storiesPostCardThumb: 120px;
+storiesPostButton: RoundButton(defaultRoundButton) {
+	textFg: #161a17;
+	textFgOver: #161a17;
+	textBg: #ffffffeb;
+	textBgOver: #ffffff;
+	height: 34px;
+	radius: 17px;
+	ripple: storiesOverRipple;
+}
+storiesStageGradientTop: #06412c;
+storiesStageGradientBottom: #018a54;
+
+// ---- posting
+storiesComposePreview: size(180px, 320px);
+storiesComposePreviewRadius: 12px;
+storiesComposePreviewBg: bgSunken;
+storiesComposeField: InputField(defaultInputField) {
+	heightMax: 120px;
+}
+storiesComposeCounterFont: font(12px);
+storiesComposeCounterFg: textTertiary;
+
+// ---- settings lists
+storiesListRowHeight: 56px;
+storiesListUserpic: 40px;
+storiesListPadding: margins(16px, 8px, 8px, 8px);
+storiesListNameFont: font(14px semibold);
+storiesListHandleFont: font(13px);
+storiesListNameFg: textPrimary;
+storiesListHandleFg: textTertiary;
+storiesListRemove: IconButton(defaultIconButton) {
+	icon: icon {{ "close", iconButtonFg }};
+	iconOver: icon {{ "close", statusError }};
+}
+
+storiesMenuIconAdd: icon {{ "plus", menuIconFg, 20px }};
+storiesMenuIconEye: icon {{ "eye", menuIconFg, 20px }};
+storiesMenuIconHide: icon {{ "eye-off", menuIconFg, 20px }};
+storiesMenuIconRetry: icon {{ "refresh", menuIconFg, 20px }};
+storiesMenuIconStory: icon {{ "create", menuIconFg, 20px }};
+storiesSettingsIconStory: icon {{ "create", textSecondary }};
+storiesSettingsIconClose: icon {{ "star", textSecondary }};
+storiesSettingsIconHidden: icon {{ "eye-off", textSecondary }};
+storiesSettingsIconReplies: icon {{ "reply", textSecondary }};
+storiesSettingsIconAdd: icon {{ "plus", brandText }};

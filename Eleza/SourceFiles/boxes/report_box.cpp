@@ -88,6 +88,8 @@ constexpr auto kNoteMaxChars = 500;
 		return tr::lng_eli_report_q_account(tr::now);
 	} else if (kind == u"conversation") {
 		return tr::lng_eli_report_q_conversation(tr::now);
+	} else if (kind == u"story") {
+		return tr::lng_stories_report_q(tr::now);
 	}
 	return tr::lng_eli_report_q_post(tr::now);
 }

@@ -158,6 +158,9 @@ QString MessageKindLabel(const Data::Message &message) {
 	case Data::MessageKind::ForwardedPost:
 		return tr::lng_media_eli_post(tr::now);
 	case Data::MessageKind::Call: return tr::lng_calls_voice_call(tr::now);
+	case Data::MessageKind::StoryReply: return tr::lng_stories_chat_reply(tr::now);
+	case Data::MessageKind::StoryReaction:
+		return tr::lng_stories_chat_reaction(tr::now);
 	case Data::MessageKind::Text:
 	case Data::MessageKind::System:
 	case Data::MessageKind::Unknown:
@@ -215,6 +218,11 @@ QString MessagePreview(const Data::Message &message) {
 		&& message.sticker
 		&& !message.sticker->emoji.isEmpty()) {
 		return message.sticker->emoji + QLatin1Char(' ') + label;
+	} else if (message.kind == Data::MessageKind::StoryReaction) {
+		// «🔥 واکنش به استوری»
+		return (message.story && !message.story->emoji.isEmpty())
+			? (Data::Json::CleanName(message.story->emoji) + QLatin1Char(' ') + label)
+			: label;
 	} else if (text.isEmpty()) {
 		return label;
 	}
