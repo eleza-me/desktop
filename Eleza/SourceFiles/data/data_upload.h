@@ -43,6 +43,7 @@ enum class UploadPurpose {
 	Post,
 	Chat,
 	Conversation,
+	Story,
 };
 
 struct UploadRequest {

@@ -48,6 +48,8 @@ namespace {
 		u"search"_s,
 		u"sessions"_s, u"settings"_s, u"setup"_s, u"share"_s,
 		u"share-link"_s, u"sounds"_s, u"state"_s, u"stickers"_s,
+		u"stories"_s, u"story-hidden"_s, u"story-mutes"_s, u"story-settings"_s,
+		u"close-friends"_s, u"tray"_s, u"seen"_s, u"reply"_s, u"viewers"_s,
 		u"stop"_s, u"suggestions"_s, u"sync"_s, u"theme"_s, u"threads"_s,
 		u"token"_s, u"topics"_s, u"transfer"_s, u"trending"_s,
 		u"two-step"_s,

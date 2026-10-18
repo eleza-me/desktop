@@ -44,6 +44,7 @@ class Notifications;
 class Feed;
 class Graph;
 class Conversations;
+class Stories;
 
 class Session final : public QObject {
 	Q_OBJECT
@@ -135,6 +136,9 @@ public:
 	[[nodiscard]] Calls &calls() const {
 		return *_calls;
 	}
+	[[nodiscard]] Stories &stories() const {
+		return *_stories;
+	}
 
 	// Reports a failed fire-and-forget action (see actionFailed).
 	void reportFailure(const QString &action, const QString &subject, const Api::Error &error);
@@ -161,6 +165,7 @@ private:
 	Feed *_feed = nullptr;
 	Graph *_graph = nullptr;
 	Calls *_calls = nullptr;
+	Stories *_stories = nullptr;
 	bool _started = false;
 
 };

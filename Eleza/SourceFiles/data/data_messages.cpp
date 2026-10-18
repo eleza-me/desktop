@@ -14,6 +14,14 @@
 namespace Data {
 namespace {
 
+// A story reply / reaction that lost its story reference in the cache.
+[[nodiscard]] bool StoredWithoutStory(const Message &message) {
+	return (message.seq > 0)
+		&& !message.story
+		&& (message.kind == MessageKind::StoryReply
+			|| message.kind == MessageKind::StoryReaction);
+}
+
 // The request field that names the chat: a group has routes of its own.
 [[nodiscard]] QString ChatKey(const QString &chat) {
 	return IsGroupId(chat) ? u"group"_s : u"chat"_s;
@@ -457,14 +465,22 @@ void Messages::loadCached(const QString &chat, base::Guard guard, Fn<void(int)> 
 		}
 		auto list = QVector<Message>();
 		list.reserve(rows.size());
+		auto outdated = QVector<qint64>();
 		for (const auto &row : rows) {
 			auto message = Message::FromStored(row);
+			if (StoredWithoutStory(message)) {
+				// Cached by a build that did not keep the story reference.
+				outdated.push_back(message.seq);
+			}
 			if (message.visible()) {
 				list.push_back(std::move(message));
 			}
 		}
 		const auto count = int(list.size());
 		merge(chat, std::move(list), false);
+		for (const auto seq : outdated) {
+			refresh(chat, seq);
+		}
 		finish(count);
 	});
 }
