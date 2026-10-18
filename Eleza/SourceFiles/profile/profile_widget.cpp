@@ -694,6 +694,7 @@ ViewerState Widget::viewerState() const {
 	result.isPrivate = _profile.isPrivate;
 	result.followsYou = _profile.followsYou;
 	result.muted = _muted;
+	result.hidden = _hidden;
 	result.postNotifications = _postNotifications;
 	result.hasHandle = !_profile.handle.isEmpty();
 	result.follow = _follow;
@@ -788,6 +789,7 @@ void Widget::loadExtras() {
 	}
 	data.graph().filters(this, [=, this](const Data::Filters &filters) {
 		_muted = filters.muted.contains(id);
+		_hidden = filters.hidden.contains(id);
 	});
 	if (!_watchingPresence) {
 		_watchingPresence = true;
@@ -1106,6 +1108,18 @@ void Widget::showMenu() {
 				[this] { toggleMute(); },
 				&st::menuIconUnmute);
 			break;
+		case MenuEntry::Hide:
+			add(
+				tr::lng_profile_hide_posts(tr::now),
+				[this] { toggleHide(); },
+				&st::profileMenuHideIcon);
+			break;
+		case MenuEntry::Unhide:
+			add(
+				tr::lng_profile_unhide_posts(tr::now),
+				[this] { toggleHide(); },
+				&st::profileMenuShowIcon);
+			break;
 		case MenuEntry::RemoveFollower:
 			add(
 				tr::lng_profile_remove_follower(tr::now),
@@ -1171,6 +1185,26 @@ void Widget::toggleMute() {
 			name));
 	}
 	_muted = !_muted;
+}
+
+void Widget::toggleHide() {
+	// Like the mute: fire-and-forget, the next load brings the real state.
+	auto &graph = controller()->session().data().graph();
+	const auto name = _profile.displayName;
+	if (_hidden) {
+		graph.unhide(_profile.id);
+		controller()->showToast(tr::lng_settings_unhidden_toast(
+			tr::now,
+			lt_name,
+			name));
+	} else {
+		graph.hide(_profile.id);
+		controller()->showToast(tr::lng_profile_hidden_toast(
+			tr::now,
+			lt_name,
+			name));
+	}
+	_hidden = !_hidden;
 }
 
 void Widget::toggleBlock() {

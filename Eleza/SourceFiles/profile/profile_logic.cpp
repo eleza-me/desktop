@@ -106,6 +106,7 @@ ButtonModel MakeButtonModel(const ViewerState &state) {
 		result.menu.push_back(MenuEntry::CopyLink);
 	}
 	result.menu.push_back(state.muted ? MenuEntry::Unmute : MenuEntry::Mute);
+	result.menu.push_back(state.hidden ? MenuEntry::Unhide : MenuEntry::Hide);
 	if (state.followsYou) {
 		result.menu.push_back(MenuEntry::RemoveFollower);
 	}

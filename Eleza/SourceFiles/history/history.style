@@ -301,6 +301,7 @@ menuIconUnpin: icon {{ "pin", menuIconFg, 20px }};
 menuIconFile: icon {{ "file", menuIconFg, 20px }};
 menuIconLocation: icon {{ "location", menuIconFg, 20px }};
 menuIconStop: icon {{ "close-circle", menuIconFg, 20px }};
+menuIconReactions: icon {{ "like", menuIconFg, 20px }};
 
 // ---- bars under the top bar
 historyBarHeight: 46px;

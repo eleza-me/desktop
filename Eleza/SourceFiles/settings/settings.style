@@ -46,6 +46,11 @@ settingsIconDeleteDanger: icon {{ "trash", statusError }};
 settingsIconHelp: icon {{ "help", textSecondary }};
 settingsIconReport: icon {{ "report", textSecondary }};
 settingsIconExternal: icon {{ "external", textSecondary }};
+settingsIconHidden: icon {{ "eye-off", textSecondary }};
+settingsIconAnonymous: icon {{ "anonymous", textSecondary }};
+settingsIconAddPeople: icon {{ "follow", brandText }};
+settingsIconSeen: icon {{ "eye", textSecondary }};
+settingsIconSeenOff: icon {{ "eye-off", textSecondary }};
 
 // ---- pages
 settingsContentWidth: 620px;
@@ -170,3 +175,22 @@ settingsCodePadding: margins(24px, 8px, 24px, 12px);
 settingsStatusIconOn: icon {{ "lock", brandPrimary, 48px }};
 settingsStatusIconOff: icon {{ "lock", textTertiary, 48px }};
 settingsStatusHeight: 96px;
+
+// ---- delete account
+settingsDeleteTitleStyle: TextStyle(defaultTextStyle) {
+	font: font(17px semibold);
+	lineHeight: 24px;
+}
+settingsDeleteTitle: FlatLabel(defaultFlatLabel) {
+	style: settingsDeleteTitleStyle;
+	align: align(top);
+}
+settingsDeleteText: FlatLabel(defaultFlatLabel) {
+	textFg: textSecondary;
+	align: align(top);
+}
+settingsDeletePoint: FlatLabel(defaultFlatLabel) {
+	textFg: textPrimary;
+}
+settingsDeletePointPadding: margins(24px, 4px, 24px, 4px);
+settingsDeleteHeaderPadding: margins(24px, 12px, 24px, 4px);

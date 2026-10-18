@@ -76,6 +76,12 @@ private:
 			u"privacy.private_account"_s,
 			false);
 		AddFootnote(content(), tr::lng_settings_private_account_about(tr::now));
+		const auto window = controller();
+		AddLinkButton(
+			content(),
+			tr::lng_settings_sent_requests(tr::now),
+			&st::settingsIconRequests,
+			[=] { ShowSentRequestsBox(window); });
 
 		AddDivider(content());
 		AddSubsectionTitle(content(), tr::lng_settings_who_can(tr::now));
@@ -126,6 +132,17 @@ private:
 				Nobody(),
 			},
 			u"everyone"_s);
+		AddLinkButton(
+			content(),
+			tr::lng_settings_ls_always(tr::now),
+			&st::settingsIconSeen,
+			[=] { ShowLastSeenExceptionsBox(window, u"always"_s); });
+		AddLinkButton(
+			content(),
+			tr::lng_settings_ls_never(tr::now),
+			&st::settingsIconSeenOff,
+			[=] { ShowLastSeenExceptionsBox(window, u"never"_s); });
+		AddFootnote(content(), tr::lng_settings_ls_exceptions_about(tr::now));
 		addPicker(
 			tr::lng_settings_birthday(tr::now),
 			u"privacy.birthday_visibility"_s,

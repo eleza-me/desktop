@@ -392,6 +392,25 @@ QString Group(const QString &groupId) {
 	return Make(RouteType::Group, groupId).toString();
 }
 
+QString GroupMedia(const QString &groupId) {
+	auto result = Make(RouteType::Group, groupId);
+	result.query.insert(QStringLiteral("show"), QStringLiteral("media"));
+	return result.toString();
+}
+
+QString GroupAdminLog(const QString &groupId) {
+	auto result = Make(RouteType::Group, groupId);
+	result.query.insert(QStringLiteral("show"), QStringLiteral("log"));
+	return result.toString();
+}
+
+QString GroupReactions(const QString &groupId, qint64 seq) {
+	auto result = Make(RouteType::Group, groupId);
+	result.query.insert(QStringLiteral("show"), QStringLiteral("reactions"));
+	result.query.insert(QStringLiteral("seq"), QString::number(seq));
+	return result.toString();
+}
+
 QString GroupInvite(const QString &token) {
 	return Make(RouteType::GroupInvite, token).toString();
 }
