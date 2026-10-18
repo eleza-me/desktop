@@ -416,6 +416,10 @@ int ClientConfig::postMaxAlbumItems() const {
 	return int(integer(u"post.max_album_items"_s, 10));
 }
 
+int ClientConfig::maxAlbumItems() const {
+	return std::clamp(int(integer(u"messaging.max_album_items"_s, 10)), 2, 20);
+}
+
 int ClientConfig::pollMinOptions() const {
 	return int(integer(u"post.poll_min_options"_s, 2));
 }

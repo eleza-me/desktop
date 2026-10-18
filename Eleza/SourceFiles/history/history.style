@@ -111,6 +111,8 @@ historyForwardedIcon: icon {{ "forward:mirror-ltr", brandText, 14px }};
 historyMediaPadding: 2px;
 historyMediaRadius: 14px;
 historyMediaRadiusSmall: 5px;
+historyAlbumGap: 2px;
+historyAlbumInnerRadius: 4px;
 historyMediaMaxWidth: 360px;
 historyMediaCaptionMinWidth: 240px;
 historyMediaCaptionSkip: 5px;

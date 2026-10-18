@@ -366,6 +366,8 @@ struct Message {
 	QString myReaction;
 	QVector<Entity> entities;
 	bool mediaSpoiler = false;
+	QString album;               // items sent together share it (a lower case UUID)
+	bool captionAbove = false;   // the caption is shown above the media
 	std::optional<Quote> quote;
 	std::optional<LinkPreview> linkPreview;
 	std::optional<Sticker> sticker;

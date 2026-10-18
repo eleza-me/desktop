@@ -279,6 +279,8 @@ bool SameLayout(const Data::Message &a, const Data::Message &b) {
 		&& (a.forwardedPost == b.forwardedPost)
 		&& (a.system == b.system)
 		&& (a.mediaSpoiler == b.mediaSpoiler)
+		&& (a.album == b.album)
+		&& (a.captionAbove == b.captionAbove)
 		&& (a.underReview == b.underReview)
 		&& (a.createdAt == b.createdAt)
 		&& (failedA == failedB)

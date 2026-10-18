@@ -1279,6 +1279,8 @@
 "lng_history_record_hint" = "در حال ضبط… برای لغو Esc را بزن";
 "lng_history_send_as_files" = "ارسال به‌صورت فایل (بدون فشرده‌سازی)";
 "lng_history_send_spoiler" = "پنهان با اسپویلر";
+"lng_history_send_grouped" = "یک‌جا به‌صورت آلبوم بفرست";
+"lng_history_send_caption_above" = "کپشن بالای عکس";
 "lng_history_caption_placeholder" = "توضیح…";
 "lng_history_add_files" = "افزودن";
 "lng_history_send_photo_title" = "ارسال عکس";

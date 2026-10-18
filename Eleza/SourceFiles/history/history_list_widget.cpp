@@ -9,6 +9,7 @@
 #include "data/data_feed.h"
 #include "data/data_session.h"
 #include "data/data_users.h"
+#include "history/history_album.h"
 #include "history/history_downloads.h"
 #include "history/history_view_media.h"
 #include "history/history_themes.h"
@@ -245,9 +246,8 @@ const Data::Message *ListWidget::elementReplyTarget(const Data::Message &message
 	if (seq <= 0) {
 		return nullptr;
 	}
-	const auto index = indexOfSeq(seq);
-	if (index >= 0) {
-		return &_rows[index].element->data();
+	if (const auto found = this->message(seq)) {
+		return found;
 	}
 	const auto cached = _replyTargets.constFind(seq);
 	if (cached != _replyTargets.cend()) {
@@ -610,7 +610,16 @@ std::optional<Data::Message> ListWidget::lastEditable() const {
 
 const Data::Message *ListWidget::message(qint64 seq) const {
 	const auto index = indexOfSeq(seq);
-	return (index >= 0) ? &_rows[index].element->data() : nullptr;
+	if (index < 0) {
+		return nullptr;
+	}
+	const auto element = _rows[index].element.get();
+	for (const auto &item : element->album()) {
+		if (item.seq == seq) {
+			return &item;
+		}
+	}
+	return &element->data();
 }
 
 #ifdef ELEZA_DEBUG_TOOLS
@@ -637,7 +646,36 @@ void ListWidget::refreshRows() {
 	applyRows(items());
 }
 
-void ListWidget::applyRows(const QVector<Data::Message> &items) {
+void ListWidget::applyRows(const QVector<Data::Message> &timeline) {
+	// Consecutive items of an album are one row: its head stands for it.
+	const auto config = _session->data().clientConfig();
+	const auto runs = GroupAlbums(
+		timeline,
+		_group,
+		config ? config->maxAlbumItems() : 10);
+	auto grouped = QVector<Data::Message>();
+	auto albums = std::vector<QVector<Data::Message>>();
+	if (runs.empty()) {
+		grouped = timeline;
+		albums.resize(timeline.size());
+	} else {
+		grouped.reserve(timeline.size());
+		auto run = runs.begin();
+		for (auto i = 0; i < int(timeline.size());) {
+			if (run != runs.end() && run->from == i) {
+				const auto album = timeline.mid(run->from, run->count);
+				grouped.push_back(AlbumHeadMessage(album));
+				albums.push_back(album);
+				i += run->count;
+				++run;
+			} else {
+				grouped.push_back(timeline[i]);
+				albums.emplace_back();
+				++i;
+			}
+		}
+	}
+	const auto &items = grouped;
 	auto was = std::vector<RowId>();
 	was.reserve(_rows.size());
 	for (const auto &row : _rows) {
@@ -670,7 +708,7 @@ void ListWidget::applyRows(const QVector<Data::Message> &items) {
 		if (old >= 0) {
 			row = std::move(_rows[old]);
 			const auto oldKey = row.element->key();
-			auto changed = row.element->setData(items[i]);
+			auto changed = row.element->setData(items[i], albums[i]);
 			changed = row.element->setFlags(flags[i]) || changed;
 			if (changed) {
 				row.exact = false;
@@ -681,7 +719,8 @@ void ListWidget::applyRows(const QVector<Data::Message> &items) {
 		} else {
 			row.element = std::make_unique<View::Element>(
 				static_cast<View::Delegate*>(this),
-				items[i]);
+				items[i],
+				albums[i]);
 			row.element->setFlags(flags[i]);
 		}
 	}
@@ -767,10 +806,20 @@ void ListWidget::rebuildIndex() {
 	_indexByKey.reserve(int(_rows.size()));
 	_indexBySeq.reserve(int(_rows.size()));
 	for (auto i = 0; i != int(_rows.size()); ++i) {
-		const auto &message = _rows[i].element->data();
-		_indexByKey.insert(_rows[i].element->key(), i);
+		const auto element = _rows[i].element.get();
+		const auto &message = element->data();
+		_indexByKey.insert(element->key(), i);
 		if (message.seq > 0) {
 			_indexBySeq.insert(message.seq, i);
+		}
+		// Every item of an album finds its bubble (jumps, replies, updates).
+		for (const auto &item : element->album()) {
+			if (!_indexByKey.contains(item.key())) {
+				_indexByKey.insert(item.key(), i);
+			}
+			if (item.seq > 0) {
+				_indexBySeq.insert(item.seq, i);
+			}
 		}
 	}
 }
@@ -1398,7 +1447,7 @@ void ListWidget::markReadNow() {
 			--index;
 		}
 		for (auto i = index; i >= 0; --i) {
-			if (const auto value = _rows[i].element->data().seq; value > 0) {
+			if (const auto value = _rows[i].element->lastSeq(); value > 0) {
 				seq = value;
 				break;
 			}

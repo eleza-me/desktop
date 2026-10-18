@@ -79,6 +79,12 @@ if (TARGET ElezaCore)
 	eleza_add_test(test_history_compose app/test_history_compose.cpp LIBS ElezaCore ElezaUi)
 	target_sources(test_history_compose PRIVATE "${_eleza_app_src}/history/history_compose_logic.cpp")
 	target_include_directories(test_history_compose PRIVATE "${_eleza_app_src}")
+	# Chat albums: the mosaic, grouping a timeline, the send plan.
+	eleza_add_test(test_history_album app/test_history_album.cpp LIBS ElezaCore)
+	target_sources(test_history_album PRIVATE "${_eleza_app_src}/history/history_album.cpp")
+	target_include_directories(test_history_album PRIVATE "${_eleza_app_src}")
+	target_compile_definitions(test_history_album PRIVATE
+		ELEZA_TESTDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/core/testdata")
 	# Bots in a chat: inline queries, commands, «شروع», inline keyboard buttons.
 	eleza_add_test(test_history_bots app/test_history_bots.cpp LIBS ElezaCore)
 	target_sources(test_history_bots PRIVATE "${_eleza_app_src}/history/history_bot_logic.cpp")

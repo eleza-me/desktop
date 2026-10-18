@@ -21,10 +21,12 @@ struct FilesToSend {
 	QVector<Data::Entity> entities;
 	bool asFiles = false; // without compression, under their own names
 	bool spoiler = false; // photos / videos hidden until clicked
+	bool grouped = true;  // several files go as albums (History::PlanAlbumSend)
+	bool captionAbove = false; // the caption is shown above the photos / videos
 };
 
-// Previews of the chosen files, a caption, «send as files» and «hide with a
-// spoiler». `send` is called once, right before the box closes.
+// Previews of the chosen files, a caption, «send as files», «hide with a
+// spoiler», «send as one album» and «caption above the media». `send` is called once, right before the box closes.
 [[nodiscard]] Ui::object_ptr<Ui::BoxContent> SendFilesBox(
 	Main::Session *session,
 	const QStringList &paths,
@@ -56,6 +58,12 @@ void ShowForwardBox(
 	Window::SessionController *controller,
 	const QVector<Data::Message> &messages,
 	Fn<void()> done = nullptr);
+
+// Sends copies of the messages to `chat` (an album stays an album there).
+void ForwardMessages(
+	Main::Session *session,
+	const QString &chat,
+	const QVector<Data::Message> &messages);
 
 // Clearing the history for me / deleting the chat (with «also delete for …»).
 void ShowClearHistoryBox(

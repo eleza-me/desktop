@@ -106,6 +106,8 @@ public:
 	[[nodiscard]] int postMaxTextChars() const;
 	[[nodiscard]] int postMaxThreadParts() const;
 	[[nodiscard]] int postMaxAlbumItems() const;
+	// Items of one chat album (messaging.max_album_items, 2..20).
+	[[nodiscard]] int maxAlbumItems() const;
 	[[nodiscard]] int pollMinOptions() const;
 	[[nodiscard]] int pollMaxOptions() const;
 	[[nodiscard]] qint64 postEditWindow() const;        // seconds

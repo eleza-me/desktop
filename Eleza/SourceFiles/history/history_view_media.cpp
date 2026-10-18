@@ -1,5 +1,7 @@
 #include "history/history_view_media.h"
 
+#include "history/history_album.h"
+
 #include "data/data_calls.h"
 
 #include "base/platform_file.h"
@@ -1631,6 +1633,182 @@ private:
 
 };
 
+// ---- album: photos / videos sent together, one tile each
+
+class AlbumMedia final : public Media {
+public:
+	AlbumMedia(Delegate *delegate, Element *parent)
+	: Media(delegate, parent) {
+	}
+
+	QSize countSize(int maxWidth, bool hasCaption) override {
+		Q_UNUSED(hasCaption);
+		ensureTiles();
+		const auto &items = parent()->album();
+		auto ratios = std::vector<double>();
+		ratios.reserve(items.size());
+		for (const auto &item : items) {
+			const auto w = item.media ? item.media->width : 0;
+			const auto h = item.media ? item.media->height : 0;
+			ratios.push_back((w > 0 && h > 0) ? (double(w) / h) : 0.);
+		}
+		_frames = AlbumLayout(ratios);
+		const auto width = std::max(
+			std::min(
+				maxWidth - 2 * st::historyMediaPadding,
+				int(st::historyMediaMaxWidth)),
+			1);
+		const auto height = std::max(
+			int(std::lround(AlbumHeight(_frames) * width / kAlbumMaxWidth)),
+			1);
+		return QSize(width, height);
+	}
+
+	bool fullBleed() const override {
+		return true;
+	}
+
+	std::shared_ptr<Ui::ImageSource> imageSource() const override {
+		return _tiles.empty() ? nullptr : _tiles.front()->imageSource();
+	}
+
+	QImage currentImage() const override {
+		return _tiles.empty() ? QImage() : _tiles.front()->currentImage();
+	}
+
+	Media *albumTile(int index) override {
+		return (index >= 0 && index < int(_tiles.size()))
+			? _tiles[index].get()
+			: nullptr;
+	}
+
+	void unload() override {
+		for (const auto &tile : _tiles) {
+			tile->unload();
+		}
+	}
+
+	void dataChanged() override {
+		if (int(_tiles.size()) != int(parent()->album().size())) {
+			_tiles.clear();
+			_frames.clear();
+			return;
+		}
+		for (const auto &tile : _tiles) {
+			tile->dataChanged();
+		}
+	}
+
+	void paint(Painter &p, const QRect &rect, const MediaPaint &context) override {
+		ensureTiles();
+		if (_frames.size() != _tiles.size()) {
+			return;
+		}
+		for (auto i = 0; i != int(_tiles.size()); ++i) {
+			const auto box = tileRect(i, rect);
+			if (!p.clipBoundingRect().isEmpty()
+				&& !p.clipBoundingRect().intersects(box)) {
+				continue;
+			}
+			auto tile = context;
+			const auto sides = visualSides(_frames[i].sides);
+			const auto inner = int(st::historyAlbumInnerRadius);
+			const auto left = (sides & kAlbumSideLeft) != 0;
+			const auto right = (sides & kAlbumSideRight) != 0;
+			const auto top = (sides & kAlbumSideTop) != 0;
+			const auto bottom = (sides & kAlbumSideBottom) != 0;
+			tile.radii[0] = (left && top) ? context.radii[0] : inner;
+			tile.radii[1] = (right && top) ? context.radii[1] : inner;
+			tile.radii[2] = (right && bottom) ? context.radii[2] : inner;
+			tile.radii[3] = (left && bottom) ? context.radii[3] : inner;
+			_tiles[i]->paint(p, box, tile);
+		}
+	}
+
+	HitResult hitTest(QPoint point, const QRect &rect) const override {
+		auto result = HitResult();
+		if (!rect.contains(point) || _frames.size() != _tiles.size()) {
+			return result;
+		}
+		for (auto i = 0; i != int(_tiles.size()); ++i) {
+			const auto box = tileRect(i, rect);
+			if (box.contains(point)) {
+				result = _tiles[i]->hitTest(point, box);
+				result.item = i;
+				return result;
+			}
+		}
+		// The gaps between the tiles.
+		result.zone = Zone::Bubble;
+		return result;
+	}
+
+private:
+	void ensureTiles() {
+		const auto count = int(parent()->album().size());
+		if (int(_tiles.size()) == count) {
+			return;
+		}
+		_tiles.clear();
+		for (auto i = 0; i != count; ++i) {
+			auto tile = std::make_unique<PhotoMedia>(delegate(), parent());
+			tile->setAlbumIndex(i);
+			_tiles.push_back(std::move(tile));
+		}
+	}
+
+	// The mosaic is mirrored in a right-to-left interface: the first item
+	// is on the right.
+	[[nodiscard]] static int visualSides(int sides) {
+		if (!style::RightToLeft()) {
+			return sides;
+		}
+		auto result = sides & (kAlbumSideTop | kAlbumSideBottom);
+		if (sides & kAlbumSideLeft) {
+			result |= kAlbumSideRight;
+		}
+		if (sides & kAlbumSideRight) {
+			result |= kAlbumSideLeft;
+		}
+		return result;
+	}
+
+	[[nodiscard]] QRect tileRect(int index, const QRect &rect) const {
+		const auto &f = _frames[index];
+		const auto k = rect.width() / kAlbumMaxWidth;
+		const auto x = style::RightToLeft() ? (kAlbumMaxWidth - f.x - f.w) : f.x;
+		auto left = int(std::lround(x * k));
+		auto right = int(std::lround((x + f.w) * k));
+		auto top = int(std::lround(f.y * k));
+		auto bottom = int(std::lround((f.y + f.h) * k));
+		const auto gap = int(st::historyAlbumGap);
+		const auto half = gap / 2;
+		const auto other = gap - half;
+		const auto sides = visualSides(f.sides);
+		if (!(sides & kAlbumSideLeft)) {
+			left += other;
+		}
+		if (!(sides & kAlbumSideRight)) {
+			right -= half;
+		}
+		if (!(sides & kAlbumSideTop)) {
+			top += other;
+		}
+		if (!(sides & kAlbumSideBottom)) {
+			bottom -= half;
+		}
+		return QRect(
+			rect.x() + left,
+			rect.y() + top,
+			std::max(right - left, 1),
+			std::max(bottom - top, 1));
+	}
+
+	std::vector<std::unique_ptr<Media>> _tiles;
+	std::vector<AlbumFrame> _frames;
+
+};
+
 } // namespace
 
 HitResult Media::hitTest(QPoint point, const QRect &rect) const {
@@ -1688,6 +1866,10 @@ std::unique_ptr<Media> CreateMedia(Delegate *delegate, Element *parent) {
 		break;
 	}
 	return nullptr;
+}
+
+std::unique_ptr<Media> CreateAlbumMedia(Delegate *delegate, Element *parent) {
+	return std::make_unique<AlbumMedia>(delegate, parent);
 }
 
 std::shared_ptr<Ui::ImageSource> MakeLocalImageSource(

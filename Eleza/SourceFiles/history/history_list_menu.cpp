@@ -47,6 +47,13 @@ void ListWidget::showContextMenu(
 	// A copy: the row may change while the menu is open.
 	const auto message = element->data();
 	const auto key = target.key;
+	// An album acts as a whole (forward, delete, select); a tile under the
+	// pointer adds the actions of its own picture.
+	const auto album = element->isAlbum();
+	const auto all = element->messages();
+	const auto tile = album && target.hit.item >= 0;
+	const auto item = element->messageAt(target.hit);
+	const auto captioned = element->captionMessage();
 	_menu = new Ui::PopupMenu(this);
 	const auto menu = _menu.data();
 	const auto config = _session->data().clientConfig();
@@ -88,14 +95,29 @@ void ListWidget::showContextMenu(
 		return;
 	}
 
-	if (message.local()) {
+	const auto anyLocal = std::any_of(all.begin(), all.end(), [](
+			const Data::Message &one) {
+		return one.local();
+	});
+	if (anyLocal) {
 		// Not sent yet (or failed): only what makes sense for the queue.
-		const auto id = message.clientMessageId;
+		auto ids = QStringList();
+		auto failed = QStringList();
+		for (const auto &one : all) {
+			if (one.local() && !one.clientMessageId.isEmpty()) {
+				ids.push_back(one.clientMessageId);
+				if (one.status == Data::MessageStatus::Failed) {
+					failed.push_back(one.clientMessageId);
+				}
+			}
+		}
 		const auto session = QPointer<Main::Session>(_session);
-		if (message.status == Data::MessageStatus::Failed) {
+		if (!failed.isEmpty()) {
 			menu->addAction(tr::lng_try_again(tr::now), [=] {
 				if (session) {
-					session->data().outbox().retry(id);
+					for (const auto &id : failed) {
+						session->data().outbox().retry(id);
+					}
 				}
 			}, &st::menuIconRetry);
 		}
@@ -111,7 +133,9 @@ void ListWidget::showContextMenu(
 		remove.destructive = true;
 		remove.callback = [=] {
 			if (session) {
-				session->data().outbox().discard(id);
+				for (const auto &id : ids) {
+					session->data().outbox().discard(id);
+				}
 			}
 		};
 		menu->addItem(std::move(remove));
@@ -180,15 +204,17 @@ void ListWidget::showContextMenu(
 	}
 
 	if (_canWrite) {
+		// A tile of an album: the reply is to that picture.
 		menu->addAction(tr::lng_reply(tr::now), [=, this] {
-			Q_EMIT replyRequested(message, std::nullopt);
+			Q_EMIT replyRequested(tile ? item : message, std::nullopt);
 		}, &st::menuIconReply);
 	}
 	const auto editWindow = config ? config->editWindow() : qint64(0);
+	// An album's caption lives on one of its items.
 	if (_canWrite
-		&& CanEdit(message, QDateTime::currentMSecsSinceEpoch(), editWindow)) {
+		&& CanEdit(captioned, QDateTime::currentMSecsSinceEpoch(), editWindow)) {
 		menu->addAction(tr::lng_edit(tr::now), [=, this] {
-			Q_EMIT editRequested(message);
+			Q_EMIT editRequested(captioned);
 		}, &st::menuIconEdit);
 	}
 	const auto groupRow = _group
@@ -234,16 +260,17 @@ void ListWidget::showContextMenu(
 		}, &st::menuIconLink);
 	}
 
-	// ---- media and files
-	const auto hidden = message.mediaSpoiler && !_revealed.contains(key);
-	switch (message.kind) {
+	// ---- media and files (of the tile under the pointer in an album)
+	const auto &media = tile ? item : message;
+	const auto hidden = media.mediaSpoiler && !_revealed.contains(media.key());
+	switch ((album && !tile) ? Data::MessageKind::Unknown : media.kind) {
 	case Data::MessageKind::Photo:
 		if (!hidden) {
 			menu->addAction(tr::lng_history_copy_image(tr::now), [=, this] {
-				copyImage(message);
+				copyImage(media);
 			}, &st::menuIconImage);
 			menu->addAction(tr::lng_history_save_as(tr::now), [=, this] {
-				saveAs(message);
+				saveAs(media);
 			}, &st::menuIconSaveAs);
 		}
 		break;
@@ -252,29 +279,29 @@ void ListWidget::showContextMenu(
 	case Data::MessageKind::VideoNote:
 		if (!hidden) {
 			menu->addAction(tr::lng_history_save_as(tr::now), [=, this] {
-				saveAs(message);
+				saveAs(media);
 			}, &st::menuIconSaveAs);
 		}
 		break;
 	case Data::MessageKind::File:
 	case Data::MessageKind::Audio:
 	case Data::MessageKind::Voice: {
-		const auto saved = !_downloads->savedPath(message).isEmpty();
-		if (message.kind == Data::MessageKind::File) {
+		const auto saved = !_downloads->savedPath(media).isEmpty();
+		if (media.kind == Data::MessageKind::File) {
 			menu->addAction(
 				saved
 					? tr::lng_history_open_file(tr::now)
 					: tr::lng_history_download(tr::now),
-				[=, this] { openFile(message); },
+				[=, this] { openFile(media); },
 				saved ? &st::menuIconOpen : &st::menuIconDownload);
 		}
 		if (saved) {
 			menu->addAction(tr::lng_history_show_in_folder(tr::now), [=, this] {
-				showInFolder(message);
+				showInFolder(media);
 			}, &st::menuIconFolder);
 		}
 		menu->addAction(tr::lng_history_save_as(tr::now), [=, this] {
-			saveAs(message);
+			saveAs(media);
 		}, &st::menuIconSaveAs);
 	} break;
 	case Data::MessageKind::Location:
@@ -296,9 +323,13 @@ void ListWidget::showContextMenu(
 		break;
 	}
 
-	if (CanForward(message) && !_anonymousPeer && !message.underReview) {
+	const auto forwardable = std::all_of(all.begin(), all.end(), [](
+			const Data::Message &one) {
+		return CanForward(one) && !one.underReview;
+	});
+	if (forwardable && !_anonymousPeer) {
 		menu->addAction(tr::lng_forward(tr::now), [=, this] {
-			Q_EMIT forwardRequested({ message });
+			Q_EMIT forwardRequested(all);
 		}, &st::menuIconForward);
 	}
 	if (_group && !message.mine && !message.sender.isEmpty()) {
@@ -325,7 +356,7 @@ void ListWidget::showContextMenu(
 	remove.icon = &st::menuIconDelete;
 	remove.destructive = true;
 	remove.callback = [=, this] {
-		Q_EMIT deleteRequested({ message });
+		Q_EMIT deleteRequested(all);
 	};
 	menu->addItem(std::move(remove));
 	menu->popup(globalPosition);

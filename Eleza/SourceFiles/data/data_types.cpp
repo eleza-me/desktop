@@ -721,6 +721,9 @@ Message Message::FromJson(const QJsonObject &json) {
 	result.myReaction = String(json, "my_reaction"_L1);
 	result.entities = List<Entity>(json.value("entities"_L1));
 	result.mediaSpoiler = Bool(json, "media_spoiler"_L1);
+	// Every item of an album compares equal in one spelling.
+	result.album = String(json, "album"_L1).toLower();
+	result.captionAbove = Bool(json, "caption_above"_L1);
 	result.quote = Optional<Quote>(json, "quote"_L1);
 	result.linkPreview = Optional<LinkPreview>(json, "link_preview"_L1);
 	result.sticker = Optional<Sticker>(json, "sticker"_L1);
@@ -769,6 +772,8 @@ QJsonObject Message::toJson() const {
 	Put(result, "my_reaction"_L1, myReaction);
 	Put(result, "entities"_L1, Array(entities));
 	Put(result, "media_spoiler"_L1, mediaSpoiler);
+	Put(result, "album"_L1, album);
+	Put(result, "caption_above"_L1, captionAbove);
 	if (quote) {
 		result.insert("quote"_L1, quote->toJson());
 	}

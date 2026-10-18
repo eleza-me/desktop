@@ -57,10 +57,23 @@ public:
 	[[nodiscard]] virtual std::shared_ptr<Ui::ImageSource> imageSource() const {
 		return nullptr;
 	}
+	// An album: the media of its tile `index` (null out of range); any
+	// other media is its own only tile.
+	[[nodiscard]] virtual Media *albumTile(int index) {
+		Q_UNUSED(index);
+		return this;
+	}
+
+	// A tile of an album: the media shows the album's item `index`.
+	void setAlbumIndex(int index) {
+		_albumIndex = index;
+	}
 
 protected:
 	[[nodiscard]] const Data::Message &data() const {
-		return _parent->data();
+		return (_albumIndex >= 0)
+			? _parent->albumItem(_albumIndex)
+			: _parent->data();
 	}
 	[[nodiscard]] Delegate *delegate() const {
 		return _delegate;
@@ -77,12 +90,18 @@ protected:
 private:
 	Delegate *_delegate = nullptr;
 	Element *_parent = nullptr;
+	int _albumIndex = -1;
 	QMetaObject::Connection _watching;
 
 };
 
 // Null for messages without an attachment part (plain text, service).
 [[nodiscard]] std::unique_ptr<Media> CreateMedia(
+	Delegate *delegate,
+	Element *parent);
+
+// The bubble of an album: one tile per item, laid out as a mosaic.
+[[nodiscard]] std::unique_ptr<Media> CreateAlbumMedia(
 	Delegate *delegate,
 	Element *parent);
 

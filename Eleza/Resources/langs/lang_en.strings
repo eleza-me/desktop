@@ -1249,6 +1249,8 @@
 "lng_history_record_hint" = "Recording… press Esc to cancel";
 "lng_history_send_as_files" = "Send as files (without compression)";
 "lng_history_send_spoiler" = "Hide with a spoiler";
+"lng_history_send_grouped" = "Send as one album";
+"lng_history_send_caption_above" = "Caption above the media";
 "lng_history_caption_placeholder" = "Caption…";
 "lng_history_add_files" = "Add";
 "lng_history_send_photo_title" = "Send a photo";

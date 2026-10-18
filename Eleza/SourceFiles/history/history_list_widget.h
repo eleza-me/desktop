@@ -269,6 +269,8 @@ private:
 	void revealSpoiler(const QString &key);
 	void openMedia(const Data::Message &message);
 	void openPhoto(const Data::Message &message);
+	// The media that shows `message` (an album's tile for its item).
+	[[nodiscard]] View::Media *mediaFor(const Data::Message &message) const;
 	void playVideo(const Data::Message &message);
 	void toggleInlineVideo(const Data::Message &message);
 	void toggleVoice(const Data::Message &message);

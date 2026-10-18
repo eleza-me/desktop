@@ -72,6 +72,7 @@ struct HitResult {
 	int column = 0;
 	double ratio = 0.;
 	QString text;
+	int item = -1;       // an album: the tile under the point (Zone::Media…)
 
 	[[nodiscard]] bool inside() const {
 		return zone != Zone::None && zone != Zone::Side && zone != Zone::Date;
@@ -190,7 +191,12 @@ struct PaintContext {
 
 class Element final {
 public:
-	Element(Delegate *delegate, const Data::Message &message);
+	// `album`: the items of an album bubble (two or more photos / videos);
+	// `message` is then the bubble's head (History::AlbumHeadMessage).
+	Element(
+		Delegate *delegate,
+		const Data::Message &message,
+		const QVector<Data::Message> &album = {});
 	~Element();
 
 	[[nodiscard]] const Data::Message &data() const {
@@ -200,7 +206,27 @@ public:
 		return _key;
 	}
 	// Returns true when the height may have changed.
-	bool setData(const Data::Message &message);
+	bool setData(
+		const Data::Message &message,
+		const QVector<Data::Message> &album = {});
+
+	// ---- an album bubble
+	[[nodiscard]] bool isAlbum() const {
+		return !_album.isEmpty();
+	}
+	[[nodiscard]] const QVector<Data::Message> &album() const {
+		return _album;
+	}
+	// The item `index` of the album (the head itself out of range).
+	[[nodiscard]] const Data::Message &albumItem(int index) const;
+	// The message a part of the row stands for: an album's tile or the head.
+	[[nodiscard]] const Data::Message &messageAt(const HitResult &hit) const;
+	// The messages of the row: the album's items, or the message.
+	[[nodiscard]] QVector<Data::Message> messages() const;
+	// The item that carries the caption (the head when there is none).
+	[[nodiscard]] const Data::Message &captionMessage() const;
+	// The newest seq of the row (an album's last item).
+	[[nodiscard]] qint64 lastSeq() const;
 	bool setFlags(const RowFlags &flags);
 	[[nodiscard]] const RowFlags &flags() const {
 		return _flags;
@@ -323,6 +349,7 @@ private:
 
 	Delegate *_delegate = nullptr;
 	Data::Message _data;
+	QVector<Data::Message> _album;
 	QString _key;
 	RowFlags _flags;
 

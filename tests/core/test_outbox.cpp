@@ -58,6 +58,7 @@ private Q_SLOTS:
 	void bodiesOfEveryKind();
 	void echoBeforeAnswer();
 	void fileIsUploadedFirst();
+	void albumIsUploadedThenSent();
 	void processedSignalEndsTheWait();
 	void queueSurvivesRestart();
 
@@ -585,6 +586,96 @@ void TestOutbox::fileIsUploadedFirst() {
 	QCOMPARE(sends[0].value("client_message_id"_L1).toString(), id);
 	QCOMPARE(sends[1].value("text"_L1).toString(), u"after"_s);
 	QCOMPARE(harness.messages().find(u"c2"_s, 70)->attachment, u"med1"_s);
+}
+
+// An album: one album id on every item, the caption (and «caption above»)
+// on the first one, ids that share their first 23 characters; every item is
+// uploaded before the first of them is sent, then they go back to back.
+void TestOutbox::albumIsUploadedThenSent() {
+	auto dir = QTemporaryDir();
+	QVERIFY(dir.isValid());
+	auto paths = QStringList();
+	for (auto i = 0; i != 3; ++i) {
+		paths.push_back(dir.filePath(u"part%1.bin"_s.arg(i)));
+		auto file = QFile(paths.back());
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(base::RandomBytes(8));
+	}
+	auto harness = Harness();
+	QVERIFY(harness.start());
+	auto uploads = 0;
+	auto completes = 0;
+	harness.http.handler = [&](const Test::HttpServer::Request &request) {
+		using Response = Test::HttpServer::Response;
+		if (request.method == "POST" && request.path == "/v1/uploads") {
+			const auto n = ++uploads;
+			return Response::Ok(QJsonObject{
+				{ u"upload_id"_s, u"up%1"_s.arg(n) },
+				{ u"media_id"_s, u"med%1"_s.arg(n) },
+				{ u"state"_s, u"pending"_s },
+				{ u"part_size"_s, 8 },
+				{ u"parts"_s, QJsonArray{ QJsonObject{
+					{ u"number"_s, 1 },
+					{ u"url"_s, harness.http.base() + u"/put/%1"_s.arg(n) },
+				} } },
+			});
+		} else if (request.path.endsWith("/complete")) {
+			++completes;
+		} else if (request.path.startsWith("/v1/media/med")) {
+			return Response::Ok(QJsonObject{ { u"state"_s, u"ready"_s } });
+		}
+		return Response::Ok();
+	};
+	auto seq = qint64(90);
+	auto completedAtFirstSend = -1;
+	harness.on(u"chat.send"_s, [&](const Call &) {
+		if (completedAtFirstSend < 0) {
+			completedAtFirstSend = completes;
+		}
+		return Reply::Ok(Sent(seq++));
+	});
+	auto sent = QSignalSpy(&harness.outbox(), &Outbox::sent);
+	const auto album = Outbox::NewAlbumId();
+	auto ids = QStringList();
+	for (auto i = 0; i != 3; ++i) {
+		auto options = SendFileOptions();
+		options.kind = UploadKind::File;
+		options.album = album;
+		ids.push_back(harness.outbox().sendFile(u"c2"_s, paths[i], options));
+	}
+	QCOMPARE(ids[0].left(23), ids[1].left(23));
+	QCOMPARE(ids[0].left(23), ids[2].left(23));
+	QCOMPARE(ids[0].mid(19, 3), u"a1b"_s);
+	QVERIFY(ids[0] != ids[1]);
+	{
+		const auto &history = harness.messages().history(u"c2"_s);
+		const auto index = history.indexOfKey(Message::KeyForLocal(ids[1]));
+		QVERIFY(index >= 0);
+		QCOMPARE(history.items[index].album, album);
+	}
+	QVERIFY(Test::WaitFor([&] { return sent.size() == 3; }, 10000));
+	QCOMPARE(completedAtFirstSend, 3);
+	const auto sends = harness.bodies(u"chat.send"_s);
+	QCOMPARE(sends.size(), 3);
+	for (auto i = 0; i != 3; ++i) {
+		QCOMPARE(sends[i].value("album"_L1).toString(), album);
+		QCOMPARE(sends[i].value("client_message_id"_L1).toString(), ids[i]);
+		QVERIFY(!sends[i].contains("caption_above"_L1));
+	}
+
+	// A caption above photos goes on the first item only.
+	auto plain = SendFileOptions();
+	plain.caption = u"x"_s;
+	plain.captionAbove = true;
+	plain.kind = UploadKind::File;
+	const auto file = harness.outbox().sendFile(u"c3"_s, paths[0], plain);
+	const auto &items = harness.outbox().items();
+	const auto found = std::find_if(items.begin(), items.end(), [&](const OutboxItem &item) {
+		return item.clientMessageId == file;
+	});
+	QVERIFY(found != items.end());
+	// Not a photo / video: the server refuses caption_above there.
+	QVERIFY(!found->body.contains("caption_above"_L1));
 }
 
 // The `media` signal tells that processing finished: the send goes out at

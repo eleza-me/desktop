@@ -15,7 +15,8 @@
 //
 // An item is one of: `source` (remote, through Support::MakeImageSource), `image`
 // (already decoded), `filePath` (a local picture, decoded on a worker thread) or
-// `videoPath` (a local video file: played by Media::VideoPlayerWidget).
+// `videoPath` (a local video file: played by Media::VideoPlayerWidget), or
+// `loadVideo` (a video downloaded when it is shown).
 #pragma once
 
 #include "ui/effects/animations.h"
@@ -51,6 +52,10 @@ struct ViewerItem {
 	QImage videoPoster;
 	QString caption;
 	QString saveName; // suggested name for «save as»
+	// A video that is not downloaded yet: called when the item is shown,
+	// `done` gets the local file (empty: it failed). `videoPoster` is shown
+	// meanwhile. `guard` dies with the viewer.
+	std::function<void(QObject *guard, std::function<void(QString)> done)> loadVideo;
 };
 
 class ImageViewer final : public Ui::RpWidget {
@@ -92,6 +97,7 @@ private:
 	}
 	void refreshImage();
 	void loadFile(const QString &path, int index);
+	void loadVideo(int index);
 	void setImage(const QImage &image, bool final);
 	void updateControls();
 	void updateVideoGeometry();

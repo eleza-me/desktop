@@ -11,8 +11,10 @@
 #include "history/history_mentions.h"
 #include "data/data_messages.h"
 #include "data/data_outbox.h"
+#include "data/data_upload.h"
 #include "data/data_session.h"
 #include "data/data_stickers.h"
+#include "history/history_album.h"
 #include "history/history_bot_keyboard.h"
 #include "history/history_bot_widgets.h"
 #include "history/history_boxes.h"
@@ -1034,10 +1036,7 @@ void ComposeControls::send(bool silent) {
 }
 
 void ComposeControls::sendForwards() {
-	auto &outbox = _session->data().outbox();
-	for (const auto &message : std::as_const(_forwards)) {
-		outbox.forward(_chatId, message);
-	}
+	ForwardMessages(_session, _chatId, _forwards);
 }
 
 void ComposeControls::saveEdit() {
@@ -1225,26 +1224,49 @@ void ComposeControls::attachFiles(const QStringList &paths) {
 		_draft->sent();
 		auto &outbox = _session->data().outbox();
 		const auto replyTo = (_mode == Mode::Reply) ? _target.seq : qint64(0);
-		auto captionLeft = !files.caption.isEmpty();
-		auto first = true;
+		// How each file goes: photos / videos together are an album, files
+		// with files and songs with songs too (one album id on every item).
+		auto families = std::vector<AlbumFamily>();
+		families.reserve(files.paths.size());
 		for (const auto &path : files.paths) {
-			const auto visual = Support::IsImageFile(path) || Support::IsVideoFile(path);
+			const auto kind = files.asFiles
+				? Data::UploadKind::File
+				: Data::Upload::Probe(path).kind;
+			families.push_back(AlbumFamilyOf(Data::MessageKindFromString(
+				Data::Upload::MessageKindFor(kind))));
+		}
+		const auto config = _session->data().clientConfig();
+		const auto plan = PlanAlbumSend(
+			families,
+			files.grouped,
+			config ? config->maxAlbumItems() : 10);
+		auto albumIds = QVector<QString>();
+		for (auto i = 0; i != plan.albumCount; ++i) {
+			albumIds.push_back(Data::Outbox::NewAlbumId());
+		}
+		// A picture carries the caption (the first of them); a file keeps
+		// its name as its text, so its caption follows as a message of its own.
+		auto captionLeft = !files.caption.isEmpty();
+		for (auto i = 0; i != int(files.paths.size()); ++i) {
+			const auto &path = files.paths[i];
+			const auto visual = (families[i] == AlbumFamily::Visual);
 			auto options = Data::SendFileOptions();
-			options.replyToSeq = first ? replyTo : 0;
+			options.replyToSeq = (i == 0) ? replyTo : 0;
 			options.spoiler = files.spoiler && visual && !files.asFiles;
 			options.fileName = QFileInfo(path).fileName();
 			if (files.asFiles) {
 				options.kind = Data::UploadKind::File;
 			}
-			// A picture carries the caption; a file keeps its name as its
-			// text, so its caption follows as a message of its own.
-			if (captionLeft && visual && !files.asFiles && files.paths.size() == 1) {
+			if (plan.albums[i] >= 0) {
+				options.album = albumIds[plan.albums[i]];
+			}
+			if (captionLeft && i == 0 && plan.captionOnFirst) {
 				options.caption = files.caption;
 				options.entities = files.entities;
+				options.captionAbove = files.captionAbove;
 				captionLeft = false;
 			}
 			outbox.sendFile(_chatId, path, options);
-			first = false;
 		}
 		if (captionLeft) {
 			auto options = Data::SendTextOptions();
