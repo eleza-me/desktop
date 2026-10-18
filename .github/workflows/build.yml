@@ -144,6 +144,21 @@ jobs:
       - name: Test
         run: ctest --preset windows-msvc-release --output-on-failure
 
+      # TEMPORARY: why test_sticker_decode cannot start on Windows.
+      - name: Diagnose test_sticker_decode
+        if: failure()
+        shell: pwsh
+        run: |
+          $b = 'build/windows-msvc-release'
+          $exe = "$b/tests/core/test_sticker_decode.exe"
+          dumpbin /nologo /dependents $exe
+          Get-ChildItem "$b/vcpkg_installed/x64-windows/bin" | Select-Object Name
+          Select-String -Path "$b/CMakeCache.txt" -Pattern 'VCPKG_INSTALLED_DIR|VCPKG_TARGET_TRIPLET|rlottie_DIR'
+          ctest --test-dir $b -R test_sticker_decode -V 2>&1 | Select-Object -First 40
+          $env:PATH = "$((Resolve-Path "$b/vcpkg_installed/x64-windows/bin").Path);$env:PATH"
+          & $exe
+          "exit code: $LASTEXITCODE (0x{0:X})" -f $LASTEXITCODE
+
       - name: Deploy (windeployqt)
         shell: pwsh
         run: |
