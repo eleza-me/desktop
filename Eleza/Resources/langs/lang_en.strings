@@ -2101,3 +2101,10 @@
 "lng_settings_session_reported" = "Reported — that device was signed out";
 "lng_settings_sessions_not_me_about" = "Don’t recognize a device? Click it and choose «This wasn’t me».";
 
+// ---- profile and eli: hiding ----
+"lng_profile_hide_posts" = "Hide posts in Eli";
+"lng_profile_unhide_posts" = "Show posts in Eli again";
+"lng_profile_hidden_toast" = "Posts from {name} won’t show in Eli";
+"lng_eli_revoke_links" = "Revoke share links";
+"lng_eli_revoke_links_sure" = "All links created from this post so far will stop working. New links will work.";
+"lng_eli_links_revoked" = "Previous links revoked";

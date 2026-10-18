@@ -96,6 +96,7 @@ private:
 	void copyLink();
 	void togglePostNotifications();
 	void toggleMute();
+	void toggleHide();
 	void toggleBlock();
 	void removeFollower();
 	void report();
@@ -115,6 +116,7 @@ private:
 	bool _blocked = false;
 	bool _justUnblocked = false;
 	bool _muted = false;
+	bool _hidden = false;
 	bool _postNotifications = false;
 	bool _openingChat = false;
 	bool _watchingPresence = false;

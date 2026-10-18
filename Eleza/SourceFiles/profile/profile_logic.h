@@ -64,6 +64,8 @@ enum class MenuEntry {
 	CopyLink,
 	Mute,
 	Unmute,
+	Hide, // their posts out of the feed
+	Unhide,
 	RemoveFollower,
 	Report,
 	Block,
@@ -89,6 +91,7 @@ struct ViewerState {
 	bool isPrivate = false;
 	bool followsYou = false;
 	bool muted = false;
+	bool hidden = false; // their posts are hidden from my feed
 	bool postNotifications = false;
 	bool hasHandle = true;
 	FollowUi follow = FollowUi::None;

@@ -608,6 +608,22 @@ void Feed::shareLink(
 		.send();
 }
 
+void Feed::revokeShareLinks(
+		const QString &id,
+		base::Guard guard,
+		Fn<void()> done,
+		FailCallback fail) {
+	_session->api().request(Api::Delete, u"/v1/posts/%1/share-links"_s.arg(PathSegment(id)))
+		.guard(guard)
+		.done([=] {
+			if (done) {
+				done();
+			}
+		})
+		.fail(std::move(fail))
+		.send();
+}
+
 void Feed::sharedPost(
 		const QString &slug,
 		base::Guard guard,

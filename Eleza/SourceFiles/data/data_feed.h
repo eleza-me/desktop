@@ -98,6 +98,8 @@ public:
 	void setPinned(const QString &id, bool pinned);
 	// https://eleza.me/s/<slug>
 	void shareLink(const QString &id, base::Guard guard, Fn<void(const QString &)> done, FailCallback fail = nullptr);
+	// Every share link of my post stops working (new ones can be made).
+	void revokeShareLinks(const QString &id, base::Guard guard, Fn<void()> done, FailCallback fail = nullptr);
 	void sharedPost(const QString &slug, base::Guard guard, Fn<void(const Post &)> done, FailCallback fail = nullptr);
 	void replies(const QString &root, const QString &cursor, base::Guard guard, Fn<void(const RepliesPage &)> done, FailCallback fail = nullptr);
 	// A reply under my post (moderation) or my own reply.

@@ -2131,3 +2131,10 @@
 "lng_settings_session_reported" = "گزارش شد؛ آن دستگاه از حساب خارج شد";
 "lng_settings_sessions_not_me_about" = "دستگاهی را نمی‌شناسی؟ رویش بزن و «این من نبودم» را انتخاب کن.";
 
+// ---- profile and eli: hiding ----
+"lng_profile_hide_posts" = "پنهان کردن پست‌ها در الی";
+"lng_profile_unhide_posts" = "نمایش دوباره پست‌ها در الی";
+"lng_profile_hidden_toast" = "پست‌های {name} دیگر در الی نشان داده نمی‌شود";
+"lng_eli_revoke_links" = "باطل کردن پیوندهای اشتراک";
+"lng_eli_revoke_links_sure" = "همهٔ پیوندهایی که تا حالا از این پست ساخته شده از کار می‌افتند. پیوندهای تازه کار می‌کنند.";
+"lng_eli_links_revoked" = "پیوندهای قبلی باطل شد";
