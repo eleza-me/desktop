@@ -2,6 +2,7 @@
 
 #include "data/data_groups.h"
 #include "data/data_session.h"
+#include "groups/groups_admin.h"
 #include "groups/groups_boxes.h"
 #include "groups/groups_info.h"
 #include "lang_auto.h"
@@ -38,6 +39,10 @@ constexpr auto kDebugRoutePollCount = 40;
 //   debug/group-admin/<g>/<u>        «مدیر کردن» for a member
 //   debug/group-restrict/<g>/<u>     «محدود کردن عضو»
 //   debug/group-member-menu/<g>/<u>[/<role>]  the menu of a member row (at the cursor)
+//   debug/group-slow/<g>             «حالت آهسته»
+//   debug/group-hide/<g>             «پنهان کردن اعضا»
+//   debug/group-reactions/<g>/<seq>  who reacted to a message
+//   debug/group-link-members/<g>/<link>  who joined through an invite link
 bool ShowDebugRoute(
 		Window::SessionController *controller,
 		const QString &name) {
@@ -82,6 +87,14 @@ bool ShowDebugRoute(
 		ShowAdminBox(controller, group, member(), nullptr);
 	} else if (what == u"restrict" && !extra.isEmpty()) {
 		ShowRestrictBox(controller, group, member(), nullptr);
+	} else if (what == u"slow") {
+		ShowSlowModeBox(controller, group);
+	} else if (what == u"hide") {
+		ShowHideMembersBox(controller, group);
+	} else if (what == u"reactions" && extra.toLongLong() > 0) {
+		ShowReactionsBox(controller, group, extra.toLongLong());
+	} else if (what == u"link-members" && !extra.isEmpty()) {
+		ShowInviteMembersBox(controller, group, extra, QString());
 	} else if (what == u"member-menu" && !extra.isEmpty()) {
 		ShowMemberMenu(controller, group, member(), QCursor::pos(), nullptr);
 	} else {
@@ -148,8 +161,20 @@ void Register() {
 			controller->showToast(tr::lng_groups_not_available(tr::now));
 			return true;
 		}
+		const auto show = route.queryValue(u"show"_s);
+		if (show == u"reactions") {
+			// A box over whatever is on screen (the chat of the group).
+			if (route.seq() > 0) {
+				ShowReactionsBox(controller, route.id, route.seq());
+			}
+			return true;
+		}
 		controller->showMainSection(
-			InfoFactory(route.id),
+			(show == u"media" && groups.thirdRelease())
+				? MediaFactory(route.id)
+				: (show == u"log" && groups.thirdRelease())
+				? AdminLogFactory(route.id)
+				: InfoFactory(route.id),
 			{ .tab = Window::Tab::Chats });
 		return true;
 	});

@@ -301,6 +301,18 @@ void ListWidget::showContextMenu(
 			Q_EMIT forwardRequested({ message });
 		}, &st::menuIconForward);
 	}
+	// Who reacted (a group of the third release that shows its members).
+	if (_group
+		&& groupHeader
+		&& !groupHeader->membersHidden
+		&& !message.reactions.isEmpty()
+		&& message.seq > 0
+		&& _session->data().groups().thirdRelease()) {
+		const auto seq = message.seq;
+		menu->addAction(tr::lng_groups_reactions(tr::now), [=, this] {
+			_controller->openRoute(Window::Routes::GroupReactions(_chatId, seq));
+		}, &st::menuIconReactions);
+	}
 	if (_group && !message.mine && !message.sender.isEmpty()) {
 		const auto sender = message.sender;
 		menu->addAction(tr::lng_groups_sender_profile(tr::now), [=, this] {
