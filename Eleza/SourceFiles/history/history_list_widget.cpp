@@ -1149,7 +1149,10 @@ void ListWidget::positionInitially() {
 			_scroll->scrollToY(std::max(rowTop(divider) - 8, 0));
 			_inLayout = false;
 			rememberAnchor();
-			_atBottom = _anchor.bottom;
+			if (_atBottom != _anchor.bottom) {
+				_atBottom = _anchor.bottom;
+				Q_EMIT stateChanged();
+			}
 			return;
 		}
 	}

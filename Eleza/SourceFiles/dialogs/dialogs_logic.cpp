@@ -168,13 +168,21 @@ QString ActivityText(const QString &kind) {
 	return tr::lng_action_typing(tr::now);
 }
 
+QString ActivityText(const QString &kind, const QString &name) {
+	const auto text = ActivityText(kind);
+	return (text.isEmpty() || name.isEmpty())
+		? text
+		: tr::lng_action_member(tr::now, lt_name, name, lt_action, text);
+}
+
 Preview PreviewFor(
 		const Data::Chat &chat,
 		const QString &activityKind,
 		const QString &senderName,
-		const QString &noteText) {
+		const QString &noteText,
+		const QString &activityName) {
 	auto result = Preview();
-	const auto activity = ActivityText(activityKind);
+	const auto activity = ActivityText(activityKind, activityName);
 	if (!activity.isEmpty()) {
 		result.kind = Preview::Kind::Activity;
 		result.text = activity;

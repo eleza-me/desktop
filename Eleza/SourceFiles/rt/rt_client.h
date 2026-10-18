@@ -60,6 +60,12 @@ struct Frame {
 		LiveLocation, // data = { chat, seq, sender, location, at, until }
 		Call,         // kind = "call.*", data = the voice service's JSON
 		Group,        // a change of a group: data = { group, pts, kind, data? }
+		GroupTyping,  // chat = the group, user, kind ("cancel" ends it), ttl (seconds)
+		GroupAdmin,   // chat = the group, kind ("join_requests"), count, user (a new request)
+		Config,       // version: of the client-config the server runs
+		Settings,     // version: of my settings document (changed)
+		Media,        // data = { media, state: ready | rejected, reason }
+		Signal,       // any other signal: kind = its type, data = its JSON body ("story", …)
 	};
 	Type type = Type::Disconnected;
 	qint64 pts = 0;
@@ -75,6 +81,7 @@ struct Frame {
 	QString category;
 	int count = 0;
 	qint64 since = 0;
+	qint64 version = 0;
 };
 
 class Client final : public QObject {
@@ -142,6 +149,9 @@ public:
 	// ---- ephemeral signals and subscriptions (re-sent after every reconnect)
 	// `cap` is the chat's capability token (chat.capability).
 	bool sendTyping(const QString &cap, const QString &kind);
+	// An activity indicator in a group (the connection's subscription to
+	// the group is the proof of membership).
+	bool sendGroupTyping(const QString &group, const QString &kind);
 	// Subscribes to presence changes; `done` gets the current PresenceOut list
 	// ([] when not connected - use POST /v1/presence then).
 	void subscribePresence(

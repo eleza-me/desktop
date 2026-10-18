@@ -31,8 +31,22 @@ constexpr auto kMaxIncomingMessage = quint64(Noise::kMaxMessage) + 1024;
 		return "FeedNewSignal";
 	} else if (type == u"state") {
 		return "StateSignal";
+	} else if (type == u"group_typing") {
+		return "GroupTypingSignal";
+	} else if (type == u"group_admin") {
+		return "GroupAdminSignal";
 	}
 	return nullptr;
+}
+
+// Signals whose body is JSON in the generic carrier (CallSignal).
+[[nodiscard]] bool JsonSignal(const QString &type) {
+	return type.startsWith(u"call.")
+		|| type == u"group"
+		|| type == u"config"
+		|| type == u"media"
+		|| type == u"settings"
+		|| type == u"story";
 }
 
 [[nodiscard]] ErrorInfo ParseError(const QJsonObject &error) {
@@ -248,9 +262,10 @@ void Session::dispatch(const QJsonObject &envelope, int depth) {
 		auto body = QJsonObject();
 		if (const auto name = SignalBody(type); name && !raw.isEmpty()) {
 			body = Proto::Decode(QLatin1StringView(name), raw).value_or(QJsonObject());
-		} else if ((type.startsWith(u"call.") || type == u"group") && !raw.isEmpty()) {
+		} else if (JsonSignal(type) && !raw.isEmpty()) {
 			// The voice service's JSON travels as is, in the generic JSON
-			// carrier; so does a change of a group.
+			// carrier; so do a change of a group, config / settings / media
+			// / story hints.
 			if (const auto call = Proto::Decode("CallSignal"_L1, raw)) {
 				body = QJsonDocument::fromJson(BytesOf(*call, "json"_L1)).object();
 			}

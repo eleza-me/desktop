@@ -505,7 +505,8 @@ void Groups::applyMessageFrame(const QString &group, const QJsonObject &data, bo
 	const auto mine = message.mine;
 	const auto isNew = message.seq > row->lastSeq;
 	const auto visible = message.visible();
-	const auto onScreen = (chats.visibleChat() == group);
+	// On screen with its newest message in view: read as it comes.
+	const auto onScreen = chats.readingLive(group);
 	const auto service = (message.kind == MessageKind::System);
 	const auto delta = service ? GroupRules::MemberDelta(message.system) : 0;
 	const auto pinned = service ? GroupRules::NotePinnedSeq(message.system) : 0;
@@ -792,7 +793,8 @@ void Groups::applyDifference(
 	const auto lastSeqBefore = row->lastSeq;
 	const auto lastReadBefore = row->lastReadSeq;
 	const auto rowBehind = (newPts > row->groupPts);
-	const auto onScreen = (chats.visibleChat() == group);
+	// On screen with its newest message in view: read as it comes.
+	const auto onScreen = chats.readingLive(group);
 	auto changes = QVector<GroupRules::Change>();
 	auto changed = QVector<Message>();
 	auto gone = QVector<qint64>();
@@ -1438,6 +1440,26 @@ void Groups::historyPage(const Group &header, bool newest) {
 		// its way) are behind: one difference from where the cache is.
 		startDifference(header.id);
 	}
+}
+
+void Groups::applyAdminSignal(
+		const QString &group,
+		const QString &kind,
+		int count,
+		const QString &user) {
+	if (!_started || !enabled() || !held(group)) {
+		return;
+	} else if (kind != u"join_requests") {
+		// Something newer than this client knows: the header tells.
+		refreshHeader(group);
+		return;
+	}
+	_session->chats().patch(group, [&](Chat &c) {
+		if (c.group) {
+			c.group->joinRequests = std::max(count, 0);
+		}
+	});
+	Q_EMIT joinRequestsChanged(group, user);
 }
 
 void Groups::refreshHeader(const QString &group) {

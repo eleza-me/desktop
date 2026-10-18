@@ -456,6 +456,8 @@ void Widget::setupList() {
 	connect(_list, &ListWidget::stateChanged, this, [this] {
 		refreshDownButton();
 		refreshState();
+		// Scrolled up, new messages count as unread until they are seen.
+		refreshActive();
 	});
 	connect(_list, &ListWidget::focusRequested, this, [this] { setInnerFocus(); });
 	connect(_scroll, &Ui::ScrollArea::scrolled, this, [this] { refreshDownButton(); });
@@ -767,7 +769,9 @@ void Widget::refreshActive() {
 	_list->setActive(active);
 	auto &chats = _session->data().chats();
 	if (active) {
-		chats.setVisibleChat(_chatId);
+		const auto atEnd = _list->atBottom()
+			&& !_session->data().messages().history(_chatId).hasMoreAfter;
+		chats.setVisibleChat(_chatId, atEnd);
 	} else if (chats.visibleChat() == _chatId) {
 		chats.setVisibleChat(QString());
 	}

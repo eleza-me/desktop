@@ -3,6 +3,7 @@
 #include "api/api_client_config.h"
 #include "data/data_chats.h"
 #include "data/data_conversations.h"
+#include "data/data_graph.h"
 #include "data/data_groups.h"
 #include "data/data_json.h"
 #include "data/data_messages.h"
@@ -10,6 +11,7 @@
 #include "data/data_outbox.h"
 #include "data/data_session.h"
 #include "data/data_transport.h"
+#include "data/data_upload.h"
 #include "data/data_users.h"
 #include "rt/rt_proto.h"
 #include "storage/storage_database.h"
@@ -234,9 +236,41 @@ void Sync::handle(const Rt::Frame &frame) {
 		// A change of a group: its own counter, its own rule.
 		_session->groups().handleFrame(frame.data);
 		break;
+	case Type::GroupTyping:
+		// Mine from another device is not shown.
+		if (frame.user != _session->userId()) {
+			_session->chats().setActivity(
+				frame.chat,
+				(frame.kind == u"cancel") ? QString() : frame.kind,
+				frame.ttl,
+				frame.user);
+		}
+		break;
+	case Type::GroupAdmin:
+		_session->groups().applyAdminSignal(frame.chat, frame.kind, frame.count, frame.user);
+		break;
+	case Type::Config:
+		// Right after every Hello and on every change: read the document
+		// only when it is not the one held.
+		if (const auto config = _session->clientConfig()) {
+			if (frame.version <= 0 || frame.version != config->version()) {
+				config->load();
+			}
+		}
+		break;
+	case Type::Settings:
+		_session->graph().settingsVersionChanged(frame.version);
+		break;
+	case Type::Media:
+		_session->upload().mediaProcessed(
+			Json::String(frame.data, "media"_L1),
+			Json::String(frame.data, "state"_L1),
+			Json::String(frame.data, "reason"_L1));
+		break;
 	case Type::FeedNew:
 	case Type::LiveLocation:
 	case Type::Call:
+	case Type::Signal:
 		// Screens that care listen to the transport's frames themselves.
 		break;
 	}
@@ -282,11 +316,16 @@ void Sync::applyLive(
 		if (!reader.isEmpty() && !mine) {
 			messages.markPeerRead(chat, seq);
 		} else if (row && row->lastReadSeq < seq) {
+			// I read it on another device, maybe not to the end.
+			const auto left = UnreadAfterRead(
+				*row,
+				messages.held(chat) ? &messages.history(chat) : nullptr,
+				seq);
 			chats.patch(chat, [&](Chat &c) {
 				c.lastReadSeq = seq;
 				c.info.lastReadSeq = seq;
-				c.unread = 0;
-				c.unreadCapped = false;
+				c.unread = left.count;
+				c.unreadCapped = left.capped;
 			});
 		}
 	} else if (kind == u"played") {
@@ -465,7 +504,7 @@ void Sync::applyMessage(Message message, bool live) {
 	if (const auto current = chats.chat(chatId)) {
 		const auto isNew = message.seq > current->lastSeq;
 		const auto isLast = isNew || message.seq == current->lastSeq;
-		const auto countsUnread = isNew && !mine && chats.visibleChat() != chatId;
+		const auto countsUnread = isNew && !mine && !chats.readingLive(chatId);
 		chats.patch(chatId, [&](Chat &c) {
 			// A message waiting in the outbox stays the row's preview.
 			const auto pending = c.lastMessage && c.lastMessage->local()
@@ -521,10 +560,16 @@ void Sync::applyItem(const QJsonObject &item, bool live) {
 			}
 			const auto row = _session->chats().chat(info.chat);
 			if (info.lastReadSeq && row && row->lastReadSeq < info.lastReadSeq) {
+				auto &messages = _session->messages();
+				const auto left = UnreadAfterRead(
+					*row,
+					messages.held(info.chat) ? &messages.history(info.chat) : nullptr,
+					info.lastReadSeq);
 				_session->chats().patch(info.chat, [&](Chat &c) {
 					c.lastReadSeq = info.lastReadSeq;
-					c.unread = 0;
-					c.unreadCapped = false;
+					c.info.lastReadSeq = info.lastReadSeq;
+					c.unread = left.count;
+					c.unreadCapped = left.capped;
 				});
 			}
 			return;
@@ -617,7 +662,14 @@ void Sync::syncOnce(std::optional<qint64> from, Fn<void()> done) {
 }
 
 void Sync::differenceStep(qint64 pts, int page, Fn<void()> done) {
-	if (page >= kMaxDifferencePages || !_started) {
+	if (!_started) {
+		done();
+		return;
+	} else if (page >= kMaxDifferencePages) {
+		// Enough pages for one round, but the log goes on: another round
+		// starts from where this one stopped (every page moved the pts),
+		// instead of leaving the rest for a gap that may never come.
+		_syncAgain = true;
 		done();
 		return;
 	}
@@ -647,16 +699,19 @@ void Sync::differenceStep(qint64 pts, int page, Fn<void()> done) {
 				return;
 			}
 			const auto updates = diff.value("updates"_L1).toArray();
-			auto last = serverPts;
+			// The highest pts applied: an item without one (or out of
+			// order) must not move the point back.
+			auto last = updates.isEmpty() ? std::max(pts, serverPts) : pts;
 			for (const auto &item : updates) {
 				const auto update = item.toObject();
 				applyItem(update, false);
-				last = Json::Int64(update, "pts"_L1);
+				last = std::max(last, Json::Int64(update, "pts"_L1));
 			}
 			if (last > _pts.value_or(0)) {
 				setPts(last);
 			}
-			if (updates.isEmpty() || last >= serverPts) {
+			if (updates.isEmpty() || last >= serverPts || last <= pts) {
+				// Done, or a page that did not move: the next gap asks again.
 				done();
 			} else {
 				differenceStep(last, page + 1, done);

@@ -1579,6 +1579,17 @@ public:
 	void prepare() override {
 		delegate()->setLoading(true);
 		load(true);
+		// A new request, or one decided by another admin: read the list
+		// again (the group_admin signal).
+		QObject::connect(
+			&_controller->session().data().groups(),
+			&Data::Groups::joinRequestsChanged,
+			delegate()->peerListBox(),
+			[=, this](const QString &group) {
+				if (group == _groupId) {
+					load(true);
+				}
+			});
 	}
 	void loadMore() override {
 		if (!_cursor.isEmpty()) {

@@ -90,6 +90,10 @@ public:
 	void cancel(Id id);
 	// `DELETE /v1/uploads/{id}` (best effort).
 	void abandon(const QString &uploadId);
+	// The realtime `media` signal: one of my uploads finished processing
+	// (state "ready" or "rejected"). An upload waiting for it goes on at
+	// once instead of at its next poll.
+	void mediaProcessed(const QString &mediaId, const QString &state, const QString &reason);
 
 	[[nodiscard]] static FileProbe Probe(const QString &path, bool asVoice = false);
 	[[nodiscard]] static UploadKind KindFor(const QString &mime, bool asVoice = false);
@@ -105,6 +109,7 @@ public:
 	static constexpr auto kParallelParts = 3;
 	static constexpr auto kPartAttempts = 3;
 	static constexpr auto kReadyAttempts = 60;
+	static constexpr auto kRememberProcessed = 32;
 
 private:
 	struct Part {
@@ -152,11 +157,17 @@ private:
 	void finish(Id id);
 	void fail(Id id, const Api::Error &error);
 	void later(Id id, int ms, Fn<void()> callback);
+	// Finishes or fails the job by the outcome the signal told; false when
+	// none is known.
+	bool applyProcessed(Id id);
 
 	Session *_session = nullptr;
 	QThreadPool _pool;
 	std::map<Id, std::unique_ptr<Job>> _jobs;
 	Id _lastId = 0;
+	// Outcomes the signal told before the upload asked for them (the
+	// signal can overtake the answer of /complete): media id -> state, reason.
+	std::vector<std::pair<QString, std::pair<QString, QString>>> _processed;
 
 };
 

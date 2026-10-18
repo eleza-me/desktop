@@ -73,11 +73,16 @@ struct Preview {
 // A group row names who wrote the last message («سارا: سلام») and words its
 // notes with people's names: the list passes both (`senderName` is the first
 // name of the sender, `noteText` the worded note of a system message).
+// `activityName`: in a group, the first name of the member whose activity
+// it is («سارا در حال نوشتن…»).
 [[nodiscard]] Preview PreviewFor(
 	const Data::Chat &chat,
 	const QString &activityKind = QString(),
 	const QString &senderName = QString(),
-	const QString &noteText = QString());
+	const QString &noteText = QString(),
+	const QString &activityName = QString());
+// «typing…», or «Sara is typing…» with a name.
+[[nodiscard]] QString ActivityText(const QString &kind, const QString &name);
 
 // Whether the «برای … هم حذف شود» checkbox makes sense: a direct chat with a
 // person (not «Saved messages», not a bot, not a conversation).

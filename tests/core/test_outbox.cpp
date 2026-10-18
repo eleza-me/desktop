@@ -58,6 +58,7 @@ private Q_SLOTS:
 	void bodiesOfEveryKind();
 	void echoBeforeAnswer();
 	void fileIsUploadedFirst();
+	void processedSignalEndsTheWait();
 	void queueSurvivesRestart();
 
 };
@@ -584,6 +585,72 @@ void TestOutbox::fileIsUploadedFirst() {
 	QCOMPARE(sends[0].value("client_message_id"_L1).toString(), id);
 	QCOMPARE(sends[1].value("text"_L1).toString(), u"after"_s);
 	QCOMPARE(harness.messages().find(u"c2"_s, 70)->attachment, u"med1"_s);
+}
+
+// The `media` signal tells that processing finished: the send goes out at
+// once instead of at the next poll of /v1/media/{id} (and a rejected file
+// fails without more polls).
+void TestOutbox::processedSignalEndsTheWait() {
+	auto dir = QTemporaryDir();
+	QVERIFY(dir.isValid());
+	const auto write = [&](const QString &name) {
+		const auto path = dir.filePath(name);
+		auto file = QFile(path);
+		if (file.open(QIODevice::WriteOnly)) {
+			file.write(base::RandomBytes(10));
+		}
+		return path;
+	};
+	auto harness = Harness();
+	QVERIFY(harness.start());
+	auto uploads = 0;
+	auto polls = QMap<QByteArray, int>();
+	harness.http.handler = [&](const Test::HttpServer::Request &request) {
+		using Response = Test::HttpServer::Response;
+		if (request.method == "POST" && request.path == "/v1/uploads") {
+			++uploads;
+			return Response::Ok(QJsonObject{
+				{ u"upload_id"_s, u"up%1"_s.arg(uploads) },
+				{ u"media_id"_s, u"med%1"_s.arg(uploads) },
+				{ u"state"_s, u"pending"_s },
+				{ u"part_size"_s, 10 },
+				{ u"parts"_s, QJsonArray{
+					QJsonObject{ { u"number"_s, 1 }, { u"url"_s, harness.http.base() + u"/put/%1"_s.arg(uploads) } },
+				} },
+			});
+		} else if (request.path.startsWith("/v1/media/")) {
+			++polls[request.path];
+			return Response::Ok(QJsonObject{ { u"state"_s, u"processing"_s } });
+		}
+		return Response::Ok();
+	};
+	harness.on(u"chat.send"_s, [&](const Call &) {
+		return Reply::Ok(Sent(80));
+	});
+	const auto processed = [&](const QString &media, const QString &state) {
+		auto frame = Rt::Frame();
+		frame.type = Rt::Frame::Type::Media;
+		frame.data = QJsonObject{ { u"media"_s, media }, { u"state"_s, state } };
+		harness.transport.emitFrame(frame);
+	};
+	auto sent = QSignalSpy(&harness.outbox(), &Outbox::sent);
+	auto options = SendFileOptions();
+	options.kind = UploadKind::File;
+	harness.outbox().sendFile(u"c2"_s, write(u"a.bin"_s), options);
+	QVERIFY(Test::WaitFor([&] { return polls.value("/v1/media/med1") > 0; }, 10000));
+	processed(u"med1"_s, u"ready"_s);
+	QVERIFY(Test::WaitFor([&] { return sent.size() == 1; }, 3000));
+	QCOMPARE(harness.bodies(u"chat.send"_s).back().value("attachment"_L1).toString(), u"med1"_s);
+	QVERIFY(polls.value("/v1/media/med1") <= 2);
+
+	// Rejected: the message fails, nothing is sent.
+	auto failed = QSignalSpy(&harness.outbox(), &Outbox::failed);
+	harness.outbox().sendFile(u"c2"_s, write(u"b.bin"_s), options);
+	QVERIFY(Test::WaitFor([&] { return polls.value("/v1/media/med2") > 0; }, 10000));
+	processed(u"med2"_s, u"rejected"_s);
+	QVERIFY(Test::WaitFor([&] { return !failed.isEmpty(); }, 3000));
+	QCOMPARE(sent.size(), 1);
+	QCOMPARE(harness.bodies(u"chat.send"_s).size(), 1);
 }
 
 void TestOutbox::queueSurvivesRestart() {

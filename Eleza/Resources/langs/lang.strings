@@ -125,6 +125,8 @@
 "lng_action_sending_video" = "در حال فرستادن ویدیو…";
 // pwa: در حال فرستادن فایل…
 "lng_action_sending_file" = "در حال فرستادن فایل…";
+// A group member's activity: «Sara» + «typing…».
+"lng_action_member" = "{name} {action}";
 // pwa: آخرین بازدید {time}
 "lng_status_last_seen" = "آخرین بازدید {time}";
 // pwa: آخرین بازدید همین حالا

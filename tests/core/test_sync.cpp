@@ -2,6 +2,7 @@
 // difference is read, what is acknowledged, and that nothing polls while the
 // connection is up.
 #include "api/api_client_config.h"
+#include "data/data_graph.h"
 #include "data/data_json.h"
 #include "data/data_notifications.h"
 #include "test_harness.h"
@@ -114,6 +115,9 @@ private Q_SLOTS:
 	void gapReadsTheDifference();
 	void differenceIsPaged();
 	void tooLongStartsOver();
+	void differenceKeepsTheHighestPts();
+	void differenceGoesOnAfterThePageLimit();
+	void settingsAndConfigSignals();
 	void resumedReplay();
 	void holeInReplay();
 	void helloAheadWithoutReplay();
@@ -274,6 +278,121 @@ void TestSync::tooLongStartsOver() {
 	// Everything cached is read again: the inbox now, timelines when opened.
 	QVERIFY(harness.transport.count(u"chat.inbox"_s) > inboxLoads);
 	QVERIFY(!harness.messages().history(u"c1"_s).loaded);
+}
+
+void TestSync::differenceKeepsTheHighestPts() {
+	auto harness = Harness();
+	QVERIFY(Connect(harness, 100));
+	harness.on(u"sync.difference"_s, [](const Call &call) {
+		if (call.body.value("pts"_L1).toString() != u"100") {
+			return Reply::Ok(Difference(104, QJsonArray()));
+		}
+		// The last item carries no pts: the point must not go back to 0
+		// (which would read the whole log - too_long - next).
+		auto bare = Item(0, MessageJson(u"c1"_s, 12, u"u_sara"_s, u"c"_s));
+		bare.remove(u"pts"_s);
+		return Reply::Ok(Difference(104, QJsonArray{
+			Item(101, MessageJson(u"c1"_s, 10, u"u_sara"_s, u"a"_s)),
+			Item(102, MessageJson(u"c1"_s, 11, u"u_sara"_s, u"b"_s)),
+			bare,
+		}));
+	});
+	const auto states = harness.transport.count(u"sync.state"_s);
+	harness.sync().catchUp();
+	QVERIFY(Test::WaitFor([&] { return !harness.sync().updating(); }));
+	QCOMPARE(DifferenceFrom(harness), (QStringList{ u"100"_s, u"102"_s }));
+	QCOMPARE(harness.sync().pts().value_or(-1), 104);
+	QVERIFY(harness.messages().find(u"c1"_s, 12) != nullptr);
+	QCOMPARE(harness.transport.count(u"sync.state"_s), states);
+}
+
+void TestSync::differenceGoesOnAfterThePageLimit() {
+	auto harness = Harness();
+	QVERIFY(Connect(harness, 100));
+	// One update per page, more pages than one round reads.
+	const auto end = qint64(100 + Sync::kMaxDifferencePages + 5);
+	harness.on(u"sync.difference"_s, [=](const Call &call) {
+		const auto from = call.body.value("pts"_L1).toString().toLongLong();
+		auto updates = QJsonArray();
+		if (from < end) {
+			updates.push_back(QJsonObject{
+				{ u"pts"_s, QString::number(from + 1) },
+				{ u"kind"_s, u"notif"_s },
+				{ u"data"_s, QJsonObject{ { u"news"_s, double(from + 1 - 100) } } },
+			});
+		}
+		return Reply::Ok(Difference(end, updates));
+	});
+	harness.sync().catchUp();
+	QVERIFY(Test::WaitFor([&] { return !harness.sync().updating(); }, 15000));
+	QCOMPARE(harness.sync().pts().value_or(-1), end);
+	QCOMPARE(harness.transport.count(u"sync.difference"_s), int(end - 100));
+}
+
+void TestSync::settingsAndConfigSignals() {
+	auto settingsReads = 0;
+	auto configReads = 0;
+	auto configServer = Test::HttpServer();
+	configServer.handler = [&](const Test::HttpServer::Request &) {
+		++configReads;
+		return Test::HttpServer::Response::Ok(QJsonObject{
+			{ u"version"_s, 7 },
+			{ u"values"_s, QJsonObject() },
+		});
+	};
+	auto configApi = Api::Client(configServer.base(), u"1.0.0"_s);
+	auto config = Api::ClientConfig(&configApi, nullptr);
+	auto loaded = false;
+	config.load(nullptr, [&](bool) { loaded = true; });
+	QVERIFY(Test::WaitFor([&] { return loaded; }));
+	QCOMPARE(config.version(), 7);
+
+	auto options = Harness::Options();
+	options.clientConfig = &config;
+	auto harness = Harness(options);
+	harness.http.handler = [&](const Test::HttpServer::Request &request) {
+		if (request.path == "/v1/me/settings") {
+			++settingsReads;
+			return Test::HttpServer::Response::Ok(QJsonObject{
+				{ u"privacy"_s, QJsonObject{ { u"read_receipts"_s, settingsReads < 2 } } },
+			});
+		}
+		return Test::HttpServer::Response::Ok();
+	};
+	QVERIFY(harness.start());
+	auto &graph = harness.session->graph();
+	const auto signal = [&](Type type, qint64 version) {
+		auto frame = Rt::Frame();
+		frame.type = type;
+		frame.version = version;
+		harness.transport.emitFrame(frame);
+	};
+
+	// Settings nobody read yet are not read because of the signal.
+	signal(Type::Settings, 3);
+	Test::Settle(50);
+	QCOMPARE(settingsReads, 0);
+	auto read = false;
+	graph.loadSettings(false, base::Guard(), [&](const QJsonObject &) { read = true; });
+	QVERIFY(Test::WaitFor([&] { return read; }));
+	QCOMPARE(settingsReads, 1);
+	QVERIFY(graph.settingValue(u"privacy.read_receipts"_s).toBool());
+	// Changed on another device: read again, once per version.
+	auto changed = QSignalSpy(&graph, &Graph::settingsChanged);
+	signal(Type::Settings, 4);
+	QVERIFY(Test::WaitFor([&] { return settingsReads == 2 && !changed.isEmpty(); }));
+	QVERIFY(!graph.settingValue(u"privacy.read_receipts"_s).toBool());
+	signal(Type::Settings, 4);
+	Test::Settle(50);
+	QCOMPARE(settingsReads, 2);
+
+	// client-config: the version held is not read again, a new one is.
+	const auto reads = configReads;
+	signal(Type::Config, 7);
+	Test::Settle(50);
+	QCOMPARE(configReads, reads);
+	signal(Type::Config, 8);
+	QVERIFY(Test::WaitFor([&] { return configReads == reads + 1; }));
 }
 
 void TestSync::resumedReplay() {

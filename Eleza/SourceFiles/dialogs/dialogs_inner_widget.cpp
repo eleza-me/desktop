@@ -431,11 +431,15 @@ void InnerWidget::prepare(Row &row) {
 				Support::MemberName(&session, last.sender));
 		}
 	}
+	const auto activityName = (activity && chat.isGroup && !activity->user.isEmpty())
+		? Data::GroupRules::FirstName(Support::MemberName(&session, activity->user))
+		: QString();
 	row.preview = PreviewFor(
 		chat,
 		activity ? activity->kind : QString(),
 		senderName,
-		noteText);
+		noteText,
+		activityName);
 	if (!row.preview.text.isEmpty()) {
 		// For painting: "@sara" / "#tag" keep their direction inside the
 		// line, and the line reads in the direction of its own text (a
