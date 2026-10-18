@@ -76,12 +76,16 @@ public:
 	// Forwards a message I can see: text and media keep their kind (media is
 	// not uploaded again); stickers, locations and posts are sent anew.
 	QString forward(const QString &toChat, const Message &source);
-	// A result of a bot's inline query.
+	// A result of a bot's inline query (the server takes the content from
+	// the bot's answer; `previewText`, its title, is only what the local
+	// bubble shows until the message comes back).
 	QString sendInlineResult(
 		const QString &chat,
 		const QString &bot,
 		const QString &queryId,
-		const QString &resultId);
+		const QString &resultId,
+		const QString &previewText = QString(),
+		qint64 replyToSeq = 0);
 
 	// Tries a failed message again.
 	void retry(const QString &clientMessageId);

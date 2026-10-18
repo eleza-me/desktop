@@ -61,6 +61,9 @@ public:
 	// The second release of groups (admins, invite links, pins, mentions).
 	[[nodiscard]] bool groupsAdministration() const;    // groups.max_admins is listed
 	[[nodiscard]] bool videoCallsEnabled() const;       // feature.video_calls (absent: off)
+	[[nodiscard]] bool botsEnabled() const;             // feature.bots (absent: on)
+	[[nodiscard]] bool botsInlineEnabled() const;       // feature.bots and bots.inline.enabled
+	[[nodiscard]] int botsInlineQueryMaxChars() const;  // bots.inline.query_max_chars
 	[[nodiscard]] bool deleteChatForBothEnabled() const;
 
 	// ---- sign-in and profile

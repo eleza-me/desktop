@@ -86,8 +86,11 @@ struct ListDiff {
 
 // The message text with its entities (server spoilers / formatting plus
 // links, mentions and hashtags found in the text).
+// `botCommands`: a chat with a bot, where «/command» in the text is a link
+// that sends it.
 [[nodiscard]] Ui::Text::TextWithEntities TextForMessage(
-	const Data::Message &message);
+	const Data::Message &message,
+	bool botCommands = false);
 [[nodiscard]] Ui::Text::Entities ConvertEntities(
 	const QString &text,
 	const QVector<Data::Entity> &entities);

@@ -30,6 +30,7 @@ class Database;
 namespace Data {
 
 class Transport;
+class Bots;
 class Users;
 class Calls;
 class Chats;
@@ -135,6 +136,9 @@ public:
 	[[nodiscard]] Calls &calls() const {
 		return *_calls;
 	}
+	[[nodiscard]] Bots &bots() const {
+		return *_bots;
+	}
 
 	// Reports a failed fire-and-forget action (see actionFailed).
 	void reportFailure(const QString &action, const QString &subject, const Api::Error &error);
@@ -161,6 +165,7 @@ private:
 	Feed *_feed = nullptr;
 	Graph *_graph = nullptr;
 	Calls *_calls = nullptr;
+	Bots *_bots = nullptr;
 	bool _started = false;
 
 };

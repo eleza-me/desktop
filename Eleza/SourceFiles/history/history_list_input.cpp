@@ -5,6 +5,7 @@
 #include "data/data_chats.h"
 #include "data/data_outbox.h"
 #include "data/data_session.h"
+#include "history/history_bot_logic.h"
 #include "history/history_downloads.h"
 #include "history/history_view_media.h"
 #include "lang_auto.h"
@@ -354,7 +355,14 @@ void ListWidget::activate(const MouseTarget &target, Qt::MouseButton button) {
 		break;
 	case Zone::Link:
 		if (const auto link = element->link(target.hit.link)) {
-			Support::ActivateTextLink(_controller, *link, button);
+			if (link->type == Ui::Text::EntityType::BotCommand) {
+				// Sent like a typed message (only where I may write).
+				if (_canWrite && button == Qt::LeftButton) {
+					Q_EMIT botCommandRequested(link->text);
+				}
+			} else {
+				Support::ActivateTextLink(_controller, *link, button);
+			}
 		}
 		break;
 	case Zone::Spoiler:
@@ -412,8 +420,12 @@ void ListWidget::activate(const MouseTarget &target, Qt::MouseButton button) {
 		showRetryMenu(message, _lastMouseGlobal);
 		break;
 	case Zone::ViaBot:
+		// «via @bot»: inline mode with that bot in this chat's composer
+		// (the chat screen opens the bot's profile where there is none).
 		if (message.viaBot && !message.viaBot->handle.isEmpty()) {
-			_controller->openRoute(Window::Routes::Handle(message.viaBot->handle));
+			Q_EMIT inlineQueryRequested(
+				InlineQueryPrefill(message.viaBot->handle, QString()),
+				false);
 		}
 		break;
 	case Zone::Side:
@@ -1063,10 +1075,27 @@ void ListWidget::pressButton(const Data::Message &message, int row, int column) 
 		return;
 	}
 	const auto &button = buttons[column];
-	if (!button.url.isEmpty()) {
+	switch (ButtonActionFor(button)) {
+	case ButtonAction::None:
+		return;
+	case ButtonAction::Url:
 		Support::OpenLink(_controller, button.url);
 		return;
-	} else if (message.seq <= 0) {
+	case ButtonAction::SwitchInlineCurrent:
+	case ButtonAction::SwitchInlinePick: {
+		// Never asked of the bot: «@bot query» goes into a composer.
+		const auto handle = ButtonBotHandle(message, _botHandle);
+		if (!handle.isEmpty()) {
+			Q_EMIT inlineQueryRequested(
+				InlineQueryPrefill(handle, button.query.value_or(QString())),
+				ButtonActionFor(button) == ButtonAction::SwitchInlinePick);
+		}
+		return;
+	}
+	case ButtonAction::Callback:
+		break;
+	}
+	if (message.seq <= 0) {
 		return;
 	}
 	const auto key = u"%1:%2:%3"_s.arg(message.seq).arg(row).arg(column);

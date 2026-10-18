@@ -14,6 +14,7 @@
 #include "data/data_session.h"
 #include "data/data_stickers.h"
 #include "history/history_bot_keyboard.h"
+#include "history/history_bot_widgets.h"
 #include "history/history_boxes.h"
 #include "history/history_logic.h"
 #include "history/history_tabbed_panel.h"
@@ -56,6 +57,18 @@ constexpr auto kTypingInterval = qint64(3000);
 
 [[nodiscard]] QHash<QString, QVector<Data::Message>> &PendingForwards() {
 	static auto result = QHash<QString, QVector<Data::Message>>();
+	return result;
+}
+
+[[nodiscard]] QHash<QString, QString> &PendingPrefills() {
+	static auto result = QHash<QString, QString>();
+	return result;
+}
+
+// One-time keyboards pressed in this run: they stay away when the chat is
+// opened again (until the bot sends another keyboard).
+[[nodiscard]] QHash<QString, qint64> &UsedKeyboards() {
+	static auto result = QHash<QString, qint64>();
 	return result;
 }
 
@@ -106,6 +119,19 @@ void SetPendingForward(
 	}
 }
 
+void SetPendingPrefill(
+		Main::Session *session,
+		const QString &toChat,
+		const QString &text) {
+	PendingPrefills().insert(ForwardKey(session, toChat), text);
+	const auto composers = LiveComposers();
+	for (const auto composer : composers) {
+		QMetaObject::invokeMethod(composer, [composer] {
+			composer->takePendingPrefill();
+		}, Qt::QueuedConnection);
+	}
+}
+
 ComposeControls::ComposeControls(
 	QWidget *parent,
 	Window::SessionController *controller,
@@ -129,6 +155,10 @@ ComposeControls::ComposeControls(
 , _recordCancel(Ui::CreateChild<Ui::IconButton>(this, st::historyRecordCancel))
 , _panel(Ui::CreateChild<TabbedPanel>(panelParent, _session))
 , _keyboard(Ui::CreateChild<BotKeyboard>(this))
+, _keyboardToggle(Ui::CreateChild<Ui::IconButton>(this, st::historyBotKeyboardToggle))
+, _botCommands(Ui::CreateChild<Ui::IconButton>(this, st::historyBotCommandsButton))
+, _botPanel(Ui::CreateChild<BotSuggestPanel>(panelParent, _session))
+, _inlineTimer([this] { runInlineQuery(QString()); })
 , _previewTimer([this] { checkPreview(); })
 , _draftTimer([this] {
 	if (_draft) {
@@ -156,11 +186,13 @@ ComposeControls::ComposeControls(
 	setupDraft();
 	takePendingForward();
 	_keyboard->hide();
+	_keyboardUsedSeq = UsedKeyboards().value(ForwardKey(_session, _chatId));
 	_keyboard->setPressedCallback([this](const QString &text) {
 		// Like typing the text and pressing send; a draft stays in the field.
 		if (_keyboardOneTime) {
 			_keyboardUsedSeq = ReplyKeyboardSeq(
 				_session->data().messages().history(_chatId).items);
+			UsedKeyboards().insert(ForwardKey(_session, _chatId), _keyboardUsedSeq);
 		}
 		_session->data().outbox().sendText(_chatId, text);
 		refreshBotKeyboard();
@@ -175,6 +207,10 @@ ComposeControls::ComposeControls(
 				refreshBotKeyboard();
 			}
 		});
+	// Whatever I send brings a persistent keyboard back.
+	connect(this, &ComposeControls::sent, this, [this] { keyboardAfterSend(); });
+	setupBots();
+	takePendingPrefill();
 	refreshBotKeyboard();
 	updateControls();
 }
@@ -358,6 +394,7 @@ Data::Draft ComposeControls::currentDraft() const {
 
 void ComposeControls::setInnerFocus() {
 	takePendingForward();
+	takePendingPrefill();
 	if (!recording()) {
 		_field->setFocusFast();
 	}
@@ -406,6 +443,7 @@ void ComposeControls::fieldChanged() {
 	checkMentions();
 	applySpoilerMarks();
 	updateMentions();
+	updateBotSuggestions();
 	updateControls();
 	if (_settingText || was == now) {
 		return;
@@ -560,11 +598,7 @@ void ComposeControls::placeMentions() {
 	if (!_mentionsBox || !_panelParent) {
 		return;
 	}
-	const auto content = contentRect();
-	const auto &padding = st::historyComposePadding;
-	_mentionsBox->placeAbove(QRect(
-		mapTo(_panelParent, QPoint(content.x() + padding.left(), 0)),
-		QSize(content.width() - padding.left() - padding.right(), height())));
+	_mentionsBox->placeAbove(suggestionsAnchor());
 }
 
 void ComposeControls::pickMention(const Data::User &user) {
@@ -672,6 +706,25 @@ bool ComposeControls::fieldKeyPress(QKeyEvent *e) {
 	const auto key = e->key();
 	const auto modifiers = e->modifiers()
 		& (Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier | Qt::MetaModifier);
+	if (_botPanel->mode() != BotSuggestPanel::Mode::None && !modifiers) {
+		// Commands / inline results: the same keys as the members' list;
+		// Tab puts a command into the field instead of sending it.
+		if (key == Qt::Key_Up || key == Qt::Key_Down) {
+			_botPanel->selectSkip((key == Qt::Key_Up) ? -1 : 1);
+			return true;
+		} else if (key == Qt::Key_Return || key == Qt::Key_Enter) {
+			if (_botPanel->chooseSelected(false)) {
+				return true;
+			}
+		} else if (key == Qt::Key_Tab) {
+			if (_botPanel->chooseSelected(true)) {
+				return true;
+			}
+		} else if (key == Qt::Key_Escape) {
+			hideBotPanel();
+			return true;
+		}
+	}
 	if (_mentionsBox && _mentionsBox->shown() && !modifiers) {
 		// The list of members is open: the arrows walk it, Enter and Tab
 		// pick, Esc closes it — the field keeps the caret all along.
@@ -732,6 +785,7 @@ bool ComposeControls::pasteFromClipboard() {
 
 void ComposeControls::setMode(Mode mode) {
 	_mode = mode;
+	updateBotSuggestions();
 	refreshBarThumb();
 	updateControls();
 	resizeToWidth(width());
@@ -811,12 +865,16 @@ void ComposeControls::cancelMode() {
 
 void ComposeControls::hideEvent(QHideEvent *e) {
 	hideMentions();
+	hideBotPanel();
 	RpWidget::hideEvent(e);
 }
 
 bool ComposeControls::cancelCurrent() {
 	if (_mentionsBox && _mentionsBox->shown()) {
 		hideMentions();
+		return true;
+	} else if (_botPanel->mode() != BotSuggestPanel::Mode::None) {
+		hideBotPanel();
 		return true;
 	} else if (recording()) {
 		stopRecording(false);
@@ -849,6 +907,17 @@ void ComposeControls::takePendingForward() {
 	_quote = std::nullopt;
 	_target = messages.front();
 	setMode(Mode::Forward);
+}
+
+void ComposeControls::takePendingPrefill() {
+	const auto key = ForwardKey(_session, _chatId);
+	const auto i = PendingPrefills().find(key);
+	if (i == PendingPrefills().end()) {
+		return;
+	}
+	const auto text = *i;
+	PendingPrefills().erase(i);
+	prefill(text);
 }
 
 void ComposeControls::refreshBarThumb() {
@@ -1327,6 +1396,7 @@ void ComposeControls::startRecording() {
 		return;
 	}
 	_panel->hideFast();
+	hideBotPanel();
 	_session->data().chats().sendTyping(_chatId, u"recording_voice"_s);
 	_recordPulse.init([this](qint64) {
 		update();
@@ -1362,32 +1432,59 @@ void ComposeControls::showToast(const QString &text) {
 void ComposeControls::refreshBotKeyboard() {
 	const auto chat = _session->data().chats().chat(_chatId);
 	auto markup = std::optional<Data::ReplyMarkup>();
+	const auto &items = _session->data().messages().history(_chatId).items;
 	if (chat && chat->isBot) {
-		markup = CurrentReplyKeyboard(
-			_session->data().messages().history(_chatId).items,
-			_keyboardUsedSeq);
+		markup = CurrentReplyKeyboard(items, _keyboardUsedSeq);
 	}
 	const auto was = keyboardHeight();
+	const auto wasShown = keyboardShown();
+	// A new keyboard (or none) takes the keyboard's place, shown.
+	_keyboardView = ReplyKeyboardAfterChange(
+		_keyboardView,
+		markup ? ReplyKeyboardSeq(items) : 0);
 	_keyboardOneTime = markup && markup->oneTime;
+	_keyboardPersistent = markup && markup->persistent;
+	_keyboard->setResize(!markup || markup->resize);
 	_keyboard->setRows(markup ? markup->keyboard : QVector<QStringList>());
 	_field->setPlaceholder((markup && !markup->placeholder.isEmpty())
 		? markup->placeholder
 		: tr::lng_chat_message_placeholder(tr::now));
-	const auto shown = !_keyboard->empty()
-		&& !recording()
-		&& (_mode != Mode::Edit);
-	if (_keyboard->isHidden() == shown || was != keyboardHeight()) {
-		_keyboard->setVisible(shown);
+	if (wasShown != keyboardShown() || was != keyboardHeight()) {
+		updateControls();
 		if (width() > 0) {
 			resizeToWidth(width());
 		}
 	}
 }
 
+bool ComposeControls::keyboardShown() const {
+	return !_keyboard->empty()
+		&& !_keyboardView.hidden
+		&& !recording()
+		&& (_mode != Mode::Edit);
+}
+
 int ComposeControls::keyboardHeight() const {
-	return (_keyboard->empty() || recording() || _mode == Mode::Edit)
-		? 0
-		: _keyboard->height();
+	return keyboardShown() ? _keyboard->height() : 0;
+}
+
+void ComposeControls::toggleBotKeyboard() {
+	if (_keyboard->empty()) {
+		return;
+	}
+	_keyboardView.hidden = !_keyboardView.hidden;
+	updateControls();
+	resizeToWidth(width());
+	_field->setFocusFast();
+}
+
+void ComposeControls::keyboardAfterSend() {
+	const auto was = _keyboardView;
+	_keyboardView = ReplyKeyboardAfterSend(_keyboardView, _keyboardPersistent);
+	if (was.hidden != _keyboardView.hidden) {
+		updateControls();
+		resizeToWidth(width());
+	}
 }
 
 // ---- layout and painting
@@ -1409,12 +1506,28 @@ void ComposeControls::updateControls() {
 	_send->setDisabled(_editSaving);
 	_barClose->setVisible(_mode != Mode::None && !rec);
 	_previewClose->setVisible(previewHeight() > 0);
-	const auto keyboard = !_keyboard->empty() && !rec && !edit;
-	if (_keyboard->isHidden() == keyboard) {
-		_keyboard->setVisible(keyboard);
+	const auto hasKeyboard = !_keyboard->empty() && !rec && !edit;
+	const auto commands = _botChat && !_commands.isEmpty() && !rec && !edit;
+	const auto trailingChanged = (_keyboardToggle->isHidden() == hasKeyboard)
+		|| (_botCommands->isHidden() == commands);
+	_keyboardToggle->setVisible(hasKeyboard);
+	_botCommands->setVisible(commands);
+	// The keyboard's button shows what a click does: put it away / bring it.
+	const auto open = keyboardShown();
+	_keyboardToggle->setIconOverride(
+		open ? &st::historyBotKeyboardHideIcon : nullptr,
+		open ? &st::historyBotKeyboardHideIconOver : nullptr);
+	const auto listed = (_botPanel->mode() == BotSuggestPanel::Mode::Commands);
+	_botCommands->setIconOverride(
+		listed ? &st::historyBotCommandsActiveIcon : nullptr,
+		listed ? &st::historyBotCommandsActiveIcon : nullptr);
+	if (_keyboard->isHidden() == open) {
+		_keyboard->setVisible(open);
 		if (width() > 0) {
 			resizeToWidth(width());
 		}
+	} else if (trailingChanged && width() > 0) {
+		resizeToWidth(width());
 	}
 	updateFieldGeometry();
 	update();
@@ -1445,7 +1558,8 @@ int ComposeControls::resizeGetHeight(int newWidth) {
 		- padding.right()
 		- leading
 		- _emoji->width()
-		- _send->width();
+		- _send->width()
+		- trailingButtonsWidth();
 	_field->resizeToWidth(std::max(fieldWidth, 40));
 	const auto row = recording()
 		? int(st::historyComposeField.heightMin)
@@ -1475,6 +1589,12 @@ void ComposeControls::resizeEvent(QResizeEvent *e) {
 void ComposeControls::updatePanelPosition() {
 	_panel->updatePosition();
 	placeMentions();
+	placeBotPanel();
+}
+
+int ComposeControls::trailingButtonsWidth() const {
+	return (_keyboardToggle->isHidden() ? 0 : _keyboardToggle->width())
+		+ (_botCommands->isHidden() ? 0 : _botCommands->width());
 }
 
 void ComposeControls::updateFieldGeometry() {
@@ -1511,6 +1631,15 @@ void ComposeControls::layoutControls(int width, int height) {
 	right += _send->width();
 	_emoji->moveToRight(right, buttonTop, width);
 	right += _emoji->width();
+	// The bot's buttons between the field and the emoji.
+	if (!_keyboardToggle->isHidden()) {
+		_keyboardToggle->moveToRight(right, buttonTop, width);
+		right += _keyboardToggle->width();
+	}
+	if (!_botCommands->isHidden()) {
+		_botCommands->moveToRight(right, buttonTop, width);
+		right += _botCommands->width();
+	}
 	_field->moveToLeft(left, rowTop, width);
 
 	const auto closeRight = side + st::historyComposeBarPadding.right();

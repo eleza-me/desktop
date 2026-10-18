@@ -254,10 +254,13 @@ QString Outbox::sendInlineResult(
 		const QString &chat,
 		const QString &bot,
 		const QString &queryId,
-		const QString &resultId) {
+		const QString &resultId,
+		const QString &previewText,
+		qint64 replyToSeq) {
 	auto item = OutboxItem();
 	item.chat = chat;
 	item.kind = u"text"_s;
+	item.previewText = previewText;
 	// The content comes from the bot's answer: kind and text must be absent.
 	item.body = QJsonObject{
 		{ u"inline_result"_s, QJsonObject{
@@ -266,6 +269,7 @@ QString Outbox::sendInlineResult(
 			{ u"result_id"_s, resultId },
 		} },
 	};
+	Json::Put(item.body, "reply_to_seq"_L1, replyToSeq);
 	return enqueue(std::move(item));
 }
 
@@ -303,6 +307,9 @@ void Outbox::show(const OutboxItem &item) {
 	message.kindName = item.kind;
 	message.kind = MessageKindFromString(item.kind);
 	message.text = Json::String(item.body, "text"_L1);
+	if (message.text.isEmpty()) {
+		message.text = item.previewText;
+	}
 	message.replyToSeq = Json::Int64(item.body, "reply_to_seq"_L1);
 	message.createdAt = item.createdAt;
 	message.mediaSpoiler = Json::Bool(item.body, "media_spoiler"_L1);

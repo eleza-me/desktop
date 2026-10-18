@@ -319,7 +319,9 @@ void Element::ensureLoaded() {
 					: st::historyJumboStyle3,
 				_data.text.trimmed());
 		} else {
-			_text.setMarkedText(st::historyTextStyle, TextForMessage(_data));
+			_text.setMarkedText(
+				st::historyTextStyle,
+				TextForMessage(_data, _delegate->elementBotCommands()));
 			if (_text.hasSpoilers()) {
 				_text.setSpoilersRevealed(_delegate->elementRevealed(_key));
 			}

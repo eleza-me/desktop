@@ -1022,6 +1022,7 @@ OutboxItem OutboxItem::FromJson(const QJsonObject &json) {
 	result.failed = Bool(json, "failed"_L1);
 	result.errorCode = String(json, "error_code"_L1);
 	result.errorText = String(json, "error_text"_L1);
+	result.previewText = String(json, "preview_text"_L1);
 	return result;
 }
 
@@ -1045,6 +1046,7 @@ QJsonObject OutboxItem::toJson() const {
 	Put(result, "failed"_L1, failed);
 	Put(result, "error_code"_L1, errorCode);
 	Put(result, "error_text"_L1, errorText);
+	Put(result, "preview_text"_L1, previewText);
 	return result;
 }
 

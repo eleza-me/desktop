@@ -1992,3 +1992,18 @@
 "lng_calls_record_video_missed" = "تماس تصویری از دست رفته";
 "lng_calls_settings_camera" = "دوربین";
 "lng_calls_no_cameras" = "دوربینی پیدا نشد";
+
+// ---- bots ----
+"lng_bot_start" = "شروع";
+"lng_bot_intro_title" = "این ربات چه کاری می‌کند؟";
+"lng_bot_commands" = "فرمان‌های ربات";
+"lng_bot_keyboard_show" = "نمایش صفحه‌کلید ربات";
+"lng_bot_keyboard_hide" = "پنهان کردن صفحه‌کلید ربات";
+"lng_bot_inline_loading" = "در حال جست‌وجو…";
+"lng_bot_inline_empty" = "نتیجه‌ای پیدا نشد";
+"lng_bot_inline_no_answer" = "ربات پاسخی نداد؛ دوباره امتحان کنید";
+"lng_bot_inline_disabled" = "این ربات حالت درون‌خطی ندارد";
+"lng_bot_inline_expired" = "این نتیجه دیگر در دسترس نیست؛ دوباره جست‌وجو کنید";
+"lng_bot_disabled" = "این ربات در دسترس نیست";
+"lng_bot_button_expired" = "این دکمه دیگر کار نمی‌کند";
+"lng_bot_switch_pick_title" = "انتخاب گفتگو";

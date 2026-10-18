@@ -185,6 +185,23 @@ TextWithEntities ParseEntities(
 				int(match.capturedLength()));
 		}
 	}
+	if ((flags & ParseBotCommands) && text.contains(QLatin1Char('/'))) {
+		// Last: a slash inside an address, a mention or a tag is not a command.
+		static const auto command = QRegularExpression(
+			QStringLiteral(
+				"(?<![\\p{L}\\p{N}_/@.:<>\\-])"
+				"/[A-Za-z0-9_]{1,32}(?:@[A-Za-z][A-Za-z0-9_.]{1,30}[A-Za-z0-9_])?"
+				"(?![\\p{L}\\p{N}_/@])"),
+			options);
+		auto i = command.globalMatch(text);
+		while (i.hasNext()) {
+			const auto match = i.next();
+			add(
+				EntityType::BotCommand,
+				int(match.capturedStart()),
+				int(match.capturedLength()));
+		}
+	}
 	result.entities.append(found);
 	result.entities = NormalizeEntities(text, std::move(result.entities));
 	return result;

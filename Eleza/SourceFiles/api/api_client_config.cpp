@@ -217,6 +217,19 @@ bool ClientConfig::groupsEnabled() const {
 	return boolean(u"feature.groups"_s, false);
 }
 
+bool ClientConfig::botsEnabled() const {
+	return boolean(u"feature.bots"_s, true);
+}
+
+bool ClientConfig::botsInlineEnabled() const {
+	return botsEnabled() && boolean(u"bots.inline.enabled"_s, true);
+}
+
+int ClientConfig::botsInlineQueryMaxChars() const {
+	const auto value = integer(u"bots.inline.query_max_chars"_s, 256);
+	return int(std::clamp(value, qint64(1), qint64(1024)));
+}
+
 bool ClientConfig::groupsAdministration() const {
 	// Defined by the second release of groups: a server that lists it has
 	// admins, invite links, pins, mentions and group drafts.

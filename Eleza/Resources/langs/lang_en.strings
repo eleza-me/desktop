@@ -1962,3 +1962,18 @@
 "lng_calls_record_video_missed" = "Missed video call";
 "lng_calls_settings_camera" = "Camera";
 "lng_calls_no_cameras" = "No camera found";
+
+// ---- bots ----
+"lng_bot_start" = "Start";
+"lng_bot_intro_title" = "What can this bot do?";
+"lng_bot_commands" = "Bot commands";
+"lng_bot_keyboard_show" = "Show the bot's keyboard";
+"lng_bot_keyboard_hide" = "Hide the bot's keyboard";
+"lng_bot_inline_loading" = "Searching…";
+"lng_bot_inline_empty" = "No results";
+"lng_bot_inline_no_answer" = "The bot did not answer; try again";
+"lng_bot_inline_disabled" = "This bot has no inline mode";
+"lng_bot_inline_expired" = "This result is no longer available; search again";
+"lng_bot_disabled" = "This bot is not available";
+"lng_bot_button_expired" = "This button no longer works";
+"lng_bot_switch_pick_title" = "Choose a chat";

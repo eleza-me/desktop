@@ -58,13 +58,26 @@ void BotKeyboard::setRows(const QVector<QStringList> &rows) {
 	update();
 }
 
+void BotKeyboard::setResize(bool resize) {
+	if (_resize == resize) {
+		return;
+	}
+	_resize = resize;
+	if (width() > 0) {
+		resizeToWidth(width());
+	}
+	update();
+}
+
 int BotKeyboard::resizeGetHeight(int newWidth) {
 	if (_buttons.empty()) {
 		return 0;
 	}
 	const auto &padding = st::historyBotKeyboardPadding;
 	const auto skip = int(st::historyBotKeyboardSkip);
-	const auto height = int(st::historyBotKeyboardButtonHeight);
+	const auto height = _resize
+		? int(st::historyBotKeyboardButtonHeight)
+		: int(st::historyBotKeyboardButtonHeightTall);
 	const auto available = std::max(
 		newWidth - padding.left() - padding.right(),
 		0);

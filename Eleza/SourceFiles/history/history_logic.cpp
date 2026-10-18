@@ -342,12 +342,14 @@ Ui::Text::Entities ConvertEntities(
 	return Ui::Text::NormalizeEntities(text, std::move(result));
 }
 
-Ui::Text::TextWithEntities TextForMessage(const Data::Message &message) {
+Ui::Text::TextWithEntities TextForMessage(
+		const Data::Message &message,
+		bool botCommands) {
 	// For showing: links are isolated (Ui::Text::IsolateLinks), so quoting and
 	// copying go through Ui::Text::SourceSelection / StripIsolates.
 	return Ui::Text::IsolateLinks(Ui::Text::ParseEntities(
 		message.text,
-		Ui::Text::ParseAll,
+		Ui::Text::ParseAll | (botCommands ? Ui::Text::ParseBotCommands : 0u),
 		ConvertEntities(message.text, message.entities)));
 }
 

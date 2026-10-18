@@ -135,6 +135,11 @@ public:
 		int row,
 		int column) = 0;
 
+	// A chat with a bot: «/command» in a message is a link that sends it.
+	[[nodiscard]] virtual bool elementBotCommands() {
+		return false;
+	}
+
 	// ---- groups (a chat of two answers none of these)
 	// Incoming messages name their sender above the first bubble of a run
 	// and show the sender's picture next to the last one.

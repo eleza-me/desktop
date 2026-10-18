@@ -550,6 +550,28 @@ void ListWidget::setCanReact(bool canReact) {
 	_canReact = canReact;
 }
 
+void ListWidget::setBotChat(bool bot, const QString &botHandle) {
+	_botHandle = botHandle;
+	if (_botChat == bot) {
+		return;
+	}
+	_botChat = bot;
+	// The texts are laid out again with (or without) their commands.
+	for (auto &row : _rows) {
+		row.element->unloadHeavy();
+		row.element->invalidate();
+		row.exact = false;
+	}
+	if (!_rows.empty()) {
+		relayoutKeepingAnchor();
+		update();
+	}
+}
+
+bool ListWidget::elementBotCommands() {
+	return _botChat;
+}
+
 bool ListWidget::awayFromBottom() const {
 	if (_rows.empty()) {
 		return false;

@@ -4,12 +4,18 @@
 
 #include "api/api_client_config.h"
 #include "core/core_application.h"
+#include "boxes/peer_list_box.h"
+#include "data/data_bots.h"
 #include "data/data_chats.h"
 #include "data/data_conversations.h"
 #include "data/data_graph.h"
 #include "data/data_messages.h"
+#include "data/data_outbox.h"
+#include "data/data_users.h"
 #include "data/data_session.h"
 #include "history/history_bars.h"
+#include "history/history_bot_logic.h"
+#include "history/history_bot_widgets.h"
 #include "history/history_boxes.h"
 #include "history/history_compose_controls.h"
 #include "history/history_list_widget.h"
@@ -65,10 +71,13 @@ namespace {
 
 } // namespace
 
-Window::SectionFactory Factory(const QString &chatId, qint64 seq) {
+Window::SectionFactory Factory(
+		const QString &chatId,
+		qint64 seq,
+		std::optional<QString> botStart) {
 	return [=](QWidget *parent, Window::SessionController *controller) {
 		return Ui::Owned<Window::SectionWidget>(
-			new Widget(parent, controller, chatId, seq));
+			new Widget(parent, controller, chatId, seq, botStart));
 	};
 }
 
@@ -307,12 +316,15 @@ Widget::Widget(
 	QWidget *parent,
 	Window::SessionController *controller,
 	const QString &chatId,
-	qint64 aroundSeq)
+	qint64 aroundSeq,
+	std::optional<QString> botStart)
 : SectionWidget(parent, controller)
 , _session(&controller->session())
 , _chatId(chatId)
 , _aroundSeq(aroundSeq)
-, _group(Data::IsGroupId(chatId)) {
+, _group(Data::IsGroupId(chatId))
+, _botStartPending(botStart.has_value())
+, _botStartPayload(botStart.value_or(QString())) {
 	setAcceptDrops(true);
 	setFocusPolicy(Qt::StrongFocus);
 	setupList();
@@ -329,7 +341,22 @@ Widget::Widget(
 	Ui::InstallTooltip(_down, [] { return tr::lng_chat_jump_bottom(tr::now); });
 	_state = Ui::CreateChild<StateView>(this);
 	_state->setRetryCallback([this] { _list->retryLoad(); });
+	_botIntro = Ui::CreateChild<BotIntroCard>(this, controller);
 	_drop = Ui::CreateChild<DropArea>(this);
+	connect(&_session->data().bots(), &Data::Bots::changed, this, [this](
+			const QString &botId) {
+		if (botId == _botId) {
+			refreshBotInfo();
+			refreshState();
+		}
+	});
+	// «شروع» goes once the first message of the chat is queued.
+	connect(&_session->data().messages(), &Data::Messages::historyChanged, this, [this](
+			const QString &chat) {
+		if (chat == _chatId && _bottom == Bottom::BotStart) {
+			refreshBottom();
+		}
+	});
 
 	auto &data = _session->data();
 	connect(&data.chats(), &Data::Chats::chatChanged, this, [this](const QString &id) {
@@ -455,7 +482,19 @@ void Widget::setupList() {
 	connect(_list, &ListWidget::selectionChanged, this, [this] { selectionChanged(); });
 	connect(_list, &ListWidget::stateChanged, this, [this] {
 		refreshDownButton();
+		refreshBottom();
 		refreshState();
+	});
+	connect(_list, &ListWidget::botCommandRequested, this, [this](
+			const QString &command) {
+		if (_bottom == Bottom::Compose) {
+			_compose->sendCommand(command);
+		}
+	});
+	connect(_list, &ListWidget::inlineQueryRequested, this, [this](
+			const QString &text,
+			bool pickChat) {
+		inlineQueryRequested(text, pickChat);
 	});
 	connect(_list, &ListWidget::focusRequested, this, [this] { setInnerFocus(); });
 	connect(_scroll, &Ui::ScrollArea::scrolled, this, [this] { refreshDownButton(); });
@@ -535,6 +574,7 @@ void Widget::refreshChat() {
 		_list->setAnonymousPeer(chat->anonymous);
 		_down->setUnread(chat->unread);
 	}
+	refreshBotInfo();
 	refreshRelationship();
 	refreshBottom();
 	refreshState();
@@ -599,6 +639,20 @@ void Widget::refreshBottom() {
 		bottom = chat->isConversation ? Bottom::Ended : Bottom::Readonly;
 	} else {
 		bottom = Bottom::Compose;
+	}
+	if (chat && !chat->isGroup) {
+		auto start = BotStartState();
+		start.isBot = chat->isBot && !chat->isConversation;
+		start.writable = (bottom == Bottom::Compose);
+		start.sent = _botStartSent;
+		start.pending = _botStartPending;
+		start.listLoaded = !_list->loading() && !_list->loadFailed();
+		start.listEmpty = _list->empty();
+		start.lastSeq = chat->lastSeq;
+		start.outboxPending = _session->data().outbox().pendingCount(_chatId);
+		if (ShowBotStart(start)) {
+			bottom = Bottom::BotStart;
+		}
 	}
 	const auto changed = (_bottom != bottom);
 	_bottom = bottom;
@@ -713,6 +767,15 @@ void Widget::refreshBottom() {
 	case Bottom::GroupWait:
 		_notice->setContent(QString(), _groupNotice, {});
 		break;
+	case Bottom::BotStart:
+		_notice->setContent(QString(), QString(), std::vector<NoticeButton>{
+			NoticeButton{
+				tr::lng_bot_start(tr::now),
+				&st::historyBotStartButton,
+				[this] { pressBotStart(); },
+			},
+		});
+		break;
 	case Bottom::Compose:
 	case Bottom::None:
 		break;
@@ -725,6 +788,20 @@ void Widget::refreshBottom() {
 
 void Widget::refreshState() {
 	using State = StateView::State;
+	// An empty chat with a bot: what the bot does, instead of «no messages».
+	const auto intro = _list->empty()
+		&& !_list->loading()
+		&& !_list->loadFailed()
+		&& !_botIntro->empty()
+		&& !_botId.isEmpty()
+		&& !_botStartSent;
+	_botIntro->setVisible(intro);
+	if (intro) {
+		_botIntro->placeIn(_scroll->geometry());
+		_botIntro->raise();
+		_state->setState(State::Hidden);
+		return;
+	}
 	if (!_list->empty()) {
 		_state->setState(State::Hidden);
 	} else if (_list->loadFailed()) {
@@ -1038,6 +1115,95 @@ void Widget::showMessage(qint64 seq) {
 	}
 }
 
+void Widget::startBot(const QString &payload) {
+	_botStartPending = true;
+	_botStartSent = false;
+	_botStartPayload = payload;
+	refreshBottom();
+	refreshState();
+}
+
+void Widget::pressBotStart() {
+	if (_bottom != Bottom::BotStart) {
+		return;
+	}
+	const auto text = StartCommandText(_botStartPending ? _botStartPayload : QString());
+	_botStartPending = false;
+	_botStartPayload = QString();
+	_botStartSent = true;
+	_session->data().outbox().sendText(_chatId, text);
+	refreshBottom();
+	refreshState();
+	_list->jumpToBottom();
+}
+
+void Widget::refreshBotInfo() {
+	const auto chat = _session->data().chats().chat(_chatId);
+	const auto bot = chat && chat->isBot && !chat->isConversation && !chat->isGroup;
+	const auto id = bot ? chat->peerUserId : QString();
+	auto &bots = _session->data().bots();
+	if (id != _botId) {
+		_botId = id;
+		if (!id.isEmpty()) {
+			bots.load(id, this, [this](const Data::BotInfo &) {
+				refreshBotInfo();
+				refreshState();
+			});
+		}
+	}
+	const auto info = id.isEmpty() ? nullptr : bots.info(id);
+	auto handle = info ? info->handle : QString();
+	if (handle.isEmpty() && bot) {
+		handle = _session->data().users().peek(chat->peerUserId).handle;
+	}
+	_list->setBotChat(bot, handle);
+	auto description = info ? info->description : QString();
+	if (description.trimmed().isEmpty() && info) {
+		description = info->about;
+	}
+	_botIntro->setDescription(description.trimmed());
+}
+
+void Widget::inlineQueryRequested(const QString &text, bool pickChat) {
+	if (pickChat) {
+		showSwitchInline(text);
+	} else if (_bottom == Bottom::Compose && _compose->inlineModeAllowed()) {
+		_compose->prefill(text);
+	} else if (const auto query = ParseInlineQuery(text)) {
+		// No inline mode here («via @bot» in a group): the bot's profile.
+		controller()->openRoute(Window::Routes::Handle(query->handle));
+	}
+}
+
+void Widget::showSwitchInline(const QString &text) {
+	const auto session = _session;
+	auto args = Boxes::ChooseChatsArgs();
+	args.title = tr::lng_bot_switch_pick_title(tr::now);
+	args.multiSelect = false;
+	args.includeSaved = true;
+	args.includeConversations = false;
+	args.includeGroups = false;
+	args.onlyWritable = true;
+	const auto weak = QPointer<Widget>(this);
+	const auto window = QPointer<Window::SessionController>(controller());
+	controller()->show(Boxes::ChooseChatsBox(session, std::move(args), [=](
+			const QStringList &chatIds) {
+		if (chatIds.isEmpty() || !window) {
+			return;
+		}
+		const auto target = chatIds.front();
+		if (weak && target == weak->_chatId) {
+			if (weak->_bottom == Bottom::Compose) {
+				weak->_compose->prefill(text);
+			}
+			return;
+		}
+		// The chat opens with «@bot query» in its field.
+		SetPendingPrefill(session, target, text);
+		window->openRoute(Window::Routes::Chat(target));
+	}));
+}
+
 void Widget::setInnerFocus() {
 	if (_search) {
 		_search->activate();
@@ -1063,6 +1229,7 @@ bool Widget::onBackRequest() {
 	}
 	return false;
 }
+
 
 void Widget::setBackButtonShown(bool shown) {
 	SectionWidget::setBackButtonShown(shown);
@@ -1101,6 +1268,10 @@ void Widget::keyPressEvent(QKeyEvent *e) {
 		deleteSelection();
 	} else if (e->key() == Qt::Key_PageUp || e->key() == Qt::Key_PageDown) {
 		_list->scrollByPage(e->key() == Qt::Key_PageUp);
+	} else if ((e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter)
+		&& _bottom == Bottom::BotStart
+		&& !_list->selectedCount()) {
+		pressBotStart();
 	} else if (!e->text().isEmpty()
 		&& e->text().front().isPrint()
 		&& !ctrl
@@ -1246,6 +1417,9 @@ void Widget::updateLayout() {
 		width());
 	if (!_drop->isHidden()) {
 		_drop->setGeometry(listGeometry);
+	}
+	if (!_botIntro->isHidden()) {
+		_botIntro->placeIn(listGeometry);
 	}
 	_compose->updatePanelPosition();
 	refreshState();

@@ -224,6 +224,7 @@ struct ChooseChatsArgs {
 	int limit = 0;
 	bool includeSaved = true;
 	bool includeConversations = false;
+	bool includeGroups = true;
 	// Only chats the user can write to.
 	bool onlyWritable = true;
 };

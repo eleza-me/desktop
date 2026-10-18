@@ -532,6 +532,7 @@ struct OutboxItem {
 	bool failed = false;
 	QString errorCode;
 	QString errorText;
+	QString previewText;     // what the local bubble shows when the body has no text
 
 	[[nodiscard]] static OutboxItem FromJson(const QJsonObject &json);
 	[[nodiscard]] QJsonObject toJson() const;
