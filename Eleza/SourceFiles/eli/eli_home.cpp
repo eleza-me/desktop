@@ -115,6 +115,40 @@ private:
 };
 
 // «N پست تازه» with the faces of up to three people who posted.
+// ---- «بالای فید»: a round button at the bottom corner once the reader is
+// well down the feed; it scrolls the current tab back to the top.
+
+class HomeSection::TopButton final : public Ui::AbstractButton {
+public:
+	explicit TopButton(QWidget *parent) : AbstractButton(parent) {
+		resize(st::eliTopSize + 8, st::eliTopSize + 8);
+		setPointerCursor(true);
+	}
+
+protected:
+	void paintEvent(QPaintEvent *e) override {
+		Q_UNUSED(e);
+		auto p = Painter(this);
+		const auto size = st::eliTopSize;
+		const auto circle = QRect((width() - size) / 2, (height() - size) / 2, size, size);
+		Ui::Shadow::Paint(p, circle, size / 2, st::smallShadow);
+		{
+			auto hq = PainterHighQualityEnabler(p);
+			p.setPen(Qt::NoPen);
+			p.setBrush(st::eliTopBg);
+			p.drawEllipse(circle);
+		}
+		(isOver() ? st::eliTopIconOver : st::eliTopIcon).paintInCenter(p, circle);
+	}
+
+	void onStateChanged(State was, StateChangeSource source) override {
+		Q_UNUSED(was);
+		Q_UNUSED(source);
+		update();
+	}
+
+};
+
 class HomeSection::NewPill final : public Ui::AbstractButton {
 public:
 	NewPill(QWidget *parent, Main::Session *session)
@@ -315,6 +349,7 @@ HomeSection::HomeSection(
 , _tabs(new Ui::TabBar(this, st::eliHomeTabs))
 , _loadingLine(new LoadingLine(this))
 , _pill(new NewPill(this, &controller->session()))
+, _top(new TopButton(this))
 , _openedAt(QDateTime::currentMSecsSinceEpoch()) {
 	setAcceptDrops(true);
 	setFocusPolicy(Qt::StrongFocus);
@@ -375,6 +410,12 @@ HomeSection::HomeSection(
 	setTab(_tab, false);
 
 	_pill->setClickedCallback([this] { applyNewPosts(); });
+	_top->hide();
+	_top->setClickedCallback([this] {
+		current().scroll->scrollToYAnimated(0);
+		_top->hide();
+	});
+	Ui::InstallTooltip(_top, [] { return tr::lng_eli_to_top(tr::now); });
 
 	connect(&data.feed(), &Data::Feed::newPosts, this, [this](int count, qint64) {
 		newPostsArrived(count);
@@ -489,6 +530,9 @@ void HomeSection::createPane(int index) {
 		auto &pane = _panes[index];
 		const auto was = pane.lastScrollTop;
 		pane.lastScrollTop = top;
+		if (index == _tab) {
+			updateTopButton();
+		}
 		if (index != _tab || !_newCount) {
 			return;
 		}
@@ -518,6 +562,7 @@ void HomeSection::setTab(int index, bool save) {
 	_pillHiddenByScroll = false;
 	_pill->setShown(_newCount > 0);
 	_pill->raise();
+	updateTopButton();
 	updateLoading();
 }
 
@@ -677,6 +722,27 @@ void HomeSection::resizeEvent(QResizeEvent *e) {
 		top + st::eliPillTop - _pill->bodyTopShift());
 	_pill->raise();
 	placeBadge();
+	placeTopButton();
+}
+
+void HomeSection::placeTopButton() {
+	const auto &margin = st::eliTopMargin;
+	_top->moveToRight(
+		margin.right() - 4,
+		height() - margin.bottom() - _top->height() + 4,
+		width());
+	_top->raise();
+}
+
+void HomeSection::updateTopButton() {
+	const auto &pane = current();
+	const auto shown = pane.scroll && pane.scroll->scrollTop() > st::eliTopShowAfter;
+	if (_top->isHidden() == shown) {
+		_top->setVisible(shown);
+		if (shown) {
+			_top->raise();
+		}
+	}
 }
 
 bool HomeSection::eventFilter(QObject *object, QEvent *event) {

@@ -50,6 +50,7 @@ protected:
 private:
 	class Entry;
 	class NewPill;
+	class TopButton;
 	class LoadingLine;
 	struct Pane {
 		Ui::ScrollArea *scroll = nullptr;
@@ -66,6 +67,8 @@ private:
 	void updateActivePost();
 	void updateLoading();
 	void placeBadge();
+	void placeTopButton();
+	void updateTopButton();
 	void newPostsArrived(int count);
 	void applyNewPosts();
 	void clearNewPosts();
@@ -82,6 +85,7 @@ private:
 	Ui::TabBar *_tabs = nullptr;
 	LoadingLine *_loadingLine = nullptr;
 	NewPill *_pill = nullptr;
+	TopButton *_top = nullptr;
 	Pane _panes[2];
 	int _tab = 0;
 	int _tabOnPress = -1;

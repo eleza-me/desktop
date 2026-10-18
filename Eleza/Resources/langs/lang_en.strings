@@ -395,6 +395,7 @@
 "lng_eli_for_you" = "For you";
 // pwa: تازه‌سازی
 "lng_eli_refresh" = "Refresh";
+"lng_eli_to_top" = "Back to top";
 // pwa: {n} پست تازه
 "lng_eli_new_posts#one" = "{count} new post";
 "lng_eli_new_posts#other" = "{count} new posts";
