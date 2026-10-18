@@ -38,6 +38,10 @@ jobs:
     name: Windows x64 (MSVC 2022)
     runs-on: windows-latest
     timeout-minutes: 90
+    env:
+      # sccache keeps its entries in the GitHub Actions cache (set for the whole
+      # job so every step talks to the same server).
+      SCCACHE_GHA_ENABLED: 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -77,15 +81,33 @@ jobs:
           New-Item -ItemType Directory -Force $cache | Out-Null
           "VCPKG_DEFAULT_BINARY_CACHE=$cache" >> $env:GITHUB_ENV
 
-      - name: Cache vcpkg packages (OpenSSL, rlottie)
-        uses: actions/cache@v4
+      # Restored here and saved right after Configure (where vcpkg builds the
+      # packages), even when a later step fails: a plain actions/cache only saves
+      # at the end of a green job, so a red build rebuilt OpenSSL and rlottie
+      # from source (about 10 minutes) on every run.
+      - name: Restore vcpkg packages (OpenSSL, rlottie)
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
         with:
           path: .vcpkg-cache
           key: vcpkg-x64-windows-${{ hashFiles('vcpkg.json') }}
           restore-keys: vcpkg-x64-windows-
 
+      # Compiler cache: unchanged translation units come from the GitHub Actions
+      # cache instead of being compiled again. The Release flags have no /Zi, so
+      # every MSVC compile is cacheable.
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
       - name: Configure
-        run: cmake --preset windows-msvc-release
+        run: cmake --preset windows-msvc-release -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+
+      - name: Save vcpkg packages
+        if: always() && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .vcpkg-cache
+          key: vcpkg-x64-windows-${{ hashFiles('vcpkg.json') }}
 
       # Keeps going after the first failure and repeats the compiler's error lines
       # as annotations, so one run shows everything that has to be fixed.
@@ -112,6 +134,10 @@ jobs:
             }
             exit $code
           }
+
+      - name: Compiler cache statistics
+        if: always()
+        run: sccache --show-stats
 
       # GUI tests run on the offscreen platform (set per test by CMake); the
       # realtime interop test skips itself without the web client sources.
@@ -238,11 +264,23 @@ jobs:
             librlottie-dev \
             xvfb dpkg-dev
 
+      # Compiler cache: only the files that changed since the cached run are
+      # compiled again.
+      - name: Set up ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: linux-release
+          max-size: 1G
+
       - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DELEZA_DEBUG_TOOLS=OFF -DCMAKE_INSTALL_PREFIX=/usr
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DELEZA_DEBUG_TOOLS=OFF -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: Build
         run: cmake --build build
+
+      - name: Compiler cache statistics
+        if: always()
+        run: ccache --show-stats
 
       - name: Test
         env:
