@@ -265,6 +265,23 @@ struct DeviceSession {
 	[[nodiscard]] static DeviceSession FromJson(const QJsonObject &json);
 };
 
+// Somebody I blocked in a masked conversation: only the mask name is known.
+struct ContactBan {
+	QString token;          // opaque handle for the unblock
+	QString label;          // the mask name they had
+	qint64 createdAt = 0;   // ms
+
+	[[nodiscard]] static ContactBan FromJson(const QJsonObject &json);
+};
+
+// One page of a last-seen exception list (`kind` always | never).
+struct LastSeenExceptionsPage {
+	QVector<Profile> users;
+	QString nextCursor;
+
+	[[nodiscard]] static LastSeenExceptionsPage FromJson(const QJsonObject &json);
+};
+
 struct ReportReasons {
 	QStringList post;
 	QStringList reply;

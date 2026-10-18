@@ -256,6 +256,33 @@ Filters Filters::FromJson(const QJsonObject &json) {
 	return result;
 }
 
+ContactBan ContactBan::FromJson(const QJsonObject &json) {
+	auto result = ContactBan();
+	result.token = String(json, "token"_L1);
+	result.label = Name(json, "label"_L1);
+	const auto created = json.value("created_at"_L1);
+	if (created.isString()) {
+		// An RFC 3339 string (a Go time).
+		const auto time = QDateTime::fromString(created.toString(), Qt::ISODateWithMs);
+		result.createdAt = time.isValid() ? time.toMSecsSinceEpoch() : 0;
+	} else {
+		result.createdAt = ToMs(Int64(json, "created_at"_L1));
+	}
+	return result;
+}
+
+LastSeenExceptionsPage LastSeenExceptionsPage::FromJson(const QJsonObject &json) {
+	auto result = LastSeenExceptionsPage();
+	for (const auto &item : json.value("items"_L1).toArray()) {
+		const auto user = Profile::FromJson(item.toObject().value("user"_L1).toObject());
+		if (!user.id.isEmpty()) {
+			result.users.push_back(user);
+		}
+	}
+	result.nextCursor = String(json, "next_cursor"_L1);
+	return result;
+}
+
 DeviceSession DeviceSession::FromJson(const QJsonObject &json) {
 	auto result = DeviceSession();
 	result.id = String(json, "session_id"_L1);
