@@ -40,16 +40,6 @@ function(eleza_core_test name)
 		target_compile_options(${name} PRIVATE -Wall -Wextra)
 	endif()
 	add_test(NAME ${name} COMMAND ${name})
-	# Windows finds a DLL only next to the executable or on PATH: copy the
-	# vcpkg rlottie.dll that the test links (through ElezaCore) beside it.
-	# Qt and OpenSSL already come from PATH / vcpkg's app-local copy.
-	if (WIN32)
-		set(_dlls "$<FILTER:$<TARGET_RUNTIME_DLLS:${name}>,INCLUDE,rlottie>")
-		add_custom_command(TARGET ${name} POST_BUILD
-			COMMAND "$<$<BOOL:${_dlls}>:${CMAKE_COMMAND};-E;copy_if_different;${_dlls};$<TARGET_FILE_DIR:${name}>>"
-			COMMAND_EXPAND_LISTS
-			VERBATIM)
-	endif()
 	set_tests_properties(${name} PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 120)
@@ -57,6 +47,12 @@ function(eleza_core_test name)
 		# The Qt DLLs, without Qt's bin directory being in PATH.
 		set_property(TEST ${name} APPEND PROPERTY
 			ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+		# The vcpkg DLLs (rlottie.dll: test_sticker_decode links it through
+		# ElezaCore), from vcpkg's installed tree, without copying them.
+		if (VCPKG_INSTALLED_DIR AND VCPKG_TARGET_TRIPLET)
+			set_property(TEST ${name} APPEND PROPERTY
+				ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin")
+		endif()
 	endif()
 endfunction()
 
