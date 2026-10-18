@@ -160,8 +160,13 @@ storiesPostCardTextStyle: TextStyle(defaultTextStyle) {
 storiesPostCardTextLines: 6;
 storiesPostCardThumb: 120px;
 storiesPostButton: RoundButton(defaultRoundButton) {
+	textFg: #161a17;
+	textFgOver: #161a17;
+	textBg: #ffffffeb;
+	textBgOver: #ffffff;
 	height: 34px;
 	radius: 17px;
+	ripple: storiesOverRipple;
 }
 storiesStageGradientTop: #06412c;
 storiesStageGradientBottom: #018a54;

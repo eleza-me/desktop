@@ -5,6 +5,7 @@
 #ifdef ELEZA_DEBUG_TOOLS
 #include "data/data_session.h"
 #include "data/data_stories.h"
+#include "data/data_users.h"
 #include "main/main_session.h"
 #include "stories/stories_boxes.h"
 #include "stories/stories_settings.h"

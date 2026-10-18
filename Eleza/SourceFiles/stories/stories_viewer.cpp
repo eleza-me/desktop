@@ -133,6 +133,7 @@ private:
 	[[nodiscard]] QRect bottomRect() const;
 	[[nodiscard]] QRect reactionRect(int index) const;
 	[[nodiscard]] QRect viewersRect() const;
+	[[nodiscard]] QString viewersText() const;
 	[[nodiscard]] QRect postCardRect() const;
 	[[nodiscard]] bool replyShown() const;
 	[[nodiscard]] Hit hitAt(QPoint point) const;
@@ -790,11 +791,17 @@ QRect Viewer::reactionRect(int index) const {
 	return inStage(left + index * (size + skip), bottom.y() + padding.top(), size, size);
 }
 
-QRect Viewer::viewersRect() const {
-	const auto &padding = st::storiesReplyPadding;
+QString Viewer::viewersText() const {
 	const auto story = current();
 	const auto count = (story && story->viewerCount > 0) ? story->viewerCount : 0;
-	const auto text = tr::lng_stories_viewers_count(tr::now, lt_count, double(count));
+	return count
+		? tr::lng_stories_viewers_count(tr::now, lt_count, double(count))
+		: tr::lng_stories_viewers_none(tr::now);
+}
+
+QRect Viewer::viewersRect() const {
+	const auto &padding = st::storiesReplyPadding;
+	const auto text = viewersText();
 	const auto width = st::storiesViewersIcon.width() + 8
 		+ st::storiesViewersButtonFont->width(text) + 24;
 	const auto bottom = bottomRect();
@@ -918,8 +925,11 @@ void Viewer::updateControls() {
 		&& story->post
 		&& story->post->available;
 	_seePost->setVisible(postShown);
-	_previousNav->setVisible(story && (_index > 0 || _userIndex > 0));
-	_nextNav->setVisible(story != nullptr);
+	// Physical buttons: back is on the right in RTL.
+	const auto back = style::RightToLeft() ? _nextNav : _previousNav;
+	const auto forward = style::RightToLeft() ? _previousNav : _nextNav;
+	back->setVisible(story && (_index > 0 || _userIndex > 0));
+	forward->setVisible(story != nullptr);
 	if (postShown) {
 		const auto card = postCardRect();
 		_seePost->move(
@@ -1209,16 +1219,16 @@ void Viewer::paintChrome(Painter &p) {
 			p.setBrush(st::storiesReactionBgOver);
 			p.drawRoundedRect(rect, rect.height() / 2., rect.height() / 2.);
 		}
-		const auto icon = inStage(
-			(style::RightToLeft() ? (_stage.x() + _stage.width() - rect.x() - rect.width()) : (rect.x() - _stage.x())) + 12,
-			rect.y() + (rect.height() - st::storiesViewersIcon.height()) / 2,
-			st::storiesViewersIcon.width(),
-			st::storiesViewersIcon.height());
-		st::storiesViewersIcon.paint(p, icon.x(), icon.y(), width());
-		const auto count = (story->viewerCount > 0) ? story->viewerCount : 0;
-		const auto text = count
-			? tr::lng_stories_viewers_count(tr::now, lt_count, double(count))
-			: tr::lng_stories_viewers_none(tr::now);
+		const auto iconSize = st::storiesViewersIcon.size();
+		const auto icon = QRect(
+			style::RightToLeft()
+				? (rect.x() + rect.width() - 12 - iconSize.width())
+				: (rect.x() + 12),
+			rect.y() + (rect.height() - iconSize.height()) / 2,
+			iconSize.width(),
+			iconSize.height());
+		st::storiesViewersIcon.paintInCenter(p, icon);
+		const auto text = viewersText();
 		p.setFont(st::storiesViewersButtonFont);
 		p.setPen(st::storiesOverFg);
 		const auto textWidth = st::storiesViewersButtonFont->width(text);
