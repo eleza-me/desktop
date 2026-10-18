@@ -78,6 +78,7 @@ public:
 
 	// False when the signal could not be sent (not connected).
 	virtual bool sendTyping(const QString &cap, const QString &kind) = 0;
+	virtual bool sendGroupTyping(const QString &group, const QString &kind) = 0;
 	// `done` gets the PresenceOut list the server answered ([] when not connected).
 	virtual void subscribePresence(
 		const QStringList &users,

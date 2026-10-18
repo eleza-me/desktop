@@ -96,6 +96,8 @@ public:
 		return _items.contains(clientMessageId);
 	}
 	[[nodiscard]] int pendingCount(const QString &chat = QString()) const;
+	// Something for this chat is in the queue (also a failed message).
+	[[nodiscard]] bool holds(const QString &chat) const;
 	// The queue in sending order.
 	[[nodiscard]] QVector<OutboxItem> items() const;
 

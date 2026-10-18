@@ -20,6 +20,7 @@
 #include "data/data_types.h"
 
 #include <QtCore/QHash>
+#include <QtCore/QSet>
 
 namespace Data {
 
@@ -41,10 +42,20 @@ public:
 
 	// ---- rows
 	// Null when the chat has no row. The pointer is valid until the list changes.
+	// Every row, also one that is not listed (see listed()).
 	[[nodiscard]] const Chat *chat(const QString &id) const;
-	// Pinned first, then newest activity first.
+	// Pinned first, then newest activity first. Only listed rows.
 	[[nodiscard]] QVector<Chat> list(Section section = Section::Messages) const;
 	[[nodiscard]] int count(Section section) const;
+	// The row is shown in the list (and counts for the badges): a direct
+	// chat that was only opened (a profile's «Message», a search result, an
+	// empty «Saved messages») has a row for its screen but stays out of the
+	// list until something is written in it, a draft is typed, it is pinned
+	// or a message waits in the outbox for it — the rule of the server's
+	// inbox, which omits such threads.
+	[[nodiscard]] bool listed(const Chat &chat) const;
+	// The content part of listed() (no outbox, no feature gate).
+	[[nodiscard]] static bool HasContent(const Chat &chat);
 	// The chat a conversation was projected into ("" when not listed yet).
 	[[nodiscard]] QString chatOfConversation(const QString &conversationId) const;
 	// «Saved messages», when it is in the list.
@@ -95,10 +106,16 @@ public:
 		Fn<void(const Chat &)> done,
 		Fn<void(const Api::Error &)> fail = nullptr);
 
-	// The chat on screen: incoming messages there do not count as unread.
-	void setVisibleChat(const QString &id);
+	// The chat on screen. `atEnd`: its newest message is in view, so
+	// incoming messages there are read as they come and do not count as
+	// unread (scrolled up they do, until they are scrolled into view).
+	void setVisibleChat(const QString &id, bool atEnd = true);
 	[[nodiscard]] QString visibleChat() const {
 		return _visibleChat;
+	}
+	// The chat is on screen with its newest message in view.
+	[[nodiscard]] bool readingLive(const QString &id) const {
+		return !id.isEmpty() && _visibleChat == id && _visibleAtEnd;
 	}
 
 	// ---- actions
@@ -142,12 +159,24 @@ public:
 	// Applies `change` to the row (if any) and stores it.
 	void patch(const QString &id, const Fn<void(Chat &)> &change);
 	void remove(const QString &id);
-	void replaceAll(const QVector<Chat> &chats);
+	// The rows of a fresh inbox. A row the inbox omits goes (chatRemoved)
+	// unless it is a group (Data::Groups keeps those), the chat on screen,
+	// a row that is not listed anyway (an opened empty thread), a chat with
+	// a message in the outbox, or of a section in `partialSections` (one
+	// that was not read to its end: its older rows are not known now).
+	void replaceAll(
+		const QVector<Chat> &chats,
+		const QSet<QString> &partialSections = {});
 	// Refreshes (or creates) a row from a newer header; false when it stays hidden.
 	bool applyInfo(const ChatInfo &info);
 	// Maps an inbox entry to a row; nullopt when it has no header.
 	[[nodiscard]] std::optional<Chat> rowFromEntry(const InboxEntry &entry) const;
-	void setActivity(const QString &chat, const QString &kind, int ttlSeconds);
+	// `user`: who (a group member); empty in a direct chat.
+	void setActivity(
+		const QString &chat,
+		const QString &kind,
+		int ttlSeconds,
+		const QString &user = QString());
 	void setPresence(const Presence &presence);
 	// A card changed: rows with that peer take the new name / badge.
 	void applyCard(const User &card);
@@ -176,8 +205,8 @@ private:
 		const QString &cursor,
 		int page,
 		std::shared_ptr<QVector<InboxEntry>> into,
-		Fn<void(bool)> done);
-	void finishInbox(const QVector<InboxEntry> &entries);
+		Fn<void(bool ok, bool complete)> done);
+	void finishInbox(const QVector<InboxEntry> &entries, const QSet<QString> &partialSections);
 	[[nodiscard]] bool shown(const Chat &chat) const;
 	[[nodiscard]] bool isCleared(const Chat &chat);
 	void persistCleared();
@@ -199,6 +228,7 @@ private:
 	QHash<QString, qint64> _typingSentAt;
 	base::Timer _activityTimer;
 	QString _visibleChat;
+	bool _visibleAtEnd = true;
 	std::optional<Api::Error> _inboxError;
 	QVector<std::pair<base::Guard, std::pair<Fn<void()>, Fn<void(const Api::Error &)>>>> _inboxWaiters;
 	int _unreadChats = 0;

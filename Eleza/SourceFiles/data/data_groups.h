@@ -130,6 +130,14 @@ public:
 	void handleFrame(const QJsonObject &frame);
 	// The data of a user update of kind `group`.
 	void applyUser(const QJsonObject &data);
+	// A `Signal t:"group_admin"` (for the admins of a group, never stored):
+	// kind "join_requests" — the number of undecided requests is `count`
+	// now; `user` made a new one (empty when a request was decided).
+	void applyAdminSignal(
+		const QString &group,
+		const QString &kind,
+		int count,
+		const QString &user);
 	// A page of the group's history arrived (its header moves the row; the
 	// newest page attaches the message cache).
 	void historyPage(const Group &header, bool newest);
@@ -327,6 +335,9 @@ Q_SIGNALS:
 	// Someone joined, left, was removed or changed role: a member list of
 	// this group that is on screen reads itself again.
 	void membersChanged(const QString &group);
+	// The requests to join changed (a group_admin signal): a list of them
+	// on screen reads itself again.
+	void joinRequestsChanged(const QString &group, const QString &user);
 	// A live message of somebody else that may alert (the notify level and
 	// the mute of the group were applied): for notifications / sounds.
 	void messageReceived(const Data::Message &message, bool addressesMe);

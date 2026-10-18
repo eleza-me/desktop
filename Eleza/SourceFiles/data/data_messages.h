@@ -48,6 +48,21 @@ struct History {
 	[[nodiscard]] const Message *find(qint64 seq) const;
 };
 
+// The unread count of a row after my read mark moved to `readSeq` (here or
+// on another device). Read to the end: none. Otherwise the messages above
+// the mark that are not mine, counted in the timeline when it holds all of
+// them, or bounded by the seqs above the mark when it does not — never more
+// than the row had (a read does not add unread messages), unless the row's
+// count was only a lower bound (capped).
+struct UnreadCount {
+	int count = 0;
+	bool capped = false;
+};
+[[nodiscard]] UnreadCount UnreadAfterRead(
+	const Chat &row,
+	const History *history,
+	qint64 readSeq);
+
 struct CallbackAnswer {
 	bool answered = false;
 	QString text;

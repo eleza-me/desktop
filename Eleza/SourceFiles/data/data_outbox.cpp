@@ -87,6 +87,12 @@ int Outbox::pendingCount(const QString &chat) const {
 	return result;
 }
 
+bool Outbox::holds(const QString &chat) const {
+	return std::any_of(_items.cbegin(), _items.cend(), [&](const OutboxItem &item) {
+		return item.chat == chat;
+	});
+}
+
 QVector<OutboxItem> Outbox::items() const {
 	auto result = QVector<OutboxItem>();
 	for (const auto &id : _order) {

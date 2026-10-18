@@ -517,6 +517,34 @@ void Client::onSignal(const QString &type, const QJsonObject &body) {
 		frame.chat = body.value("group"_L1).toString();
 		frame.pts = base::SafeInt64(body.value("pts"_L1).toDouble());
 		frame.data = body;
+	} else if (type == u"group_typing") {
+		frame.type = Frame::Type::GroupTyping;
+		frame.chat = body.value("group"_L1).toString();
+		frame.user = body.value("user"_L1).toString();
+		frame.kind = body.value("kind"_L1).toString();
+		if (frame.kind.isEmpty()) {
+			frame.kind = u"typing"_s;
+		}
+		const auto ttl = base::SafeInt(body.value("ttl_s"_L1).toDouble());
+		frame.ttl = (ttl > 0) ? ttl : 6;
+	} else if (type == u"group_admin") {
+		frame.type = Frame::Type::GroupAdmin;
+		frame.chat = body.value("group"_L1).toString();
+		frame.kind = body.value("kind"_L1).toString();
+		frame.count = base::SafeInt(body.value("join_requests"_L1).toDouble());
+		frame.user = body.value("user"_L1).toString();
+	} else if (type == u"config" || type == u"settings") {
+		frame.type = (type == u"config") ? Frame::Type::Config : Frame::Type::Settings;
+		frame.version = base::SafeInt64(body.value("version"_L1).toDouble());
+	} else if (type == u"media") {
+		frame.type = Frame::Type::Media;
+		frame.data = body;
+	} else if (!type.isEmpty()) {
+		// Not known here (a «story» hint, a newer server's signal): the
+		// screens that care read it from the frame.
+		frame.type = Frame::Type::Signal;
+		frame.kind = type;
+		frame.data = body;
 	} else {
 		return;
 	}
@@ -619,6 +647,18 @@ bool Client::sendTyping(const QString &cap, const QString &kind) {
 	}
 	session->signal(u"typing"_s, EncodeBody("TypingSignal", QJsonObject{
 		{ u"cap"_s, cap },
+		{ u"kind"_s, kind },
+	}));
+	return true;
+}
+
+bool Client::sendGroupTyping(const QString &group, const QString &kind) {
+	const auto session = _session.data();
+	if (!session || !session->isOpen() || group.isEmpty()) {
+		return false;
+	}
+	session->signal(u"group_typing"_s, EncodeBody("GroupTypingSignal", QJsonObject{
+		{ u"group"_s, group },
 		{ u"kind"_s, kind },
 	}));
 	return true;

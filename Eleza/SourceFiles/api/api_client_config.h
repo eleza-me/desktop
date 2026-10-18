@@ -38,6 +38,9 @@ public:
 	[[nodiscard]] bool loaded() const {
 		return _loaded;
 	}
+	// The document's "version" (0 when it has none): the realtime `config`
+	// signal names the server's, a different one is read again.
+	[[nodiscard]] qint64 version() const;
 
 	// ---- raw access
 	[[nodiscard]] QJsonValue value(const QString &dotted) const;

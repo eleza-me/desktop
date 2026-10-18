@@ -251,6 +251,7 @@ private Q_SLOTS:
 	void actionsUseTheGroupRoutes();
 	void permissionsGoOverHttp();
 	void cachedGroupIsRepairedOnOpen();
+	void typingAndAdminSignals();
 
 };
 
@@ -996,11 +997,15 @@ void TestGroups::actionsUseTheGroupRoutes() {
 	chats.muteFor(kGroup, u"8h"_s);
 	QCOMPARE(fixture.harness->bodies(u"groups.member"_s).back().value("mute_for"_L1).toString(), u"8h"_s);
 	QCOMPARE(transport.count(u"chat.member"_s), 0);
-	// Groups have no typing indicators.
+	// Typing in a group is a group_typing signal (no capability).
 	transport.setOnline(true);
 	chats.sendTyping(kGroup);
 	Test::Settle(30);
 	QCOMPARE(transport.count(u"chat.capability"_s), 0);
+	QCOMPARE(transport.groupTyping.size(), 1);
+	QCOMPARE(transport.groupTyping[0].first, kGroup);
+	QCOMPARE(transport.groupTyping[0].second, u"typing"_s);
+	QVERIFY(transport.typing.isEmpty());
 
 	// The draft of a group is saved through its own route.
 	auto draft = Draft();
@@ -1160,6 +1165,63 @@ void TestGroups::cachedGroupIsRepairedOnOpen() {
 	QCOMPARE(fixture.timeline(), (QStringList{
 		u"1=m1 edited"_s, u"2=m2"_s, u"3=m3"_s, u"4=m4"_s, u"5=m5"_s, u"6=m6"_s,
 	}));
+}
+
+void TestGroups::typingAndAdminSignals() {
+	auto fixture = Fixture();
+	QVERIFY(fixture.startWithGroup());
+	auto &chats = fixture.harness->chats();
+	const auto typing = [&](const QString &user, const QString &kind) {
+		auto frame = Rt::Frame();
+		frame.type = Type::GroupTyping;
+		frame.chat = kGroup;
+		frame.user = user;
+		frame.kind = kind;
+		frame.ttl = 6;
+		fixture.frame(frame);
+	};
+	auto activity = QSignalSpy(&chats, &Chats::activityChanged);
+	typing(u"u_sara"_s, u"recording_voice"_s);
+	QVERIFY(chats.activity(kGroup).has_value());
+	QCOMPARE(chats.activity(kGroup)->kind, u"recording_voice"_s);
+	QCOMPARE(chats.activity(kGroup)->user, u"u_sara"_s);
+	QCOMPARE(activity.size(), 1);
+	// Somebody else's cancel does not end Sara's indicator, hers does.
+	typing(u"u_ali"_s, u"cancel"_s);
+	QVERIFY(chats.activity(kGroup).has_value());
+	typing(u"u_sara"_s, u"cancel"_s);
+	QVERIFY(!chats.activity(kGroup).has_value());
+	// Mine from another device is not shown.
+	typing(u"u_me"_s, u"typing"_s);
+	QVERIFY(!chats.activity(kGroup).has_value());
+
+	// The number of requests to join, live.
+	auto requests = QSignalSpy(&fixture.groups(), &Groups::joinRequestsChanged);
+	auto admin = Rt::Frame();
+	admin.type = Type::GroupAdmin;
+	admin.chat = kGroup;
+	admin.kind = u"join_requests"_s;
+	admin.count = 3;
+	admin.user = u"u_new"_s;
+	fixture.frame(admin);
+	QCOMPARE(fixture.groups().group(kGroup)->joinRequests, 3);
+	QCOMPARE(requests.size(), 1);
+	QCOMPARE(requests[0][1].toString(), u"u_new"_s);
+	admin.count = 2;
+	admin.user = QString();
+	fixture.frame(admin);
+	QCOMPARE(fixture.groups().group(kGroup)->joinRequests, 2);
+	// Not a group of mine: nothing.
+	admin.chat = u"j_other"_s;
+	fixture.frame(admin);
+	QCOMPARE(requests.size(), 2);
+	// A kind this client does not know: the header is read again.
+	const auto gets = fixture.count(u"groups.get"_s);
+	admin.chat = kGroup;
+	admin.kind = u"something_new"_s;
+	fixture.frame(admin);
+	Test::Settle(30);
+	QCOMPARE(fixture.count(u"groups.get"_s), gets + 1);
 }
 
 QTEST_GUILESS_MAIN(TestGroups)

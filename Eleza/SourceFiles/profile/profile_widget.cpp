@@ -673,7 +673,8 @@ QString Widget::callableUserId() const {
 		return QString();
 	}
 	const auto &chats = controller()->session().data().chats();
-	for (const auto &chat : chats.list(Data::Chats::Section::All)) {
+	// Also a chat that is not listed yet (opened, nothing written).
+	for (const auto &chat : chats.all()) {
 		if (chat.peerUserId == _profile.id
 			&& (Data::CallAvailabilityFor(chat)
 				== Data::CallAvailability::Available)) {

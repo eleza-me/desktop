@@ -629,6 +629,17 @@ void Graph::setSetting(const QString &dotted, const QJsonValue &value) {
 	patchSettings(SettingPatch(dotted, value));
 }
 
+void Graph::settingsVersionChanged(qint64 version) {
+	if (version > 0 && version == _settingsVersion) {
+		return;
+	}
+	_settingsVersion = version;
+	// Not read yet: whoever needs it reads the current one then.
+	if (_settingsLoaded) {
+		loadSettings(true, base::Guard(), nullptr);
+	}
+}
+
 void Graph::loadSettings(
 		bool force,
 		base::Guard guard,
