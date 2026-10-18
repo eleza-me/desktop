@@ -10,6 +10,8 @@
 //                     offers, which rights a granter may tick)
 //   GroupInviteLinks  https://eleza.me/g/<token>
 //   MentionRules      «@…» while typing, entity offsets, "does it address me"
+//   GroupAdminLog     the sentence of an entry of the admin log, its filter
+//                     by kind of action, the steps of slow mode
 //
 // A group has two counters. `seq` numbers its messages; `pts` numbers its
 // changes (a new message, an edit, a delete for everyone, a reaction, a
@@ -18,6 +20,7 @@
 #pragma once
 
 #include "base/basic_types.h"
+#include "data/data_group_types.h"
 
 #include <QtCore/QStringList>
 #include <QtCore/QVector>
@@ -367,5 +370,71 @@ struct Range {
 [[nodiscard]] qint64 NextMention(const QVector<qint64> &seqs, qint64 afterSeq);
 
 } // namespace MentionRules
+
+namespace GroupAdminLog {
+
+// The sentence an entry reads as. Generic: an action this build does not know.
+enum class Form {
+	Generic,
+	Promote,
+	AdminRights,
+	Demote,
+	Restrict,
+	RestrictUntil,
+	Unrestrict,
+	Remove,
+	Ban,
+	BanDelete,
+	Unban,
+	Permissions,
+	SlowModeOn,
+	SlowModeOff,
+	HideMembersOn,
+	HideMembersOff,
+	Title,
+	Photo,
+	About,
+	Pin,
+	Unpin,
+	InviteCreate,
+	InviteCreateNamed,
+	InviteRevoke,
+	InviteRevokeNamed,
+	JoinApprove,
+	JoinDecline,
+	DeleteMessage,
+	DeleteMessages,   // a bulk delete of several people's messages
+	DeleteMessagesOf, // a bulk delete of one person's messages (target set)
+	DeleteAll,
+	Transfer,
+};
+[[nodiscard]] Form FormOf(const GroupAdminLogEntry &entry);
+// The sentence names the person the action was done to.
+[[nodiscard]] bool NamesTarget(Form form);
+
+// The kinds of action the filter offers, in its order.
+enum Category : int {
+	Members,
+	Admins,
+	Settings,
+	Messages,
+	Links,
+	kCategoryCount,
+};
+[[nodiscard]] QStringList Actions(int category);
+// The `actions` parameter for a mask of categories (1 << Category): the
+// names as a comma list, or "" when nothing narrows (none or every kind
+// picked: an action of a later release is then still listed).
+[[nodiscard]] QString ActionsParam(int mask);
+// The categories that narrow the list (0: the filter does not narrow).
+[[nodiscard]] int PickedCount(int mask);
+
+// The steps of slow mode from client-config `groups.slow_mode.values`
+// ("0", "10s", "1m"…, or plain seconds): seconds, ascending, without
+// repeats, always starting with 0 (off); the server's defaults when the
+// list says nothing usable.
+[[nodiscard]] QVector<int> SlowModeSteps(const QStringList &values);
+
+} // namespace GroupAdminLog
 
 } // namespace Data

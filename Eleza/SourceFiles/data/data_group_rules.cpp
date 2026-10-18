@@ -4,6 +4,7 @@
 #include <QtCore/QSet>
 
 #include <algorithm>
+#include <array>
 
 namespace Data {
 namespace {
@@ -710,5 +711,194 @@ qint64 NextMention(const QVector<qint64> &seqs, qint64 afterSeq) {
 }
 
 } // namespace MentionRules
+
+namespace GroupAdminLog {
+namespace {
+
+[[nodiscard]] const std::array<QStringList, kCategoryCount> &Names() {
+	static const auto result = std::array<QStringList, kCategoryCount>{
+		QStringList{
+			u"restrict"_s, u"unrestrict"_s, u"remove"_s, u"ban"_s,
+			u"unban"_s, u"join_approve"_s, u"join_decline"_s },
+		QStringList{
+			u"promote"_s, u"admin_rights"_s, u"demote"_s, u"transfer"_s },
+		QStringList{
+			u"permissions"_s, u"slow_mode"_s, u"hide_members"_s,
+			u"title"_s, u"photo"_s, u"about"_s },
+		QStringList{
+			u"pin"_s, u"unpin"_s, u"delete_message"_s,
+			u"delete_messages"_s, u"delete_all_messages"_s },
+		QStringList{ u"invite_create"_s, u"invite_revoke"_s },
+	};
+	return result;
+}
+
+// Seconds of one value of the list: "0", "30", "10s", "1m", "1h30m".
+[[nodiscard]] int StepSeconds(const QString &value) {
+	static const auto kPart = QRegularExpression(u"(\\d+)(s|m|h|d)"_s);
+	const auto text = value.trimmed();
+	if (text.isEmpty()) {
+		return -1;
+	}
+	auto ok = false;
+	const auto plain = text.toLongLong(&ok);
+	if (ok) {
+		return (plain >= 0 && plain <= 7 * 86400) ? int(plain) : -1;
+	}
+	auto total = qint64(0);
+	auto consumed = qsizetype(0);
+	auto i = kPart.globalMatch(text);
+	while (i.hasNext()) {
+		const auto match = i.next();
+		if (match.capturedStart() != consumed) {
+			return -1;
+		}
+		consumed = match.capturedEnd();
+		const auto number = match.captured(1).toLongLong();
+		const auto unit = match.captured(2);
+		total += number * ((unit == u"d")
+			? 86400
+			: (unit == u"h")
+			? 3600
+			: (unit == u"m")
+			? 60
+			: 1);
+		if (total > 7 * 86400) {
+			return -1;
+		}
+	}
+	return (consumed == text.size()) ? int(total) : -1;
+}
+
+} // namespace
+
+Form FormOf(const GroupAdminLogEntry &entry) {
+	const auto &action = entry.action;
+	const auto named = !entry.linkName.trimmed().isEmpty();
+	if (action == u"promote") {
+		return Form::Promote;
+	} else if (action == u"admin_rights") {
+		return Form::AdminRights;
+	} else if (action == u"demote") {
+		return Form::Demote;
+	} else if (action == u"restrict") {
+		return (entry.until > 0) ? Form::RestrictUntil : Form::Restrict;
+	} else if (action == u"unrestrict") {
+		return Form::Unrestrict;
+	} else if (action == u"remove") {
+		return Form::Remove;
+	} else if (action == u"ban") {
+		return entry.deleteMessages ? Form::BanDelete : Form::Ban;
+	} else if (action == u"unban") {
+		return Form::Unban;
+	} else if (action == u"permissions") {
+		return Form::Permissions;
+	} else if (action == u"slow_mode") {
+		return (entry.slowModeS > 0) ? Form::SlowModeOn : Form::SlowModeOff;
+	} else if (action == u"hide_members") {
+		return entry.hideMembers ? Form::HideMembersOn : Form::HideMembersOff;
+	} else if (action == u"title") {
+		return Form::Title;
+	} else if (action == u"photo") {
+		return Form::Photo;
+	} else if (action == u"about") {
+		return Form::About;
+	} else if (action == u"pin") {
+		return Form::Pin;
+	} else if (action == u"unpin") {
+		return Form::Unpin;
+	} else if (action == u"invite_create") {
+		return named ? Form::InviteCreateNamed : Form::InviteCreate;
+	} else if (action == u"invite_revoke") {
+		return named ? Form::InviteRevokeNamed : Form::InviteRevoke;
+	} else if (action == u"join_approve") {
+		return Form::JoinApprove;
+	} else if (action == u"join_decline") {
+		return Form::JoinDecline;
+	} else if (action == u"delete_message") {
+		return Form::DeleteMessage;
+	} else if (action == u"delete_messages") {
+		// The sender is named only when every message was that one person's.
+		return entry.target.isEmpty()
+			? Form::DeleteMessages
+			: Form::DeleteMessagesOf;
+	} else if (action == u"delete_all_messages") {
+		return Form::DeleteAll;
+	} else if (action == u"transfer") {
+		return Form::Transfer;
+	}
+	return Form::Generic;
+}
+
+bool NamesTarget(Form form) {
+	switch (form) {
+	case Form::Promote:
+	case Form::AdminRights:
+	case Form::Demote:
+	case Form::Restrict:
+	case Form::RestrictUntil:
+	case Form::Unrestrict:
+	case Form::Remove:
+	case Form::Ban:
+	case Form::BanDelete:
+	case Form::Unban:
+	case Form::JoinApprove:
+	case Form::JoinDecline:
+	case Form::DeleteMessage:
+	case Form::DeleteMessagesOf:
+	case Form::DeleteAll:
+	case Form::Transfer:
+		return true;
+	default:
+		return false;
+	}
+}
+
+QStringList Actions(int category) {
+	return (category >= 0 && category < kCategoryCount)
+		? Names()[category]
+		: QStringList();
+}
+
+QString ActionsParam(int mask) {
+	const auto picked = PickedCount(mask);
+	if (!picked) {
+		return QString();
+	}
+	auto result = QStringList();
+	for (auto i = 0; i != kCategoryCount; ++i) {
+		if (mask & (1 << i)) {
+			result += Names()[i];
+		}
+	}
+	return result.join(u',');
+}
+
+int PickedCount(int mask) {
+	auto result = 0;
+	for (auto i = 0; i != kCategoryCount; ++i) {
+		if (mask & (1 << i)) {
+			++result;
+		}
+	}
+	return (result == kCategoryCount) ? 0 : result;
+}
+
+QVector<int> SlowModeSteps(const QStringList &values) {
+	auto result = QVector<int>{ 0 };
+	for (const auto &value : values) {
+		const auto seconds = StepSeconds(value);
+		if (seconds > 0 && !result.contains(seconds)) {
+			result.push_back(seconds);
+		}
+	}
+	if (result.size() == 1) {
+		result = { 0, 10, 30, 60, 300, 900, 3600 };
+	}
+	std::sort(result.begin(), result.end());
+	return result;
+}
+
+} // namespace GroupAdminLog
 
 } // namespace Data
