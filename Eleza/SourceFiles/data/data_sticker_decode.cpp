@@ -188,6 +188,7 @@ private:
 	// The chunks of one frame (ALPH + VP8, or VP8L) as a file of its own.
 	[[nodiscard]] static QByteArray WrapFrame(const QByteArray &chunks, QSize size) {
 		auto alpha = false;
+		auto lossless = false;
 		auto image = false;
 		const auto b = reinterpret_cast<const uchar*>(chunks.constData());
 		const auto n = qint64(chunks.size());
@@ -203,6 +204,7 @@ private:
 				alpha = true;
 			} else if (tag == "VP8 " || tag == "VP8L") {
 				image = true;
+				lossless = (tag == "VP8L");
 			} else {
 				offset += total;
 				continue; // unknown chunks stay out
@@ -214,7 +216,11 @@ private:
 			return QByteArray();
 		}
 		auto body = QByteArray("WEBP");
-		if (alpha) {
+		// A lossless frame goes into the extended container too: the WebP
+		// plugin of newer Qt (6.7 / 6.8) decodes a bare VP8L frame to a null
+		// image, while VP8X + VP8L (alpha flag: VP8L carries its own alpha)
+		// works with every version.
+		if (alpha || lossless) {
 			body.append("VP8X");
 			PutLe32(body, 10);
 			body.append(char(0x10)); // alpha
@@ -267,15 +273,34 @@ private:
 }
 
 #ifdef ELEZA_HAVE_RLOTTIE
+// The frames of a Lottie document: ip .. op - 1 (op is exclusive), as
+// Telegram counts them. rlottie's totalFrame() is op - ip in older
+// releases and op - ip + 1 in newer ones (vcpkg 2024), so the document
+// decides; 0 when it does not say.
+[[nodiscard]] int LottieDocumentFrames(const QByteArray &json) {
+	const auto root = QJsonDocument::fromJson(json).object();
+	const auto ip = root.value(u"ip"_s).toDouble();
+	const auto op = root.value(u"op"_s).toDouble();
+	const auto frames = std::floor(op - ip);
+	return (frames >= 1. && frames <= 1e6) ? int(frames) : 0;
+}
+
 class LottieAnimation final : public StickerAnimation {
 public:
-	explicit LottieAnimation(std::unique_ptr<rlottie::Animation> animation, QSize box)
+	LottieAnimation(
+		std::unique_ptr<rlottie::Animation> animation,
+		QSize box,
+		int documentFrames)
 	: _animation(std::move(animation)) {
 		auto w = size_t(0);
 		auto h = size_t(0);
 		_animation->size(w, h);
 		_size = FitSize(QSize(int(std::min(w, size_t(4096))), int(std::min(h, size_t(4096)))), box);
-		_count = int(std::min(_animation->totalFrame(), size_t(kMaxFrames)));
+		auto total = _animation->totalFrame();
+		if (documentFrames > 0) {
+			total = std::min(total, size_t(documentFrames));
+		}
+		_count = int(std::min(total, size_t(kMaxFrames)));
 		const auto rate = _animation->frameRate();
 		_delayMs = (rate >= 1. && rate <= 120.)
 			? std::max(int(std::lround(1000. / rate)), kMinDelayMs)
@@ -437,7 +462,10 @@ std::unique_ptr<StickerAnimation> OpenStickerAnimation(
 		if (!animation) {
 			return nullptr;
 		}
-		auto result = std::make_unique<LottieAnimation>(std::move(animation), box);
+		auto result = std::make_unique<LottieAnimation>(
+			std::move(animation),
+			box,
+			LottieDocumentFrames(json));
 		if (!result->valid()) {
 			return nullptr;
 		}

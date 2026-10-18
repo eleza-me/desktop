@@ -47,12 +47,6 @@ function(eleza_core_test name)
 		# The Qt DLLs, without Qt's bin directory being in PATH.
 		set_property(TEST ${name} APPEND PROPERTY
 			ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
-		# The vcpkg DLLs (rlottie.dll: test_sticker_decode links it through
-		# ElezaCore), from vcpkg's installed tree, without copying them.
-		if (VCPKG_INSTALLED_DIR AND VCPKG_TARGET_TRIPLET)
-			set_property(TEST ${name} APPEND PROPERTY
-				ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin")
-		endif()
 	endif()
 endfunction()
 
