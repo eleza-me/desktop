@@ -302,7 +302,7 @@ private:
 	bool _botChat = false;                // the peer is a bot
 	QString _botId;
 	QVector<Data::BotCommand> _commands;
-	InlineState _inline;
+	InlineState _inlineMode;
 	base::Timer _inlineTimer;
 	QPointer<Ui::PopupMenu> _attachMenu;
 

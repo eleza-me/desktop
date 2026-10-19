@@ -220,7 +220,7 @@ void ComposeControls::inlineText(const QString &handle, const QString &query) {
 	auto &bots = _session->data().bots();
 	switch (bots.handleState(handle)) {
 	case Data::Bots::HandleState::Unknown:
-		if (_inline.active && _inline.handle != handle) {
+		if (_inlineMode.active && _inlineMode.handle != handle) {
 			leaveInline();
 		}
 		// Looked up once; the text is read again when the answer is here
@@ -253,30 +253,30 @@ void ComposeControls::inlineText(const QString &handle, const QString &query) {
 	const auto limited = LimitInlineQuery(
 		query,
 		config ? config->botsInlineQueryMaxChars() : 0);
-	if (_inline.active
-		&& _inline.handle == handle
-		&& _inline.query == limited) {
+	if (_inlineMode.active
+		&& _inlineMode.handle == handle
+		&& _inlineMode.query == limited) {
 		return; // nothing new
 	}
-	const auto sameBot = _inline.active && (_inline.botId == info->id);
-	_inline.active = true;
-	_inline.handle = handle;
-	_inline.botId = info->id;
-	_inline.placeholder = info->inlinePlaceholder;
-	_inline.query = limited;
-	_inline.next = QString();
-	_inline.loadingMore = false;
-	++_inline.generation;
+	const auto sameBot = _inlineMode.active && (_inlineMode.botId == info->id);
+	_inlineMode.active = true;
+	_inlineMode.handle = handle;
+	_inlineMode.botId = info->id;
+	_inlineMode.placeholder = info->inlinePlaceholder;
+	_inlineMode.query = limited;
+	_inlineMode.next = QString();
+	_inlineMode.loadingMore = false;
+	++_inlineMode.generation;
 	if (!sameBot) {
-		_inline.results.clear();
-		_inline.queryIds.clear();
+		_inlineMode.results.clear();
+		_inlineMode.queryIds.clear();
 	}
-	if (_inline.results.isEmpty()) {
+	if (_inlineMode.results.isEmpty()) {
 		// The bot's hint (or «searching») until its answer is here.
 		placeBotPanel();
 		_botPanel->showInline(
-			(limited.isEmpty() && !_inline.placeholder.isEmpty())
-				? _inline.placeholder
+			(limited.isEmpty() && !_inlineMode.placeholder.isEmpty())
+				? _inlineMode.placeholder
 				: tr::lng_bot_inline_loading(tr::now),
 			{});
 	}
@@ -285,15 +285,15 @@ void ComposeControls::inlineText(const QString &handle, const QString &query) {
 }
 
 void ComposeControls::leaveInline() {
-	if (!_inline.active) {
+	if (!_inlineMode.active) {
 		if (_botPanel->mode() == BotSuggestPanel::Mode::Inline) {
 			hideBotPanel();
 		}
 		return;
 	}
-	const auto generation = _inline.generation + 1;
-	_inline = InlineState();
-	_inline.generation = generation;
+	const auto generation = _inlineMode.generation + 1;
+	_inlineMode = InlineState();
+	_inlineMode.generation = generation;
 	_inlineTimer.cancel();
 	if (_botPanel->mode() == BotSuggestPanel::Mode::Inline) {
 		hideBotPanel();
@@ -301,82 +301,82 @@ void ComposeControls::leaveInline() {
 }
 
 void ComposeControls::runInlineQuery(const QString &offset) {
-	if (!_inline.active || _inline.botId.isEmpty()) {
+	if (!_inlineMode.active || _inlineMode.botId.isEmpty()) {
 		return;
 	}
-	const auto generation = _inline.generation;
+	const auto generation = _inlineMode.generation;
 	const auto more = !offset.isEmpty();
-	const auto query = _inline.query;
+	const auto query = _inlineMode.query;
 	if (more) {
-		_inline.loadingMore = true;
+		_inlineMode.loadingMore = true;
 	}
 	_session->data().bots().inlineQuery(
-		_inline.botId,
+		_inlineMode.botId,
 		query,
 		offset,
 		this,
 		[=, this](const Data::InlineResults &page) {
-			if (!_inline.active || generation != _inline.generation) {
+			if (!_inlineMode.active || generation != _inlineMode.generation) {
 				return;
 			}
-			_inline.loadingMore = false;
+			_inlineMode.loadingMore = false;
 			if (!more) {
-				_inline.results.clear();
-				_inline.queryIds.clear();
+				_inlineMode.results.clear();
+				_inlineMode.queryIds.clear();
 			}
 			for (const auto &result : page.results) {
 				// A result is sent with the query it came from.
-				if (!_inline.queryIds.contains(result.id)) {
-					_inline.results.push_back(result);
-					_inline.queryIds.insert(result.id, page.queryId);
+				if (!_inlineMode.queryIds.contains(result.id)) {
+					_inlineMode.results.push_back(result);
+					_inlineMode.queryIds.insert(result.id, page.queryId);
 				}
 			}
-			_inline.next = page.nextOffset;
+			_inlineMode.next = page.nextOffset;
 			auto header = QString();
-			if (_inline.results.isEmpty()) {
+			if (_inlineMode.results.isEmpty()) {
 				header = !page.answered
 					? tr::lng_bot_inline_no_answer(tr::now)
-					: (query.isEmpty() && !_inline.placeholder.isEmpty())
-					? _inline.placeholder
+					: (query.isEmpty() && !_inlineMode.placeholder.isEmpty())
+					? _inlineMode.placeholder
 					: tr::lng_bot_inline_empty(tr::now);
 			}
 			if (_mode == Mode::Edit || recording()) {
 				return;
 			}
 			placeBotPanel();
-			_botPanel->showInline(header, _inline.results, more);
+			_botPanel->showInline(header, _inlineMode.results, more);
 			updateControls();
 		},
 		[=, this](const Api::Error &error) {
-			if (!_inline.active || generation != _inline.generation) {
+			if (!_inlineMode.active || generation != _inlineMode.generation) {
 				return;
 			}
-			_inline.loadingMore = false;
+			_inlineMode.loadingMore = false;
 			if (BotGone(error)) {
 				leaveInline();
 				showToast(Support::ErrorText(error));
 			} else if (error.rateLimited()) {
 				showToast(Support::ErrorText(error));
-			} else if (!more && _inline.results.isEmpty()) {
+			} else if (!more && _inlineMode.results.isEmpty()) {
 				hideBotPanel();
 			}
 		});
 }
 
 void ComposeControls::inlineNeedMore() {
-	if (_inline.active && !_inline.loadingMore && !_inline.next.isEmpty()) {
-		runInlineQuery(_inline.next);
+	if (_inlineMode.active && !_inlineMode.loadingMore && !_inlineMode.next.isEmpty()) {
+		runInlineQuery(_inlineMode.next);
 	}
 }
 
 void ComposeControls::pickInlineResult(const Data::InlineResult &result) {
-	if (!_inline.active
-		|| _inline.botId.isEmpty()
+	if (!_inlineMode.active
+		|| _inlineMode.botId.isEmpty()
 		|| _mode == Mode::Edit
 		|| recording()) {
 		return;
 	}
-	const auto queryId = _inline.queryIds.value(result.id);
+	const auto queryId = _inlineMode.queryIds.value(result.id);
 	if (queryId.isEmpty()) {
 		return;
 	}
@@ -385,12 +385,12 @@ void ComposeControls::pickInlineResult(const Data::InlineResult &result) {
 	// meanwhile fails on its bubble (bot.inline_result_expired).
 	_session->data().outbox().sendInlineResult(
 		_chatId,
-		_inline.botId,
+		_inlineMode.botId,
 		queryId,
 		result.id,
 		result.title,
 		replyTo);
-	const auto prefix = u'@' + _inline.handle;
+	const auto prefix = u'@' + _inlineMode.handle;
 	leaveInline();
 	// That bot's query is still in the field: it was used up.
 	if (_text.startsWith(prefix, Qt::CaseInsensitive)) {
