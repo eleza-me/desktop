@@ -2,6 +2,7 @@
 //
 //   Ui::Toast::Show(window->bodyWidget(), tr::lng_copied(tr::now));
 //   Ui::Toast::Show(parent, { .text = ..., .duration = 4000, .icon = &st::toastIconCheck });
+//   Ui::Toast::Show(parent, { .text = ..., .action = undoText, .actionClicked = undo });
 //
 // One toast is visible per parent; the next ones wait in a queue.
 // (Feature code: controller->showToast(text).)
@@ -22,6 +23,10 @@ struct Config {
 	int bottomSkip = 0;
 	// Makes the toast a button: a click runs this and hides it.
 	std::function<void()> clicked = nullptr;
+	// A text button at the toast's end («واگرد»): a click on it runs
+	// `actionClicked` and hides the toast.
+	QString action;
+	std::function<void()> actionClicked = nullptr;
 };
 
 void Show(QWidget *parent, const QString &text);

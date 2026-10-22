@@ -270,4 +270,27 @@ private:
 
 };
 
+// ---- reposts taken back
+
+// The rows of my profile that went with a repost I took back, kept for a
+// while: «واگرد» on the toast reposts it again and the row comes back to
+// where it was.
+class TakenBack final {
+public:
+	static constexpr auto kKeepMs = qint64(30) * 1000;
+
+	void remember(const QString &id, int index, qint64 now);
+	// Where the row was; -1 when it is not kept, or was kept too long. The
+	// row is forgotten either way.
+	[[nodiscard]] int take(const QString &id, qint64 now);
+
+private:
+	struct Entry {
+		int index = 0;
+		qint64 at = 0;
+	};
+	QHash<QString, Entry> _entries;
+
+};
+
 } // namespace Eli::Logic

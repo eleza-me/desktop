@@ -478,6 +478,27 @@ private Q_SLOTS:
 		QVERIFY(fresh.takeStale({ QStringLiteral("p2") }, now + 900'000).isEmpty());
 	}
 
+	void repostTakenBack() {
+		using Eli::Logic::TakenBack;
+		auto taken = TakenBack();
+		auto now = qint64(5'000'000);
+		taken.remember(QStringLiteral("p1"), 3, now);
+		taken.remember(QStringLiteral("p2"), -4, now);
+		// «واگرد» soon after: the row goes back where it was, once.
+		QCOMPARE(taken.take(QStringLiteral("p1"), now + 4'000), 3);
+		QCOMPARE(taken.take(QStringLiteral("p1"), now + 4'000), -1);
+		QCOMPARE(taken.take(QStringLiteral("p2"), now + TakenBack::kKeepMs), 0);
+		// Reposted again much later, or never taken back: a new repost.
+		taken.remember(QStringLiteral("p3"), 1, now);
+		QCOMPARE(taken.take(QStringLiteral("p3"), now + TakenBack::kKeepMs + 1), -1);
+		QCOMPARE(taken.take(QStringLiteral("p4"), now), -1);
+		// Old entries do not pile up.
+		taken.remember(QStringLiteral("p5"), 2, now);
+		taken.remember(QStringLiteral("p6"), 7, now + TakenBack::kKeepMs + 1);
+		QCOMPARE(taken.take(QStringLiteral("p5"), now), -1);
+		QCOMPARE(taken.take(QStringLiteral("p6"), now + TakenBack::kKeepMs + 2), 7);
+	}
+
 };
 
 QTEST_GUILESS_MAIN(TestEliLogic)

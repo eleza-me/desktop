@@ -3,7 +3,9 @@
 //
 //   if (!VoiceRecorder::Available()) { toast; return; }
 //   _recorder->start();                       // false when it could not start
-//   _recorder->stop(true);  ->  finished(path, durationMs)   // false: cancel, the file is removed
+//   _recorder->stop(true);  ->  finished(path, durationMs) or failed()
+//   _recorder->stop(false);     // cancel: the file is removed, nothing is emitted
+// Destroyed before `finished`, the recorder removes its file.
 #pragma once
 
 #include <QtCore/QObject>
@@ -44,6 +46,8 @@ Q_SIGNALS:
 
 private:
 	void cleanup(bool removeFile);
+	// Throws the recording away when the recorder goes before finishing.
+	void abandon();
 
 	std::unique_ptr<QMediaCaptureSession> _session;
 	std::unique_ptr<QAudioInput> _input;

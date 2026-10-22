@@ -192,16 +192,18 @@ void ListWidget::showContextMenu(
 		menu->addItem(std::move(copy));
 		// The quote must be an exact part of the message text.
 		// (The shown text has direction marks around its links.)
+		// An album's text is the caption of one of its items: the reply
+		// goes to that item.
 		if (_canWrite
-			&& Ui::Text::StripIsolates(element->text()) == message.text) {
+			&& Ui::Text::StripIsolates(element->text()) == captioned.text) {
 			const auto quote = MakeQuote(
-				message.text,
+				captioned.text,
 				Ui::Text::SourceSelection(element->text(), selection),
 				config ? config->maxQuoteLength() : 0);
 			if (quote) {
 				menu->addAction(tr::lng_chat_quote(tr::now), [=, this] {
 					setTextSelection(QString(), {});
-					Q_EMIT replyRequested(message, quote);
+					Q_EMIT replyRequested(captioned, quote);
 				}, &st::menuIconQuote);
 			}
 		}

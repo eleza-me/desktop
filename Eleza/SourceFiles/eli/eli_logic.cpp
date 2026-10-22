@@ -529,4 +529,25 @@ void CountsFreshness::forget(const QString &id) {
 	_at.remove(id);
 }
 
+void TakenBack::remember(const QString &id, int index, qint64 now) {
+	for (auto i = _entries.begin(); i != _entries.end();) {
+		if (now - i->at > kKeepMs) {
+			i = _entries.erase(i);
+		} else {
+			++i;
+		}
+	}
+	_entries.insert(id, Entry{ std::max(index, 0), now });
+}
+
+int TakenBack::take(const QString &id, qint64 now) {
+	const auto i = _entries.constFind(id);
+	if (i == _entries.cend()) {
+		return -1;
+	}
+	const auto result = (now - i->at <= kKeepMs) ? i->index : -1;
+	_entries.erase(i);
+	return result;
+}
+
 } // namespace Eli::Logic

@@ -11,6 +11,7 @@
 // next page when its scroll comes near the end, and follows heightChanged().
 #pragma once
 
+#include "eli/eli_logic.h"
 #include "window/window_embeds.h"
 
 namespace Window {
@@ -39,6 +40,7 @@ protected:
 
 private:
 	PostList *_list = nullptr;
+	Logic::TakenBack _takenBack;
 	bool _inResize = false;
 
 };

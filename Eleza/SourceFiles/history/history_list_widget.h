@@ -113,7 +113,8 @@ public:
 	[[nodiscard]] QVector<Data::Message> selectedMessages() const;
 	[[nodiscard]] bool hasTextSelection() const;
 	void clearSelection();
-	// Copies the selected text / messages. False when nothing is selected.
+	// Copies the selected text / messages, says «Copied» and clears the
+	// selection. False when nothing is selected.
 	bool copySelection();
 	// The sender's name as copied text / reply bars show it.
 	[[nodiscard]] QString senderName(const Data::Message &message);
@@ -257,7 +258,6 @@ private:
 	void ensureExactNearViewport();
 	void positionInitially();
 	void showAtSeq(qint64 seq, const std::optional<Data::Quote> &quote, bool animated);
-	void invalidateAll();
 
 	// ---- input (history_list_input.cpp)
 	[[nodiscard]] MouseTarget targetAt(QPoint position) const;

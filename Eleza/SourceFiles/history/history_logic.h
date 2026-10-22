@@ -77,6 +77,12 @@ struct ListDiff {
 	const std::vector<RowId> &was,
 	const std::vector<RowId> &now);
 
+// The old row the reading position holds on to through `diff` when it was
+// at old row `anchor`: that row while it survives, else the nearest
+// surviving one above it (what is above stays in place), else the nearest
+// one below; -1 when no row survives.
+[[nodiscard]] int SurvivingAnchor(const ListDiff &diff, int anchor);
+
 // Whether two versions of a message look the same on screen (so the row
 // keeps its layout).
 [[nodiscard]] bool SameForView(const Data::Message &a, const Data::Message &b);

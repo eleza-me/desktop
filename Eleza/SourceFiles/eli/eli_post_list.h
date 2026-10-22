@@ -97,6 +97,8 @@ public:
 	void loadMore();
 	void prepend(const QString &postId);
 	void remove(const QString &postId);
+	// Puts a removed row back at `index` (clamped to the list).
+	void insert(int index, const Data::FeedItem &item);
 	// Static content (replies): cards of ids that stay are kept.
 	void setRows(const QVector<ListRow> &rows);
 

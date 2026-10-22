@@ -125,7 +125,27 @@ ListWidget::ListWidget(
 	connect(&data.users(), &Data::Users::changed, this, [this](const QStringList &ids) {
 		// Names in reply headers and shared posts; in a group also above
 		// the bubbles and in the notes; the lines of self-destructing
-		// media and its screenshot notice.
+		// media and its screenshot notice. Only the rows that show one of
+		// these people change, and their pictures stay.
+		const auto myId = _session->data().users().myId();
+		const auto chat = _session->data().chats().chat(_chatId);
+		const auto peer = chat ? chat->peerUserId : QString();
+		const auto replyNamed = [&](const Data::Message &message) {
+			// Whose name the header shows (senderName()); a target that is
+			// not known yet shows none.
+			const auto seq = message.replyToSeq;
+			auto target = (seq > 0) ? this->message(seq) : nullptr;
+			if (seq > 0 && !target) {
+				const auto cached = _replyTargets.constFind(seq);
+				target = (cached != _replyTargets.cend()) ? &*cached : nullptr;
+			}
+			return target
+				&& ids.contains(target->mine
+					? myId
+					: _group
+					? target->sender
+					: peer);
+		};
 		auto changed = false;
 		for (auto &row : _rows) {
 			const auto &message = row.element->data();
@@ -134,17 +154,26 @@ ListWidget::ListWidget(
 					&& (ids.contains(message.sender)
 						|| (system && ids.contains(Data::GroupRules::NoteUser(message.system)))))
 				|| (system && ids.contains(Data::SelfDestructScreenshotTaker(message.system)))
-				|| (message.selfDestruct && ids.contains(message.sender))) {
-				row.element->unloadHeavy();
-				row.element->invalidate();
+				|| (message.selfDestruct && ids.contains(message.sender))
+				|| replyNamed(message)) {
+				row.element->reloadTexts();
 				row.exact = false;
 				changed = true;
+			} else if (!message.forwardedPost.isEmpty()) {
+				// The card lays its author's name out again.
+				const auto post = _session->data().feed().post(message.forwardedPost);
+				if (post && ids.contains(post->author)) {
+					row.element->invalidate();
+					row.exact = false;
+					changed = true;
+				}
 			}
 		}
 		if (changed) {
 			relayoutKeepingAnchor();
 		}
-		invalidateAll();
+		// Story cards paint their owner's name as it is now.
+		update();
 	});
 	connect(&data.feed(), &Data::Feed::postChanged, this, [this](const QString &id) {
 		auto changed = false;
@@ -639,9 +668,12 @@ std::optional<Data::Message> ListWidget::lastEditable() const {
 	const auto window = config ? config->editWindow() : qint64(0);
 	const auto now = QDateTime::currentMSecsSinceEpoch();
 	for (auto i = int(_rows.size()) - 1; i >= 0; --i) {
-		const auto &message = _rows[i].element->data();
-		if (message.mine && CanEdit(message, now, window)) {
-			return message;
+		const auto element = _rows[i].element.get();
+		const auto &message = element->data();
+		// An album's caption lives on one of its items.
+		const auto &captioned = element->captionMessage();
+		if (message.mine && CanEdit(captioned, now, window)) {
+			return captioned;
 		} else if (message.mine && message.seq > 0) {
 			// Only the last own message is edited this way.
 			if (!IsService(message) || message.selfDestruct) {
@@ -731,6 +763,20 @@ void ListWidget::applyRows(const QVector<Data::Message> &timeline) {
 		now.push_back(RowId::From(message));
 	}
 	const auto diff = DiffRows(was, now);
+	if (!_anchor.bottom) {
+		// The row the reading position holds on to may go in this rebuild
+		// (deleted, maybe while older rows come in above it): a neighbour
+		// that stays takes its place, so what is being read does not jump.
+		const auto anchor = indexOfKey(_anchor.key);
+		const auto kept = SurvivingAnchor(diff, anchor);
+		if (kept >= 0 && kept != anchor) {
+			const auto bottom = [&](int index) {
+				return rowTop(index) + _rows[index].height;
+			};
+			_anchor.offset += bottom(anchor) - bottom(kept);
+			_anchor.key = _rows[kept].element->key();
+		}
+	}
 	auto flags = ComputeRowFlags(items, _firstUnreadSeq);
 	const auto firstBack = int(items.size()) - diff.addedAtBack;
 	auto sentByMe = false;
@@ -908,22 +954,6 @@ void ListWidget::updateRow(int index) {
 	if (index >= 0 && index < int(_rows.size())) {
 		update(rowRect(index));
 	}
-}
-
-void ListWidget::invalidateAll() {
-	if (_rows.empty()) {
-		return;
-	}
-	for (auto &row : _rows) {
-		if (row.element->data().replyToSeq > 0
-			|| !row.element->data().forwardedPost.isEmpty()) {
-			row.element->unloadHeavy();
-			row.element->invalidate();
-			row.exact = false;
-		}
-	}
-	relayoutKeepingAnchor();
-	update();
 }
 
 // ---- layout

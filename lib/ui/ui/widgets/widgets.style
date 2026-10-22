@@ -716,6 +716,9 @@ Toast {
 	iconSkip: pixels;
 	slide: pixels;        // travel of the show animation
 	duration: duration;
+	actionFont: font;     // the text button at the end («واگرد»)
+	actionFg: color;
+	actionSkip: pixels;   // between the text and the action
 }
 toastTextStyle: TextStyle(defaultTextStyle) {
 	font: smallSemiboldFont;
@@ -735,6 +738,9 @@ defaultToast: Toast {
 	iconSkip: 8px;
 	slide: 16px;
 	duration: 200ms;
+	actionFont: smallSemiboldFont;
+	actionFg: brandMint;
+	actionSkip: 20px;
 }
 toastIconCheck: icon {{ "check", brandMint, 20px }};
 toastIconWarning: icon {{ "warning", accentLamp, 20px }};

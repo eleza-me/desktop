@@ -256,6 +256,38 @@ private Q_SLOTS:
 		QCOMPARE(int(prepared.entities.size()), 2);
 	}
 
+	void editKeepsOtherEntities() {
+		// "hello bold link": bold over "bold", a link over "link".
+		const auto text = u"hello bold link"_s;
+		auto bold = Spoiler(6, 4);
+		bold.type = u"bold"_s;
+		auto link = Spoiler(11, 4);
+		link.type = u"text_link"_s;
+		link.url = u"https://eleza.me"_s;
+		// The edit types in front: the kept ranges move with their words.
+		const auto now = u"oh, hello bold link"_s;
+		const auto kept = History::AdjustEntities({ bold, link }, text, now);
+		auto prepared = History::PrepareForSend(
+			now,
+			History::WithKeptEntities({}, kept));
+		QCOMPARE(Ranges(prepared.entities), u"10+4 15+4"_s);
+		QCOMPARE(Marked(now, prepared.entities), u"bold|link"_s);
+		QCOMPARE(prepared.entities[1].url, u"https://eleza.me"_s);
+		// A spoiler put over the bold word wins: the server takes no
+		// overlapping ranges.
+		prepared = History::PrepareForSend(
+			now,
+			History::WithKeptEntities({ Spoiler(12, 1) }, kept));
+		QCOMPARE(Ranges(prepared.entities), u"12+1 15+4"_s);
+		QCOMPARE(prepared.entities[0].type, u"spoiler"_s);
+		QCOMPARE(prepared.entities[1].type, u"text_link"_s);
+		// Ranges that touch do not overlap.
+		prepared = History::PrepareForSend(
+			now,
+			History::WithKeptEntities({ Spoiler(4, 6) }, kept));
+		QCOMPARE(Ranges(prepared.entities), u"4+6 10+4 15+4"_s);
+	}
+
 	void splitForSend() {
 		auto prepared = History::PreparedText();
 		prepared.text = u"aaaa bbbb cccc dddd"_s;

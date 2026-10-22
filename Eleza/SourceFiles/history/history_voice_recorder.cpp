@@ -6,6 +6,7 @@
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QStandardPaths>
+#include <QtCore/QTimer>
 #include <QtCore/QUrl>
 #include <QtCore/QUuid>
 #include <QtMultimedia/QAudioDevice>
@@ -22,13 +23,10 @@ VoiceRecorder::VoiceRecorder(QObject *parent)
 }
 
 VoiceRecorder::~VoiceRecorder() {
-	if (_recording) {
-		_keep = false;
-		if (_recorder) {
-			_recorder->disconnect(this);
-			_recorder->stop();
-		}
-		cleanup(true);
+	// Gone before `finished` (the chat closed mid-recording, or while a
+	// stopped recording is still being written): nothing stays on disk.
+	if (_recording || _stopping) {
+		abandon();
 	}
 }
 
@@ -99,11 +97,15 @@ bool VoiceRecorder::start() {
 		&QMediaRecorder::errorOccurred,
 		this,
 		[this](QMediaRecorder::Error, const QString &) {
-			if (!_recording) {
+			if (!_recording && !_stopping) {
 				return;
 			}
+			// A kept recording ends with finished or failed, never silently.
+			const auto report = _recording || _keep;
 			cleanup(true);
-			Q_EMIT failed();
+			if (report) {
+				Q_EMIT failed();
+			}
 		});
 	connect(
 		_recorder.get(),
@@ -145,11 +147,56 @@ void VoiceRecorder::stop(bool keep) {
 	_duration = durationMs();
 	_recording = false;
 	if (_recorder->recorderState() == QMediaRecorder::StoppedState) {
-		// Never really started.
+		// Never really started: there is nothing to send.
 		cleanup(true);
+		if (keep) {
+			Q_EMIT failed();
+		}
 		return;
 	}
 	_recorder->stop();
+}
+
+void VoiceRecorder::abandon() {
+	const auto path = _path;
+	const auto recorder = _recorder.release();
+	const auto session = _session.release();
+	const auto input = _input.release();
+	cleanup(true);
+	if (!recorder) {
+		return;
+	}
+	recorder->disconnect(this);
+	// The backend may go on writing the file until it reports that it
+	// stopped: remove it again then, and only then let the objects go.
+	const auto finish = [=] {
+		QFile::remove(path);
+		recorder->deleteLater();
+		if (session) {
+			session->deleteLater();
+		}
+		if (input) {
+			input->deleteLater();
+		}
+	};
+	if (recorder->recorderState() == QMediaRecorder::StoppedState) {
+		finish();
+		return;
+	}
+	connect(
+		recorder,
+		&QMediaRecorder::recorderStateChanged,
+		recorder,
+		[=](QMediaRecorder::RecorderState state) {
+			if (state == QMediaRecorder::StoppedState) {
+				finish();
+			}
+		});
+	connect(recorder, &QMediaRecorder::errorOccurred, recorder, finish);
+	// A backend that never reports does not keep the objects forever.
+	constexpr auto kStopTimeout = 10 * 1000;
+	QTimer::singleShot(kStopTimeout, recorder, finish);
+	recorder->stop();
 }
 
 void VoiceRecorder::cleanup(bool removeFile) {

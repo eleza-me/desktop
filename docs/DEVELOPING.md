@@ -455,7 +455,8 @@ All in `lib/ui/ui/**`; every header starts with an example. The gallery (`--gall
   `Ui::MakeConfirmBox({ .text = …, .confirmText = …, .confirmed = [=](auto close) { … close(); }, .destructive = true })`,
   `controller->showSheet(…)` for the side sheet.
 * **Toasts**: `controller->showToast(text)` (lifted above the visible section's bottom
-  controls, see `SectionWidget::toastBottomSkip()`).
+  controls, see `SectionWidget::toastBottomSkip()`); an undo toast is a `Ui::Toast::Config`
+  with `.action = tr::lng_toast_undo(tr::now)` and `.actionClicked`.
 * **Top bar**: `Ui::TopBar` (`setTitle`, `setSubtitle(text, accent)`, `addAction(st)`,
   `setLeadingWidget`).
 

@@ -183,6 +183,24 @@ private Q_SLOTS:
 		QCOMPARE(diff.removed, 3);
 	}
 
+	void anchorSurvivesItsRow() {
+		const auto was = Ids({ u"seq:3"_s, u"seq:4"_s, u"seq:5"_s, u"seq:6"_s });
+		// The anchor's row stays: it is kept, also with rows put in above.
+		auto diff = History::DiffRows(was, Ids({ u"seq:1"_s, u"seq:3"_s, u"seq:4"_s, u"seq:5"_s, u"seq:6"_s }));
+		QCOMPARE(History::SurvivingAnchor(diff, 2), 2);
+		// Deleted while older rows come in: the row above takes its place.
+		diff = History::DiffRows(was, Ids({ u"seq:1"_s, u"seq:2"_s, u"seq:3"_s, u"seq:4"_s, u"seq:6"_s }));
+		QCOMPARE(History::SurvivingAnchor(diff, 2), 1);
+		// Nothing above survives: the nearest row below.
+		diff = History::DiffRows(was, Ids({ u"seq:5"_s, u"seq:6"_s }));
+		QCOMPARE(History::SurvivingAnchor(diff, 1), 2);
+		// Nothing survives, or there was no anchor.
+		diff = History::DiffRows(was, Ids({ u"seq:90"_s }));
+		QCOMPARE(History::SurvivingAnchor(diff, 1), -1);
+		QCOMPARE(History::SurvivingAnchor(diff, -1), -1);
+		QCOMPARE(History::SurvivingAnchor(diff, 9), -1);
+	}
+
 	void diffPendingBecomesSent() {
 		auto was = Ids({ u"seq:3"_s });
 		was.push_back({ u"local:abc"_s, u"abc"_s });

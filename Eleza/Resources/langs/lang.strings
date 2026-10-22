@@ -850,6 +850,7 @@
 "lng_show" = "نمایش";
 "lng_hide" = "پنهان";
 "lng_menu_undo" = "واگرد";
+"lng_toast_undo" = "واگرد";
 "lng_menu_redo" = "ازنو";
 "lng_menu_cut" = "برش";
 "lng_menu_paste" = "چسباندن";
