@@ -296,6 +296,7 @@ void TestRtInterop::rpc() {
 	for (auto limit = 1; limit <= 5; ++limit) {
 		QCOMPARE(answers.value(limit), limit);
 	}
+
 	QVERIFY(peer.client.isConnected());
 }
 
@@ -455,6 +456,70 @@ void TestRtInterop::signalsAndSubscriptions() {
 	QCOMPARE(live.value("seq"_L1).toInt(), 12);
 	QCOMPARE(live.value("location"_L1).toObject().value("lat"_L1).toDouble(), 35.7);
 	QCOMPARE(LastSignal(state, u"state"_s).value("body"_L1).toObject().value("background"_L1).toBool(), true);
+
+	// Presence is counted per subscriber: the first of two unsubscribes
+	// keeps it, the second ends it.
+	const auto unsubs = [&] {
+		auto result = 0;
+		for (const auto &signal : peer.state().value("signals"_L1).toArray()) {
+			const auto object = signal.toObject();
+			if (object.value("t"_L1).toString() == u"presence_unsub"_s
+				&& object.value("body"_L1).toObject().value("users"_L1).toArray().contains(u"u_reza"_s)) {
+				++result;
+			}
+		}
+		return result;
+	};
+	peer.client.subscribePresence({ u"u_reza"_s });
+	peer.client.subscribePresence({ u"u_reza"_s });
+	peer.client.unsubscribePresence({ u"u_reza"_s });
+	peer.client.unsubscribePresence({ u"u_reza"_s });
+	peer.client.unsubscribePresence({ u"u_reza"_s }); // one too many: nothing
+	QVERIFY(Test::WaitFor([&] { return unsubs() > 0; }));
+	QTest::qWait(200);
+	QCOMPARE(unsubs(), 1);
+
+	// Cards: never more than the gateway follows, the most recent kept.
+	auto many = QStringList();
+	for (auto i = 0; i != 2 * Rt::Client::kProfileSubMax; ++i) {
+		many.push_back(u"u_card%1"_s.arg(i));
+		if (many.size() == 50) {
+			peer.client.followProfiles(many);
+			many.clear();
+		}
+	}
+	const auto followed = peer.client.followedProfiles();
+	QVERIFY(followed.size() <= Rt::Client::kProfileSubMax);
+	QVERIFY(followed.contains(u"u_card%1"_s.arg(2 * Rt::Client::kProfileSubMax - 1)));
+	QVERIFY(!followed.contains(u"u_card0"_s));
+	QVERIFY(Test::WaitFor([&] {
+		return LastSignal(peer.state(), u"profile_sub"_s).value("body"_L1).toObject().value("users"_L1).toArray().contains(
+			u"u_card%1"_s.arg(2 * Rt::Client::kProfileSubMax - 1));
+	}));
+	// What the gateway holds, as it counts: a request past its cap replaces
+	// everything before it.
+	auto held = QSet<QString>();
+	for (const auto &signal : peer.state().value("signals"_L1).toArray()) {
+		const auto object = signal.toObject();
+		if (object.value("t"_L1).toString() != u"profile_sub"_s) {
+			continue;
+		}
+		const auto users = object.value("body"_L1).toObject().value("users"_L1).toArray();
+		QVERIFY(users.size() <= Rt::Client::kProfileSubMax);
+		auto fresh = 0;
+		for (const auto &user : users) {
+			fresh += held.contains(user.toString()) ? 0 : 1;
+		}
+		if (held.size() + fresh > Rt::Client::kProfileSubMax) {
+			held.clear();
+		}
+		for (const auto &user : users) {
+			held.insert(user.toString());
+		}
+	}
+	for (const auto &user : followed) {
+		QVERIFY2(held.contains(user), qPrintable(user));
+	}
 
 	// Signals the server sends on its own.
 	peer.control(Api::Post, u"/control/signal"_s, {

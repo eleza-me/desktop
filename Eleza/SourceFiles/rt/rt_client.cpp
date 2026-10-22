@@ -25,17 +25,11 @@ constexpr auto kAuthFailuresDelay = 15.;
 constexpr auto kQuickWindowMs = qint64(10000);
 constexpr auto kQuickReconnects = 3;
 constexpr auto kQuickPenalty = 2.;
+// cardSubTTL of the gateway; presence's comes with each subscription.
+constexpr auto kProfileSubTtl = 15 * 60;
 
 [[nodiscard]] QByteArray EncodeBody(const char *message, const QJsonObject &object) {
 	return Proto::Encode(QLatin1StringView(message), object).value_or(QByteArray());
-}
-
-[[nodiscard]] QJsonArray ToArray(const QSet<QString> &set) {
-	auto result = QJsonArray();
-	for (const auto &value : set) {
-		result.push_back(value);
-	}
-	return result;
 }
 
 [[nodiscard]] QJsonArray ToArray(const QStringList &list) {
@@ -58,7 +52,8 @@ Client::Client(
 , _delegate(delegate)
 , _keys(std::make_unique<Keys>(api, cache))
 , _pauseTimer([this] { resumeAfterPause(); })
-, _watchdog([this] { watchdogTick(); }) {
+, _watchdog([this] { watchdogTick(); })
+, _renewTimer([this] { renewSubscriptions(); }) {
 	qRegisterMetaType<Rt::Frame>();
 	qRegisterMetaType<Rt::State>();
 }
@@ -92,6 +87,7 @@ void Client::stop(const QString &reason) {
 	++_generation;
 	_pauseTimer.cancel();
 	_watchdog.cancel();
+	_renewTimer.cancel();
 	if (const auto session = _session.data()) {
 		_session = nullptr;
 		session->disconnect(this);
@@ -552,10 +548,8 @@ void Client::onSignal(const QString &type, const QJsonObject &body) {
 	if (frame.type == Frame::Type::Presence && frame.reset && frame.user.isEmpty()) {
 		// The server dropped our presence subscriptions (visibility changed).
 		const auto session = _session.data();
-		if (session && session->isOpen() && !_presenceSubs.isEmpty()) {
-			session->signal(u"presence_sub"_s, EncodeBody("PresenceSub", QJsonObject{
-				{ u"users"_s, ToArray(_presenceSubs) },
-			}));
+		if (session && session->isOpen()) {
+			sendPresenceSubs(session);
 		}
 	}
 }
@@ -669,7 +663,7 @@ void Client::subscribePresence(
 		base::Guard guard,
 		Fn<void(const QJsonArray &)> done) {
 	for (const auto &user : users) {
-		_presenceSubs.insert(user);
+		++_presenceSubs[user];
 	}
 	const auto session = _session.data();
 	if (!session || !session->isOpen() || users.isEmpty()) {
@@ -687,43 +681,142 @@ void Client::subscribePresence(
 		session->signal(u"presence_sub"_s, body);
 		return;
 	}
-	session->signal(u"presence_sub"_s, body, [=](const Response &response) {
+	session->signal(u"presence_sub"_s, body, [=, this](const Response &response) {
 		if (!guard.alive()) {
 			return;
 		}
 		const auto decoded = response.ok()
 			? Proto::Decode("PresenceSubResult"_L1, response.body)
 			: std::nullopt;
+		if (decoded) {
+			if (const auto ttl = decoded->value("ttl_s"_L1).toInt(); ttl > 0) {
+				_presenceTtl = ttl;
+			}
+		}
 		done(decoded ? decoded->value("presence"_L1).toArray() : QJsonArray());
 	});
 }
 
 void Client::unsubscribePresence(const QStringList &users) {
+	auto gone = QStringList();
 	for (const auto &user : users) {
-		_presenceSubs.remove(user);
+		const auto i = _presenceSubs.find(user);
+		if (i != _presenceSubs.end() && --i.value() <= 0) {
+			_presenceSubs.erase(i);
+			gone.push_back(user);
+		}
 	}
 	const auto session = _session.data();
-	if (session && session->isOpen() && !users.isEmpty()) {
+	if (session && session->isOpen() && !gone.isEmpty()) {
 		session->signal(u"presence_unsub"_s, EncodeBody("PresenceSub", QJsonObject{
-			{ u"users"_s, ToArray(users) },
+			{ u"users"_s, ToArray(gone) },
 		}));
 	}
 }
 
-void Client::followProfiles(const QStringList &users) {
-	auto changed = false;
+void Client::sendPresenceSubs(Session *session) {
+	if (_presenceSubs.isEmpty()) {
+		return;
+	}
+	// More than the gateway's cap would be refused as a whole.
+	auto users = QStringList();
+	for (auto i = _presenceSubs.cbegin(); i != _presenceSubs.cend(); ++i) {
+		if (users.size() == kPresenceSubMax) {
+			break;
+		}
+		users.push_back(i.key());
+	}
+	session->signal(u"presence_sub"_s, EncodeBody("PresenceSub", QJsonObject{
+		{ u"users"_s, ToArray(users) },
+	}), base::guard(this, [this](const Response &response) {
+		const auto decoded = response.ok()
+			? Proto::Decode("PresenceSubResult"_L1, response.body)
+			: std::nullopt;
+		if (decoded) {
+			if (const auto ttl = decoded->value("ttl_s"_L1).toInt(); ttl > 0) {
+				_presenceTtl = ttl;
+			}
+		}
+	}));
+}
+
+void Client::sendProfileSubs(Session *session, const QStringList &users) {
+	if (users.isEmpty()) {
+		return;
+	}
+	// What the gateway does with it: past its cap the request replaces
+	// everything followed before, otherwise it adds.
+	auto fresh = 0;
 	for (const auto &user : users) {
-		if (!user.isEmpty() && !_profileSubs.contains(user)) {
-			_profileSubs.insert(user);
-			changed = true;
+		if (!_profileSubsOnServer.contains(user)) {
+			++fresh;
 		}
 	}
-	const auto session = _session.data();
-	if (changed && session && session->isOpen()) {
-		session->signal(u"profile_sub"_s, EncodeBody("ProfileSub", QJsonObject{
-			{ u"users"_s, ToArray(_profileSubs) },
-		}));
+	if (_profileSubsOnServer.size() + fresh > kProfileSubMax) {
+		_profileSubsOnServer.clear();
 	}
+	for (const auto &user : users) {
+		_profileSubsOnServer.insert(user);
+	}
+	session->signal(u"profile_sub"_s, EncodeBody("ProfileSub", QJsonObject{
+		{ u"users"_s, ToArray(users) },
+	}));
+}
+
+void Client::renewSubscriptions() {
+	const auto session = _session.data();
+	if (!session || !session->isOpen()) {
+		return;
+	}
+	sendPresenceSubs(session);
+	sendProfileSubs(session, _profileSubs);
+	// Both expire on the server (presence's TTL is configurable there).
+	const auto ttl = std::min(_presenceTtl, kProfileSubTtl);
+	_renewTimer.callOnce(std::max(30, ttl * 4 / 5) * 1000);
+}
+
+void Client::followProfiles(const QStringList &users) {
+	auto added = QStringList();
+	auto touched = 0;
+	for (const auto &user : users) {
+		if (user.isEmpty() || added.contains(user)) {
+			continue;
+		} else if (touched == kProfileSubMax) {
+			break;
+		}
+		++touched;
+		const auto index = _profileSubs.indexOf(user);
+		if (index >= 0) {
+			_profileSubs.move(index, 0); // followed already: just recent now
+		} else {
+			_profileSubs.prepend(user);
+			added.push_back(user);
+		}
+	}
+	if (_profileSubs.size() > kProfileSubMax) {
+		_profileSubs.resize(kProfileSubMax);
+	}
+	const auto session = _session.data();
+	if (added.isEmpty() || !session || !session->isOpen()) {
+		return; // sent with the others after the next Hello
+	}
+	auto fresh = 0;
+	for (const auto &user : added) {
+		if (!_profileSubsOnServer.contains(user)) {
+			++fresh;
+		}
+	}
+	if (_profileSubsOnServer.size() + fresh <= kProfileSubMax) {
+		sendProfileSubs(session, added);
+		return;
+	}
+	// Full: the gateway would keep only this request. Send the most recent
+	// ones instead, and few enough of them to leave room for the next.
+	const auto keep = std::max(int(kProfileSubKeep), touched);
+	if (_profileSubs.size() > keep) {
+		_profileSubs.resize(keep);
+	}
+	sendProfileSubs(session, _profileSubs);
 }
 
 void Client::subscribeTopics(const QString &category) {
@@ -771,16 +864,7 @@ void Client::resendSubscriptions() {
 	if (!session || !session->isOpen()) {
 		return;
 	}
-	if (!_presenceSubs.isEmpty()) {
-		session->signal(u"presence_sub"_s, EncodeBody("PresenceSub", QJsonObject{
-			{ u"users"_s, ToArray(_presenceSubs) },
-		}));
-	}
-	if (!_profileSubs.isEmpty()) {
-		session->signal(u"profile_sub"_s, EncodeBody("ProfileSub", QJsonObject{
-			{ u"users"_s, ToArray(_profileSubs) },
-		}));
-	}
+	renewSubscriptions();
 	if (_topicsCategory) {
 		session->signal(u"topics_sub"_s, EncodeBody("TopicsSub", QJsonObject{
 			{ u"category"_s, *_topicsCategory },
