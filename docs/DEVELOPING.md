@@ -479,9 +479,9 @@ Preferences that exist already in `Core::Settings` (`Core::App().settings()`):
 `notifications()` (`desktopEnabled`, `soundEnabled`, `showPreview` = «نمایش متن پیام»,
 `showSender`, `onlyWhenInactive`, `flashTaskbar`, `countUnreadMuted`), `closeToTray`,
 `themeMode`, `language`, `sideColumnWidth`, `lastTab`, `playbackVolume`,
-`voicePlaybackSpeed`, `systemTitleBar` (applies with the next start). Change them through the setters (they save themselves); language and
-`voicePlaybackSpeed`, `autoUpdate`. Change them through the setters (they save themselves); language and
-theme through `Core::App().setLanguage / setThemeMode`.
+`voicePlaybackSpeed`, `autoUpdate`, `systemTitleBar` (applies with the next start). Change them
+through the setters (they save themselves); language and theme through
+`Core::App().setLanguage / setThemeMode`.
 
 ## 7. The core API
 
