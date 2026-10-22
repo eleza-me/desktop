@@ -3,6 +3,7 @@
 #include "data/data_chats.h"
 #include "data/data_session.h"
 #include "dialogs/dialogs_menu.h"
+#include "dialogs/dialogs_notes_box.h"
 #include "dialogs/dialogs_widget.h"
 #include "lang_auto.h"
 #include "main/main_session.h"
@@ -75,6 +76,10 @@ bool HandleDebugRoute(
 		if (const auto chat = chats.chat(at(0))) {
 			ShowDeleteChatBox(controller, *chat);
 		}
+	} else if (what == u"note-new") {
+		ShowNoteComposer(controller);
+	} else if (what.startsWith(u"note/")) {
+		ShowFriendNote(controller, what.mid(5));
 	} else if (what == u"pin-all") {
 		for (const auto &chat : list) {
 			chats.setPinned(chat.id, true);

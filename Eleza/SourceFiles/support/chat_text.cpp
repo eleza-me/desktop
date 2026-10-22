@@ -3,6 +3,7 @@
 #include "base/platform_file.h"
 #include "data/data_group_rules.h"
 #include "data/data_json.h"
+#include "data/data_note_types.h"
 #include "data/data_session.h"
 #include "data/data_users.h"
 #include "lang/lang_format.h"
@@ -325,7 +326,10 @@ QString MessagePreview(const Data::Message &message) {
 	// ("x<RLO>fdp.exe" is not "xexe.pdf").
 	auto text = (message.kind == Data::MessageKind::File && !message.text.trimmed().isEmpty())
 		? base::platform::SafeFileName(message.text)
-		: Data::Json::CleanName(message.text.simplified());
+		: Data::Json::CleanName((label.isEmpty()
+			// A reply to a note shows «↩︎ <answer>», not the quoted note.
+			? Data::NoteReply::Preview(message.text)
+			: message.text).simplified());
 	if (label.isEmpty()) {
 		return text.isEmpty() ? tr::lng_support_notify_new_message(tr::now) : text;
 	} else if (message.kind == Data::MessageKind::Sticker

@@ -68,8 +68,24 @@ void TopBar::doSetLeadingWidget(object_ptr<RpWidget> widget) {
 	if (_leading) {
 		_leading->setParent(this);
 		_leading->show();
+		// A leading widget that hides or changes its width moves the title.
+		connect(_leading.data(), &RpWidget::widthChanged, this, [this] {
+			updateControls();
+		});
+		_leading->installEventFilter(this);
 	}
 	updateControls();
+}
+
+bool TopBar::eventFilter(QObject *object, QEvent *event) {
+	// (sent whether or not the bar itself is on screen)
+	if (_leading
+		&& object == _leading.data()
+		&& (event->type() == QEvent::ShowToParent
+			|| event->type() == QEvent::HideToParent)) {
+		updateControls();
+	}
+	return RpWidget::eventFilter(object, event);
 }
 
 int TopBar::resizeGetHeight(int newWidth) {
@@ -85,7 +101,7 @@ void TopBar::updateControls() {
 	} else {
 		left += _st.titleLeftNoBack;
 	}
-	if (_leading) {
+	if (_leading && !_leading->isHidden()) {
 		_leading->moveToLeft(left, (height() - _leading->height()) / 2, width());
 		left += _leading->width() + _st.leadingSkip;
 	}

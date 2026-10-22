@@ -62,6 +62,10 @@ set(_eleza_core_files
 	data/data_media.h
 	data/data_messages.cpp
 	data/data_messages.h
+	data/data_note_types.cpp
+	data/data_note_types.h
+	data/data_notes.cpp
+	data/data_notes.h
 	data/data_notifications.cpp
 	data/data_notifications.h
 	data/data_outbox.cpp
