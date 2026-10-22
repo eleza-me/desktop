@@ -203,16 +203,17 @@ Upload::Job *Upload::job(Id id) {
 }
 
 void Upload::later(Id id, int ms, Fn<void()> callback) {
-	const auto current = job(id);
-	if (!current) {
+	if (!job(id)) {
 		return;
 	}
-	current->timer = std::make_unique<base::Timer>([=, this] {
+	// Not a timer the job owns: the callback may end the job (fail, finish),
+	// which must not destroy the timer whose shot is running. Ids are never
+	// reused, so the shot of a job that ended does nothing.
+	QTimer::singleShot(ms, this, [=, this] {
 		if (job(id)) {
 			callback();
 		}
 	});
-	current->timer->callOnce(ms);
 }
 
 Upload::Id Upload::start(
@@ -684,8 +685,8 @@ void Upload::waitUntilReady(Id id) {
 		return entry.first == current->mediaId;
 	});
 	if (known) {
-		// The signal came first. Not from inside the poll timer's own
-		// callback: finishing destroys the job and its timer.
+		// The signal came first: answered on the next turn of the event
+		// loop, as a poll would be.
 		++current->readyAttempt;
 		QTimer::singleShot(0, this, [=, this] {
 			applyProcessed(id);

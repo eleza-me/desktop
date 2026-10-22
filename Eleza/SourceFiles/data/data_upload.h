@@ -143,7 +143,6 @@ private:
 		int readyAttempt = 0;
 		QVector<Api::RequestId> requests;
 		std::shared_ptr<std::atomic<bool>> cancelled;
-		std::unique_ptr<base::Timer> timer;
 	};
 
 	[[nodiscard]] Job *job(Id id);
