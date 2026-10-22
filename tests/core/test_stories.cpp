@@ -159,8 +159,9 @@ void TestStories::parsesTrayAndSorts() {
 	for (const auto &item : items) {
 		order.push_back(item.user.id);
 	}
-	// Unseen by newest, then seen, muted last whatever it holds.
-	QCOMPARE(order, (QStringList{ u"d"_s, u"b"_s, u"a"_s, u"c"_s }));
+	// Unseen, then seen, muted last whatever it holds; inside a group the
+	// server's order (affinity) stays, whatever the times say.
+	QCOMPARE(order, (QStringList{ u"b"_s, u"d"_s, u"a"_s, u"c"_s }));
 }
 
 void TestStories::ringStates() {

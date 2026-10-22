@@ -161,8 +161,10 @@ struct StoryRingState {
 [[nodiscard]] StoryRingState RingStateOf(const StoryTrayItem &item);
 [[nodiscard]] StoryRingState RingStateOf(const StoryTrayMe &me);
 
-// The tray order of the server: accounts with unseen stories first, then the
-// fully seen ones, muted accounts last; each group by the newest story.
+// The groups of the tray: accounts with unseen stories first, then the fully
+// seen ones, muted accounts last. The server orders each group (the people
+// whose stories I watch most first) and that order is kept: this only moves
+// an account whose group changed here (seen, muted).
 void SortTray(QVector<StoryTrayItem> &items);
 
 // Where the viewer starts in a person's stories: the first one I have not

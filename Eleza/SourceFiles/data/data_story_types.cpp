@@ -216,12 +216,12 @@ void SortTray(QVector<StoryTrayItem> &items) {
 	const auto group = [](const StoryTrayItem &item) {
 		return item.muted ? 2 : (item.unseen > 0) ? 0 : 1;
 	};
+	// Inside a group the server's order stays (affinity first, then the
+	// newest story; docs/stories.md §5): only moves between the groups.
 	std::stable_sort(items.begin(), items.end(), [&](
 			const StoryTrayItem &a,
 			const StoryTrayItem &b) {
-		const auto ga = group(a);
-		const auto gb = group(b);
-		return (ga != gb) ? (ga < gb) : (a.latestAt > b.latestAt);
+		return group(a) < group(b);
 	});
 }
 
