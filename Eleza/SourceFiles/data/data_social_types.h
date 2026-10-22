@@ -7,6 +7,8 @@
 #include "base/weak_guard.h"
 #include "data/data_types.h"
 
+#include <QtCore/QHash>
+
 namespace Data {
 
 struct PostCounts {
@@ -153,6 +155,9 @@ struct PostsPage {
 	QStringList posts;    // ids, in order
 	QString nextBefore;
 	QString nextCursor;
+	// Items the list shows as reposts (`reason: "repost"` of a profile's
+	// timeline): post id -> who reposted it.
+	QHash<QString, QString> repostedBy;
 };
 
 struct RepliesPage {

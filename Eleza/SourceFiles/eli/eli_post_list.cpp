@@ -57,6 +57,11 @@ ListPage ListPage::From(const Data::PostsPage &page) {
 	for (const auto &id : page.posts) {
 		auto item = Data::FeedItem();
 		item.postId = id;
+		if (const auto actor = page.repostedBy.value(id); !actor.isEmpty()) {
+			// «↻ name reposted», as in the following feed.
+			item.reason = u"repost"_s;
+			item.actor = actor;
+		}
 		result.items.push_back(item);
 	}
 	result.next = page.nextBefore.isEmpty() ? page.nextCursor : page.nextBefore;
