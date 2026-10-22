@@ -108,6 +108,7 @@ PostList::PostList(
 		auto removed = false;
 		for (auto i = _rows.begin(); i != _rows.end();) {
 			if (i->card && i->card->post().author == userId) {
+				_freshness.forget(i->id);
 				i = _rows.erase(i);
 				removed = true;
 			} else {
@@ -115,8 +116,14 @@ PostList::PostList(
 			}
 		}
 		if (removed) {
+			// As remove(): the indices of the rows moved.
+			_overRow = -1;
+			_overHit = {};
+			_pressedRow = -1;
 			rebuildIndex();
+			refreshPlaceholder();
 			relayout();
+			Q_EMIT emptyChanged(_rows.empty());
 		}
 	});
 	connect(&data.stories(), &Data::Stories::ringsChanged, this, [this] {
