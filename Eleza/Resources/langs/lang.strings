@@ -2234,3 +2234,6 @@
 
 // ---- eli and search: comments, notifications, suggestions ----
 "lng_eli_notif_reply_comment" = "{who} به نظرت پاسخ داد";
+"lng_eli_new_followers" = "دنبال‌کنندگان تازه";
+"lng_eli_notif_and_more#one" = "و {count} نفر دیگر";
+"lng_eli_notif_and_more#other" = "و {count} نفر دیگر";
