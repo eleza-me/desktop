@@ -583,10 +583,16 @@ void Chats::loadInbox(
 		std::shared_ptr<QVector<InboxEntry>> conversations = std::make_shared<QVector<InboxEntry>>();
 		std::shared_ptr<QVector<InboxEntry>> requests = std::make_shared<QVector<InboxEntry>>();
 		QSet<QString> partial;
+		// The rows' unread counts when the inbox was asked for: what live
+		// messages add to them while it is on its way stays.
+		QHash<QString, int> unreadAtStart;
 		int left = 3;
 		bool ok = true;
 	};
 	const auto state = std::make_shared<State>();
+	for (const auto &chat : std::as_const(_chats)) {
+		state->unreadAtStart.insert(chat.id, chat.unread);
+	}
 	const auto sectionDone = [=, this](const QString &section, bool ok, bool complete) {
 		state->ok = state->ok && ok;
 		if (!complete) {
@@ -612,6 +618,7 @@ void Chats::loadInbox(
 		}
 		auto entries = *state->messages + *state->conversations + *state->requests;
 		const auto partial = state->partial;
+		const auto unreadAtStart = state->unreadAtStart;
 		auto people = QStringList();
 		for (const auto &entry : entries) {
 			if (entry.chatInfo) {
@@ -620,7 +627,7 @@ void Chats::loadInbox(
 		}
 		// Cards first, so the rows appear with their names.
 		_session->users().ensure(people, this, [=, this] {
-			finishInbox(entries, partial);
+			finishInbox(entries, partial, unreadAtStart);
 			_inboxLoading = false;
 			_inboxLoaded = true;
 			_inboxError = std::nullopt;
@@ -642,9 +649,37 @@ void Chats::loadInbox(
 	load(u"request"_s, state->requests);
 }
 
+// The inbox tells how a row was when the server read it: the messages and
+// read marks applied to the row since are newer, and stay.
+void Chats::keepNewer(Chat &row, const Chat &previous, std::optional<int> unreadAtStart) {
+	if (previous.lastSeq > row.lastSeq) {
+		// What the live messages added (never more than there are of them).
+		const auto added = previous.unread - unreadAtStart.value_or(0);
+		const auto newer = int(std::min<qint64>(previous.lastSeq - row.lastSeq, 1 << 30));
+		row.unread += std::clamp(added, 0, newer);
+		row.lastSeq = previous.lastSeq;
+		row.info.lastSeq = std::max(row.info.lastSeq, previous.lastSeq);
+		row.lastMessage = previous.lastMessage;
+		row.lastMine = previous.lastMine;
+		row.lastActivityAt = std::max(row.lastActivityAt, previous.lastActivityAt);
+	}
+	if (previous.lastReadSeq > row.lastReadSeq) {
+		auto &messages = _session->messages();
+		const auto left = UnreadAfterRead(
+			row,
+			messages.held(row.id) ? &messages.history(row.id) : nullptr,
+			previous.lastReadSeq);
+		row.lastReadSeq = previous.lastReadSeq;
+		row.info.lastReadSeq = previous.lastReadSeq;
+		row.unread = left.count;
+		row.unreadCapped = left.capped;
+	}
+}
+
 void Chats::finishInbox(
 		const QVector<InboxEntry> &entries,
-		const QSet<QString> &partialSections) {
+		const QSet<QString> &partialSections,
+		const QHash<QString, int> &unreadAtStart) {
 	auto list = QVector<Chat>();
 	auto peers = QStringList();
 	for (const auto &entry : entries) {
@@ -656,8 +691,12 @@ void Chats::finishInbox(
 		if (const auto local = _localDrafts.constFind(row->id); local != _localDrafts.cend()) {
 			row->draft = local->empty() ? std::nullopt : std::make_optional(*local);
 		}
-		// A message queued in the outbox stays the row's preview.
 		if (const auto previous = chat(row->id)) {
+			const auto start = unreadAtStart.constFind(row->id);
+			keepNewer(*row, *previous, (start != unreadAtStart.cend())
+				? std::make_optional(*start)
+				: std::nullopt);
+			// A message queued in the outbox stays the row's preview.
 			if (previous->lastMessage && previous->lastMessage->local()) {
 				row->lastMessage = previous->lastMessage;
 				row->lastMine = true;
