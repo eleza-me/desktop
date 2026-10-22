@@ -45,6 +45,9 @@ void PaintOne(
 	const QFont &fallback,
 	bool faded = false);
 
+// The width PaintOne() takes for `emoji`: `size` when the pack draws it.
+[[nodiscard]] int OneWidth(QStringView emoji, int size, const QFont &fallback);
+
 // Starts decoding ahead (the panel's rows below the visible ones).
 void Preload(Id id, int devicePixels);
 

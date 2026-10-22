@@ -1,5 +1,7 @@
 #include "history/history_logic.h"
 
+#include "ui/emoji/emoji_index.h"
+
 #include <QtCore/QHash>
 
 #include <algorithm>
@@ -380,6 +382,29 @@ int JumboEmojiCount(const QString &text) {
 	const auto trimmed = text.trimmed();
 	if (trimmed.isEmpty() || trimmed.size() > 48) {
 		return 0;
+	}
+	// The emoji the pack knows (keycaps and subdivision flags too), with
+	// nothing but spaces around them.
+	const auto ranges = Ui::Emoji::FindAll(trimmed, 4);
+	if (!ranges.empty()) {
+		const auto blank = [&](int from, int till) {
+			for (auto i = from; i < till; ++i) {
+				const auto ch = trimmed[i];
+				if (!ch.isSpace() && ch != QChar(0x200C)) {
+					return false;
+				}
+			}
+			return true;
+		};
+		auto position = 0;
+		auto covered = true;
+		for (const auto &range : ranges) {
+			covered = covered && blank(position, range.from);
+			position = range.till;
+		}
+		if (covered && blank(position, int(trimmed.size()))) {
+			return (ranges.size() <= 3) ? int(ranges.size()) : 0;
+		}
 	}
 	const auto codes = Codepoints(trimmed);
 	const auto size = int(codes.size());

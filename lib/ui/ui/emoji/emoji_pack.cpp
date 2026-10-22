@@ -460,6 +460,13 @@ void PaintOne(
 	}
 }
 
+int OneWidth(QStringView emoji, int size, const QFont &fallback) {
+	return (Available() && Find(emoji) != kNone)
+		? size
+		: int(std::ceil(QFontMetricsF(fallback).horizontalAdvance(
+			emoji.toString())));
+}
+
 void Preload(Id id, int devicePixels) {
 	if (const auto pack = Instance(); pack && pack->available()) {
 		if (!pack->picture(id, devicePixels, false)) {

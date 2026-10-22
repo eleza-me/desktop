@@ -9,6 +9,7 @@
 #include "support/chat_text.h"
 #include "support/media_image.h"
 #include "ui/effects/radial_animation.h"
+#include "ui/emoji/emoji_pack.h"
 #include "ui/image/userpic.h"
 #include "ui/painter.h"
 #include "ui/ui_utility.h"
@@ -23,6 +24,14 @@ namespace History::View {
 namespace {
 
 constexpr auto kReplyTextMaxWidth = 260;
+
+// A reaction's emoji: the pack's picture, or the fonts' emoji without it.
+[[nodiscard]] int ReactionEmojiWidth(const QString &emoji) {
+	return Ui::Emoji::OneWidth(
+		emoji,
+		st::historyReactionEmojiSize,
+		st::historyReactionEmojiFont->f);
+}
 
 [[nodiscard]] int PillHeight() {
 	const auto &padding = st::historyServicePadding;
@@ -715,7 +724,7 @@ void Element::layoutBubble(int maxWidth) {
 		const auto &chipPadding = st::historyReactionPadding;
 		for (auto &chip : _reactions) {
 			const auto chipWidth = chipPadding.left()
-				+ st::historyReactionEmojiFont->width(chip.emoji)
+				+ ReactionEmojiWidth(chip.emoji)
 				+ (chip.count.isEmpty()
 					? 0
 					: (4 + st::historyReactionCountFont->width(chip.count)))
@@ -739,7 +748,7 @@ void Element::layoutBubble(int maxWidth) {
 		const auto &chipPadding = st::historyReactionPadding;
 		for (const auto &chip : _reactions) {
 			result += chipPadding.left()
-				+ st::historyReactionEmojiFont->width(chip.emoji)
+				+ ReactionEmojiWidth(chip.emoji)
 				+ (chip.count.isEmpty()
 					? 0
 					: (4 + st::historyReactionCountFont->width(chip.count)))
@@ -1554,18 +1563,17 @@ void Element::paintReactions(
 				chip.rect.height() / 2.,
 				chip.rect.height() / 2.);
 		}
-		const auto emojiWidth = st::historyReactionEmojiFont->width(chip.emoji);
+		const auto emojiWidth = ReactionEmojiWidth(chip.emoji);
 		const auto emojiLeft = rtl
 			? (chip.rect.right() + 1 - padding.left() - emojiWidth)
 			: (chip.rect.x() + padding.left());
-		p.setFont(st::historyReactionEmojiFont);
 		p.setPen(st::textPrimary);
-		p.drawText(
-			emojiLeft,
-			chip.rect.y()
-				+ (chip.rect.height() - st::historyReactionEmojiFont->height) / 2
-				+ st::historyReactionEmojiFont->ascent,
-			chip.emoji);
+		Ui::Emoji::PaintOne(
+			p,
+			chip.emoji,
+			QRect(emojiLeft, chip.rect.y(), emojiWidth, chip.rect.height()),
+			st::historyReactionEmojiSize,
+			st::historyReactionEmojiFont->f);
 		if (!chip.count.isEmpty()) {
 			const auto countWidth = st::historyReactionCountFont->width(chip.count);
 			p.setFont(st::historyReactionCountFont);
