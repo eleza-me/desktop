@@ -340,8 +340,12 @@ QString Eli() {
 	return Make(RouteType::Eli).toString();
 }
 
-QString Post(const QString &postId) {
-	return Make(RouteType::Post, postId).toString();
+QString Post(const QString &postId, const QString &rootHint) {
+	auto route = Make(RouteType::Post, postId);
+	if (!rootHint.isEmpty() && rootHint != postId) {
+		route.query.insert(QStringLiteral("root"), rootHint);
+	}
+	return route.toString();
 }
 
 QString SharedPost(const QString &slug) {

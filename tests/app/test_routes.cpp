@@ -96,6 +96,11 @@ private Q_SLOTS:
 		QCOMPARE(ParseRoute("eli/share/abcp1").type, RouteType::SharedPost);
 		QCOMPARE(Routes::SharedPost("x1"), QStringLiteral("eli/share/x1"));
 		QVERIFY(!ParseRoute("eli/share").valid());
+		// A comment with the post at the top of its conversation.
+		QCOMPARE(Routes::Post("c2", "p1"), QStringLiteral("eli/post/c2?root=p1"));
+		QCOMPARE(Routes::Post("p1", "p1"), QStringLiteral("eli/post/p1"));
+		QCOMPARE(ParseRoute("eli/post/c2?root=p1").id, QStringLiteral("c2"));
+		QCOMPARE(ParseRoute("eli/post/c2?root=p1").queryValue("root"), QStringLiteral("p1"));
 
 		// Groups: the info screen, «new group» and invite links. The chat
 		// of a group is an ordinary chat route.

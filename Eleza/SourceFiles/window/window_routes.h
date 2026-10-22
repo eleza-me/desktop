@@ -9,6 +9,8 @@
 //                              with the bot and its «شروع»; a profile when it is not a bot
 //   eli                        the feed tab
 //   eli/post/<postId>          a post with its replies
+//   eli/post/<id>?root=<root>  a comment, opened under its post (`root`: the post at the top of its
+//                              conversation as a notification named it, read at the same time)
 //   eli/share/<slug>           a post by its share link (https://eleza.me/s/<slug>)
 //   eli/topic/<slug>           a topic (#tag) page
 //   eli/notifications          the notifications list
@@ -109,7 +111,7 @@ namespace Routes {
 // The chat with a bot, «شروع» shown with the payload of a deep link.
 [[nodiscard]] QString BotStart(const QString &chatId, const QString &payload);
 [[nodiscard]] QString Eli();
-[[nodiscard]] QString Post(const QString &postId);
+[[nodiscard]] QString Post(const QString &postId, const QString &rootHint = QString());
 [[nodiscard]] QString SharedPost(const QString &slug);
 [[nodiscard]] QString Topic(const QString &slug);
 [[nodiscard]] QString EliNotifications();

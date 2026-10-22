@@ -39,7 +39,6 @@ namespace {
 
 constexpr auto kMaxHops = 8;
 constexpr auto kFoldAfter = 3;
-constexpr auto kHighlightPages = 5;
 constexpr auto kDefaultReplyLength = 500;
 
 [[nodiscard]] int ColumnWidth(int width) {
@@ -410,9 +409,11 @@ private:
 PostSection::PostSection(
 	QWidget *parent,
 	Window::SessionController *controller,
-	const QString &postId)
+	const QString &postId,
+	const QString &rootHint)
 : SectionWidget(parent, controller)
 , _requestedId(postId)
+, _rootHint((rootHint != postId) ? rootHint : QString())
 , _bar(new Ui::TopBar(this))
 , _scroll(new Ui::ScrollArea(this)) {
 	_bar->setTitle(tr::lng_eli_post_title(tr::now));
@@ -447,7 +448,8 @@ PostSection::PostSection(
 			return;
 		}
 		if (post->replyTo == _rootId) {
-			_replyIds.push_front(id);
+			_replyIds.push_back(id);
+			_mineFirst.push_front(id);
 		} else if (_replyIds.contains(post->replyTo)) {
 			_replyIds.push_back(id);
 			// Open the branch it landed in.
@@ -466,7 +468,6 @@ PostSection::PostSection(
 		arrange();
 		refreshTail();
 		_highlightId = id;
-		_highlightTries = kHighlightPages;
 		applyHighlight();
 	});
 	connect(&data.graph(), &Data::Graph::relationshipChanged, this, [this](
@@ -520,6 +521,9 @@ void PostSection::load() {
 	}
 	_scroll->hide();
 	updateLayout();
+	_climb.clear();
+	_afterHint = nullptr;
+	loadHint();
 	const auto generation = _generation;
 	controller()->session().data().feed().fetchPost(
 		_requestedId,
@@ -531,13 +535,68 @@ void PostSection::load() {
 		},
 		[=, this](const Api::Error &error) {
 			if (generation == _generation) {
-				showError(error);
+				requestedFailed(error);
 			}
 		});
 }
 
+// The post a notification named as the top of the conversation is read at
+// the same time as the comment.
+void PostSection::loadHint() {
+	if (_rootHint.isEmpty()) {
+		_hintState = HintState::None;
+		return;
+	}
+	const auto known = controller()->session().data().feed().post(_rootHint);
+	if (known && !known->author.isEmpty() && !known->deleted) {
+		_hintState = HintState::Ready;
+		return;
+	}
+	_hintState = HintState::Loading;
+	const auto generation = _generation;
+	const auto finished = [=, this](HintState state) {
+		if (generation != _generation) {
+			return;
+		}
+		_hintState = state;
+		if (const auto then = std::exchange(_afterHint, nullptr)) {
+			then();
+		}
+	};
+	controller()->session().data().feed().fetchPost(
+		_rootHint,
+		base::Guard(this),
+		[=](const Data::Post &) { finished(HintState::Ready); },
+		[=](const Api::Error &) { finished(HintState::Failed); });
+}
+
+void PostSection::requestedFailed(const Api::Error &error) {
+	// A comment that can't be read (gone, hidden): its post alone, when the
+	// notification named it.
+	switch (_hintState) {
+	case HintState::Loading:
+		_afterHint = [=, this] { requestedFailed(error); };
+		return;
+	case HintState::Ready:
+		_climb.clear();
+		showRoot(_rootHint);
+		return;
+	case HintState::None:
+	case HintState::Failed:
+		break;
+	}
+	showError(error);
+}
+
 void PostSection::resolve(const Data::Post &post, int hop) {
 	auto &feed = controller()->session().data().feed();
+	if (_climb.isEmpty() || _climb.back().id != post.id) {
+		auto step = Logic::ClimbStep();
+		step.id = post.id;
+		step.comment = !post.replyTo.isEmpty();
+		step.deleted = post.deleted;
+		_climb.push_back(step);
+	}
 	auto next = QString();
 	if (!post.replyTo.isEmpty() && hop < kMaxHops) {
 		next = post.replyTo;
@@ -547,6 +606,10 @@ void PostSection::resolve(const Data::Post &post, int hop) {
 	}
 	if (next.isEmpty()) {
 		showRoot(post.id);
+		return;
+	}
+	if (next == _rootHint && _hintState == HintState::Loading) {
+		_afterHint = [=, this] { resolve(post, hop); };
 		return;
 	}
 	if (const auto known = feed.post(next); known && !known->author.isEmpty()) {
@@ -564,11 +627,29 @@ void PostSection::resolve(const Data::Post &post, int hop) {
 			}
 		},
 		[=, this](const Api::Error &) {
-			// The parent is gone: what we have is the top of what is left.
 			if (generation == _generation) {
-				showRoot(current);
+				climbEnded(current);
 			}
 		});
+}
+
+// A parent that can't be read ends the climb: the post the notification
+// named is the top when there is one, otherwise what we have is the top of
+// what is left.
+void PostSection::climbEnded(const QString &top) {
+	if (_hintState == HintState::Loading) {
+		_afterHint = [=, this] { climbEnded(top); };
+		return;
+	}
+	const auto inClimb = std::any_of(_climb.cbegin(), _climb.cend(), [&](
+			const Logic::ClimbStep &step) {
+		return step.id == _rootHint;
+	});
+	if (_hintState == HintState::Ready && !inClimb) {
+		showRoot(_rootHint);
+	} else {
+		showRoot(top);
+	}
 }
 
 void PostSection::showError(const Api::Error &error) {
@@ -596,8 +677,10 @@ void PostSection::showRoot(const QString &rootId) {
 	}
 	_rootId = rootId;
 	_replyTarget = rootId;
-	_highlightId = (_requestedId != rootId) ? _requestedId : QString();
-	_highlightTries = 0;
+	// (a deleted comment: the post and its comments alone)
+	_focusPath = Logic::FocusPath(_climb);
+	_focusPath.removeAll(rootId);
+	_highlightId = _focusPath.isEmpty() ? QString() : _focusPath.back();
 	const auto controller = this->controller();
 	auto &feed = controller->session().data().feed();
 	const auto root = feed.post(rootId);
@@ -764,7 +847,18 @@ void PostSection::loadReplies() {
 			}
 			_repliesLoading = false;
 			_repliesLoadedOnce = true;
-			for (const auto &id : page.replies) {
+			auto ids = page.replies;
+			if (!_focusPlaced && !_focusPath.isEmpty()) {
+				_focusPlaced = true;
+				// The opened comment's thread first and open, unless the
+				// page brings it (its posts were read on the climb).
+				ids = Logic::PinThread(ids, _focusPath);
+				if (ids != page.replies) {
+					_pinnedTop = _focusPath.front();
+				}
+				_expandedBranches.insert(_focusPath.front());
+			}
+			for (const auto &id : ids) {
 				if (!_replyIds.contains(id)) {
 					_replyIds.push_back(id);
 				}
@@ -806,7 +900,15 @@ void PostSection::arrange() {
 		node.deleted = post->deleted;
 		nodes.push_back(node);
 	}
-	const auto arranged = Logic::ArrangeReplies(nodes, _rootId, _newestFirst);
+	auto first = _mineFirst;
+	if (!_pinnedTop.isEmpty() && !first.contains(_pinnedTop)) {
+		first.push_back(_pinnedTop);
+	}
+	const auto arranged = Logic::ArrangeReplies(
+		nodes,
+		_rootId,
+		_newestFirst,
+		first);
 	auto rows = QVector<ListRow>();
 	for (auto i = 0; i != int(arranged.size());) {
 		const auto &top = arranged[i];
@@ -860,10 +962,9 @@ void PostSection::applyHighlight() {
 	}
 	const auto id = _highlightId;
 	if (!_replyIds.contains(id)) {
-		if (!_repliesDone && _highlightTries < kHighlightPages) {
-			++_highlightTries;
-			loadReplies();
-		} else {
+		// Not read yet: it was pinned in front when it could be (the list
+		// is not read ahead for it).
+		if (_repliesLoadedOnce) {
 			_highlightId = QString();
 		}
 		return;
@@ -1301,10 +1402,12 @@ void ThreadSection::resizeEvent(QResizeEvent *e) {
 	}
 }
 
-Window::SectionFactory PostFactory(const QString &postId) {
+Window::SectionFactory PostFactory(
+		const QString &postId,
+		const QString &rootHint) {
 	return [=](QWidget *parent, Window::SessionController *controller) {
 		return Ui::Owned<Window::SectionWidget>(
-			new PostSection(parent, controller, postId));
+			new PostSection(parent, controller, postId, rootHint));
 	};
 }
 
