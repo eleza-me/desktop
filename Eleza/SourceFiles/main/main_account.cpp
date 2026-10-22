@@ -15,6 +15,7 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QRegularExpression>
+#include <QtCore/QUrl>
 
 #include <cmath>
 
@@ -26,6 +27,8 @@ namespace Main {
 namespace {
 
 const auto kDeviceIdKey = u"device.id"_s;
+// Sessions stored before the origin was kept were all of the default API.
+const auto kDefaultApiBase = u"https://api.eleza.me"_s;
 const auto kLanguageKey = u"language"_s;
 
 // `access_expires_at` arrives as an RFC 3339 string or a number of
@@ -61,7 +64,22 @@ Tokens Tokens::FromJson(const QJsonObject &json) {
 	result.nonce = json.value(u"nonce"_s).toString();
 	result.userId = json.value(u"user_id"_s).toString();
 	result.sessionId = json.value(u"sid"_s).toString();
+	result.origin = json.value(u"origin"_s).toString();
+	if (result.origin.isEmpty()) {
+		result.origin = OriginOf(kDefaultApiBase);
+	}
 	return result;
+}
+
+QString Tokens::OriginOf(const QString &apiBase) {
+	const auto url = QUrl(apiBase, QUrl::StrictMode);
+	const auto scheme = url.scheme().toLower();
+	const auto host = url.host().toLower();
+	if (!url.isValid() || scheme.isEmpty() || host.isEmpty()) {
+		return QString();
+	}
+	const auto port = url.port((scheme == u"https") ? 443 : 80);
+	return scheme + u"://"_s + host + u':' + QString::number(port);
 }
 
 QJsonObject Tokens::toJson() const {
@@ -72,6 +90,7 @@ QJsonObject Tokens::toJson() const {
 		{ u"nonce"_s, nonce },
 		{ u"user_id"_s, userId },
 		{ u"sid"_s, sessionId },
+		{ u"origin"_s, origin },
 	};
 }
 
@@ -86,6 +105,7 @@ Account::Account(Config config, QObject *parent)
 	_settings = std::make_unique<Storage::KeyValue>(accountDir() + u"/settings.json"_s);
 	_keyBlob = std::make_unique<Storage::SecureBlob>(accountDir() + u"/device.key"_s);
 	_tokensBlob = std::make_unique<Storage::SecureBlob>(accountDir() + u"/session.bin"_s);
+	_origin = Tokens::OriginOf(_config.apiBase);
 	_api = std::make_unique<Api::Client>(_config.apiBase, _config.version);
 	_api->setTokenProvider(this);
 	_api->setLanguage(_settings->string(kLanguageKey, _config.language));
@@ -130,6 +150,14 @@ void Account::loadIdentity() {
 	if (auto stored = _tokensBlob->read()) {
 		_tokens = Tokens::FromJson(QJsonDocument::fromJson(*stored).object());
 		base::bytes::wipe(*stored);
+		if (_tokens.signedIn() && (_origin.isEmpty() || _tokens.origin != _origin)) {
+			// Issued by another server: neither the tokens nor proofs of the
+			// device key go here. The stored session is left for a run
+			// against its own origin (until somebody signs in here).
+			qWarning("Main: the stored session belongs to another API origin; starting signed out.");
+			_otherOriginUser = _tokens.userId;
+			_tokens = Tokens();
+		}
 	}
 	if (auto stored = _keyBlob->read()) {
 		_deviceKey = Crypto::DeviceKey::FromPrivate(*stored);
@@ -197,6 +225,7 @@ void Account::storeTokens(const QJsonObject &tokens) {
 	next.accessExpiresAt = ParseExpiry(tokens.value(u"access_expires_at"_s));
 	next.refresh = tokens.value(u"refresh_token"_s).toString();
 	next.nonce = tokens.value(u"device_nonce"_s).toString();
+	next.origin = _origin;
 	next.userId = tokens.value(u"user_id"_s).toString();
 	if (next.userId.isEmpty()) {
 		next.userId = claims.value(u"sub"_s).toString();
@@ -233,6 +262,15 @@ void Account::createSession() {
 	// sign-in. Once somebody else signs in here, the messages and media of
 	// the earlier user are not left on the disk behind their back.
 	const auto own = QFileInfo(userDir(_tokens.userId)).fileName();
+	if (!_otherOriginUser.isEmpty()) {
+		// The session of the other origin was replaced by this sign-in; its
+		// cache must not be taken for this one's even when the ids match.
+		if (_otherOriginUser == _tokens.userId) {
+			base::platform::RemoveRecursively(userDir(_otherOriginUser));
+			_settings->removeSuffix(u'.' + _otherOriginUser);
+		}
+		_otherOriginUser = QString();
+	}
 	const auto prefix = u"user-"_s;
 	const auto stale = QDir(accountDir()).entryList(
 		{ prefix + u'*' },

@@ -11,6 +11,13 @@
 //   device.key, session.bin  Storage::SecureBlob (DPAPI on Windows, 0600 on Linux)
 //   user-<id>/               the signed-in user's cache.db and media cache
 //
+// session.bin remembers the API origin the tokens were issued by (a session
+// stored before that is taken as one of the default origin). A run against
+// another origin (`--api`, ELEZA_API) starts signed out and never sends the
+// stored tokens or proofs there; the file stays as it is until somebody signs
+// in on this origin, which replaces it like any other sign-in (and then drops
+// the cache of the other origin's user, as for any other account).
+//
 // Token refresh (the web client's net/session.ts): refreshing proves
 // possession of the device key by signing the nonce handed out with the
 // previous tokens; concurrent callers share one refresh; a proof / nonce
@@ -50,10 +57,13 @@ struct Tokens {
 	QString nonce;              // base64 device nonce for the next refresh
 	QString userId;
 	QString sessionId;          // the `sid` claim
+	QString origin;             // the API origin that issued them (OriginOf)
 
 	[[nodiscard]] bool signedIn() const {
 		return !refresh.isEmpty();
 	}
+	// "scheme://host:port" of an API base; empty when it does not parse.
+	[[nodiscard]] static QString OriginOf(const QString &apiBase);
 	[[nodiscard]] static Tokens FromJson(const QJsonObject &json);
 	[[nodiscard]] QJsonObject toJson() const;
 };
@@ -188,6 +198,8 @@ private:
 	QString _deviceId;
 	Crypto::DeviceKey _deviceKey;
 	Tokens _tokens;
+	QString _origin;           // OriginOf(_config.apiBase)
+	QString _otherOriginUser;  // the user of a session.bin of another origin
 
 	bool _refreshing = false;
 	QVector<Fn<void(bool)>> _refreshWaiters;

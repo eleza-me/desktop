@@ -36,7 +36,9 @@ Then look at the PNG. Check both languages (`--lang=fa|en`: RTL and LTR) and bot
 Under a real X server use `xvfb-run -a ./build/Eleza/Eleza …` with the same flags.
 
 The session is stored in `--workdir`: the second run with the same directory is already
-signed in (`--debug-login` is skipped then). Delete the directory to start clean.
+signed in (`--debug-login` is skipped then). Delete the directory to start clean. The stored
+session belongs to the API origin that issued it: a run with another `--api` starts signed
+out and sends it nothing, and signing in there replaces it (one workdir per server keeps both).
 
 ## 2. Debug hooks
 

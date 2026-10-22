@@ -12,6 +12,7 @@
 #include "main/main_account.h"
 #include "main/main_session.h"
 #include "storage/storage_key_value.h"
+#include "storage/storage_secure_blob.h"
 
 #include <QtCore/QTemporaryDir>
 
@@ -104,6 +105,7 @@ private Q_SLOTS:
 	void refreshReissuesNonceOnce();
 	void refreshFailuresKeepOrEndTheSession();
 	void logoutWipes();
+	void storedSessionStaysWithItsOrigin();
 	void onlyWebAddressesAreReached();
 	void oversizedJsonIsRefused();
 	void abortAuthenticatedStopsRetries();
@@ -1121,6 +1123,83 @@ void TestApi::logoutWipes() {
 	account.logout(this, [&] { done = true; });
 	QVERIFY(Test::WaitFor([&] { return done; }));
 	QCOMPARE(server.count("/v1/auth/logout"), 1);
+}
+
+void TestApi::storedSessionStaysWithItsOrigin() {
+	QCOMPARE(Main::Tokens::OriginOf(u"https://API.eleza.me/"_s), u"https://api.eleza.me:443"_s);
+	QCOMPARE(Main::Tokens::OriginOf(u"http://127.0.0.1:8000/x"_s), u"http://127.0.0.1:8000"_s);
+	QVERIFY(Main::Tokens::OriginOf(u"nonsense"_s).isEmpty());
+
+	const auto handler = [](const HttpServer::Request &request) {
+		if (request.path == "/v1/auth/otp/verify") {
+			return HttpServer::Response::Ok(TokensDocument(1, 600));
+		}
+		return HttpServer::Response::Ok();
+	};
+	auto home = HttpServer();
+	home.handler = handler;
+	auto other = HttpServer();
+	other.handler = handler;
+	auto userDir = QString();
+	{
+		auto account = Main::Account(accountConfig(home, u"origin"_s));
+		account.start();
+		auto outcome = std::optional<Api::VerifyOutcome>();
+		account.auth().verifyCode(u"ch"_s, u"1"_s, false, this, [&](const Api::VerifyOutcome &value) { outcome = value; }, nullptr);
+		QVERIFY(Test::WaitFor([&] { return outcome.has_value(); }));
+		QVERIFY(account.signedIn());
+		userDir = account.session()->userDir();
+		QVERIFY(Test::WaitFor([&] { return account.session()->isReady(); }));
+	}
+	{
+		// Another server: signed out, nothing of the session is sent there,
+		// and the stored session is left alone.
+		auto config = accountConfig(home, u"origin"_s);
+		config.apiBase = other.base();
+		auto account = Main::Account(config);
+		account.start();
+		QVERIFY(!account.signedIn());
+		QVERIFY(!account.session());
+		QVERIFY(account.currentAccessToken().isEmpty());
+		auto done = false;
+		account.logout(this, [&] { done = true; });
+		QVERIFY(Test::WaitFor([&] { return done; }));
+		QTest::qWait(100);
+		for (const auto &request : other.requests) {
+			QVERIFY(!request.headers.contains("authorization"));
+		}
+		QCOMPARE(other.count("/v1/auth/token/refresh"), 0);
+		QVERIFY(QFileInfo::exists(userDir));
+	}
+	{
+		// Back on its own origin the session is still there.
+		auto account = Main::Account(accountConfig(home, u"origin"_s));
+		QVERIFY(account.signedIn());
+		QCOMPARE(account.userId(), u"u_me"_s);
+	}
+
+	// A session stored before the origin was kept belongs to the default API.
+	const auto workdir = _dir.path() + u"/origin-legacy"_s;
+	base::platform::EnsureDirectory(workdir + u"/account"_s, true);
+	auto legacy = Main::Tokens::FromJson(TokensDocument(1, 600));
+	legacy.refresh = u"refresh-legacy"_s;
+	legacy.userId = u"u_me"_s;
+	auto json = legacy.toJson();
+	json.remove(u"origin"_s);
+	QVERIFY(Storage::SecureBlob(workdir + u"/account/session.bin"_s).write(QJsonDocument(json).toJson()));
+	{
+		auto config = accountConfig(home, u"origin-legacy"_s);
+	QVERIFY(Storage::SecureBlob(workdir + u"/account/device.key"_s).write(Crypto::DeviceKey::Generate().privateKey()));
+		auto account = Main::Account(config);
+		QVERIFY(!account.signedIn());
+	}
+	{
+		auto config = accountConfig(home, u"origin-legacy"_s);
+		config.apiBase = u"https://api.eleza.me"_s;
+		auto account = Main::Account(config);
+		QVERIFY(account.signedIn()); // not started: nothing is sent anywhere
+		QCOMPARE(account.userId(), u"u_me"_s);
+	}
 }
 
 void TestApi::onlyWebAddressesAreReached() {
