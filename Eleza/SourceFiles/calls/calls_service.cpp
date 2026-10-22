@@ -490,7 +490,7 @@ void Service::updateIncomingWindow() {
 		&& !call->ended()
 		&& (call->state() == State::Incoming);
 	if (!ringing) {
-		_incoming = nullptr;
+		dropIncomingWindow();
 		return;
 	}
 	// The camera is offered only where the server has video calls.
@@ -499,6 +499,7 @@ void Service::updateIncomingWindow() {
 		_incoming->setVideo(video);
 		return;
 	}
+	dropIncomingWindow();
 	_incoming = std::make_unique<IncomingWindow>(
 		_session,
 		call->id(),
@@ -509,6 +510,15 @@ void Service::updateIncomingWindow() {
 	});
 	_incoming->setDeclineCallback([this] { hangup(); });
 	_incoming->showAtCorner();
+}
+
+void Service::dropIncomingWindow() {
+	// Often from inside the window's own button or key handler (answer,
+	// decline -> refresh): not deleted under it.
+	if (_incoming) {
+		_incoming->hide();
+		_incoming.release()->deleteLater();
+	}
 }
 
 void Service::flashTaskbar() {
