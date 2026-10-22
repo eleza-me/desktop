@@ -5,6 +5,7 @@
 #include <QtCore/QCoreApplication>
 #include <QtCore/QHash>
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -157,11 +158,37 @@ QString GetValueByName(const QString &name) {
 
 namespace internal {
 
+void ReplaceTags(QString &text, std::initializer_list<TagValue> tags) {
+	auto result = QString();
+	auto from = qsizetype(0);
+	auto open = text.indexOf(QLatin1Char('{'));
+	while (open >= 0) {
+		const auto close = text.indexOf(QLatin1Char('}'), open + 1);
+		if (close < 0) {
+			break;
+		}
+		const auto name = QStringView(text).mid(open + 1, close - open - 1);
+		const auto found = std::find_if(
+			tags.begin(),
+			tags.end(),
+			[&](const TagValue &tag) { return name == QLatin1String(tag.tag); });
+		if (found == tags.end()) {
+			open = text.indexOf(QLatin1Char('{'), open + 1);
+			continue;
+		}
+		result += QStringView(text).mid(from, open - from);
+		result += found->value;
+		from = close + 1;
+		open = text.indexOf(QLatin1Char('{'), from);
+	}
+	if (from > 0) {
+		result += QStringView(text).mid(from);
+		text = std::move(result);
+	}
+}
+
 void ReplaceTag(QString &text, const char *tag, const QString &value) {
-	const auto pattern = QLatin1Char('{')
-		+ QString::fromLatin1(tag)
-		+ QLatin1Char('}');
-	text.replace(pattern, value);
+	ReplaceTags(text, { { tag, value } });
 }
 
 } // namespace internal

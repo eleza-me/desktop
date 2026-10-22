@@ -106,6 +106,29 @@ private Q_SLOTS:
 		QCOMPARE(CurrentId(), QStringLiteral("en"));
 	}
 
+	void tagsInOnePass() {
+		// A value that looks like a later tag (somebody's name) stays as it is.
+		QCOMPARE(
+			tr::lng_action_member(
+				tr::now,
+				lt_name,
+				QStringLiteral("{action}"),
+				lt_action,
+				QStringLiteral("joined")),
+			QStringLiteral("{action} joined"));
+		auto text = QStringLiteral("{a}-{b}-{a}-{c}-{b");
+		const auto a = QStringLiteral("{b}");
+		const auto b = QStringLiteral("{a}");
+		Lang::internal::ReplaceTags(text, { { "a", a }, { "b", b } });
+		QCOMPARE(text, QStringLiteral("{b}-{a}-{b}-{c}-{b"));
+		auto plain = QStringLiteral("no tags {here");
+		Lang::internal::ReplaceTag(plain, "here", a);
+		QCOMPARE(plain, QStringLiteral("no tags {here"));
+		auto nested = QStringLiteral("{{a}}");
+		Lang::internal::ReplaceTag(nested, "a", QStringLiteral("x"));
+		QCOMPARE(nested, QStringLiteral("{x}"));
+	}
+
 	void digits() {
 		QCOMPARE(FaDigits(QStringLiteral("0123456789")), U("۰۱۲۳۴۵۶۷۸۹"));
 		QCOMPARE(FaDigits(U("٣ نفر، 2 پیام")), U("۳ نفر، ۲ پیام"));
