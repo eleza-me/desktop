@@ -286,6 +286,43 @@ struct StoryRef {
 	[[nodiscard]] QJsonObject toJson() const;
 };
 
+// A self-destructing photo or video (the backend's
+// docs/self-destruct-media.md): view once, or a timer that starts when the
+// recipient's phone shows it. Only the phone apps open one; this app is sent
+// a text that says so, with this to tell what it is and how far it got.
+struct SelfDestruct {
+	QString mode;          // view_once | timer
+	int seconds = 0;       // a timer
+	QString state;         // unopened | opened | expired
+	qint64 openedAt = 0;   // ms, the server's clock (once shown)
+	qint64 destructAt = 0; // ms, the server's clock (once shown)
+
+	[[nodiscard]] bool viewOnce() const {
+		return mode == u"view_once";
+	}
+	[[nodiscard]] bool opened() const {
+		return state == u"opened";
+	}
+	[[nodiscard]] bool expired() const {
+		return state == u"expired";
+	}
+	[[nodiscard]] static SelfDestruct FromJson(const QJsonObject &json);
+	[[nodiscard]] QJsonObject toJson() const;
+	friend bool operator==(const SelfDestruct &, const SelfDestruct &) = default;
+};
+
+// What a send asks for: exactly one of the two (`seconds` one of
+// client-config chat.self_destruct.timers).
+struct SelfDestructInput {
+	bool viewOnce = false;
+	int seconds = 0;
+
+	[[nodiscard]] bool valid() const {
+		return viewOnce != (seconds > 0);
+	}
+	[[nodiscard]] QJsonObject toJson() const;
+};
+
 struct MarkupButton {
 	QString text;
 	QString kind; // callback | url | switch_inline | ...
@@ -396,6 +433,9 @@ struct Message {
 	std::optional<ReplyMarkup> replyMarkup;
 	std::optional<ViaBot> viaBot;
 	std::optional<StoryRef> story; // story_reply / story_reaction
+	// Self-destructing media: the bubble is drawn from this, never from the
+	// text (the server's «only on the phone» line) or an attachment.
+	std::optional<SelfDestruct> selfDestruct;
 
 	// ---- local
 	bool mine = false;
@@ -427,6 +467,11 @@ struct Message {
 	// Resolves `mine` and the read state against a chat header.
 	void resolveLocal(const ChatInfo *info, const QString &myUserId);
 };
+
+// The person whose screenshot of a self-destructing message a service
+// message tells about («self_destruct_screenshot:<taker>:<seq>»); empty for
+// any other code.
+[[nodiscard]] QString SelfDestructScreenshotTaker(const QString &systemCode);
 
 // Server messages by seq, then local pending ones by creation time.
 [[nodiscard]] bool MessageLess(const Message &a, const Message &b);

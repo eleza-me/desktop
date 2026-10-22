@@ -484,6 +484,32 @@ QJsonObject Quote::toJson() const {
 	return result;
 }
 
+SelfDestruct SelfDestruct::FromJson(const QJsonObject &json) {
+	auto result = SelfDestruct();
+	result.mode = String(json, "mode"_L1);
+	result.seconds = Int(json, "seconds"_L1);
+	result.state = String(json, "state"_L1);
+	result.openedAt = Int64(json, "opened_at"_L1);
+	result.destructAt = Int64(json, "destruct_at"_L1);
+	return result;
+}
+
+QJsonObject SelfDestruct::toJson() const {
+	auto result = QJsonObject();
+	result.insert("mode"_L1, mode);
+	Put(result, "seconds"_L1, seconds);
+	result.insert("state"_L1, state);
+	Put(result, "opened_at"_L1, openedAt);
+	Put(result, "destruct_at"_L1, destructAt);
+	return result;
+}
+
+QJsonObject SelfDestructInput::toJson() const {
+	return viewOnce
+		? QJsonObject{ { u"view_once"_s, true } }
+		: QJsonObject{ { u"seconds"_s, seconds } };
+}
+
 StoryRef StoryRef::FromJson(const QJsonObject &json) {
 	auto result = StoryRef();
 	result.storyId = String(json, "story_id"_L1);
@@ -764,6 +790,9 @@ Message Message::FromJson(const QJsonObject &json) {
 	if (auto story = Optional<StoryRef>(json, "story"_L1); story && !story->storyId.isEmpty()) {
 		result.story = std::move(story);
 	}
+	if (auto sd = Optional<SelfDestruct>(json, "self_destruct"_L1); sd && !sd->mode.isEmpty()) {
+		result.selfDestruct = std::move(sd);
+	}
 	return result;
 }
 
@@ -825,6 +854,9 @@ QJsonObject Message::toJson() const {
 	if (story) {
 		result.insert("story"_L1, story->toJson());
 	}
+	if (selfDestruct) {
+		result.insert("self_destruct"_L1, selfDestruct->toJson());
+	}
 	return result;
 }
 
@@ -864,6 +896,14 @@ void Message::resolveLocal(const ChatInfo *info, const QString &myUserId) {
 	status = (mine && seq > 0 && seq <= peerRead)
 		? MessageStatus::Read
 		: MessageStatus::Sent;
+}
+
+QString SelfDestructScreenshotTaker(const QString &systemCode) {
+	static const auto kPrefix = u"self_destruct_screenshot:"_s;
+	if (!systemCode.startsWith(kPrefix)) {
+		return QString();
+	}
+	return systemCode.mid(kPrefix.size()).section(u':', 0, 0);
 }
 
 bool MessageLess(const Message &a, const Message &b) {
