@@ -13,6 +13,15 @@
 //   }
 //   Media::ShowImageViewer(controller->window(), std::move(items), indexOfClicked);
 //
+// Beyond the items it was opened with the viewer pages through its host
+// (`ViewerOptions::paging`): close to either end it asks for the items past
+// the one there, which join without moving the item on screen. A strip of
+// every item runs along the bottom (click to jump, drag to scrub: only the
+// item it stops on loads in full). The sound of videos is switched for the
+// whole viewer (and remembered for the next one). With `origin` the viewer
+// grows out of the item's place on screen and shrinks back into the place of
+// the item it closes on (a bubble, a square of the shared media).
+//
 // An item is one of: `source` (remote, through Support::MakeImageSource), `image`
 // (already decoded), `filePath` (a local picture, decoded on a worker thread) or
 // `videoPath` (a local video file: played by Media::VideoPlayerWidget), or
@@ -26,6 +35,7 @@
 #include "ui/text/text.h"
 
 #include <QtCore/QPointer>
+#include <QtCore/QSet>
 
 #include <functional>
 #include <memory>
@@ -44,6 +54,9 @@ namespace Media {
 class VideoPlayerWidget;
 
 struct ViewerItem {
+	// Identifies the item for its host (a message's key): paging skips the
+	// ones the viewer has, `origin` finds its place on screen.
+	QString key;
 	std::shared_ptr<Ui::ImageSource> source;
 	std::shared_ptr<Ui::ImageSource> preview; // shown while `source` loads
 	QImage image;
@@ -58,9 +71,35 @@ struct ViewerItem {
 	std::function<void(QObject *guard, std::function<void(QString)> done)> loadVideo;
 };
 
+struct ViewerPaging {
+	// `direction` 1: the items after `edgeKey` (the last item held), -1:
+	// the ones before it (the first). `done` gets them in the viewer's
+	// order and whether more lie beyond; nothing and false end the paging
+	// on that side (an error, a server without the route). `guard` dies
+	// with the viewer.
+	std::function<void(
+		int direction,
+		const QString &edgeKey,
+		QObject *guard,
+		std::function<void(std::vector<ViewerItem> items, bool more)> done)> load;
+	bool moreAfter = false;
+	bool moreBefore = false;
+};
+
+struct ViewerOptions {
+	ViewerPaging paging;
+	// Where the item is on screen now, in global coordinates (empty: not on
+	// screen).
+	std::function<QRect(const ViewerItem &item)> origin;
+};
+
 class ImageViewer final : public Ui::RpWidget {
 public:
-	ImageViewer(QWidget *parent, std::vector<ViewerItem> items, int index);
+	ImageViewer(
+		QWidget *parent,
+		std::vector<ViewerItem> items,
+		int index,
+		ViewerOptions options = {});
 	~ImageViewer();
 
 	void showItem(int index);
@@ -96,8 +135,11 @@ private:
 		return _items[_index];
 	}
 	void refreshImage();
-	void loadFile(const QString &path, int index);
-	void loadVideo(int index);
+	// By the serial number of the item (its index moves when items join in
+	// front).
+	void loadFile(const QString &path, int serial);
+	void loadVideo(int serial);
+	[[nodiscard]] int indexOfSerial(int serial) const;
 	void setImage(const QImage &image, bool final);
 	void updateControls();
 	void updateVideoGeometry();
@@ -112,7 +154,28 @@ private:
 	void copy();
 	[[nodiscard]] QRect captionRect() const;
 
+	// Paging through the host.
+	void maybeLoadMore();
+	void loadMore(int direction);
+	void insertItems(int direction, std::vector<ViewerItem> items);
+
+	// The strip of every item.
+	[[nodiscard]] bool stripShown() const;
+	[[nodiscard]] QRect stripRect() const;
+	[[nodiscard]] int stripStep() const;
+	[[nodiscard]] QRect stripThumbRect(int index, int centered) const;
+	[[nodiscard]] int stripIndexAt(QPoint position, int centered) const;
+	[[nodiscard]] QImage stripImage(int index);
+	void paintStrip(QPainter &p);
+
+	// Growing out of / shrinking into the item's place on screen.
+	[[nodiscard]] QRect originRect() const;
+	void finishClose();
+	void applyMuted(bool muted);
+
 	std::vector<ViewerItem> _items;
+	std::vector<int> _serials; // one per item, never reused
+	int _lastSerial = 0;
 	int _index = -1;
 	QImage _image; // what is painted
 	bool _imageFinal = false;
@@ -140,12 +203,32 @@ private:
 	std::function<void(int index)> _indexChanged;
 	bool _closing = false;
 
+	ViewerPaging _paging;
+	std::function<QRect(const ViewerItem &item)> _origin;
+	bool _loadingAfter = false;
+	bool _loadingBefore = false;
+
+	bool _stripPressed = false;
+	bool _stripDragged = false;
+	int _stripPressIndex = -1;
+	int _stripScrub = -1; // the item the strip is dragged to (-1: none)
+	QPoint _stripPressPosition;
+	QSet<const Ui::ImageSource*> _stripWatched;
+
+	// From the item's place on screen (0) to the fitted picture (1), and
+	// back while closing.
+	Ui::Animations::Simple _flyAnimation;
+	QRectF _flyFrom;
+	QRectF _flyTo;
+	bool _flying = false;
+
 };
 
 // Shows the viewer over the whole window. The viewer deletes itself when closed.
 ImageViewer *ShowImageViewer(
 	Window::MainWindow *window,
 	std::vector<ViewerItem> items,
-	int index = 0);
+	int index = 0,
+	ViewerOptions options = {});
 
 } // namespace Media

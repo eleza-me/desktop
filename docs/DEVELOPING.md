@@ -469,7 +469,7 @@ All in `lib/ui/ui/**`; every header starts with an example. The gallery (`--gall
 | Country list, about | `Boxes::CountrySelectBox`, `Boxes::AboutBox` |
 | «گزارش» (post / reply / account / conversation / group / a message of a group) | `Boxes::ShowReportBox(controller, args)` |
 | Shared media of a chat or a group (tabs with counts, server pages) | `controller->openRoute(Window::Routes::ChatMedia(chatId))` / `GroupMedia(groupId)` (`media/media_shared.h`); the data side: `data/data_shared_media.h` |
-| Full-window photo / video viewer | `Media::ShowImageViewer(controller->window(), items, index)` |
+| Full-window photo / video viewer | `Media::ShowImageViewer(controller->window(), items, index, options)`; `options.paging` pages past the items handed (by `ViewerItem::key`), `options.origin` gives the item's place on screen (it grows out of it and closes into it) |
 | Voice / music playback | `Media::Player().toggle(track, &session)`; signals `stateChanged`, `positionChanged`; `cycleSpeed()` |
 | Inline video | `Media::VideoPlayerWidget` (`setSource(localPath)`, `setPoster`, `play`) |
 

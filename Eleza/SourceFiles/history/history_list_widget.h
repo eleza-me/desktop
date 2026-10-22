@@ -269,6 +269,9 @@ private:
 	void revealSpoiler(const QString &key);
 	void openMedia(const Data::Message &message);
 	void openPhoto(const Data::Message &message);
+	// The bubble of a message on screen, in global coordinates (empty:
+	// not on screen): the viewer grows out of it and closes into it.
+	[[nodiscard]] QRect viewerOrigin(const QString &key) const;
 	// The media that shows `message` (an album's tile for its item).
 	[[nodiscard]] View::Media *mediaFor(const Data::Message &message) const;
 	void playVideo(const Data::Message &message);

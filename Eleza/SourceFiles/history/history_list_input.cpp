@@ -5,6 +5,7 @@
 #include "data/data_chats.h"
 #include "data/data_outbox.h"
 #include "data/data_session.h"
+#include "data/data_shared_media.h"
 #include "history/history_bot_logic.h"
 #include "history/history_downloads.h"
 #include "history/history_view_media.h"
@@ -670,19 +671,13 @@ void ListWidget::openMedia(const Data::Message &message) {
 		}
 		return;
 	}
-	const auto index = indexOfKey(message.key());
-	const auto inAlbum = (index >= 0) && _rows[index].element->isAlbum();
 	switch (message.kind) {
 	case Data::MessageKind::Photo:
 		openPhoto(message);
 		break;
 	case Data::MessageKind::Video:
-		// A video of an album opens in the viewer with its neighbours.
-		if (inAlbum) {
-			openPhoto(message);
-		} else {
-			playVideo(message);
-		}
+		// A video opens in the viewer with the pictures around it.
+		openPhoto(message);
 		break;
 	case Data::MessageKind::Gif:
 		playVideo(message);
@@ -715,14 +710,15 @@ View::Media *ListWidget::mediaFor(const Data::Message &message) const {
 }
 
 void ListWidget::openPhoto(const Data::Message &message) {
-	// Every photo of the chat, and the videos of the albums among them: ← →
-	// go through an album and on to the pictures around it.
+	// Every photo and video of the chat: ← → go through an album and on to
+	// the pictures around it, past what is loaded into the chat's media
+	// pages (older) and its history (newer).
 	auto items = std::vector<Media::ViewerItem>();
 	auto index = 0;
 	for (const auto &row : _rows) {
 	const auto album = row.element->isAlbum();
 	for (const auto &other : row.element->messages()) {
-		const auto video = album && (other.kind == Data::MessageKind::Video);
+		const auto video = (other.kind == Data::MessageKind::Video);
 		if (other.kind != Data::MessageKind::Photo && !video) {
 			continue;
 		} else if (other.mediaSpoiler
@@ -782,15 +778,144 @@ void ListWidget::openPhoto(const Data::Message &message) {
 			? row.element->captionMessage().text
 			: other.text;
 		item.saveName = Downloads::SuggestedName(other);
+		item.key = other.key();
 		if (other.key() == message.key()) {
 			index = int(items.size());
 		}
 		items.push_back(std::move(item));
 	}
 	}
-	if (!items.empty()) {
-		Media::ShowImageViewer(_controller->window(), std::move(items), index);
+	if (items.empty()) {
+		return;
 	}
+	const auto weak = QPointer<ListWidget>(this);
+	const auto session = _session;
+	const auto chatId = _chatId;
+	const auto downloads = QPointer<Downloads>(_downloads);
+	const auto seqOf = [](const QString &key) {
+		return key.startsWith(u"seq:"_s) ? key.mid(4).toLongLong() : qint64(0);
+	};
+	// An item the chat has not loaded: no bubble to borrow a preview from.
+	const auto pagedItem = [=](const Data::Message &other) {
+		auto item = Media::ViewerItem();
+		item.key = other.key();
+		item.caption = other.text;
+		item.saveName = Downloads::SuggestedName(other);
+		item.preview = Support::MakeMessageImageSource(session, other);
+		if (other.kind == Data::MessageKind::Video) {
+			if (item.preview) {
+				item.videoPoster = item.preview->preview();
+			}
+			item.loadVideo = [=](
+					QObject *guard,
+					std::function<void(QString)> done) {
+				if (!downloads) {
+					done(QString());
+					return;
+				}
+				downloads->fetch(
+					other,
+					Data::MediaVariant::Mp4,
+					guard,
+					[=](const QString &path) { done(path); });
+			};
+		} else {
+			auto options = Support::ImageOptions();
+			options.original = true;
+			if (other.media) {
+				options.blurhash = other.media->blurhash;
+				options.aspect = QSize(other.media->width, other.media->height);
+			}
+			item.source = Support::MakeImageSource(
+				session,
+				Data::MediaRef::Attachment(other.chat, other.seq),
+				Data::MediaVariant::Full,
+				options);
+		}
+		return item;
+	};
+	const auto pictures = [](const Data::Message &other) {
+		return (other.seq > 0)
+			&& other.visible()
+			&& !other.mediaSpoiler
+			&& (other.kind == Data::MessageKind::Photo
+				|| other.kind == Data::MessageKind::Video);
+	};
+	auto options = Media::ViewerOptions();
+	options.paging.moreBefore = (seqOf(items.front().key) > 0);
+	options.paging.moreAfter = _session->data().messages().history(_chatId).hasMoreAfter
+		&& (seqOf(items.back().key) > 0);
+	options.paging.load = [=](
+			int direction,
+			const QString &edgeKey,
+			QObject *guard,
+			std::function<void(std::vector<Media::ViewerItem>, bool)> done) {
+		const auto edge = seqOf(edgeKey);
+		if (edge <= 0) {
+			done({}, false);
+			return;
+		} else if (direction < 0) {
+			// Older: the chat's media pages (they leave its cache alone).
+			Data::LoadSharedMedia(
+				&session->data(),
+				chatId,
+				Data::SharedMediaKinds(Data::SharedMediaTab::Media),
+				edge,
+				0,
+				base::Guard(guard),
+				[=](const Data::SharedMediaPage &page) {
+					auto result = std::vector<Media::ViewerItem>();
+					for (auto i = page.messages.size(); i != 0;) {
+						const auto &other = page.messages[--i];
+						if (pictures(other)) {
+							result.push_back(pagedItem(other));
+						}
+					}
+					done(std::move(result), page.hasMoreBefore);
+				},
+				[=](const Api::Error &) { done({}, false); });
+			return;
+		}
+		// Newer, while the chat shows a window further up its history.
+		auto &messages = session->data().messages();
+		messages.loadNewer(chatId, base::Guard(guard), [=](int) {
+			const auto &history = session->data().messages().history(chatId);
+			auto result = std::vector<Media::ViewerItem>();
+			for (const auto &other : history.items) {
+				if (other.seq > edge && pictures(other)) {
+					result.push_back(pagedItem(other));
+				}
+			}
+			done(std::move(result), history.hasMoreAfter);
+		}, [=](const Api::Error &) { done({}, false); });
+	};
+	options.origin = [=](const Media::ViewerItem &item) {
+		return weak ? weak->viewerOrigin(item.key) : QRect();
+	};
+	Media::ShowImageViewer(
+		_controller->window(),
+		std::move(items),
+		index,
+		std::move(options));
+}
+
+QRect ListWidget::viewerOrigin(const QString &key) const {
+	const auto index = indexOfKey(key);
+	if (index < 0 || !_rows[index].exact || !isVisible()) {
+		return QRect();
+	}
+	const auto rect = _rows[index].element->mediaRect().translated(
+		0,
+		rowTop(index));
+	const auto visible = rect.intersected(QRect(
+		0,
+		_visibleTop,
+		width(),
+		_visibleBottom - _visibleTop));
+	if (rect.isEmpty() || visible.height() < rect.height() / 2) {
+		return QRect();
+	}
+	return QRect(mapToGlobal(rect.topLeft()), rect.size());
 }
 
 void ListWidget::playVideo(const Data::Message &message) {

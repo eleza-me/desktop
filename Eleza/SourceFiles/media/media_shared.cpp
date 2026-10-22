@@ -314,6 +314,18 @@ private:
 
 	void open(const Data::Message &message);
 	void openViewer(const Data::Message &message);
+	[[nodiscard]] bool inViewer(
+		SharedMediaTab tab,
+		const Data::Message &message,
+		qint64 clicked) const;
+	[[nodiscard]] ViewerItem viewerItem(const Data::Message &message);
+	void viewerPage(
+		SharedMediaTab tab,
+		qint64 clicked,
+		const QString &edgeKey,
+		std::function<void(std::vector<ViewerItem>, bool)> done);
+	[[nodiscard]] QRect viewerOrigin(const QString &key) const;
+	void pageArrived(SharedMediaTab tab);
 	void openFile(const Data::Message &message);
 	void showMenu(const Data::Message &message, QPoint globalPosition);
 	void showInChat(qint64 seq);
@@ -347,6 +359,8 @@ private:
 	int _pressed = -1;
 	Fn<void()> _tabsChanged;
 	Fn<void()> _selectionChanged;
+	// Viewers waiting for the next page of a tab.
+	std::vector<std::pair<SharedMediaTab, Fn<void()>>> _pageWaiters;
 
 };
 
@@ -605,6 +619,7 @@ void List::load(SharedMediaTab tab) {
 			if (had != hasRows() || !_counts) {
 				notifyTabs();
 			}
+			pageArrived(tab);
 		},
 		[=, this](const Api::Error &error) {
 			auto &state = _tabs[int(tab)];
@@ -616,7 +631,8 @@ void List::load(SharedMediaTab tab) {
 				_unsupported = true;
 				rebuildAll();
 				notifyTabs();
-					return;
+				pageArrived(tab);
+				return;
 			}
 			state.failed = true;
 			state.error = Support::ErrorText(error, tr::lng_error_load(tr::now));
@@ -626,6 +642,7 @@ void List::load(SharedMediaTab tab) {
 			if (!_counts) {
 				notifyTabs();
 			}
+			pageArrived(tab);
 		});
 }
 
@@ -1351,69 +1368,187 @@ void List::open(const Data::Message &message) {
 	}
 }
 
+bool List::inViewer(
+		SharedMediaTab tab,
+		const Data::Message &message,
+		qint64 clicked) const {
+	switch (message.kind) {
+	case Data::MessageKind::Photo:
+	case Data::MessageKind::Video:
+	case Data::MessageKind::Gif:
+		return true;
+	case Data::MessageKind::VideoNote:
+		// In the voice tab round videos go through each other.
+		return (tab == SharedMediaTab::Voice) || (message.seq == clicked);
+	default:
+		return false;
+	}
+}
+
+ViewerItem List::viewerItem(const Data::Message &message) {
+	auto item = ViewerItem();
+	item.key = message.key();
+	const auto preview = image(message);
+	item.preview = preview;
+	if (message.kind != Data::MessageKind::Photo) {
+		if (preview) {
+			item.videoPoster = preview->request(QSize());
+			if (item.videoPoster.isNull()) {
+				item.videoPoster = preview->preview();
+			}
+		}
+		const auto downloads = QPointer<History::Downloads>(_downloads);
+		item.loadVideo = [=](
+				QObject *guard,
+				std::function<void(QString)> done) {
+			if (!downloads) {
+				done(QString());
+				return;
+			}
+			downloads->fetch(
+				message,
+				Data::MediaVariant::Mp4,
+				guard,
+				[=](const QString &path) { done(path); });
+		};
+	} else {
+		auto options = Support::ImageOptions();
+		options.original = true;
+		if (message.media) {
+			options.blurhash = message.media->blurhash;
+			options.aspect = QSize(message.media->width, message.media->height);
+		}
+		item.source = Support::MakeImageSource(
+			_session,
+			Data::MediaRef::Attachment(message.chat, message.seq),
+			Data::MediaVariant::Full,
+			options);
+	}
+	item.caption = message.text;
+	item.saveName = History::Downloads::SuggestedName(message);
+	return item;
+}
+
 void List::openViewer(const Data::Message &clicked) {
-	// Every picture and video of the tab, ← → through them.
+	// Every picture and video of the tab, ← → through them, and on into the
+	// pages the tab has not read yet.
+	const auto tab = _tab;
 	const auto &items = state().shown;
 	auto viewerItems = std::vector<ViewerItem>();
 	auto index = 0;
-	const auto downloads = QPointer<History::Downloads>(_downloads);
 	for (const auto &message : items) {
-		const auto video = (message.kind == Data::MessageKind::Video)
-			|| (message.kind == Data::MessageKind::Gif)
-			|| (message.kind == Data::MessageKind::VideoNote);
-		if (message.kind != Data::MessageKind::Photo && !video) {
+		if (!inViewer(tab, message, clicked.seq)) {
 			continue;
-		} else if (message.seq != clicked.seq
-			&& (_tab == SharedMediaTab::Voice)
-			&& (message.kind != Data::MessageKind::VideoNote)) {
-			continue;
-		}
-		auto item = ViewerItem();
-		const auto preview = image(message);
-		if (video) {
-			if (preview) {
-				item.videoPoster = preview->request(QSize());
-				if (item.videoPoster.isNull()) {
-					item.videoPoster = preview->preview();
-				}
-			}
-			item.loadVideo = [=](
-					QObject *guard,
-					std::function<void(QString)> done) {
-				if (!downloads) {
-					done(QString());
-					return;
-				}
-				downloads->fetch(
-					message,
-					Data::MediaVariant::Mp4,
-					guard,
-					[=](const QString &path) { done(path); });
-			};
-		} else {
-			auto options = Support::ImageOptions();
-			options.original = true;
-			if (message.media) {
-				options.blurhash = message.media->blurhash;
-				options.aspect = QSize(message.media->width, message.media->height);
-			}
-			item.source = Support::MakeImageSource(
-				_session,
-				Data::MediaRef::Attachment(message.chat, message.seq),
-				Data::MediaVariant::Full,
-				options);
-			item.preview = preview;
-		}
-		item.caption = message.text;
-		item.saveName = History::Downloads::SuggestedName(message);
-		if (message.seq == clicked.seq) {
+		} else if (message.seq == clicked.seq) {
 			index = int(viewerItems.size());
 		}
-		viewerItems.push_back(std::move(item));
+		viewerItems.push_back(viewerItem(message));
 	}
-	if (!viewerItems.empty()) {
-		ShowImageViewer(_controller->window(), std::move(viewerItems), index);
+	if (viewerItems.empty()) {
+		return;
 	}
+	const auto weak = QPointer<List>(this);
+	auto options = ViewerOptions();
+	if (clicked.kind != Data::MessageKind::VideoNote
+		|| tab == SharedMediaTab::Voice) {
+		const auto seq = clicked.seq;
+		options.paging.moreAfter = !_unsupported;
+		options.paging.load = [=](
+				int direction,
+				const QString &edgeKey,
+				QObject *guard,
+				std::function<void(std::vector<ViewerItem>, bool)> done) {
+			Q_UNUSED(guard);
+			// Newest first: what lies before the first item is the newest
+			// there is (anything newer joins the tab, not the viewer).
+			if (!weak || direction < 0) {
+				done({}, false);
+				return;
+			}
+			weak->viewerPage(tab, seq, edgeKey, std::move(done));
+		};
+	}
+	options.origin = [=](const ViewerItem &item) {
+		return weak ? weak->viewerOrigin(item.key) : QRect();
+	};
+	ShowImageViewer(
+		_controller->window(),
+		std::move(viewerItems),
+		index,
+		std::move(options));
+}
+
+void List::viewerPage(
+		SharedMediaTab tab,
+		qint64 clicked,
+		const QString &edgeKey,
+		std::function<void(std::vector<ViewerItem>, bool)> done) {
+	auto &state = _tabs[int(tab)];
+	auto result = std::vector<ViewerItem>();
+	auto after = false;
+	for (const auto &message : std::as_const(state.shown)) {
+		if (!after) {
+			after = (message.key() == edgeKey);
+		} else if (inViewer(tab, message, clicked)) {
+			result.push_back(viewerItem(message));
+		}
+	}
+	const auto more = state.more && !_unsupported;
+	if (!after || !result.empty() || !more) {
+		done(std::move(result), more && after);
+		return;
+	}
+	// The rest of the tab first, then the server.
+	const auto weak = QPointer<List>(this);
+	_pageWaiters.emplace_back(tab, [=] {
+		if (weak) {
+			auto &state = weak->_tabs[int(tab)];
+			if (state.failed) {
+				done({}, false);
+			} else {
+				weak->viewerPage(tab, clicked, edgeKey, done);
+			}
+		}
+	});
+	if (!state.loading) {
+		load(tab);
+	}
+}
+
+void List::pageArrived(SharedMediaTab tab) {
+	auto waiting = std::vector<Fn<void()>>();
+	for (auto i = _pageWaiters.begin(); i != _pageWaiters.end();) {
+		if (i->first == tab) {
+			waiting.push_back(std::move(i->second));
+			i = _pageWaiters.erase(i);
+		} else {
+			++i;
+		}
+	}
+	for (const auto &callback : waiting) {
+		callback();
+	}
+}
+
+QRect List::viewerOrigin(const QString &key) const {
+	if (!isVisible() || !grid()) {
+		return QRect();
+	}
+	const auto &items = state().shown;
+	for (const auto &entry : _entries) {
+		if (entry.item >= 0 && items[entry.item].key() == key) {
+			const auto visible = entry.rect.intersected(QRect(
+				0,
+				_visibleTop,
+				width(),
+				_visibleBottom - _visibleTop));
+			if (visible.height() < entry.rect.height() / 2) {
+				return QRect();
+			}
+			return QRect(mapToGlobal(entry.rect.topLeft()), entry.rect.size());
+		}
+	}
+	return QRect();
 }
 
 void List::openFile(const Data::Message &message) {
