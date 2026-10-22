@@ -89,6 +89,7 @@ struct DownloadState {
 	QString path; // where the saved copy is, when there is one
 	bool failed = false; // the last attempt failed (until the next one)
 	bool oversized = false; // … because the file was larger than declared
+	bool gone = false; // … because the server says it is not there (404 / 403 / 410)
 };
 
 // What an audio row shows of the player.
@@ -99,6 +100,7 @@ struct PlaybackState {
 	double progress = 0.;
 	qint64 positionMs = 0;
 	double speed = 1.;
+	double loadProgress = 0.; // of the download while loading
 };
 
 // Who wrote an incoming message of a group.

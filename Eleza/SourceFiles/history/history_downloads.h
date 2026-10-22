@@ -93,7 +93,11 @@ private:
 	Main::Session *_session = nullptr;
 	QHash<QString, Job> _jobs;
 	QHash<QString, QString> _saved; // key -> path
-	QHash<QString, bool> _failures; // message key -> larger than declared
+	struct Failure {
+		bool oversized = false; // larger than declared
+		bool gone = false; // the server says the file is not there
+	};
+	QHash<QString, Failure> _failures; // message key -> the last failure
 	bool _savedLoaded = false;
 
 };

@@ -2070,16 +2070,6 @@
 "lng_groups_log_delete_all" = "{actor} همهٔ پیام‌های {target} را حذف کرد";
 "lng_groups_log_transfer" = "{actor} مالکیت گروه را به {target} داد";
 "lng_groups_log_generic" = "{actor} تغییری در گروه داد";
-"lng_groups_media_title" = "رسانه، فایل و پیوند";
-"lng_groups_media_tab_media" = "رسانه";
-"lng_groups_media_tab_files" = "فایل‌ها";
-"lng_groups_media_tab_links" = "پیوندها";
-"lng_groups_media_tab_voice" = "صدا";
-"lng_groups_media_empty_media" = "هنوز عکس یا ویدیویی نیست";
-"lng_groups_media_empty_files" = "هنوز فایلی نیست";
-"lng_groups_media_empty_links" = "هنوز پیوندی نیست";
-"lng_groups_media_empty_voice" = "هنوز پیام صوتی‌ای نیست";
-"lng_groups_media_show_in_chat" = "نمایش در چت";
 "lng_groups_reactions" = "واکنش‌ها";
 "lng_groups_reactions_all" = "همه {count}";
 "lng_groups_reactions_none" = "واکنشی نیست";
@@ -2356,3 +2346,48 @@
 "lng_notes_replied_mine" = "به نوتش جواب دادی";
 "lng_notes_error_invalid" = "نوت باید یک خط کوتاه باشد.";
 "lng_notes_error_disabled" = "نوت در حال حاضر در دسترس نیست.";
+// ---- media: shared media ----
+"lng_media_shared_title" = "رسانه‌های مشترک";
+"lng_media_shared_open" = "رسانه، فایل و پیوند";
+"lng_media_shared_tab_media" = "رسانه";
+"lng_media_shared_tab_files" = "فایل‌ها";
+"lng_media_shared_tab_links" = "پیوندها";
+"lng_media_shared_tab_music" = "موسیقی";
+"lng_media_shared_tab_voice" = "صوتی";
+"lng_media_shared_tab_gifs" = "گیف‌ها";
+"lng_media_shared_count_media#one" = "{count} عکس و ویدیو";
+"lng_media_shared_count_media#other" = "{count} عکس و ویدیو";
+"lng_media_shared_count_files#one" = "{count} فایل";
+"lng_media_shared_count_files#other" = "{count} فایل";
+"lng_media_shared_count_links#one" = "{count} پیوند";
+"lng_media_shared_count_links#other" = "{count} پیوند";
+"lng_media_shared_count_music#one" = "{count} آهنگ";
+"lng_media_shared_count_music#other" = "{count} آهنگ";
+"lng_media_shared_count_voice#one" = "{count} پیام صوتی";
+"lng_media_shared_count_voice#other" = "{count} پیام صوتی";
+"lng_media_shared_count_gifs#one" = "{count} گیف";
+"lng_media_shared_count_gifs#other" = "{count} گیف";
+"lng_media_shared_capped_media" = "{n}+ عکس و ویدیو";
+"lng_media_shared_capped_files" = "{n}+ فایل";
+"lng_media_shared_capped_links" = "{n}+ پیوند";
+"lng_media_shared_capped_music" = "{n}+ آهنگ";
+"lng_media_shared_capped_voice" = "{n}+ پیام صوتی";
+"lng_media_shared_capped_gifs" = "{n}+ گیف";
+"lng_media_shared_empty_media" = "هنوز عکس یا ویدیویی نیست";
+"lng_media_shared_empty_files" = "هنوز فایلی نیست";
+"lng_media_shared_empty_links" = "هنوز پیوندی نیست";
+"lng_media_shared_empty_music" = "هنوز آهنگی نیست";
+"lng_media_shared_empty_voice" = "هنوز پیام صوتی‌ای نیست";
+"lng_media_shared_empty_gifs" = "هنوز گیفی نیست";
+"lng_media_shared_show_in_chat" = "نمایش در چت";
+"lng_media_shared_select" = "انتخاب";
+"lng_media_shared_selected#one" = "{count} انتخاب‌شده";
+"lng_media_shared_selected#other" = "{count} انتخاب‌شده";
+
+// ---- media: the player ----
+"lng_media_player_title" = "پخش‌کننده";
+"lng_media_player_download_failed" = "فایل بارگیری نشد. دوباره امتحان کن.";
+"lng_media_player_play_failed" = "این فایل صوتی پخش نشد";
+
+// ---- history: downloads ----
+"lng_chat_file_download_failed" = "فایل بارگیری نشد. دوباره امتحان کن.";

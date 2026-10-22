@@ -7,6 +7,7 @@
 #include "media/media_video_player.h"
 #include "support/file_dialogs.h"
 #include "ui/painter.h"
+#include "ui/ui_utility.h"
 #include "ui/widgets/buttons.h"
 #include "window/window_main_window.h"
 #include "styles/style_media.h"
@@ -17,6 +18,7 @@
 #include <QtGui/QGuiApplication>
 #include <QtGui/QKeyEvent>
 #include <QtGui/QMouseEvent>
+#include <QtGui/QPainterPath>
 #include <QtGui/QWheelEvent>
 #include <QtWidgets/QApplication>
 
@@ -29,13 +31,44 @@ constexpr auto kDragThreshold = 4;
 constexpr auto kZoomStep = 1.25;
 constexpr auto kShowDuration = 140;
 constexpr auto kMaxDecodedSide = 8192;
+constexpr auto kFlyDuration = 200;
+// How close to either end the viewer asks its host for more.
+constexpr auto kPreloadItems = 3;
+
+// The sound of videos, switched for the whole viewer and kept for the next.
+auto ViewerMuted = false;
+
+[[nodiscard]] QRectF Mix(const QRectF &a, const QRectF &b, double t) {
+	return QRectF(
+		a.x() + (b.x() - a.x()) * t,
+		a.y() + (b.y() - a.y()) * t,
+		a.width() + (b.width() - a.width()) * t,
+		a.height() + (b.height() - a.height()) * t);
+}
+
+// `size` scaled to cover `box`, centred on it.
+[[nodiscard]] QRectF Cover(QSizeF size, const QRectF &box) {
+	if (size.isEmpty()) {
+		return box;
+	}
+	const auto scale = std::max(
+		box.width() / size.width(),
+		box.height() / size.height());
+	const auto scaled = size * scale;
+	return QRectF(
+		box.center().x() - scaled.width() / 2.,
+		box.center().y() - scaled.height() / 2.,
+		scaled.width(),
+		scaled.height());
+}
 
 } // namespace
 
 ImageViewer::ImageViewer(
 	QWidget *parent,
 	std::vector<ViewerItem> items,
-	int index)
+	int index,
+	ViewerOptions options)
 : RpWidget(parent)
 , _items(std::move(items))
 , _closeButton(new Ui::IconButton(this, st::viewerClose))
@@ -54,9 +87,26 @@ ImageViewer::ImageViewer(
 	_saveButton->setClickedCallback([this] { save(); });
 	_previous->setClickedCallback([this] { step(-1); });
 	_next->setClickedCallback([this] { step(1); });
+	_paging = std::move(options.paging);
+	_origin = std::move(options.origin);
+	for (auto i = 0; i != int(_items.size()); ++i) {
+		_serials.push_back(++_lastSerial);
+	}
 	_showAnimation.start([this] { update(); }, 0., 1., kShowDuration);
 	if (!_items.empty()) {
 		showItem(std::clamp(index, 0, int(_items.size()) - 1));
+	}
+	// Out of the item's place on screen, when it is on screen.
+	const auto from = originRect();
+	if (!from.isEmpty() && !_image.isNull() && !_video) {
+		_flyFrom = QRectF(from);
+		_flying = true;
+		_flyAnimation.start([this] {
+			if (!_flyAnimation.animating() && !_closing) {
+				_flying = false;
+			}
+			update();
+		}, 0., 1., kFlyDuration);
 	}
 }
 
@@ -68,14 +118,16 @@ ImageViewer::~ImageViewer() {
 ImageViewer *ShowImageViewer(
 		Window::MainWindow *window,
 		std::vector<ViewerItem> items,
-		int index) {
+		int index,
+		ViewerOptions options) {
 	if (!window || items.empty()) {
 		return nullptr;
 	}
 	const auto viewer = new ImageViewer(
 		window->bodyWidget(),
 		std::move(items),
-		index);
+		index,
+		std::move(options));
 	window->registerDarkOverlay(viewer);
 	if (window->sessionController()) {
 		// The account's photos do not stay over the intro after a sign-out.
@@ -107,14 +159,55 @@ void ImageViewer::close() {
 		return;
 	}
 	_closing = true;
-	hide();
 	if (_previousFocus) {
 		_previousFocus->setFocus();
 	}
 	if (const auto closed = std::exchange(_closed, nullptr)) {
 		closed();
 	}
+	// Into the place of the item it closes on, when that is on screen.
+	const auto to = originRect();
+	if (!to.isEmpty()
+		&& !_image.isNull()
+		&& !_video
+		&& _zoom == 1.
+		&& !Ui::AnimationsDisabled()) {
+		setAttribute(Qt::WA_TransparentForMouseEvents);
+		for (const auto button : { _closeButton, _saveButton, _previous, _next }) {
+			button->hide();
+		}
+		_flyFrom = QRectF(to);
+		_flying = true;
+		_flyAnimation.start([this] {
+			update();
+			if (!_flyAnimation.animating()) {
+				finishClose();
+			}
+		}, _flyAnimation.value(1.), 0., kFlyDuration);
+		return;
+	}
+	finishClose();
+}
+
+void ImageViewer::finishClose() {
+	hide();
 	deleteLater();
+}
+
+QRect ImageViewer::originRect() const {
+	if (!_origin || _index < 0) {
+		return QRect();
+	}
+	const auto global = _origin(item());
+	if (global.isEmpty()) {
+		return QRect();
+	}
+	const auto local = QRect(mapFromGlobal(global.topLeft()), global.size());
+	return local.intersects(rect()) ? local : QRect();
+}
+
+void ImageViewer::applyMuted(bool muted) {
+	ViewerMuted = muted;
 }
 
 void ImageViewer::showItem(int index) {
@@ -136,6 +229,12 @@ void ImageViewer::showItem(int index) {
 	_caption.setText(st::viewerCaptionStyle, current.caption.trimmed());
 	if (!current.videoPath.isEmpty()) {
 		_video = new VideoPlayerWidget(this);
+		_video->setMuted(ViewerMuted);
+		QObject::connect(
+			_video,
+			&VideoPlayerWidget::mutedChanged,
+			this,
+			[this](bool muted) { applyMuted(muted); });
 		_video->setPoster(current.videoPoster);
 		_video->setSource(current.videoPath);
 		_video->show();
@@ -165,11 +264,11 @@ void ImageViewer::showItem(int index) {
 		if (!current.videoPoster.isNull()) {
 			setImage(current.videoPoster, false);
 		}
-		loadVideo(index);
+		loadVideo(_serials[index]);
 	} else if (!current.image.isNull()) {
 		setImage(current.image, true);
 	} else if (!current.filePath.isEmpty()) {
-		loadFile(current.filePath, index);
+		loadFile(current.filePath, _serials[index]);
 	} else if (current.source) {
 		_sourceConnection = QObject::connect(
 			current.source.get(),
@@ -195,6 +294,102 @@ void ImageViewer::showItem(int index) {
 	if (_indexChanged) {
 		_indexChanged(_index);
 	}
+	maybeLoadMore();
+}
+
+// ---- paging through the host
+
+void ImageViewer::maybeLoadMore() {
+	if (!_paging.load || _items.empty() || _closing) {
+		return;
+	}
+	if (_paging.moreAfter
+		&& !_loadingAfter
+		&& _index + kPreloadItems >= int(_items.size()) - 1) {
+		loadMore(1);
+	}
+	if (_paging.moreBefore && !_loadingBefore && _index <= kPreloadItems) {
+		loadMore(-1);
+	}
+}
+
+void ImageViewer::loadMore(int direction) {
+	auto &loading = (direction > 0) ? _loadingAfter : _loadingBefore;
+	loading = true;
+	const auto edge = (direction > 0) ? _items.back().key : _items.front().key;
+	const auto weak = QPointer<ImageViewer>(this);
+	_paging.load(direction, edge, this, [=](
+			std::vector<ViewerItem> items,
+			bool more) {
+		if (!weak) {
+			return;
+		}
+		((direction > 0) ? weak->_loadingAfter : weak->_loadingBefore) = false;
+		((direction > 0) ? weak->_paging.moreAfter : weak->_paging.moreBefore)
+			= more && !items.empty();
+		weak->insertItems(direction, std::move(items));
+	});
+}
+
+void ImageViewer::insertItems(int direction, std::vector<ViewerItem> items) {
+	auto known = QSet<QString>();
+	for (const auto &item : _items) {
+		if (!item.key.isEmpty()) {
+			known.insert(item.key);
+		}
+	}
+	auto fresh = std::vector<ViewerItem>();
+	for (auto &item : items) {
+		if (item.key.isEmpty() || !known.contains(item.key)) {
+			known.insert(item.key);
+			fresh.push_back(std::move(item));
+		}
+	}
+	if (fresh.empty()) {
+		return;
+	}
+	const auto count = int(fresh.size());
+	auto serials = std::vector<int>();
+	for (auto i = 0; i != count; ++i) {
+		serials.push_back(++_lastSerial);
+	}
+	if (direction > 0) {
+		_items.insert(
+			_items.end(),
+			std::make_move_iterator(fresh.begin()),
+			std::make_move_iterator(fresh.end()));
+		_serials.insert(_serials.end(), serials.begin(), serials.end());
+	} else {
+		// In front: the item on screen stays where it is.
+		_items.insert(
+			_items.begin(),
+			std::make_move_iterator(fresh.begin()),
+			std::make_move_iterator(fresh.end()));
+		_serials.insert(_serials.begin(), serials.begin(), serials.end());
+		_index += count;
+		if (_stripScrub >= 0) {
+			_stripScrub += count;
+		}
+		if (_stripPressIndex >= 0) {
+			_stripPressIndex += count;
+		}
+	}
+	updateControls();
+	updateVideoGeometry();
+	update();
+	if (_indexChanged) {
+		_indexChanged(_index);
+	}
+	maybeLoadMore();
+}
+
+int ImageViewer::indexOfSerial(int serial) const {
+	for (auto i = 0; i != int(_serials.size()); ++i) {
+		if (_serials[i] == serial) {
+			return i;
+		}
+	}
+	return -1;
 }
 
 void ImageViewer::refreshImage() {
@@ -227,13 +422,13 @@ void ImageViewer::refreshImage() {
 	}
 }
 
-void ImageViewer::loadFile(const QString &path, int index) {
+void ImageViewer::loadFile(const QString &path, int serial) {
 	const auto weak = QPointer<ImageViewer>(this);
 	QThreadPool::globalInstance()->start([=] {
 		// A downloaded file is as untrusted as the bytes it came from.
 		const auto image = Data::DecodeImageFile(path, kMaxDecodedSide);
 		QMetaObject::invokeMethod(qApp, [=] {
-			if (!weak || weak->_index != index) {
+			if (!weak || weak->_index != weak->indexOfSerial(serial)) {
 				return;
 			} else if (image.isNull()) {
 				weak->_failed = true;
@@ -246,10 +441,16 @@ void ImageViewer::loadFile(const QString &path, int index) {
 	});
 }
 
-void ImageViewer::loadVideo(int index) {
+void ImageViewer::loadVideo(int serial) {
 	const auto weak = QPointer<ImageViewer>(this);
-	_items[index].loadVideo(this, [=](const QString &path) {
-		if (!weak || index < 0 || index >= int(weak->_items.size())) {
+	const auto start = indexOfSerial(serial);
+	if (start < 0) {
+		return;
+	}
+	_items[start].loadVideo(this, [=](const QString &path) {
+		// Items may have joined in front meanwhile.
+		const auto index = weak ? weak->indexOfSerial(serial) : -1;
+		if (index < 0) {
 			return;
 		} else if (path.isEmpty()) {
 			if (weak->_index == index) {
@@ -285,11 +486,142 @@ void ImageViewer::setImage(const QImage &image, bool final) {
 QRect ImageViewer::contentArea() const {
 	const auto padding = int(st::viewerPadding);
 	const auto horizontal = std::min(padding, width() / 8);
+	const auto bottom = stripShown()
+		? int(st::viewerStripHeight + st::viewerStripBottom)
+		: horizontal;
 	return QRect(
 		horizontal,
 		st::viewerTopHeight,
 		std::max(width() - 2 * horizontal, 1),
-		std::max(height() - st::viewerTopHeight - horizontal, 1));
+		std::max(height() - st::viewerTopHeight - bottom, 1));
+}
+
+// ---- the strip
+
+bool ImageViewer::stripShown() const {
+	return (_items.size() > 1) && !(_video && _video->fullscreen());
+}
+
+QRect ImageViewer::stripRect() const {
+	if (!stripShown()) {
+		return QRect();
+	}
+	return QRect(
+		0,
+		height() - st::viewerStripBottom - st::viewerStripHeight,
+		width(),
+		st::viewerStripHeight);
+}
+
+int ImageViewer::stripStep() const {
+	return st::viewerStripThumb + st::viewerStripSkip;
+}
+
+QRect ImageViewer::stripThumbRect(int index, int centered) const {
+	const auto strip = stripRect();
+	const auto current = int(st::viewerStripCurrent);
+	const auto thumb = int(st::viewerStripThumb);
+	const auto skip = int(st::viewerStripSkip);
+	const auto offset = index - centered;
+	// Later items on the trailing side, as the arrows.
+	const auto sign = style::RightToLeft() ? -1 : 1;
+	const auto center = strip.x() + strip.width() / 2;
+	if (offset == 0) {
+		return QRect(
+			center - current / 2,
+			strip.y() + (strip.height() - current) / 2,
+			current,
+			current);
+	}
+	const auto distance = current / 2
+		+ skip
+		+ (std::abs(offset) - 1) * (thumb + skip);
+	const auto left = (offset * sign > 0)
+		? (center + distance)
+		: (center - distance - thumb);
+	return QRect(left, strip.y() + (strip.height() - thumb) / 2, thumb, thumb);
+}
+
+int ImageViewer::stripIndexAt(QPoint position, int centered) const {
+	if (!stripRect().contains(position)) {
+		return -1;
+	}
+	const auto half = width() / (2 * stripStep()) + 2;
+	const auto from = std::max(centered - half, 0);
+	const auto till = std::min(centered + half + 1, int(_items.size()));
+	for (auto i = from; i != till; ++i) {
+		if (stripThumbRect(i, centered).contains(position)) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+QImage ImageViewer::stripImage(int index) {
+	const auto &entry = _items[index];
+	const auto size = QSize(st::viewerStripCurrent, st::viewerStripCurrent)
+		* devicePixelRatioF();
+	const auto watch = [&](const std::shared_ptr<Ui::ImageSource> &source) {
+		if (source && !_stripWatched.contains(source.get())) {
+			_stripWatched.insert(source.get());
+			QObject::connect(
+				source.get(),
+				&Ui::ImageSource::updated,
+				this,
+				[this] { update(stripRect()); });
+		}
+	};
+	if (entry.preview) {
+		watch(entry.preview);
+		auto result = entry.preview->request(size);
+		if (!result.isNull()) {
+			return result;
+		}
+		result = entry.preview->preview();
+		if (!result.isNull()) {
+			return result;
+		}
+	}
+	if (!entry.image.isNull()) {
+		return entry.image;
+	} else if (!entry.videoPoster.isNull()) {
+		return entry.videoPoster;
+	} else if (entry.source) {
+		// The full picture only once it is here (the item was shown).
+		watch(entry.source);
+		return entry.source->preview();
+	}
+	return QImage();
+}
+
+void ImageViewer::paintStrip(QPainter &p) {
+	if (!stripShown()) {
+		return;
+	}
+	const auto centered = (_stripScrub >= 0) ? _stripScrub : _index;
+	const auto half = width() / (2 * stripStep()) + 2;
+	const auto from = std::max(centered - half, 0);
+	const auto till = std::min(centered + half + 1, int(_items.size()));
+	auto hq = PainterHighQualityEnabler(p);
+	for (auto i = from; i != till; ++i) {
+		const auto box = QRectF(stripThumbRect(i, centered));
+		if (!box.intersects(QRectF(rect()))) {
+			continue;
+		}
+		auto path = QPainterPath();
+		path.addRoundedRect(box, st::viewerStripRadius, st::viewerStripRadius);
+		p.save();
+		p.setClipPath(path);
+		p.fillRect(box, st::mediaOverBg);
+		const auto image = stripImage(i);
+		if (!image.isNull()) {
+			p.drawImage(Cover(QSizeF(image.size()), box), image);
+		}
+		if (i != centered) {
+			p.fillRect(box, st::viewerStripDim);
+		}
+		p.restore();
+	}
 }
 
 double ImageViewer::fitScale() const {
@@ -408,7 +740,10 @@ QRect ImageViewer::captionRect() const {
 		st::viewerCaptionLines);
 	const auto boxWidth = textWidth + padding.left() + padding.right();
 	const auto boxHeight = textHeight + padding.top() + padding.bottom();
-	const auto bottom = int(st::viewerCaptionBottom);
+	const auto bottom = int(st::viewerCaptionBottom)
+		+ (stripShown()
+			? int(st::viewerStripHeight + st::viewerStripBottom)
+			: 0);
 	return QRect(
 		(width() - boxWidth) / 2,
 		height() - bottom - boxHeight,
@@ -420,6 +755,10 @@ void ImageViewer::updateControls() {
 	const auto count = int(_items.size());
 	_previous->setVisible(count > 1 && _index > 0);
 	_next->setVisible(count > 1 && _index + 1 < count);
+	if (_closing) {
+		_previous->hide();
+		_next->hide();
+	}
 	const auto &current = item();
 	_saveButton->setVisible(!current.videoPath.isEmpty()
 		|| !current.filePath.isEmpty()
@@ -489,11 +828,35 @@ void ImageViewer::resizeEvent(QResizeEvent *e) {
 void ImageViewer::paintEvent(QPaintEvent *e) {
 	Q_UNUSED(e);
 	auto p = Painter(this);
-	const auto shown = _showAnimation.value(1.);
+	const auto fly = _flying ? _flyAnimation.value(_closing ? 0. : 1.) : 1.;
+	const auto shown = _flying ? fly : _showAnimation.value(1.);
 	p.setOpacity(shown);
 	p.fillRect(rect(), st::viewerBg);
 	if (_index < 0) {
 		return;
+	}
+	if (_flying) {
+		// The picture between its place on screen (0) and here (1).
+		p.setOpacity(1.);
+		if (!_image.isNull()) {
+			const auto fitted = imageRect();
+			const auto clip = Mix(_flyFrom, QRectF(rect()), fly);
+			const auto target = Mix(
+				Cover(fitted.size(), _flyFrom),
+				fitted,
+				fly);
+			auto hq = PainterHighQualityEnabler(p);
+			p.save();
+			auto path = QPainterPath();
+			const auto radius = (1. - fly) * st::viewerStripRadius;
+			path.addRoundedRect(clip, radius, radius);
+			p.setClipPath(path);
+			p.drawImage(target, _image);
+			p.restore();
+		}
+		if (_closing || fly < 1.) {
+			return;
+		}
 	}
 
 	if (!_video) {
@@ -514,6 +877,8 @@ void ImageViewer::paintEvent(QPaintEvent *e) {
 				st::mediaOverFg->c);
 		}
 	}
+
+	paintStrip(p);
 
 	// "2 / 5" at the leading top corner.
 	if (_items.size() > 1) {
@@ -630,6 +995,13 @@ void ImageViewer::mousePressEvent(QMouseEvent *e) {
 		return;
 	}
 	setFocus();
+	if (stripShown() && stripRect().contains(e->pos())) {
+		_stripPressed = true;
+		_stripDragged = false;
+		_stripPressPosition = e->pos();
+		_stripPressIndex = stripIndexAt(e->pos(), _index);
+		return;
+	}
 	_pressed = true;
 	_dragged = false;
 	_pressPosition = e->pos();
@@ -644,7 +1016,32 @@ void ImageViewer::mousePressEvent(QMouseEvent *e) {
 }
 
 void ImageViewer::mouseMoveEvent(QMouseEvent *e) {
-	if (!_pressed) {
+	if (_stripPressed) {
+		// Scrubbing: the strip follows the pointer, the item it stops on
+		// is shown when the button is let go.
+		const auto dx = e->pos().x() - _stripPressPosition.x();
+		if (!_stripDragged && std::abs(dx) >= kDragThreshold) {
+			_stripDragged = true;
+		}
+		if (_stripDragged) {
+			const auto moved = int(std::lround(
+				double(style::RightToLeft() ? dx : -dx) / stripStep()));
+			const auto scrub = std::clamp(
+				_index + moved,
+				0,
+				int(_items.size()) - 1);
+			if (scrub != _stripScrub) {
+				_stripScrub = scrub;
+				update(stripRect());
+			}
+		}
+		return;
+	} else if (!_pressed) {
+		if (stripIndexAt(e->pos(), _index) >= 0) {
+			setCursor(style::cur_pointer);
+		} else {
+			setCursor((_zoom > 1.) ? Qt::OpenHandCursor : Qt::ArrowCursor);
+		}
 		return;
 	}
 	const auto delta = e->pos() - _pressPosition;
@@ -659,7 +1056,22 @@ void ImageViewer::mouseMoveEvent(QMouseEvent *e) {
 }
 
 void ImageViewer::mouseReleaseEvent(QMouseEvent *e) {
-	if (e->button() != Qt::LeftButton || !_pressed) {
+	if (e->button() == Qt::LeftButton && _stripPressed) {
+		_stripPressed = false;
+		const auto target = _stripDragged
+			? _stripScrub
+			: ((stripIndexAt(e->pos(), _index) == _stripPressIndex)
+				? _stripPressIndex
+				: -1);
+		_stripScrub = -1;
+		_stripPressIndex = -1;
+		if (target >= 0 && target != _index) {
+			showItem(target);
+		} else {
+			update(stripRect());
+		}
+		return;
+	} else if (e->button() != Qt::LeftButton || !_pressed) {
 		return;
 	}
 	_pressed = false;
@@ -689,7 +1101,10 @@ void ImageViewer::mouseDoubleClickEvent(QMouseEvent *e) {
 
 void ImageViewer::wheelEvent(QWheelEvent *e) {
 	const auto delta = e->angleDelta().y();
-	if (delta && !_video) {
+	if (delta && stripShown() && stripRect().contains(e->position().toPoint())) {
+		// Over the strip the wheel goes through the items.
+		step((delta > 0) ? -1 : 1);
+	} else if (delta && !_video) {
 		setZoom(_zoom * std::pow(1.0015, delta), e->position());
 	}
 	e->accept();

@@ -72,6 +72,8 @@ set(_eleza_core_files
 	data/data_outbox.h
 	data/data_session.cpp
 	data/data_session.h
+	data/data_shared_media.cpp
+	data/data_shared_media.h
 	data/data_social_types.cpp
 	data/data_social_types.h
 	data/data_sticker_decode.cpp

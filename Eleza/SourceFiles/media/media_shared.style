@@ -1,0 +1,84 @@
+// The shared media of a chat or a group: the tabs, the grid of photos and
+// videos, the rows of files, links, songs and voice messages, select mode.
+using "ui/basic.style";
+using "ui/widgets/widgets.style";
+
+sharedColumnWidth: 720px;
+sharedTabsPadding: margins(8px, 0px, 8px, 0px);
+sharedPadding: margins(12px, 4px, 12px, 12px);
+
+// ---- month headings
+sharedMonthHeight: 36px;
+sharedMonthFont: font(13px semibold);
+sharedMonthFg: textSecondary;
+sharedMonthLeft: 4px;
+
+// ---- the grid
+sharedTileSkip: 3px;
+sharedTileMin: 110px;
+sharedGridColumnsMin: 2;
+sharedGridColumnsMax: 6;
+sharedTileRadius: 4px;
+sharedBadgeFont: font(12px semibold);
+sharedBadgePadding: margins(6px, 2px, 6px, 2px);
+sharedBadgeSkip: 5px;
+sharedGifIcon: icon {{ "gif", staticWhite, 18px }};
+
+// ---- selection
+sharedCheckSize: 22px;
+sharedCheckSkip: 6px;
+sharedCheckBorder: 2px;
+sharedCheckIcon: icon {{ "check", staticWhite, 16px }};
+sharedSelectedDim: #00000040;
+
+// ---- rows
+sharedRowHeight: 64px;
+sharedRowLinkHeight: 74px;
+sharedRowIcon: 44px;
+sharedRowIconSkip: 12px;
+sharedRowRadius: 10px;
+sharedRowIconRadius: 8px;
+sharedRowPadding: margins(8px, 0px, 8px, 0px);
+sharedRowTitleFont: font(14px medium);
+sharedRowTitleTop: 12px;
+sharedRowStatusFont: font(12px);
+sharedRowStatusTop: 36px;
+sharedRowLinkTextTop: 52px;
+sharedRowExtFont: font(12px bold);
+sharedRowLetterFont: font(20px semibold);
+sharedIconLink: icon {{ "link", brandText }};
+sharedIconFile: icon {{ "file", textOnBrand }};
+sharedIconPlay: icon {{ "play", textOnBrand, 22px }};
+sharedIconPause: icon {{ "pause", textOnBrand, 22px }};
+sharedIconDownload: icon {{ "download", textOnBrand, 20px }};
+sharedIconVideoNote: icon {{ "video-note", staticWhite, 20px }};
+sharedProgressWidth: 2px;
+sharedSeekHeight: 3px;
+
+// ---- what is not a row
+sharedStateHeight: 56px;
+sharedEmptyHeight: 180px;
+sharedStateFont: font(13px);
+sharedEmptyFont: font(15px);
+
+// ---- the top of the page
+sharedSubtitleFont: font(13px);
+sharedSelectionHeight: 56px;
+sharedSelectionPadding: margins(8px, 0px, 8px, 0px);
+sharedSelectionFont: font(16px semibold);
+sharedSelectionButton: IconButton(defaultIconButton) {
+	width: 44px;
+	height: 44px;
+	icon: icon {{ "close", textSecondary }};
+	iconOver: icon {{ "close", textPrimary }};
+	rippleSize: 40px;
+}
+sharedSelectionForward: IconButton(sharedSelectionButton) {
+	icon: icon {{ "forward:mirror-ltr", textSecondary }};
+	iconOver: icon {{ "forward:mirror-ltr", textPrimary }};
+}
+sharedSelectionDelete: IconButton(sharedSelectionButton) {
+	icon: icon {{ "trash", textSecondary }};
+	iconOver: icon {{ "trash", statusError }};
+}
+sharedMenuShowInChat: icon {{ "message", menuIconFg, 20px }};

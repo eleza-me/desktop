@@ -184,10 +184,14 @@ ListWidget::ListWidget(
 	connect(_downloads, &Downloads::failed, this, [this](const QString &chat, qint64 seq) {
 		if (chat == _chatId) {
 			const auto item = message(seq);
-			_controller->showToast(
-				(item && _downloads->state(*item).oversized)
-					? tr::lng_chat_file_larger_than_declared(tr::now)
-					: tr::lng_chat_file_isnt_available(tr::now));
+			const auto state = item
+				? _downloads->state(*item)
+				: View::DownloadState();
+			_controller->showToast(state.oversized
+				? tr::lng_chat_file_larger_than_declared(tr::now)
+				: state.gone
+				? tr::lng_chat_file_isnt_available(tr::now)
+				: tr::lng_chat_file_download_failed(tr::now));
 		}
 	});
 	const auto player = &Media::Player();
@@ -450,6 +454,7 @@ View::PlaybackState ListWidget::elementPlayback(const Data::Message &message) {
 	result.current = true;
 	result.playing = player.isPlaying(id);
 	result.loading = player.isLoading(id);
+	result.loadProgress = player.loadProgress();
 	result.progress = player.progress();
 	result.positionMs = player.positionMs();
 	result.speed = player.speed();

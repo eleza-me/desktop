@@ -130,6 +130,15 @@ public:
 		return _voicePlaybackSpeed;
 	}
 	void setVoicePlaybackSpeed(double speed);
+	// The music player: repeat (0 off, 1 all, 2 one) and shuffle.
+	[[nodiscard]] int musicRepeat() const {
+		return _musicRepeat;
+	}
+	void setMusicRepeat(int mode);
+	[[nodiscard]] bool musicShuffle() const {
+		return _musicShuffle;
+	}
+	void setMusicShuffle(bool shuffle);
 
 	// The composer: false = Enter sends and Shift+Enter breaks the line,
 	// true = Ctrl+Enter sends and Enter breaks the line.
@@ -200,6 +209,8 @@ private:
 	QString _lastDialogDirectory;
 	double _playbackVolume = 1.;
 	double _voicePlaybackSpeed = 1.;
+	int _musicRepeat = 0;
+	bool _musicShuffle = false;
 	bool _sendByCtrlEnter = false;
 	std::optional<bool> _systemTitleBar;
 	qint64 _mediaCacheLimit = 0;

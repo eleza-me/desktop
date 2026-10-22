@@ -75,6 +75,8 @@ public:
 
 Q_SIGNALS:
 	void playingChanged(bool playing);
+	// The sound was switched on or off (the button, M, setMuted).
+	void mutedChanged(bool muted);
 	void videoSizeChanged(QSize size);
 	void finished();
 	void failed();

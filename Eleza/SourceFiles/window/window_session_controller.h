@@ -116,6 +116,12 @@ public:
 	[[nodiscard]] SectionWidget *mainSection() const; // the visible one, or null
 	[[nodiscard]] int mainStackDepth() const;
 	[[nodiscard]] bool isSingleColumn() const;
+	// A section kept further back (a chat under its profile) comes to the
+	// top of its stack instead of being opened once more; false: none.
+	bool showExistingSection(const QString &sectionKey);
+	// The strip on top of the main column (the «now playing» bar), owned
+	// by the layout from now on; null removes it.
+	void setMainStrip(QWidget *strip);
 
 	[[nodiscard]] LayoutState saveState() const;
 	void restoreState(const LayoutState &state);

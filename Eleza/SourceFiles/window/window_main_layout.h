@@ -8,6 +8,8 @@
 #include "window/window_registry.h"
 #include "window/window_session_controller.h"
 
+#include <QtCore/QPointer>
+
 #include <array>
 #include <vector>
 
@@ -45,6 +47,12 @@ public:
 	}
 	// The rail at the leading side (hidden while a section covers it).
 	[[nodiscard]] QWidget *navRail() const;
+	// A strip on top of the main column (the whole width in the single
+	// column layout) while it is shown: the «now playing» bar. Owned.
+	void setMainStrip(QWidget *strip);
+	// Brings a section kept further back in a tab's stack to the top of it
+	// (the sections over it stay, behind it) and makes the tab current.
+	bool showExistingSection(const QString &sectionKey);
 
 	[[nodiscard]] LayoutState saveState() const;
 	void restoreState(const LayoutState &state);
@@ -54,6 +62,7 @@ public:
 protected:
 	void resizeEvent(QResizeEvent *e) override;
 	void paintEvent(QPaintEvent *e) override;
+	bool eventFilter(QObject *object, QEvent *event) override;
 
 private:
 	class Resizer;
@@ -97,6 +106,7 @@ private:
 	Resizer *_resizer = nullptr;
 	EmptyMain *_empty = nullptr;
 	Transition *_transition = nullptr;
+	QPointer<QWidget> _strip;
 	std::array<TabState, kTabsCount> _tabs;
 	Tab _tab = Tab::Chats;
 	bool _singleColumn = false;

@@ -147,6 +147,22 @@ void SessionController::showMainSection(
 	}
 }
 
+bool SessionController::showExistingSection(const QString &sectionKey) {
+	if (!_layout) {
+		return false;
+	}
+	_window->layers()->hideLayers();
+	return _layout->showExistingSection(sectionKey);
+}
+
+void SessionController::setMainStrip(QWidget *strip) {
+	if (_layout) {
+		_layout->setMainStrip(strip);
+	} else {
+		delete strip;
+	}
+}
+
 bool SessionController::showBack() {
 	return _layout && _layout->showBack();
 }

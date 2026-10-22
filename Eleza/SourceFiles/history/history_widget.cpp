@@ -1129,6 +1129,15 @@ void Widget::showMoreMenu() {
 	menu->addAction(tr::lng_history_search(tr::now), [this] {
 		showSearch();
 	}, &st::menuIconSearch);
+	// «رسانه، فایل و پیوند»: a group's media pages came with its third release.
+	if (!chat->isGroup || session->data().groups().thirdRelease()) {
+		const auto route = chat->isGroup
+			? Window::Routes::GroupMedia(chatId)
+			: Window::Routes::ChatMedia(chatId);
+		menu->addAction(tr::lng_media_shared_open(tr::now), [=] {
+			window->openRoute(route);
+		}, &st::menuIconImage);
+	}
 	if (!chat->saved) {
 		if (chat->muted) {
 			menu->addAction(tr::lng_chat_unmute(tr::now), [=] {

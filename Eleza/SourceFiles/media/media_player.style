@@ -1,0 +1,97 @@
+// The app's audio player: the «now playing» bar on top of the main column
+// and the music player with its playlist.
+using "ui/basic.style";
+using "ui/widgets/widgets.style";
+
+// ---- the bar
+playerBarHeight: 44px;
+playerBarBg: chromeBar;
+playerBarPadding: margins(6px, 0px, 6px, 0px);
+playerBarTitleFont: font(13px semibold);
+playerBarSubtitleFont: font(13px);
+playerBarTextSkip: 8px;
+playerBarProgressHeight: 2px;
+playerBarProgressOver: 4px;
+playerBarSeekArea: 8px;
+playerBarSpeedFont: font(12px semibold);
+playerBarSpeedSize: size(36px, 20px);
+playerBarButton: IconButton(defaultIconButton) {
+	width: 34px;
+	height: 34px;
+	icon: icon {{ "play", textSecondary, 20px }};
+	iconOver: icon {{ "play", textPrimary, 20px }};
+	rippleSize: 30px;
+}
+playerBarPlay: IconButton(playerBarButton) {
+	icon: icon {{ "play", brandText, 22px }};
+	iconOver: icon {{ "play", brandPrimary, 22px }};
+}
+playerBarPauseIcon: icon {{ "pause", brandText, 22px }};
+playerBarPauseIconOver: icon {{ "pause", brandPrimary, 22px }};
+playerBarPrevious: IconButton(playerBarButton) {
+	icon: icon {{ "skip-previous", textSecondary, 20px }};
+	iconOver: icon {{ "skip-previous", textPrimary, 20px }};
+}
+playerBarNext: IconButton(playerBarButton) {
+	icon: icon {{ "skip-next", textSecondary, 20px }};
+	iconOver: icon {{ "skip-next", textPrimary, 20px }};
+}
+playerBarPlaylist: IconButton(playerBarButton) {
+	icon: icon {{ "playlist:mirror-rtl", textSecondary, 20px }};
+	iconOver: icon {{ "playlist:mirror-rtl", textPrimary, 20px }};
+}
+playerBarClose: IconButton(playerBarButton) {
+	icon: icon {{ "close", textSecondary, 18px }};
+	iconOver: icon {{ "close", textPrimary, 18px }};
+}
+
+// ---- the music player
+playerBoxWidth: 400px;
+playerBoxHeight: 560px;
+playerHeaderPadding: margins(20px, 8px, 20px, 8px);
+playerCoverSize: 72px;
+playerCoverRadius: 10px;
+playerCoverBg: brandSoft;
+playerCoverIcon: icon {{ "music", brandText, 32px }};
+playerCoverSkip: 14px;
+playerTitleFont: font(16px semibold);
+playerPerformerFont: font(14px);
+playerSeekTop: 92px;
+playerSeekHeight: 4px;
+playerSeekKnob: 12px;
+playerSeekArea: 18px;
+playerTimeFont: font(12px);
+playerTimeTop: 104px;
+playerControlsTop: 124px;
+playerControlsHeight: 48px;
+playerHeaderHeight: 184px;
+playerControlSize: 44px;
+playerPlaySize: 52px;
+playerControlSkip: 14px;
+playerControlOver: stateHover;
+playerRepeatIcon: icon {{ "repeat", textSecondary, 22px }};
+playerRepeatOnIcon: icon {{ "repeat", brandPrimary, 22px }};
+playerRepeatOneIcon: icon {{ "repeat-one", brandPrimary, 22px }};
+playerShuffleIcon: icon {{ "shuffle", textSecondary, 22px }};
+playerShuffleOnIcon: icon {{ "shuffle", brandPrimary, 22px }};
+playerReverseIcon: icon {{ "sort", textSecondary, 22px }};
+playerReverseOnIcon: icon {{ "sort", brandPrimary, 22px }};
+playerPreviousIcon: icon {{ "skip-previous", textPrimary, 26px }};
+playerNextIcon: icon {{ "skip-next", textPrimary, 26px }};
+playerPlayIcon: icon {{ "play", textOnBrand, 26px }};
+playerPauseIcon: icon {{ "pause", textOnBrand, 26px }};
+playerShowInChatIcon: icon {{ "message", textSecondary, 22px }};
+
+// ---- the playlist
+playerRowHeight: 52px;
+playerRowPadding: margins(20px, 0px, 20px, 0px);
+playerRowTitleFont: font(14px medium);
+playerRowTitleTop: 8px;
+playerRowStatusFont: font(12px);
+playerRowStatusTop: 29px;
+playerRowMarker: 28px;
+playerRowMarkerSkip: 12px;
+playerRowIndexFont: font(12px);
+playerBarsWidth: 3px;
+playerBarsSkip: 2px;
+playerListStateHeight: 48px;

@@ -336,6 +336,12 @@ QString BotStart(const QString &chatId, const QString &payload) {
 	return route.toString();
 }
 
+QString ChatMedia(const QString &chatId) {
+	auto result = Make(RouteType::Chat, chatId);
+	result.query.insert(QStringLiteral("show"), QStringLiteral("media"));
+	return result.toString();
+}
+
 QString Eli() {
 	return Make(RouteType::Eli).toString();
 }

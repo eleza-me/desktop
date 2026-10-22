@@ -58,6 +58,14 @@ viewerCaptionBottom: 20px;
 viewerCaptionRadius: 12px;
 viewerCaptionLines: 4;
 viewerSpinnerSize: 36px;
+// The strip of every item along the bottom.
+viewerStripHeight: 64px;
+viewerStripThumb: 40px;      // a square of another item
+viewerStripCurrent: 52px;    // the height of the current one (wider by its shape)
+viewerStripSkip: 3px;
+viewerStripRadius: 4px;
+viewerStripDim: #00000066;
+viewerStripBottom: 8px;
 viewerErrorFont: font(14px);
 
 // ---- video player
