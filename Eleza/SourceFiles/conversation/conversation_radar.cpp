@@ -271,8 +271,14 @@ void Content::goToChat() {
 			controller->showToast(tr::lng_conversation_chat_soon(tr::now));
 			return;
 		}
-		// Replaces the radar: the section dies inside.
+		// Replaces the radar: the section dies inside. Only while the
+		// radar is still what is shown: the search may have taken seconds.
+		const auto weak = QPointer<Content>(this);
 		Ui::PostponeCall(controller, [=] {
+			const auto section = controller->mainSection();
+			if (!weak || !section || !section->isAncestorOf(weak.data())) {
+				return;
+			}
 			controller->clearMainStack(Window::Tab::Chats);
 			controller->openRoute(Window::Routes::Chat(chat));
 		});
