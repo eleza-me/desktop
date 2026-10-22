@@ -243,6 +243,14 @@ private Q_SLOTS:
 		QCOMPARE(RelativeTime(now.addSecs(-25 * 60), now), U("۲۵ دقیقه"));
 		QCOMPARE(RelativeTime(now.addSecs(-5 * 3600), now), U("۵ ساعت"));
 		QCOMPARE(RelativeTime(now.addSecs(-30 * 3600), now), U("دیروز"));
+		// Yesterday is the calendar day before, not "less than 48 hours".
+		const auto early = QDateTime(QDate(2025, 10, 9), QTime(1, 0));
+		QCOMPARE(RelativeTime(early.addSecs(-23 * 3600), early), U("۲۳ ساعت"));
+		QCOMPARE(RelativeTime(early.addSecs(-25 * 3600), early), U("دیروز"));
+		QCOMPARE(RelativeTime(early.addSecs(-30 * 3600), early), U("۱۵ مهر"));
+		const auto late = QDateTime(QDate(2025, 10, 9), QTime(23, 30));
+		QCOMPARE(RelativeTime(late.addSecs(-47 * 3600), late), U("دیروز"));
+		QCOMPARE(RelativeTime(late.addSecs(-48 * 3600), late), U("۱۵ مهر"));
 
 		SetCurrent(Language::English);
 		QCOMPARE(SolarDate(today, false, today), QStringLiteral("October 9"));

@@ -356,7 +356,9 @@ QString RelativeTime(const QDateTime &dateTime, const QDateTime &now) {
 		return tr::lng_minutes_short(tr::now, lt_count, double(diff / 60'000));
 	} else if (diff < 86'400'000) {
 		return tr::lng_hours_short(tr::now, lt_count, double(diff / 3'600'000));
-	} else if (diff < 2 * qint64(86'400'000)) {
+	} else if (dateTime.toLocalTime().date()
+		== now.toLocalTime().date().addDays(-1)) {
+		// By the calendar: 30 hours ago in the small hours was two days ago.
 		return tr::lng_yesterday(tr::now);
 	}
 	return SolarDate(dateTime.date(), false, now.date());
