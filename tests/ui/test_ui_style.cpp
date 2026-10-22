@@ -3,6 +3,7 @@
 #include "ui/image/image_prepare.h"
 #include "ui/image/userpic.h"
 #include "ui/style/style_core.h"
+#include "ui/toast/toast.h"
 #include "ui/ui_utility.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/input_fields.h"
@@ -244,6 +245,55 @@ private Q_SLOTS:
 		QCOMPARE(code->code(), QStringLiteral("12345"));
 		QCOMPARE(finished, QStringLiteral("12345"));
 		QCOMPARE(Ui::LatinizeDigits(QString::fromUtf8("۰۹۱۲")), QStringLiteral("0912"));
+	}
+
+	void toastAction() {
+		const auto check = [](bool rtl) {
+			style::SetRightToLeft(rtl);
+			auto window = QWidget();
+			window.resize(600, 400);
+			window.show();
+			auto undone = 0;
+			auto config = Ui::Toast::Config();
+			config.text = QStringLiteral("Repost removed");
+			config.action = QStringLiteral("Undo");
+			config.actionClicked = [&] { ++undone; };
+			Ui::Toast::Show(&window, std::move(config));
+			const auto toast = window.findChild<Ui::RpWidget*>(
+				QString(),
+				Qt::FindDirectChildrenOnly);
+			QVERIFY(toast != nullptr);
+			QVERIFY(!toast->testAttribute(Qt::WA_TransparentForMouseEvents));
+			const auto &st = st::defaultToast;
+			const auto body = toast->rect().marginsRemoved(st.shadow.extend);
+			const auto y = body.center().y();
+			// The action sits at the end of the line: on the left in RTL.
+			const auto text = rtl
+				? QPoint(body.right() - st.padding.left() - 2, y)
+				: QPoint(body.x() + st.padding.left() + 2, y);
+			const auto action = rtl
+				? QPoint(body.x() + st.padding.right() + 2, y)
+				: QPoint(body.right() - st.padding.right() - 2, y);
+			QTest::mouseClick(toast, Qt::LeftButton, {}, text);
+			QCOMPARE(undone, 0);
+			QTest::mouseClick(toast, Qt::LeftButton, {}, action);
+			QCOMPARE(undone, 1);
+			// The toast hides on the click: a second one does nothing.
+			QTest::mouseClick(toast, Qt::LeftButton, {}, action);
+			QCOMPARE(undone, 1);
+		};
+		check(false);
+		check(true);
+		style::SetRightToLeft(false);
+		// Without an action a toast lets the mouse through.
+		auto window = QWidget();
+		window.resize(600, 400);
+		Ui::Toast::Show(&window, QStringLiteral("Copied"));
+		const auto toast = window.findChild<Ui::RpWidget*>(
+			QString(),
+			Qt::FindDirectChildrenOnly);
+		QVERIFY(toast != nullptr);
+		QVERIFY(toast->testAttribute(Qt::WA_TransparentForMouseEvents));
 	}
 
 	void images() {
