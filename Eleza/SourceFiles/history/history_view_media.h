@@ -26,7 +26,9 @@ public:
 	: _delegate(delegate)
 	, _parent(parent) {
 	}
-	virtual ~Media() = default;
+	// The sources a row watches can outlive it (the image viewer keeps
+	// one), so the row stops listening when it goes.
+	virtual ~Media();
 
 	// The size inside a bubble that can be `maxWidth` wide.
 	[[nodiscard]] virtual QSize countSize(int maxWidth, bool hasCaption) = 0;
@@ -86,6 +88,8 @@ protected:
 	}
 	// Repaints the row when the source gets its image.
 	void watch(const std::shared_ptr<Ui::ImageSource> &source);
+	// Call wherever the watched source is dropped.
+	void unwatch();
 
 private:
 	Delegate *_delegate = nullptr;

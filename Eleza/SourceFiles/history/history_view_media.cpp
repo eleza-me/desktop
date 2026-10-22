@@ -216,6 +216,7 @@ public:
 	}
 
 	void unload() override {
+		unwatch();
 		_source = nullptr;
 		_prepared = PreparedImage();
 		_last = QImage();
@@ -342,6 +343,7 @@ private:
 			_sourcePath = QString();
 			_sourceSeq = message.seq;
 		} else {
+			unwatch();
 			_source = nullptr;
 			return;
 		}
@@ -384,6 +386,7 @@ public:
 	}
 
 	void unload() override {
+		unwatch();
 		_source = nullptr;
 		_prepared = PreparedImage();
 		_last = QImage();
@@ -1379,6 +1382,7 @@ public:
 	}
 
 	void unload() override {
+		unwatch();
 		_source = nullptr;
 		_prepared = PreparedImage();
 		_text.clear();
@@ -2119,8 +2123,17 @@ HitResult Media::hitTest(QPoint point, const QRect &rect) const {
 	return result;
 }
 
-void Media::watch(const std::shared_ptr<Ui::ImageSource> &source) {
+Media::~Media() {
+	unwatch();
+}
+
+void Media::unwatch() {
 	QObject::disconnect(_watching);
+	_watching = QMetaObject::Connection();
+}
+
+void Media::watch(const std::shared_ptr<Ui::ImageSource> &source) {
+	unwatch();
 	if (!source) {
 		return;
 	}
@@ -2185,6 +2198,7 @@ public:
 	}
 
 	void unload() override {
+		unwatch();
 		_source = nullptr;
 		_prepared = PreparedImage();
 	}
