@@ -321,6 +321,7 @@ private:
 	void captured(qint16 *samples);
 	void publishVideo(QSize size);
 	void unpublishVideo();
+	void unpublishTrack(const QString &sid);
 	void closeVideoStream();
 	void setRemoteVideoShown(bool shown);
 
@@ -360,6 +361,9 @@ private:
 	QSize _videoSourceSize;
 	quint64 _videoTrack = 0;
 	quint64 _videoPublishAsync = 0;
+	// A publish that was in flight when the camera went off: unpublished
+	// as soon as it is done.
+	quint64 _videoAbandonedAsync = 0;
 	QString _videoPublicationSid;
 	bool _videoPublished = false;
 	quint64 _remoteVideoTrack = 0;
@@ -633,6 +637,7 @@ void Engine::closeRoom() {
 	// that is still wanted is published again in the next one.
 	_videoPublished = false;
 	_videoPublishAsync = 0;
+	_videoAbandonedAsync = 0;
 	_videoPublicationSid = QString();
 	_videoRetryAt = 0;
 	drop(_videoTrack);
@@ -724,6 +729,7 @@ void Engine::publishVideo(QSize size) {
 		|| !_participant
 		|| !_published
 		|| _videoPublishAsync
+		|| _videoAbandonedAsync
 		|| _videoPublished
 		|| QDateTime::currentMSecsSinceEpoch() < _videoRetryAt) {
 		return;
@@ -769,21 +775,30 @@ void Engine::publishVideo(QSize size) {
 }
 
 void Engine::unpublishVideo() {
-	_videoPublishAsync = 0;
-	if (_videoPublished && _participant && !_videoPublicationSid.isEmpty()) {
-		// UnpublishTrackRequest { local_participant_handle = 1, track_sid = 2,
-		// stop_on_unpublish = 3 }: the other side sees the track go away.
-		auto message = Writer();
-		message.varint(1, _participant)
-			.string(2, _videoPublicationSid)
-			.boolean(3, true);
-		[[maybe_unused]] const auto response = request(
-			Request::kUnpublishTrack,
-			message);
+	if (_videoPublishAsync) {
+		_videoAbandonedAsync = std::exchange(_videoPublishAsync, 0);
+	}
+	if (_videoPublished) {
+		unpublishTrack(_videoPublicationSid);
 	}
 	_videoPublished = false;
 	_videoPublicationSid = QString();
 	drop(_videoTrack);
+}
+
+void Engine::unpublishTrack(const QString &sid) {
+	if (!_participant || sid.isEmpty()) {
+		return;
+	}
+	// UnpublishTrackRequest { local_participant_handle = 1, track_sid = 2,
+	// stop_on_unpublish = 3 }: the other side sees the track go away.
+	auto message = Writer();
+	message.varint(1, _participant)
+		.string(2, sid)
+		.boolean(3, true);
+	[[maybe_unused]] const auto response = request(
+		Request::kUnpublishTrack,
+		message);
 }
 
 void Engine::captureVideo(quint64 session, const QImage &rgba) {
@@ -973,6 +988,14 @@ void Engine::handleEvent(const QByteArray &bytes) {
 			}
 			if (publication) {
 				_library->dropHandle(publication);
+			}
+			if (asyncId && asyncId == _videoAbandonedAsync) {
+				// The camera went off while this was being published.
+				_videoAbandonedAsync = 0;
+				if (!hasError) {
+					unpublishTrack(publicationSid);
+				}
+				break;
 			}
 			if (asyncId && asyncId == _videoPublishAsync) {
 				_videoPublishAsync = 0;
