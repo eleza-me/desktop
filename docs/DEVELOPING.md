@@ -138,7 +138,7 @@ to answer every "open" dialog at once and `ELEZA_DEBUG_SAVE=/path/out.bin` for "
 | `debug/title[/<states>]` | what the custom title bar shows, the states of `--debug-title-bar` (`debug/title/inactive,hover-close`); without states: back to normal |
 | `debug/notification`, `debug/notifications` | one / three sample notification toasts |
 | `debug/viewer[?file=<path>][&video=<path>]` | the image viewer with generated pictures (and your file / video) |
-| `debug/player[/voice\|/box]` | the «now playing» bar with made-up songs (or a voice message), paused, nothing opened (no audio device needed); `box` opens the music player too |
+| `debug/player[/voice\|/panel]` | the «now playing» bar with made-up songs (or a voice message), paused, nothing opened (no audio device needed); `panel` opens the music player under it too |
 | `debug/crop`, `debug/about`, `debug/peers`, `debug/peers-multi` | the shared boxes |
 | `debug/logout`, `debug/link`, `debug/error`, `debug/upgrade` | sign-out confirmation, external link confirmation, an error toast, the "update required" screen |
 | `debug/session-expired` | ends the session as the server would |

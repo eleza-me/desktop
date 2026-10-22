@@ -16,8 +16,8 @@
 namespace Media {
 
 #ifdef ELEZA_DEBUG_TOOLS
-// "debug/player[/voice|/box]": the bar with made-up songs of the chat
-// `gallery` (or a voice), «box» opens the music player too.
+// "debug/player[/voice|/panel]": the bar with made-up songs of the chat
+// `gallery` (or a voice), «panel» opens the music player under it too.
 bool HandleDebugRoute(
 		Window::SessionController *controller,
 		const QString &route) {
@@ -48,7 +48,7 @@ bool HandleDebugRoute(
 	} else {
 		Player().debugShow(queue[2], queue, &controller->session());
 	}
-	if (mode == QStringLiteral("box")) {
+	if (mode == QStringLiteral("panel")) {
 		ShowMusicPlayer(controller);
 	}
 	return true;

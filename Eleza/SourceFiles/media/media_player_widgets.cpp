@@ -5,7 +5,7 @@
 #include "main/main_session.h"
 #include "support/chat_text.h"
 #include "support/media_image.h"
-#include "ui/layers/box_content.h"
+#include "ui/effects/shadow.h"
 #include "ui/painter.h"
 #include "ui/ui_utility.h"
 #include "ui/widgets/buttons.h"
@@ -17,9 +17,12 @@
 
 #include <QtCore/QPointer>
 #include <QtCore/QTimer>
+#include <QtGui/QKeyEvent>
 #include <QtGui/QMouseEvent>
 #include <QtGui/QPainterPath>
+#include <QtWidgets/QApplication>
 
+#include <algorithm>
 #include <cmath>
 
 namespace Media {
@@ -107,6 +110,11 @@ public:
 	Bar(QWidget *parent, Controller *controller);
 
 	void refresh();
+	// Shows or hides the music player under the bar.
+	void togglePanel();
+	[[nodiscard]] Controller *controller() const {
+		return _controller;
+	}
 
 protected:
 	int resizeGetHeight(int newWidth) override;
@@ -130,6 +138,7 @@ private:
 	Ui::IconButton *_next = nullptr;
 	Ui::IconButton *_playlist = nullptr;
 	Ui::IconButton *_close = nullptr;
+	QPointer<QWidget> _panel; // the music player under the bar
 	bool _overText = false;
 	bool _overSeek = false;
 	bool _seeking = false;
@@ -160,7 +169,7 @@ Bar::Bar(QWidget *parent, Controller *controller)
 			player.resume();
 		}
 	});
-	_playlist->setClickedCallback([=] { ShowMusicPlayer(controller); });
+	_playlist->setClickedCallback([this] { togglePanel(); });
 	_close->setClickedCallback([] { Player().stop(); });
 	connect(&player, &AudioPlayer::stateChanged, this, [this] { refresh(); });
 	connect(&player, &AudioPlayer::trackChanged, this, [this] { refresh(); });
@@ -385,7 +394,7 @@ void Bar::mouseReleaseEvent(QMouseEvent *e) {
 	} else if (textRect().contains(e->pos())) {
 		// A song opens the music player, a voice goes to its message.
 		if (!track.voice && !track.chat.isEmpty()) {
-			ShowMusicPlayer(_controller);
+			togglePanel();
 		} else {
 			OpenTrackPlace(_controller, track);
 		}
@@ -933,60 +942,195 @@ void Playlist::leaveEvent(QEvent *e) {
 	}
 }
 
-class PlayerBox final : public Ui::BoxContent {
+// The music player: a panel under the bar (Telegram Desktop's playlist
+// dropdown), at its trailing side, over the main column. A click outside
+// or Esc hides it.
+class Panel final : public Ui::RpWidget {
 public:
-	PlayerBox(QWidget*, Controller *controller)
-	: _controller(controller) {
-	}
+	Panel(QWidget *parent, Controller *controller, QWidget *anchor);
+	~Panel();
+
+	void toggle();
+	void hidePanel();
 
 protected:
-	void prepare() override {
-		setTitle(tr::lng_media_player_title(tr::now));
-		const auto weak = QPointer<PlayerBox>(this);
-		_header = new Header(this, _controller, [=] {
-			if (weak) {
-				weak->closeBox();
-			}
-		});
-		const auto list = setInnerWidget(
-			Ui::object_ptr<Playlist>(this, _controller),
-			_header->naturalHeight());
-		addButton(tr::lng_close(tr::now), [=] { closeBox(); });
-		setDimensions(st::playerBoxWidth, st::playerBoxHeight);
-		connect(&Player(), &AudioPlayer::stateChanged, this, [=] {
-			// Nothing plays any more: nothing to show.
-			if (Player().state() == AudioPlayer::State::Stopped && weak) {
-				Ui::PostponeCall(weak.data(), [=] {
-					if (weak && Player().state() == AudioPlayer::State::Stopped) {
-						weak->closeBox();
-					}
-				});
-			}
-		});
-		Ui::PostponeCall(this, [=] {
-			if (weak && weak->scrollArea()) {
-				list->scrollToCurrent([=](int top, int bottom) {
-					if (weak && weak->scrollArea()) {
-						weak->scrollArea()->scrollToY(top, bottom);
-					}
-				});
-			}
-		});
-	}
-
-	void resizeEvent(QResizeEvent *e) override {
-		BoxContent::resizeEvent(e);
-		if (_header) {
-			_header->setGeometry(0, 0, width(), _header->naturalHeight());
-			_header->raise();
-		}
-	}
+	void paintEvent(QPaintEvent *e) override;
+	void resizeEvent(QResizeEvent *e) override;
+	bool eventFilter(QObject *object, QEvent *event) override;
 
 private:
-	Controller *_controller = nullptr;
+	[[nodiscard]] QRect body() const {
+		return rect().marginsRemoved(st::defaultShadow.extend);
+	}
+	void showPanel();
+	void place();
+
+	QPointer<QWidget> _anchor;
 	Header *_header = nullptr;
+	Ui::ScrollArea *_scroll = nullptr;
+	Playlist *_list = nullptr;
+	bool _filtering = false;
 
 };
+
+Panel::Panel(QWidget *parent, Controller *controller, QWidget *anchor)
+: RpWidget(parent)
+, _anchor(anchor)
+, _header(new Header(this, controller, [this] { hidePanel(); }))
+, _scroll(new Ui::ScrollArea(this)) {
+	_list = _scroll->setOwnedWidget(Ui::object_ptr<Playlist>(_scroll, controller));
+	hide();
+	anchor->installEventFilter(this);
+	parent->installEventFilter(this);
+	connect(&Player(), &AudioPlayer::stateChanged, this, [this] {
+		// Nothing plays any more: nothing to show.
+		if (Player().state() == AudioPlayer::State::Stopped) {
+			hidePanel();
+		}
+	});
+	style::OnPaletteChanged(this, [this] { update(); });
+}
+
+Panel::~Panel() {
+	if (_filtering) {
+		qApp->removeEventFilter(this);
+	}
+}
+
+void Panel::toggle() {
+	if (isHidden()) {
+		showPanel();
+	} else {
+		hidePanel();
+	}
+}
+
+void Panel::showPanel() {
+	if (Player().state() == AudioPlayer::State::Stopped) {
+		return;
+	}
+	place();
+	show();
+	raise();
+	if (!std::exchange(_filtering, true)) {
+		// Clicks anywhere else and Esc close it.
+		qApp->installEventFilter(this);
+	}
+	const auto weak = QPointer<Panel>(this);
+	Ui::PostponeCall(this, [=] {
+		if (weak) {
+			weak->_list->scrollToCurrent([=](int top, int bottom) {
+				if (weak) {
+					weak->_scroll->scrollToY(top, bottom);
+				}
+			});
+		}
+	});
+}
+
+void Panel::hidePanel() {
+	if (std::exchange(_filtering, false)) {
+		qApp->removeEventFilter(this);
+	}
+	hide();
+}
+
+void Panel::place() {
+	const auto parent = parentWidget();
+	if (!_anchor || !parent) {
+		return;
+	}
+	const auto &extend = st::defaultShadow.extend;
+	const auto anchor = _anchor->geometry();
+	const auto inset = int(st::playerPanelInset);
+	const auto width = std::min(
+		int(st::playerPanelWidth),
+		std::max(anchor.width() - 2 * inset, 1));
+	// Under the bar, at its trailing side (its playlist button).
+	const auto x = style::RightToLeft()
+		? (anchor.x() + inset)
+		: (anchor.x() + anchor.width() - inset - width);
+	const auto y = anchor.y() + anchor.height() + st::playerPanelSkip;
+	const auto available = parent->height() - y - st::playerPanelSkip;
+	const auto height = std::max(
+		std::min(int(st::playerPanelHeight), available),
+		_header->naturalHeight() + 2 * int(st::playerRowHeight));
+	setGeometry(
+		x - extend.left(),
+		y - extend.top(),
+		width + extend.left() + extend.right(),
+		height + extend.top() + extend.bottom());
+}
+
+void Panel::resizeEvent(QResizeEvent *e) {
+	Q_UNUSED(e);
+	const auto inner = body();
+	const auto header = _header->naturalHeight();
+	_header->setGeometry(inner.x(), inner.y(), inner.width(), header);
+	_scroll->setGeometry(
+		inner.x(),
+		inner.y() + header,
+		inner.width(),
+		std::max(inner.height() - header - int(st::playerPanelRadius), 0));
+}
+
+void Panel::paintEvent(QPaintEvent *e) {
+	Q_UNUSED(e);
+	auto p = Painter(this);
+	const auto inner = body();
+	Ui::Shadow::Paint(p, inner, st::playerPanelRadius, st::defaultShadow);
+	auto hq = PainterHighQualityEnabler(p);
+	p.setPen(Qt::NoPen);
+	p.setBrush(st::playerPanelBg);
+	p.drawRoundedRect(inner, st::playerPanelRadius, st::playerPanelRadius);
+}
+
+bool Panel::eventFilter(QObject *object, QEvent *event) {
+	const auto type = event->type();
+	if (object == _anchor.data() || object == parentWidget()) {
+		if (object == _anchor.data() && type == QEvent::Hide) {
+			hidePanel();
+		} else if ((type == QEvent::Move || type == QEvent::Resize)
+			&& !isHidden()) {
+			place();
+		}
+		return false;
+	} else if (isHidden()) {
+		return false;
+	}
+	if (type == QEvent::MouseButtonPress) {
+		const auto widget = qobject_cast<QWidget*>(object);
+		// The bar toggles it itself.
+		const auto inside = widget
+			&& (widget == this
+				|| isAncestorOf(widget)
+				|| (_anchor
+					&& (widget == _anchor.data()
+						|| _anchor->isAncestorOf(widget))));
+		if (widget && !inside) {
+			hidePanel();
+		}
+	} else if (type == QEvent::KeyPress) {
+		const auto key = static_cast<QKeyEvent*>(event)->key();
+		if (key == Qt::Key_Escape) {
+			hidePanel();
+			return true;
+		}
+	}
+	return false;
+}
+
+[[nodiscard]] std::vector<QPointer<Bar>> &Bars() {
+	static auto result = std::vector<QPointer<Bar>>();
+	return result;
+}
+
+void Bar::togglePanel() {
+	if (!_panel) {
+		_panel = new Panel(parentWidget(), _controller, this);
+	}
+	static_cast<Panel*>(_panel.data())->toggle();
+}
 
 } // namespace
 
@@ -994,7 +1138,12 @@ void ShowMusicPlayer(Window::SessionController *controller) {
 	if (Player().state() == AudioPlayer::State::Stopped) {
 		return;
 	}
-	controller->show(Ui::Box<PlayerBox>(controller));
+	for (const auto &bar : Bars()) {
+		if (bar && bar->controller() == controller) {
+			bar->togglePanel();
+			return;
+		}
+	}
 }
 
 void OpenTrackPlace(
@@ -1012,6 +1161,11 @@ void OpenTrackPlace(
 
 void SetupNowPlaying(Window::SessionController *controller) {
 	const auto bar = new Bar(nullptr, controller);
+	auto &bars = Bars();
+	bars.erase(
+		std::remove(bars.begin(), bars.end(), QPointer<Bar>()),
+		bars.end());
+	bars.push_back(bar);
 	bar->hide();
 	controller->setMainStrip(bar);
 	bar->refresh();
