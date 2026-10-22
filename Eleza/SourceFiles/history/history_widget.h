@@ -30,6 +30,7 @@ class ScrollArea;
 
 namespace History {
 
+class ActionBar;
 class BotIntroCard;
 class BottomNotice;
 class ComposeControls;
@@ -152,6 +153,7 @@ private:
 
 	TopBar *_topBar = nullptr;
 	SearchBar *_search = nullptr;
+	ActionBar *_actionBar = nullptr;
 	PinnedBar *_pinned = nullptr;
 	ConversationBanner *_banner = nullptr;
 	Ui::ScrollArea *_scroll = nullptr;
@@ -178,6 +180,7 @@ private:
 	bool _headerRequested = false;
 	bool _requestBusy = false;
 	bool _leaving = false;
+	bool _leavingByBar = false; // the report / block bar leaves the group
 	bool _group = false;
 	QTimer _groupTimer; // the countdown of slow mode / a restriction
 	QString _groupNotice;

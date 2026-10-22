@@ -2204,3 +2204,28 @@
 
 // ---- history: the floating buttons ----
 "lng_history_jump_mention" = "Go to the next mention";
+
+// ---- history: the report / block bar ----
+"lng_history_abar_block" = "Block user";
+"lng_history_abar_report" = "Report spam";
+"lng_history_abar_close" = "Hide this bar";
+"lng_history_abar_added_you" = "{name} added you to this group";
+"lng_history_abar_block_title" = "Block {name}?";
+"lng_history_abar_block_text" = "{name} won't be able to message or call you.";
+"lng_history_abar_also_report" = "Report spam too";
+"lng_history_abar_block_confirm" = "Block";
+"lng_history_abar_report_title" = "Report spam?";
+"lng_history_abar_report_chat_text" = "The latest messages of this chat will be sent for review, and {name} will be blocked.";
+"lng_history_abar_report_chat_confirm" = "Report and block";
+"lng_history_abar_report_group_text" = "This group will be reported as spam.";
+"lng_history_abar_report_confirm" = "Report";
+"lng_history_abar_leave_title" = "Leave the group?";
+"lng_history_abar_leave_text" = "You will no longer get the messages of this group.";
+"lng_history_abar_also_block" = "Block {name} too";
+"lng_history_abar_reported_blocked" = "Reported. {name} is blocked.";
+"lng_history_abar_reported_not_blocked" = "Reported, but {name} was not blocked.";
+"lng_history_abar_blocked_not_reported" = "Blocked, but the report was not sent.";
+"lng_history_abar_reported_left" = "Reported. You left the group.";
+"lng_history_abar_left_not_reported" = "You left the group, but the report was not sent.";
+"lng_history_abar_left_not_blocked" = "You left the group, but {name} was not blocked.";
+"lng_history_abar_reported_not_left" = "Reported, but you did not leave the group.";

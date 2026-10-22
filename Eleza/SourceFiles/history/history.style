@@ -338,6 +338,22 @@ historyBarClose: IconButton(smallCloseButton) {
 historyPinnedUnpin: IconButton(historyBarClose) {
 }
 
+// the report / block bar (history_action_bar.cpp)
+historyActionBarGroupHeight: 74px;
+historyActionBarLineTop: 10px;
+historyActionBarLineFont: font(13px);
+historyActionBarLineFg: textSecondary;
+historyActionBarButtonsBottom: 6px;
+historyActionBarClosePosition: point(6px, 5px);
+historyActionBarButton: RoundButton(defaultFlatButton) {
+	height: 36px;
+	font: font(14px semibold);
+}
+historyActionBarDanger: RoundButton(historyActionBarButton) {
+	textFg: statusError;
+	textFgOver: statusError;
+}
+
 historyRequestHeight: 62px;
 historyRequestPadding: margins(16px, 0px, 12px, 0px);
 historyRequestTitleFont: font(14px semibold);

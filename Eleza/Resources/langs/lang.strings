@@ -2234,3 +2234,28 @@
 
 // ---- history: the floating buttons ----
 "lng_history_jump_mention" = "رفتن به جایی که از تو نام برده‌اند";
+
+// ---- history: the report / block bar ----
+"lng_history_abar_block" = "مسدود کردن";
+"lng_history_abar_report" = "گزارش هرزنامه";
+"lng_history_abar_close" = "بستن این نوار";
+"lng_history_abar_added_you" = "{name} تو را به این گروه اضافه کرد";
+"lng_history_abar_block_title" = "مسدود کردن {name}؟";
+"lng_history_abar_block_text" = "{name} دیگر نمی‌تواند به تو پیام بدهد یا تماس بگیرد.";
+"lng_history_abar_also_report" = "گزارش هرزنامه هم بشود";
+"lng_history_abar_block_confirm" = "مسدود کن";
+"lng_history_abar_report_title" = "گزارش هرزنامه؟";
+"lng_history_abar_report_chat_text" = "پیام‌های اخیر این گفتگو برای بررسی فرستاده می‌شود و {name} مسدود می‌شود.";
+"lng_history_abar_report_chat_confirm" = "گزارش و مسدود کردن";
+"lng_history_abar_report_group_text" = "این گروه به‌عنوان هرزنامه گزارش می‌شود.";
+"lng_history_abar_report_confirm" = "گزارش";
+"lng_history_abar_leave_title" = "ترک گروه؟";
+"lng_history_abar_leave_text" = "دیگر پیام‌های این گروه به تو نمی‌رسد.";
+"lng_history_abar_also_block" = "{name} را هم مسدود کن";
+"lng_history_abar_reported_blocked" = "گزارش شد و {name} مسدود شد";
+"lng_history_abar_reported_not_blocked" = "گزارش شد، ولی {name} مسدود نشد";
+"lng_history_abar_blocked_not_reported" = "مسدود شد، ولی گزارش فرستاده نشد";
+"lng_history_abar_reported_left" = "گزارش شد و از گروه بیرون رفتی";
+"lng_history_abar_left_not_reported" = "از گروه بیرون رفتی، ولی گزارش فرستاده نشد";
+"lng_history_abar_left_not_blocked" = "از گروه بیرون رفتی، ولی {name} مسدود نشد";
+"lng_history_abar_reported_not_left" = "گزارش شد، ولی از گروه بیرون نرفتی";

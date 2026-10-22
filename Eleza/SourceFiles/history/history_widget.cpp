@@ -13,6 +13,7 @@
 #include "data/data_outbox.h"
 #include "data/data_users.h"
 #include "data/data_session.h"
+#include "history/history_action_bar.h"
 #include "history/history_bars.h"
 #include "history/history_bot_logic.h"
 #include "history/history_bot_widgets.h"
@@ -415,8 +416,8 @@ Widget::Widget(
 	connect(controller, &Window::SessionController::mainSectionChanged, this, [this] {
 		refreshActive();
 	});
-	// Blocked or unblocked elsewhere (the profile, a block box of another
-	// screen): the composer follows.
+	// Blocked or unblocked elsewhere (the report / block bar, the profile):
+	// the composer follows.
 	connect(&data.graph(), &Data::Graph::relationshipChanged, this, [this](
 			const QString &userId,
 			const Data::GraphState &state) {
@@ -436,6 +437,9 @@ Widget::Widget(
 				const QString &group,
 				const QString &status) {
 			if (group != _chatId) {
+				return;
+			} else if (_leavingByBar && status == u"left") {
+				// The report / block bar says how its choice went.
 				return;
 			}
 			this->controller()->showToast((status == u"banned")
@@ -559,6 +563,11 @@ void Widget::setupTopBar() {
 }
 
 void Widget::setupBars() {
+	_actionBar = Ui::CreateChild<ActionBar>(this, controller(), _chatId);
+	connect(_actionBar, &ActionBar::shownChanged, this, [this] { updateLayout(); });
+	connect(_actionBar, &ActionBar::leaving, this, [this](bool leaving) {
+		_leavingByBar = leaving;
+	});
 	_pinned = Ui::CreateChild<PinnedBar>(this, _session, _chatId);
 	_pinned->setVisible(_pinned->hasPins());
 	connect(_pinned, &PinnedBar::jumpRequested, this, [this](qint64 seq) {
@@ -1530,6 +1539,11 @@ void Widget::updateLayout() {
 		_topBar->resizeToWidth(width());
 		_topBar->move(0, top);
 		top += _topBar->height();
+	}
+	if (!_actionBar->isHidden()) {
+		_actionBar->resizeToWidth(width());
+		_actionBar->move(0, top);
+		top += _actionBar->height();
 	}
 	if (!_pinned->isHidden()) {
 		_pinned->resizeToWidth(width());
