@@ -113,7 +113,8 @@ public:
 	[[nodiscard]] QVector<Data::Message> selectedMessages() const;
 	[[nodiscard]] bool hasTextSelection() const;
 	void clearSelection();
-	// Copies the selected text / messages. False when nothing is selected.
+	// Copies the selected text / messages, says «Copied» and clears the
+	// selection. False when nothing is selected.
 	bool copySelection();
 	// The sender's name as copied text / reply bars show it.
 	[[nodiscard]] QString senderName(const Data::Message &message);

@@ -1016,10 +1016,8 @@ void Widget::selectionChanged() {
 }
 
 void Widget::copySelection() {
-	if (_list->copySelection()) {
-		controller()->showToast(tr::lng_copied(tr::now));
-		_list->clearSelection();
-	}
+	// The list says «Copied» and clears the selection itself.
+	_list->copySelection();
 }
 
 void Widget::forwardSelection() {

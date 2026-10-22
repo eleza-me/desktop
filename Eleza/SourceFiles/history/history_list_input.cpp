@@ -629,6 +629,8 @@ bool ListWidget::copySelection() {
 		if (index >= 0) {
 			QGuiApplication::clipboard()->setText(
 				_rows[index].element->selectedText(_textSelection));
+			_controller->showToast(tr::lng_copied(tr::now));
+			clearSelection();
 			return true;
 		}
 	}
