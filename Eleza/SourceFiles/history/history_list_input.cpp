@@ -1,10 +1,12 @@
 // ListWidget: the mouse, selection, and what a click on each part of a row does.
+
 #include "history/history_list_widget.h"
 
 #include "data/data_calls.h"
 #include "data/data_chats.h"
 #include "data/data_outbox.h"
 #include "data/data_session.h"
+#include "groups/groups_tags.h"
 #include "history/history_bot_logic.h"
 #include "history/history_downloads.h"
 #include "history/history_view_media.h"
@@ -69,6 +71,7 @@ constexpr auto kMaxInlineGifs = 2;
 	case Zone::Retry:
 	case Zone::ViaBot:
 	case Zone::Sender:
+	case Zone::SenderTag:
 		return true;
 	default:
 		return false;
@@ -355,6 +358,20 @@ void ListWidget::activate(const MouseTarget &target, Qt::MouseButton button) {
 		// The name above a bubble of a group, or the picture next to it.
 		if (!target.hit.text.isEmpty()) {
 			_controller->openRoute(Window::Routes::User(target.hit.text));
+		}
+		break;
+	case Zone::SenderTag:
+		// The tag next to the name: what it is (and my own tag).
+		if (button == Qt::LeftButton && !target.hit.text.isEmpty()) {
+			const auto &sender = element->sender();
+			if (!sender.tag.isEmpty()) {
+				Groups::ShowTagInfoBox(
+					_controller,
+					_chatId,
+					sender.userId,
+					sender.tag,
+					sender.tagRole);
+			}
 		}
 		break;
 	case Zone::Link:

@@ -1,6 +1,7 @@
 #include "groups/groups_boxes.h"
 
 #include "groups/groups_admin.h"
+#include "groups/groups_tags.h"
 
 #include "api/api_auth.h"
 #include "boxes/peer_list_box.h"
@@ -82,6 +83,36 @@ constexpr auto kWeek = 7 * kDay;
 		controller->session().userId(),
 		header.role,
 		Rights::RightsMask(header.rights));
+}
+
+// The names a box lists, in their order: the ones of member tags only for a
+// server that has them (an older one refuses a name it does not know).
+[[nodiscard]] QStringList ShownNames(
+		Window::SessionController *controller,
+		const QString &groupId,
+		const QStringList &names) {
+	if (Store(controller).memberTagsIn(groupId)) {
+		return names;
+	}
+	auto result = names;
+	result.removeAll(u"manage_tags"_s);
+	result.removeAll(u"edit_tag"_s);
+	return result;
+}
+
+// What a member is known as: the store's latest, else the row's own.
+[[nodiscard]] TagSender TagOf(
+		Window::SessionController *controller,
+		const QString &groupId,
+		const Data::GroupMember &member) {
+	if (const auto known = Store(controller).senderTag(groupId, member.user)) {
+		return *known;
+	}
+	return Data::MemberTags::FromMember(
+		member.status,
+		member.role,
+		member.tag,
+		member.adminTitle);
 }
 
 [[nodiscard]] Rights::Member Target(const Data::GroupMember &member) {
@@ -430,6 +461,8 @@ QString RightLabel(const QString &name) {
 		return tr::lng_groups_right_pin_messages(tr::now);
 	} else if (name == u"add_admins") {
 		return tr::lng_groups_right_add_admins(tr::now);
+	} else if (name == u"manage_tags") {
+		return tr::lng_groups_right_manage_tags(tr::now);
 	}
 	return name;
 }
@@ -447,17 +480,18 @@ QString PermissionLabel(const QString &name) {
 		return tr::lng_groups_perm_pin_messages(tr::now);
 	} else if (name == u"change_info") {
 		return tr::lng_groups_perm_change_info(tr::now);
+	} else if (name == u"edit_tag") {
+		return tr::lng_groups_perm_edit_tag(tr::now);
 	}
 	return name;
 }
 
 QString MemberTag(const Data::GroupMember &member) {
+	const auto tag = Data::MemberTags::Shown(member.currentTag());
 	if (member.role == u"owner") {
-		return tr::lng_groups_role_owner(tr::now);
+		return tag.isEmpty() ? tr::lng_groups_role_owner(tr::now) : tag;
 	} else if (member.role == u"admin") {
-		return member.adminTitle.trimmed().isEmpty()
-			? tr::lng_groups_role_admin(tr::now)
-			: Data::Json::CleanName(member.adminTitle.simplified());
+		return tag.isEmpty() ? tr::lng_groups_role_admin(tr::now) : tag;
 	} else if (member.restricted()) {
 		return tr::lng_groups_role_restricted(tr::now);
 	}
@@ -953,11 +987,11 @@ void ShowAdminBox(
 				tr::lng_groups_admin_rights_header(tr::now, lt_name, name),
 				st::boxLabel),
 			st::boxRowPadding);
-		const auto &names = Rights::RightNames();
+		const auto names = ShownNames(controller, groupId, Rights::ShownRights());
 		const auto current = Rights::RightsMask(member.rights);
 		auto checks = std::vector<Ui::Checkbox*>();
 		for (auto i = 0; i != int(names.size()); ++i) {
-			const auto bit = (1 << i);
+			const auto bit = Rights::RightBit(names[i]);
 			const auto mine = (grantable & bit) != 0;
 			// A new admin starts with everything I may give but «add admins».
 			const auto checked = promoting
@@ -976,16 +1010,22 @@ void ShowAdminBox(
 				tr::lng_groups_admin_rights_note(tr::now),
 				st::groupsBoxCaption),
 			st::boxRowPadding);
+		// The admin's title is their member tag: the same field, «تگ».
+		const auto tags = Store(controller).memberTagsIn(groupId);
 		const auto title = box->addRow(Ui::object_ptr<Ui::InputField>(
 			box,
 			st::defaultInputField,
-			tr::lng_groups_admin_title_placeholder(tr::now),
-			member.adminTitle));
+			tags
+				? tr::lng_groups_tag_placeholder(tr::now)
+				: tr::lng_groups_admin_title_placeholder(tr::now),
+			tags ? TagOf(controller, groupId, member).tag : member.adminTitle));
 		title->setMaxLength(Store(controller).adminTitleMaxChars() * 2);
 		box->addRow(
 			Ui::object_ptr<Ui::FlatLabel>(
 				box,
-				tr::lng_groups_admin_title_note(tr::now),
+				tags
+					? tr::lng_groups_admin_tag_note(tr::now)
+					: tr::lng_groups_admin_title_note(tr::now),
 				st::groupsBoxCaption),
 			st::boxRowPadding);
 		const auto saving = std::make_shared<bool>(false);
@@ -1000,7 +1040,7 @@ void ShowAdminBox(
 			auto mask = 0;
 			for (auto i = 0; i != int(checks.size()); ++i) {
 				if (checks[i]->checked()) {
-					mask |= (1 << i);
+					mask |= Rights::RightBit(names[i]);
 				}
 			}
 			*saving = true;
@@ -1009,7 +1049,7 @@ void ShowAdminBox(
 				groupId,
 				member.user,
 				Rights::RightsList(mask),
-				std::make_optional(title->text().trimmed()),
+				std::make_optional(Data::MemberTags::Typed(title->text())),
 				base::Guard(box),
 				[=](const Data::GroupMember &) {
 					box->closeBox();
@@ -1045,11 +1085,11 @@ void ShowRestrictBox(
 				tr::lng_groups_admin_rights_header(tr::now, lt_name, name),
 				st::boxLabel),
 			st::boxRowPadding);
-		const auto &names = Rights::PermissionNames();
+		const auto names = ShownNames(controller, groupId, Rights::ShownPermissions());
 		const auto denied = Rights::PermissionsMask(member.denied);
 		auto checks = std::vector<Ui::Checkbox*>();
 		for (auto i = 0; i != int(names.size()); ++i) {
-			const auto bit = (1 << i);
+			const auto bit = Rights::PermissionBit(names[i]);
 			// A fresh restriction takes sending away; the rest stays.
 			const auto allowed = member.restricted()
 				? ((denied & bit) == 0)
@@ -1094,7 +1134,7 @@ void ShowRestrictBox(
 			auto mask = 0;
 			for (auto i = 0; i != int(checks.size()); ++i) {
 				if (!checks[i]->checked()) {
-					mask |= (1 << i);
+					mask |= Rights::PermissionBit(names[i]);
 				}
 			}
 			const auto seconds = lengths[std::clamp(
@@ -1149,14 +1189,15 @@ void ShowPermissionsBox(
 				tr::lng_groups_perms_header(tr::now),
 				st::boxLabel),
 			st::boxRowPadding);
-		const auto &names = Rights::PermissionNames();
+		// «ویرایش تگ خود» after «pin» and before «change info» (Telegram's order).
+		const auto names = ShownNames(controller, groupId, Rights::ShownPermissions());
 		auto checks = std::vector<Ui::Checkbox*>();
 		for (auto i = 0; i != int(names.size()); ++i) {
 			checks.push_back(box->addRow(
 				Ui::object_ptr<Ui::Checkbox>(
 					box,
 					PermissionLabel(names[i]),
-					(defaults & (1 << i)) != 0),
+					(defaults & Rights::PermissionBit(names[i])) != 0),
 				st::boxCheckboxPadding));
 		}
 		box->addRow(
@@ -1190,11 +1231,11 @@ void ShowPermissionsBox(
 			if (*saving) {
 				return;
 			}
-			auto mask = 0;
+			// What the box does not list stays as it is.
+			auto mask = defaults;
 			for (auto i = 0; i != int(checks.size()); ++i) {
-				if (checks[i]->checked()) {
-					mask |= (1 << i);
-				}
+				const auto bit = Rights::PermissionBit(names[i]);
+				mask = checks[i]->checked() ? (mask | bit) : (mask & ~bit);
 			}
 			const auto permissions = (mask != defaults)
 				? std::make_optional(Rights::PermissionsList(mask))
@@ -1253,6 +1294,26 @@ void ShowMemberMenu(
 		controller->hideLayers();
 		controller->openRoute(Window::Routes::User(user));
 	}, &st::groupsMenuUser);
+	// The tag: my own («افزودن / ویرایش تگ»), or a member's with `manage_tags`.
+	if (member.status.isEmpty() || member.status == u"member") {
+		const auto tag = TagOf(controller, groupId, member);
+		const auto mayTag = self
+			? MayEditOwnTag(controller, groupId)
+			: MayEditTagOf(controller, groupId, user, tag.role);
+		if (mayTag) {
+			menu->addAction(
+				self
+					? (tag.tag.isEmpty()
+						? tr::lng_groups_tag_add(tr::now)
+						: tr::lng_groups_tag_edit(tr::now))
+					: (tag.tag.isEmpty()
+						? tr::lng_groups_tag_add_member(tr::now)
+						: tr::lng_groups_tag_edit_member(tr::now)),
+				// The rows that show the tag follow Data::Groups::senderTagsChanged.
+				[=] { ShowEditTagBox(controller, groupId, user, tag); },
+				&st::groupsMenuTag);
+		}
+	}
 	const auto danger = [&](const QString &text, Fn<void()> callback, const style::icon *icon) {
 		auto item = Ui::MenuItem();
 		item.text = text;

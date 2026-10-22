@@ -20,11 +20,17 @@
 //   VIDEO=off         no `feature.video_calls`
 //   AVATAR_DELAY=<ms> delays every avatar and group photo (the flicker test)
 //   REPLY=off         nobody answers what I send
+//   TAGS=off          a server without member tags (no `edit_tag` / `manage_tags`,
+//                     no `tag` / `sender_tag` / `sender_role`, no tag route)
+//   THIRD=1           the third release too (`groups.admin_log.page_size`): recent
+//                     actions, with the tag changes of this run
 //
 // Groups (I am u_me):
 //   j1team   «تیم الزا»: I own it. Admins, a restricted member, pins, mentions,
-//            replies, service notes, a photo, two join requests, invite links
-//   j1class  «هم‌کلاسی‌ها»: an ordinary member; three unread, one mentions me; muted
+//            replies, service notes, a photo, two join requests, invite links;
+//            member tags: Sara «ناظر» (admin), Ali «طراح», John «Designer»
+//   j1class  «هم‌کلاسی‌ها»: an ordinary member; three unread, one mentions me; muted;
+//            Ali is an admin who may set tags, Sara is tagged «خوش‌خنده»
 //   j1quiet  «اطلاعیه‌ها»: I am restricted (the bar instead of the composer)
 //   j1slow   «گپ آهسته»: slow mode, one message every 20 s (429 group.slow_mode)
 //   j1big    «محلهٔ ما»: 240 members, no join / leave notes, I am an admin who
@@ -57,6 +63,8 @@ const PHASE2 = process.env.PHASE !== '1';
 const VIDEO_ON = process.env.VIDEO !== 'off';
 const AVATAR_DELAY = Number(process.env.AVATAR_DELAY || 0);
 const REPLY = process.env.REPLY !== 'off';
+const TAGS = process.env.TAGS !== 'off';
+const THIRD = process.env.THIRD === '1';
 const ME = 'u_me';
 const now = Date.now();
 const MIN = 60_000, HOUR = 3600_000, DAY = 86400_000;
@@ -225,9 +233,11 @@ const card = (id) => {
 
 // ---- groups -----------------------------------------------------------------------------------
 
-const ALL_RIGHTS = ['change_info', 'delete_messages', 'ban_users', 'invite_users', 'pin_messages', 'add_admins'];
-const ALL_PERMS = ['send_messages', 'send_media', 'send_links', 'add_members', 'pin_messages', 'change_info'];
-const DEFAULT_PERMS = ['send_messages', 'send_media', 'send_links', 'add_members'];
+// The names in the server's order; the tag ones only with member tags.
+const ALL_RIGHTS = ['change_info', 'delete_messages', 'ban_users', 'invite_users', 'pin_messages', 'add_admins', ...(TAGS ? ['manage_tags'] : [])];
+const ALL_PERMS = ['send_messages', 'send_media', 'send_links', 'add_members', 'pin_messages', 'change_info', ...(TAGS ? ['edit_tag'] : [])];
+const DEFAULT_PERMS = ['send_messages', 'send_media', 'send_links', 'add_members', ...(TAGS ? ['edit_tag'] : [])];
+const TAG_NAMES = ['manage_tags', 'edit_tag'];
 
 const groups = {};     // id -> group
 const invitePool = {}; // token -> { group, requires_approval, expired }
@@ -238,7 +248,8 @@ function makeGroup(id, title, fields = {}) {
 	const group = {
 		id, title, about: '', photo: '', state: 'active', created_at: now - 30 * DAY,
 		pts: 0, last_seq: 0, default_permissions: [...DEFAULT_PERMS], history_visible: true,
-		members: [],   // { user, role, rights, admin_title, status, denied, restricted_until, joined_at, invited_by }
+		members: [],   // { user, role, rights, tag, status, denied, restricted_until, joined_at, invited_by }
+		log: [],       // the admin log, newest first
 		messages: [],  // MessageView + _pts (the pts of its last change) + _mine_reaction per user
 		pins: [],      // { seq, pinned_by, pinned_at }, newest first
 		invites: [], requests: [], member_count_extra: 0,
@@ -253,6 +264,14 @@ function join(group, user, role = 'member', extra = {}) {
 	group.members.push({ user, role, rights: role === 'owner' ? [...ALL_RIGHTS] : [], status: 'member', joined_at: group.created_at + group.members.length * MIN, ...(role === 'owner' ? {} : { invited_by: group.members[0]?.user }), ...extra });
 }
 const memberOf = (group, user) => group.members.find((m) => m.user === user && m.status === 'member');
+// A tag change: logged (own changes too) and, live, the `info` frame with the member.
+function setTag(group, member, tag) {
+	const previous = member.tag || '';
+	if (previous === tag) return;
+	if (tag) member.tag = tag; else delete member.tag;
+	++group.pts;
+	group.log.unshift({ id: `l${group.pts}`, at: Date.now(), actor: ME, action: 'edit_tag', target: member.user, detail: { ...(tag ? { tag } : {}), ...(previous ? { prev_tag: previous } : {}) } });
+}
 const count = (group) => group.members.filter((m) => m.status === 'member').length + group.member_count_extra;
 const small = (group) => count(group) <= 200;
 
@@ -282,7 +301,7 @@ function myPermissions(group) {
 	if (me.role === 'owner') return [...ALL_PERMS];
 	const perms = new Set(group.default_permissions);
 	if (me.role === 'admin') {
-		['send_messages', 'send_media', 'send_links'].forEach((p) => perms.add(p));
+		['send_messages', 'send_media', 'send_links', ...(TAGS ? ['edit_tag'] : [])].forEach((p) => perms.add(p));
 		if (me.rights.includes('change_info')) perms.add('change_info');
 		if (me.rights.includes('pin_messages')) perms.add('pin_messages');
 		if (me.rights.includes('invite_users')) perms.add('add_members');
@@ -303,13 +322,24 @@ function addresses(group, message) {
 }
 const mentionsOf = (group) => PHASE2 ? group.messages.filter((m) => m.seq > group.me.last_read_seq && visible(group, m) && addresses(group, m)).map((m) => m.seq) : [];
 
+// The sender's tag and role as they are now (filled when read, never stored).
+function senderFields(group, message) {
+	if (!TAGS || message.kind === 'system') return {};
+	const member = memberOf(group, message.sender);
+	if (!member) return {};
+	const out = {};
+	if (member.tag) out.sender_tag = member.tag;
+	if (member.role === 'owner' || member.role === 'admin') out.sender_role = member.role;
+	return out;
+}
 function messageView(group, message) {
 	const { _pts, ...view } = message;
 	if (message.deleted) {
 		return { chat: view.chat, seq: view.seq, id: view.id, sender: view.sender, client_message_id: view.client_message_id, kind: view.kind, created_at: view.created_at, deleted: true };
 	}
 	const mine = group.me.reactions[message.seq];
-	return mine ? { ...view, my_reaction: mine } : view;
+	const full = { ...view, ...senderFields(group, message) };
+	return mine ? { ...full, my_reaction: mine } : full;
 }
 const frameView = (group, message) => { const { my_reaction, ...view } = messageView(group, message); return view; };
 
@@ -328,6 +358,7 @@ function groupView(group) {
 	};
 	if (group.about) view.about = group.about;
 	if (group.photo) view.photo = group.photo;
+	if (TAGS && me?.tag) view.my_tag = me.tag;
 	if (!canSend) {
 		view.send_blocked = permissions.includes('send_messages') ? 'slow_mode' : 'restricted';
 		if (view.send_blocked === 'slow_mode') view.slow_mode_wait_s = Math.ceil((group.slow.until - Date.now()) / 1000);
@@ -350,7 +381,11 @@ function entryOf(group) {
 }
 function memberView(member) {
 	const view = { user: member.user, role: member.role, rights: member.role === 'owner' ? [...ALL_RIGHTS] : (member.rights || []), status: member.status };
-	if (member.admin_title) view.admin_title = member.admin_title;
+	// The tag of everybody; the admin title (the same) only of the owner and admins.
+	if (member.tag && member.status === 'member') {
+		if (TAGS) view.tag = member.tag;
+		if (member.role !== 'member') view.admin_title = member.tag;
+	}
 	if (restrictionApplies(member) && member.status === 'member') {
 		view.denied = member.denied;
 		if (member.restricted_until) view.restricted_until = member.restricted_until;
@@ -381,11 +416,11 @@ function addInvite(group, fields = {}) {
 {
 	const g = makeGroup('j1team', 'تیم الزا', { about: 'هماهنگی کارهای الزا 🌱\nراهنما: https://eleza.me/help', photo: 'f1team', created_at: now - 40 * DAY });
 	join(g, 'u_me', 'owner');
-	join(g, 'u_sara', 'admin', { rights: ['delete_messages', 'ban_users', 'invite_users', 'pin_messages'], admin_title: 'ناظر' });
-	join(g, 'u_ali');
+	join(g, 'u_sara', 'admin', { rights: ['delete_messages', 'ban_users', 'invite_users', 'pin_messages'], tag: 'ناظر' });
+	join(g, 'u_ali', 'member', { tag: 'طراح' });
 	join(g, 'u_reza', 'admin', { rights: ['pin_messages'] });
 	join(g, 'u_nika', 'member', { denied: ['send_media', 'send_links'], restricted_until: Math.floor(Date.now() / 1000) + 5 * 3600 });
-	join(g, 'u_john');
+	join(g, 'u_john', 'member', { tag: 'Designer' });
 	const t0 = now - 2 * DAY;
 	note(g, 'u_me', 'group_created', g.created_at);
 	note(g, 'u_me', 'member_added:u_sara', g.created_at + MIN);
@@ -423,14 +458,20 @@ function addInvite(group, fields = {}) {
 	g.invites[0].uses = 3;
 	addInvite(g, { name: 'با تأیید', requires_approval: true, expires_at: Math.floor(Date.now() / 1000) + 7 * 86400 });
 	g.members.push({ user: 'u_omid', role: 'member', rights: [], status: 'banned' });
+	g.log.push(
+		{ id: 'l3', at: now - 3 * HOUR, actor: 'u_john', action: 'edit_tag', target: 'u_john', detail: { tag: 'Designer' } },
+		{ id: 'l2', at: now - 5 * HOUR, actor: 'u_me', action: 'edit_tag', target: 'u_sara', detail: { tag: 'ناظر', prev_tag: 'مدیر' } },
+		{ id: 'l1', at: now - 6 * HOUR, actor: 'u_me', action: 'edit_tag', target: 'u_ali', detail: { tag: 'طراح' } },
+		{ id: 'l0', at: now - DAY, actor: 'u_reza', action: 'edit_tag', target: 'u_reza', detail: { prev_tag: 'عکاس' } },
+	);
 }
 // -- «هم‌کلاسی‌ها»: an ordinary member, unread with a mention
 {
 	const g = makeGroup('j1class', 'هم‌کلاسی‌ها', { about: 'ورودی‌های ۹۸', created_at: now - 90 * DAY });
 	join(g, 'u_nika', 'owner');
 	join(g, 'u_me');
-	join(g, 'u_sara');
-	join(g, 'u_ali');
+	join(g, 'u_sara', 'member', { tag: 'خوش‌خنده' });
+	join(g, 'u_ali', 'admin', { rights: ['pin_messages', ...(TAGS ? ['manage_tags'] : [])] });
 	note(g, 'u_nika', 'group_created', g.created_at);
 	post(g, 'u_nika', 'text', { text: 'بچه‌ها دورهمی جمعه سر جاشه؟' }, now - 3 * DAY);
 	post(g, 'u_me', 'text', { text: 'من هستم.' }, now - 3 * DAY + 10 * MIN);
@@ -468,7 +509,7 @@ function addInvite(group, fields = {}) {
 	const g = makeGroup('j1big', 'محلهٔ ما', { about: 'گروه همسایه‌ها', photo: 'f1big', created_at: now - 200 * DAY });
 	join(g, 'u_mina', 'owner');
 	join(g, 'u_me', 'admin', { rights: ['ban_users', 'invite_users', 'delete_messages'] });
-	join(g, 'u_omid', 'admin', { rights: ['delete_messages'], admin_title: 'مدیر' });
+	join(g, 'u_omid', 'admin', { rights: ['delete_messages'], tag: 'مدیر' });
 	for (let i = 1; i <= 236; i++) join(g, `u_c${i}`);
 	g.members.push({ user: 'u_ali', role: 'member', rights: [], status: 'banned' });
 	note(g, 'u_mina', 'group_created', g.created_at);
@@ -542,6 +583,7 @@ function configValues(flat) {
 				'groups.bulk_delete.max_messages': 100, 'groups.slow_mode.values': '0,10s,30s,1m,5m,15m,1h',
 			});
 		}
+		if (PHASE2 && THIRD) values['groups.admin_log.page_size'] = 50;
 	}
 	return values;
 }
@@ -677,7 +719,9 @@ async function handleGroups(req, res, url, raw) {
 		if (body.default_permissions !== undefined) {
 			if (need(rights.includes('ban_users'))) return;
 			if (body.default_permissions.some((x) => !ALL_PERMS.includes(x))) return problem(res, 400, 'group.rights_invalid', 'نام اجازه درست نیست');
-			group.default_permissions = ALL_PERMS.filter((x) => body.default_permissions.includes(x));
+			// Without `with_tags` (an older app) the list says nothing of `edit_tag`.
+			const keep = body.with_tags ? [] : group.default_permissions.filter((x) => TAG_NAMES.includes(x));
+			group.default_permissions = ALL_PERMS.filter((x) => body.default_permissions.includes(x) || keep.includes(x));
 		}
 		if (body.history_visible !== undefined) {
 			if (need(rights.includes('change_info'))) return;
@@ -712,7 +756,7 @@ async function handleGroups(req, res, url, raw) {
 		}
 		return json(res, 200, { added, not_added: notAdded });
 	}
-	if ((match = rest.match(/^\/members\/([^/]+)(\/admin|\/restrictions|\/ban)?$/))) {
+	if ((match = rest.match(/^\/members\/([^/]+)(\/admin|\/restrictions|\/ban|\/tag)?$/))) {
 		const user = decodeURIComponent(match[1]), what = match[2] || '';
 		if (!people[user]) return problem(res, 404, 'user.unavailable', 'کاربر در دسترس نیست');
 		const t = target(user);
@@ -726,7 +770,8 @@ async function handleGroups(req, res, url, raw) {
 			if (need(rights.includes('add_admins')) || actOn(user)) return;
 			if (!t || t.status !== 'member') return problem(res, 409, 'group.target_not_member', 'این کاربر عضو گروه نیست');
 			if (m === 'DELETE') {
-				if (t.role === 'admin') { t.role = 'member'; t.rights = []; delete t.admin_title; info(); }
+				// The tag stays (Telegram keeps the rank on the participant).
+				if (t.role === 'admin') { t.role = 'member'; t.rights = []; if (!TAGS) delete t.tag; info(); }
 				return json(res, 200, memberView(t));
 			}
 			const wanted = body.rights || [];
@@ -735,9 +780,10 @@ async function handleGroups(req, res, url, raw) {
 			if (body.title !== undefined && [...String(body.title)].length > 16) return problem(res, 400, 'group.admin_title_invalid', 'عنوان درست نیست');
 			if (t.role !== 'admin' && group.members.filter((x) => x.status === 'member' && x.role === 'admin').length >= 50) return problem(res, 409, 'group.too_many_admins', 'مدیرهای گروه کامل است');
 			const promoted = t.role !== 'admin';
+			const keep = (body.with_tags || promoted) ? [] : (t.rights || []).filter((x) => TAG_NAMES.includes(x));
 			t.role = 'admin';
-			t.rights = ALL_RIGHTS.filter((x) => wanted.includes(x));
-			if (body.title !== undefined) { if (body.title) t.admin_title = String(body.title); else delete t.admin_title; }
+			t.rights = ALL_RIGHTS.filter((x) => wanted.includes(x) || keep.includes(x));
+			if (body.title !== undefined) setTag(group, t, String(body.title));
 			t.denied = [];
 			if (promoted) info();
 			return json(res, 200, memberView(t));
@@ -748,7 +794,8 @@ async function handleGroups(req, res, url, raw) {
 			if (t.role !== 'member' || user === ME) return problem(res, 403, 'group.right_required', 'اجازهٔ این کار را نداری');
 			const denied = body.denied || [];
 			if (denied.some((x) => !ALL_PERMS.includes(x)) || (body.until && body.until * 1000 < Date.now())) return problem(res, 400, 'group.restriction_invalid', 'محدودیت درست نیست');
-			t.denied = ALL_PERMS.filter((x) => denied.includes(x));
+			const keep = body.with_tags ? [] : (t.denied || []).filter((x) => TAG_NAMES.includes(x));
+			t.denied = ALL_PERMS.filter((x) => denied.includes(x) || keep.includes(x));
 			t.restricted_until = denied.length ? (body.until || 0) : 0;
 			return json(res, 200, memberView(t));
 		}
@@ -769,6 +816,17 @@ async function handleGroups(req, res, url, raw) {
 			if (need(rights.includes('ban_users'))) return;
 			if (t && t.status === 'banned') t.status = 'kicked';
 			return json(res, 204);
+		}
+		if (what === '/tag' && m === 'PUT' && TAGS) {
+			// Mine: edit_tag (admins and the owner always); somebody else's:
+			// manage_tags, of an admin only the owner, of the owner nobody.
+			const own = (user === ME);
+			if (own ? need(permissions.includes('edit_tag')) : (need(rights.includes('manage_tags')) || actOn(user))) return;
+			if (!t || t.status !== 'member') return problem(res, 409, 'group.target_not_member', 'این کاربر عضو گروه نیست');
+			const tag = String(body.tag ?? '').trim();
+			if ([...tag].length > 16 || /[\n\r\u0000-\u001f]/.test(tag)) return problem(res, 400, 'group.tag_invalid', 'تگ نامعتبر است');
+			setTag(group, t, tag);
+			return json(res, 200, memberView(t));
 		}
 	}
 	if (rest === '/leave' && m === 'POST') {
@@ -935,6 +993,14 @@ async function handleGroups(req, res, url, raw) {
 		}) });
 	}
 	if (rest === '/mentions' && m === 'GET') return json(res, 200, { seqs: mentionsOf(group).slice(0, 100) });
+	if (rest === '/admin-log' && m === 'GET' && THIRD) {
+		if (need(me.role !== 'member')) return;
+		const kinds = (q.get('actions') || '').split(',').filter(Boolean);
+		const admin = q.get('admin') || '';
+		const list = group.log.filter((x) => (!kinds.length || kinds.includes(x.action)) && (!admin || x.actor === admin));
+		const { items, next } = page(list, q.get('cursor'), 50);
+		return json(res, 200, next ? { entries: items, next_cursor: next } : { entries: items });
+	}
 	if (rest === '/draft') {
 		if (m === 'PUT' && String(body.text || '').trim()) {
 			group.me.draft = { text: body.text, updated_at: Date.now(), ...(body.reply_to_seq ? { reply_to_seq: body.reply_to_seq } : {}), ...(body.entities?.length ? { entities: body.entities } : {}) };

@@ -393,6 +393,11 @@ struct Message {
 	std::optional<ReplyMarkup> replyMarkup;
 	std::optional<ViaBot> viaBot;
 	std::optional<StoryRef> story; // story_reply / story_reaction
+	// Groups: the sender's tag and role ("owner" | "admin") when it was read
+	// (Data::Groups::senderTag has the latest); both "" for an ordinary
+	// member without a tag.
+	QString senderTag;
+	QString senderRole;
 
 	// ---- local
 	bool mine = false;

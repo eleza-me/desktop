@@ -6,6 +6,7 @@
 #include "data/data_group_rules.h"
 #include "data/data_groups.h"
 #include "data/data_json.h"
+#include "rt/rt_methods.h"
 #include "test_harness.h"
 
 #include <QtCore/QTemporaryDir>
@@ -252,6 +253,9 @@ private Q_SLOTS:
 	void permissionsGoOverHttp();
 	void cachedGroupIsRepairedOnOpen();
 	void typingAndAdminSignals();
+	void memberTagsFollowTheServer();
+	void memberTagsAreSet();
+	void permissionWritesSayWithTags();
 
 };
 
@@ -1222,6 +1226,213 @@ void TestGroups::typingAndAdminSignals() {
 	fixture.frame(admin);
 	Test::Settle(30);
 	QCOMPARE(fixture.count(u"groups.get"_s), gets + 1);
+}
+
+// ---- member tags
+
+void TestGroups::memberTagsFollowTheServer() {
+	auto fixture = Fixture();
+	QVERIFY(fixture.startWithGroup());
+	auto &groups = fixture.groups();
+	auto spy = QSignalSpy(&groups, &Groups::senderTagsChanged);
+	// A server without tags: a message that names no tag says nothing.
+	QVERIFY(fixture.open());
+	QVERIFY(!groups.memberTags());
+	QVERIFY(!groups.senderTag(kGroup, u"u_sara"_s));
+	QCOMPARE(spy.count(), 0);
+
+	// Its pages carry the senders' tags and roles as they are now.
+	fixture.harness->on(u"groups.history"_s, [=](const Call &) {
+		return Reply::Ok(QJsonObject{
+			{ u"group"_s, Header(kGroup, 6, 4, {
+				{ u"default_permissions"_s, QJsonArray{ u"send_messages"_s, u"edit_tag"_s } },
+			}) },
+			{ u"messages"_s, QJsonArray{
+				MessageJson(kGroup, 1, u"u_sara"_s, u"m1"_s, {
+					{ u"sender_role"_s, u"owner"_s },
+				}),
+				MessageJson(kGroup, 2, u"u_ali"_s, u"m2"_s, {
+					{ u"sender_tag"_s, u"طراح"_s },
+				}),
+				MessageJson(kGroup, 3, u"u_nika"_s, u"m3"_s),
+				Note(kGroup, 4, u"u_reza"_s, u"member_left"_s),
+			} },
+			{ u"has_more_before"_s, false },
+		});
+	});
+	auto done = false;
+	fixture.harness->messages().loadLatest(kGroup, base::Guard(), [&] { done = true; });
+	QVERIFY(Test::WaitFor([&] { return done; }));
+	QVERIFY(groups.memberTags());
+	QCOMPARE(*groups.senderTag(kGroup, u"u_sara"_s),
+		(MemberTags::Sender{ QString(), MemberTags::Role::Owner }));
+	QCOMPARE(*groups.senderTag(kGroup, u"u_ali"_s),
+		(MemberTags::Sender{ u"طراح"_s, MemberTags::Role::Member }));
+	// Neither field from a server with tags: an ordinary member without one.
+	QCOMPARE(*groups.senderTag(kGroup, u"u_nika"_s), MemberTags::Sender());
+	// A service note says nothing of its author.
+	QVERIFY(!groups.senderTag(kGroup, u"u_reza"_s));
+	QVERIFY(!spy.isEmpty());
+	const auto changed = spy.takeLast().at(1).toStringList();
+	QVERIFY(changed.contains(u"u_sara"_s) && changed.contains(u"u_ali"_s));
+
+	// A tag set elsewhere: the `info` frame with the member.
+	spy.clear();
+	fixture.frame(GroupFrame(kGroup, 7, u"info"_s, QJsonObject{
+		{ u"member"_s, QJsonObject{
+			{ u"user"_s, u"u_ali"_s },
+			{ u"role"_s, u"admin"_s },
+			{ u"rights"_s, QJsonArray{ u"pin_messages"_s } },
+			{ u"admin_title"_s, u"ناظر"_s },
+			{ u"tag"_s, u"ناظر"_s },
+			{ u"status"_s, u"member"_s },
+		} },
+	}));
+	QVERIFY(Test::WaitFor([&] { return !spy.isEmpty(); }));
+	QCOMPARE(spy.takeFirst().at(1).toStringList(), QStringList{ u"u_ali"_s });
+	QCOMPARE(*groups.senderTag(kGroup, u"u_ali"_s),
+		(MemberTags::Sender{ u"ناظر"_s, MemberTags::Role::Admin }));
+
+	// A live message of somebody whose tag is gone.
+	fixture.frame(GroupFrame(kGroup, 8, u"message"_s, MessageJson(kGroup, 5, u"u_sara"_s, u"m5"_s)));
+	QVERIFY(Test::WaitFor([&] { return !spy.isEmpty(); }));
+	QCOMPARE(*groups.senderTag(kGroup, u"u_sara"_s), MemberTags::Sender());
+
+	// Somebody removed: nothing is left of their place.
+	spy.clear();
+	fixture.frame(GroupFrame(kGroup, 9, u"info"_s, QJsonObject{
+		{ u"member"_s, QJsonObject{
+			{ u"user"_s, u"u_ali"_s },
+			{ u"role"_s, u"member"_s },
+			{ u"status"_s, u"kicked"_s },
+		} },
+	}));
+	QVERIFY(Test::WaitFor([&] { return !spy.isEmpty(); }));
+	QCOMPARE(*groups.senderTag(kGroup, u"u_ali"_s), MemberTags::Sender());
+}
+
+void TestGroups::memberTagsAreSet() {
+	auto fixture = Fixture();
+	QVERIFY(fixture.startWithGroup());
+	fixture.harness->on(u"groups.members.tag"_s, [](const Call &call) {
+		const auto user = call.body.value("user"_L1).toString();
+		if (user == u"u_nika") {
+			return Reply::Fail(400, u"group.tag_invalid"_s);
+		}
+		return Reply::Ok(QJsonObject{
+			{ u"user"_s, user },
+			{ u"role"_s, u"member"_s },
+			{ u"rights"_s, QJsonArray() },
+			{ u"status"_s, u"member"_s },
+			{ u"tag"_s, call.body.value("tag"_L1).toString() },
+		});
+	});
+	auto &groups = fixture.groups();
+	auto member = std::optional<GroupMember>();
+	// One line, no emoji: what is typed is cleaned before it goes.
+	groups.setTag(kGroup, u"u_ali"_s, u" طراح  "_s + QString::fromUtf8("🎨"), base::Guard(), [&](
+			const GroupMember &result) {
+		member = result;
+	});
+	QVERIFY(Test::WaitFor([&] { return member.has_value(); }));
+	const auto bodies = fixture.harness->bodies(u"groups.members.tag"_s);
+	QCOMPARE(bodies.size(), 1);
+	QCOMPARE(bodies[0], (QJsonObject{
+		{ u"group"_s, kGroup },
+		{ u"user"_s, u"u_ali"_s },
+		{ u"tag"_s, u"طراح"_s },
+	}));
+	QCOMPARE(member->tag, u"طراح"_s);
+	QVERIFY(groups.memberTags());
+	QCOMPARE(groups.senderTag(kGroup, u"u_ali"_s)->tag, u"طراح"_s);
+
+	// The HTTP form of the call (the connection is down).
+	const auto http = Rt::Methods::ToHttp(u"groups.members.tag"_s, bodies[0]);
+	QVERIFY(http.has_value());
+	QCOMPARE(http->verb, u"PUT"_s);
+	QCOMPARE(http->path, u"/v1/groups/j1group/members/u_ali/tag"_s);
+	QCOMPARE(http->body, (QJsonObject{ { u"tag"_s, u"طراح"_s } }));
+
+	// My own: the header's tag follows at once.
+	member.reset();
+	groups.setTag(kGroup, u"u_me"_s, u"برنامه‌نویس"_s, base::Guard(), [&](
+			const GroupMember &result) {
+		member = result;
+	});
+	QVERIFY(Test::WaitFor([&] { return member.has_value(); }));
+	QCOMPARE(fixture.row()->group->myTag, u"برنامه‌نویس"_s);
+	// …and goes again ("" removes it).
+	member.reset();
+	groups.setTag(kGroup, u"u_me"_s, QString(), base::Guard(), [&](
+			const GroupMember &result) {
+		member = result;
+	});
+	QVERIFY(Test::WaitFor([&] { return member.has_value(); }));
+	QVERIFY(fixture.row()->group->myTag.isEmpty());
+	QVERIFY(fixture.harness->bodies(u"groups.members.tag"_s).back().contains("tag"_L1));
+
+	// A refusal reaches the caller with its code.
+	auto code = QString();
+	groups.setTag(kGroup, u"u_nika"_s, u"x"_s, base::Guard(), nullptr, [&](
+			const Api::Error &error) {
+		code = error.code;
+	});
+	QVERIFY(Test::WaitFor([&] { return !code.isEmpty(); }));
+	QCOMPARE(code, u"group.tag_invalid"_s);
+}
+
+void TestGroups::permissionWritesSayWithTags() {
+	auto fixture = Fixture();
+	QVERIFY(fixture.startWithGroup());
+	auto &groups = fixture.groups();
+	auto &transport = fixture.harness->transport;
+	transport.handler = [prev = transport.handler](const Call &call) {
+		if (call.method == u"groups.admin.set" || call.method == u"groups.restrict") {
+			return Reply::Ok(QJsonObject{
+				{ u"user"_s, call.body.value("user"_L1).toString() },
+				{ u"role"_s, (call.method == u"groups.admin.set") ? u"admin"_s : u"member"_s },
+				{ u"status"_s, u"member"_s },
+			});
+		}
+		return prev(call);
+	};
+	auto answers = 0;
+	groups.setAdmin(kGroup, u"u_ali"_s, { u"manage_tags"_s }, u"ناظر"_s, base::Guard(), [&](
+			const GroupMember &) {
+		++answers;
+	});
+	groups.restrict(kGroup, u"u_nika"_s, { u"edit_tag"_s }, 0, base::Guard(), [&](
+			const GroupMember &) {
+		++answers;
+	});
+	QVERIFY(Test::WaitFor([&] { return answers == 2; }));
+	// The lists are complete: the server takes the new names as they are.
+	const auto admin = fixture.harness->bodies(u"groups.admin.set"_s);
+	QCOMPARE(admin.size(), 1);
+	QCOMPARE(admin[0].value("with_tags"_L1).toBool(), true);
+	QCOMPARE(admin[0].value("rights"_L1).toArray(), (QJsonArray{ u"manage_tags"_s }));
+	const auto restrict = fixture.harness->bodies(u"groups.restrict"_s);
+	QCOMPARE(restrict.size(), 1);
+	QCOMPARE(restrict[0].value("with_tags"_L1).toBool(), true);
+	QCOMPARE(restrict[0].value("denied"_L1).toArray(), (QJsonArray{ u"edit_tag"_s }));
+
+	fixture.harness->http.handler = [](const Test::HttpServer::Request &request) {
+		if (request.path == "/v1/groups/j1group/permissions") {
+			return Test::HttpServer::Response::Ok(Header(kGroup, 7, 4));
+		}
+		return Test::HttpServer::Response::Ok();
+	};
+	auto done = false;
+	groups.setPermissions(
+		kGroup,
+		QStringList{ u"send_messages"_s, u"edit_tag"_s },
+		std::nullopt,
+		base::Guard(),
+		[&](const Group &) { done = true; });
+	QVERIFY(Test::WaitFor([&] { return done; }));
+	const auto requests = fixture.harness->http.to("/v1/groups/j1group/permissions");
+	QCOMPARE(requests.size(), 1);
+	QCOMPARE(requests[0].json().value("with_tags"_L1).toBool(), true);
 }
 
 QTEST_GUILESS_MAIN(TestGroups)

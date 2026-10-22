@@ -9,6 +9,7 @@
 #include "groups/groups_admin.h"
 #include "groups/groups_boxes.h"
 #include "groups/groups_common.h"
+#include "groups/groups_tags.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
 #include "main/main_session.h"
@@ -160,6 +161,20 @@ public:
 				reload();
 			}
 		});
+		connect(&data.groups(), &Data::Groups::senderTagsChanged, this, [this](
+				const QString &group,
+				const QStringList &users) {
+			if (group == _groupId) {
+				tagsChanged(users);
+			}
+		});
+		// Whether I may set tags follows my header (rights, permissions).
+		connect(&data.chats(), &Data::Chats::chatChanged, this, [this](
+				const QString &id) {
+			if (id == _groupId) {
+				update();
+			}
+		});
 		style::OnPaletteChanged(this, [this] {
 			_userpics.clear();
 			update();
@@ -227,12 +242,20 @@ protected:
 				member.user);
 			const auto left = padding.left() + size + st::groupsMemberUserpicSkip;
 			auto available = outer - left - padding.right();
-			// The role on the trailing side: «مالک», «مدیر», a title, «تو».
-			auto tag = MemberTag(member);
+			// The tag on the trailing side (Telegram's member rows): the
+			// owner's and the admins' on a pill, a member's in grey, my own
+			// «افزودن تگ»; without one «محدودشده» or «تو».
+			const auto tagged = tagGeometry(i, available);
+			auto tag = (tagged.tag.mode == Data::MemberTags::RowMode::None)
+				? MemberTag(member)
+				: QString();
 			if (tag.isEmpty() && member.user == me) {
 				tag = tr::lng_groups_you_tag(tr::now);
 			}
-			if (!tag.isEmpty()) {
+			if (tagged.tag.mode != Data::MemberTags::RowMode::None) {
+				paintTag(p, tagged, i == _overTag);
+				available -= tagged.rect.width() + st::groupsMemberTagSkip;
+			} else if (!tag.isEmpty()) {
 				const auto &font = st::groupsMemberTagFont;
 				tag = font->elided(tag, std::max(available / 3, 1));
 				const auto tagWidth = font->width(tag);
@@ -290,21 +313,34 @@ protected:
 	}
 
 	void mouseMoveEvent(QMouseEvent *e) override {
-		setOver(rowAt(e->pos()));
+		setOver(rowAt(e->pos()), tagAt(e->pos()));
 	}
 	void leaveEvent(QEvent *e) override {
 		Q_UNUSED(e);
-		setOver(-1);
+		setOver(-1, -1);
 	}
 	void mousePressEvent(QMouseEvent *e) override {
 		_pressed = rowAt(e->pos());
+		_pressedTag = tagAt(e->pos());
 	}
 	void mouseReleaseEvent(QMouseEvent *e) override {
 		const auto pressed = std::exchange(_pressed, -1);
+		const auto pressedTag = std::exchange(_pressedTag, -1);
 		const auto index = rowAt(e->pos());
 		if (index != pressed
 			|| (e->button() != Qt::LeftButton && e->button() != Qt::RightButton)) {
 			return;
+		} else if (e->button() == Qt::LeftButton
+			&& pressedTag >= 0
+			&& pressedTag == tagAt(e->pos())
+			&& pressedTag < _rows.size()) {
+			// A tag I may set: the box at once.
+			const auto &member = _rows[pressedTag];
+			ShowEditTagBox(
+				_controller,
+				_groupId,
+				member.user,
+				senderOf(member));
 		} else if (index >= 0 && index < _rows.size()) {
 			const auto weak = QPointer<MembersList>(this);
 			ShowMemberMenu(
@@ -334,11 +370,162 @@ private:
 		const auto index = position.y() / st::groupsMemberHeight;
 		return (index * st::groupsMemberHeight < height()) ? index : -1;
 	}
-	void setOver(int index) {
+	void setOver(int index, int tag) {
 		const auto over = (index >= 0 && index < _rows.size()) ? index : -1;
 		setCursor((index >= 0) ? style::cur_pointer : style::cur_default);
-		if (_over != over) {
+		if (_over != over || _overTag != tag) {
 			_over = over;
+			_overTag = tag;
+			update();
+		}
+	}
+
+	// ---- the tags of the rows
+	struct TagGeometry {
+		Data::MemberTags::RowTag tag;
+		QString text; // elided
+		QRect rect;   // physical
+	};
+	[[nodiscard]] TagSender senderOf(const Data::GroupMember &member) const {
+		return Data::MemberTags::FromMember(
+			member.status,
+			member.role,
+			member.tag,
+			member.adminTitle);
+	}
+	[[nodiscard]] TagGeometry tagGeometry(int index, int available) const {
+		auto result = TagGeometry();
+		if (index < 0 || index >= _rows.size()) {
+			return result;
+		}
+		const auto &member = _rows[index];
+		const auto self = (member.user == _controller->session().userId());
+		const auto sender = senderOf(member);
+		const auto canEdit = self
+			? MayEditOwnTag(_controller, _groupId)
+			: MayEditTagOf(_controller, _groupId, member.user, sender.role);
+		result.tag = Data::MemberTags::RowTagFor(
+			sender.role,
+			sender.tag,
+			self,
+			canEdit,
+			tr::lng_groups_tag_owner(tr::now),
+			tr::lng_groups_tag_admin(tr::now),
+			tr::lng_groups_tag_add(tr::now));
+		using Mode = Data::MemberTags::RowMode;
+		if (result.tag.mode == Mode::None) {
+			return result;
+		}
+		const auto &font = st::groupsMemberTagPillFont;
+		const auto pill = (result.tag.mode != Mode::Text) || result.tag.interactive;
+		const auto sides = pill ? 2 * int(st::groupsMemberTagPadding) : 0;
+		const auto room = std::max(
+			std::min(int(st::groupsMemberTagMax), available / 2) - sides,
+			font->elidew * 2);
+		result.text = font->elided(result.tag.text, room);
+		const auto height = pill
+			? int(st::groupsMemberTagHeight)
+			: int(font->height);
+		const auto tagWidth = TagBadgeWidth(
+			result.text,
+			pill,
+			font,
+			height,
+			st::groupsMemberTagPadding);
+		const auto rowHeight = int(st::groupsMemberHeight);
+		const auto right = st::groupsMemberPadding.right();
+		result.rect = QRect(
+			style::RightToLeft() ? right : (width() - right - tagWidth),
+			index * rowHeight + (rowHeight - height) / 2,
+			tagWidth,
+			height);
+		return result;
+	}
+	[[nodiscard]] int availableFor() const {
+		const auto &padding = st::groupsMemberPadding;
+		return width()
+			- padding.left()
+			- st::groupsMemberUserpic
+			- st::groupsMemberUserpicSkip
+			- padding.right();
+	}
+	// The row whose tag is under the point, when a click on it opens the box.
+	[[nodiscard]] int tagAt(QPoint position) const {
+		const auto index = rowAt(position);
+		if (index < 0 || index >= _rows.size()) {
+			return -1;
+		}
+		const auto geometry = tagGeometry(index, availableFor());
+		return (geometry.tag.interactive
+			&& geometry.rect.marginsAdded(QMargins(4, 4, 4, 4)).contains(position))
+			? index
+			: -1;
+	}
+	void paintTag(QPainter &p, const TagGeometry &geometry, bool over) const {
+		using Mode = Data::MemberTags::RowMode;
+		const auto &font = st::groupsMemberTagPillFont;
+		const auto &tag = geometry.tag;
+		if (tag.mode == Mode::Add) {
+			// The light blue «افزودن تگ» button.
+			auto hq = PainterHighQualityEnabler(p);
+			auto fill = st::rankAddFg->c;
+			fill.setAlphaF(over ? 0.18 : 0.12);
+			p.setPen(Qt::NoPen);
+			p.setBrush(fill);
+			const auto radius = geometry.rect.height() / 2.;
+			p.drawRoundedRect(QRectF(geometry.rect), radius, radius);
+			const auto width = font->width(geometry.text);
+			p.setFont(font);
+			p.setPen(st::rankAddFg);
+			p.drawText(
+				geometry.rect.x() + (geometry.rect.width() - width) / 2,
+				geometry.rect.y() + (geometry.rect.height() - font->height) / 2 + font->ascent,
+				geometry.text);
+		} else if (tag.mode == Mode::Pill) {
+			PaintTagBadge(
+				p,
+				geometry.rect,
+				geometry.text,
+				tag.role,
+				true,
+				font,
+				(tag.interactive && over) ? 0.18 : 0.12);
+		} else if (tag.interactive) {
+			// A member's tag I may set: grey, on a pill when hovered.
+			PaintTagBadge(
+				p,
+				geometry.rect,
+				geometry.text,
+				tag.role,
+				true,
+				font,
+				over ? 0.12 : 0.);
+		} else {
+			PaintTagBadge(
+				p,
+				geometry.rect,
+				geometry.text,
+				tag.role,
+				false,
+				font);
+		}
+	}
+	void tagsChanged(const QStringList &users) {
+		auto &groups = _controller->session().data().groups();
+		auto changed = false;
+		for (auto &member : _rows) {
+			if (!users.contains(member.user)) {
+				continue;
+			}
+			if (const auto known = groups.senderTag(_groupId, member.user)) {
+				member.tag = known->tag;
+				if (member.role == u"owner" || member.role == u"admin") {
+					member.adminTitle = known->tag;
+				}
+				changed = true;
+			}
+		}
+		if (changed) {
 			update();
 		}
 	}
@@ -402,7 +589,9 @@ private:
 	QString _cursor;
 	int _generation = 0;
 	int _over = -1;
+	int _overTag = -1;
 	int _pressed = -1;
+	int _pressedTag = -1;
 	bool _loading = false;
 	bool _failed = false;
 

@@ -1,5 +1,7 @@
 #include "history/history_view_element.h"
 
+#include "groups/groups_tags.h"
+
 #include "history/history_view_media.h"
 #include "history/history_album.h"
 #include "data/data_group_rules.h"
@@ -868,14 +870,19 @@ void Element::layoutBubble(int maxWidth) {
 					std::min(innerMax, int(st::historyReplyMaxWidth))));
 		}
 		if (named) {
+			// The bubble grows to show the whole name and the whole tag.
 			others = std::max(
 				others,
 				std::min(
-					st::historyGroupNameFont->width(_sender.name)
-						+ (_sender.tag.isEmpty()
-							? 0
-							: (st::historyGroupTagSkip
-								+ st::historyGroupTagFont->width(_sender.tag))),
+					Groups::NameLineNaturalWidth(
+						_sender.name,
+						st::historyGroupNameFont,
+						_sender.tag,
+						senderTagPill(),
+						st::historyGroupTagFont,
+						st::historyGroupTagHeight,
+						st::historyGroupTagPadding,
+						st::historyGroupTagSkip),
 					innerMax));
 		}
 		if (!_forwardedText.isEmpty()) {
@@ -937,16 +944,21 @@ void Element::layoutBubble(int maxWidth) {
 	if (named) {
 		_senderRect = QRect(left, top, inner, st::historyGroupNameHeight);
 		top += st::historyGroupNameHeight;
-		// The role gives way to the name, the name to the bubble's width.
-		const auto tagWidth = _sender.tag.isEmpty()
-			? 0
-			: st::historyGroupTagFont->width(_sender.tag);
-		const auto withTag = (tagWidth > 0)
-			&& (tagWidth + st::historyGroupTagSkip <= inner / 2);
-		_senderTag = withTag ? _sender.tag : QString();
-		_senderName = st::historyGroupNameFont->elided(
+		// The tag is cut before it pushes the name out (Telegram's RightBadge
+		// at the end of the line).
+		const auto line = Groups::LayoutNameLine(
 			_sender.name,
-			inner - (withTag ? (tagWidth + st::historyGroupTagSkip) : 0));
+			st::historyGroupNameFont,
+			_sender.tag,
+			senderTagPill(),
+			st::historyGroupTagFont,
+			st::historyGroupTagHeight,
+			st::historyGroupTagPadding,
+			st::historyGroupTagSkip,
+			inner);
+		_senderName = line.name;
+		_senderTag = line.badge;
+		_senderTagWidth = line.badgeWidth;
 	}
 	if (!_forwardedText.isEmpty()) {
 		_forwardedRect = QRect(left, top, inner, st::historyForwardedHeight);
@@ -1358,15 +1370,35 @@ void Element::paintSender(Painter &p, const ChatColors &colors) const {
 		_senderRect.y() + font->ascent,
 		_senderName);
 	if (!_senderTag.isEmpty()) {
-		const auto &tagFont = st::historyGroupTagFont;
-		const auto tagWidth = tagFont->width(_senderTag);
-		p.setPen(colors.metaIn);
-		p.setFont(tagFont);
-		p.drawText(
-			rtl ? _senderRect.x() : (_senderRect.right() + 1 - tagWidth),
-			_senderRect.y() + font->ascent,
-			_senderTag);
+		Groups::PaintTagBadge(
+			p,
+			senderTagRect(),
+			_senderTag,
+			_sender.tagRole,
+			senderTagPill(),
+			st::historyGroupTagFont);
 	}
+}
+
+bool Element::senderTagPill() const {
+	return _sender.tagRole != Data::MemberTags::Role::Member;
+}
+
+QRect Element::senderTagRect() const {
+	if (_senderRect.isNull() || _senderTag.isEmpty()) {
+		return QRect();
+	}
+	// At the end of the name line: the left edge in RTL.
+	const auto height = senderTagPill()
+		? int(st::historyGroupTagHeight)
+		: int(st::historyGroupTagFont->height);
+	return QRect(
+		style::RightToLeft()
+			? _senderRect.x()
+			: (_senderRect.right() + 1 - _senderTagWidth),
+		_senderRect.y() + (_senderRect.height() - height) / 2,
+		_senderTagWidth,
+		height);
 }
 
 void Element::paintReply(Painter &p, const ChatColors &colors) const {
@@ -1734,6 +1766,17 @@ HitResult Element::hitTest(QPoint point) const {
 		}
 	}
 	if (!_sender.userId.isEmpty()) {
+		// The tag first: a tap on it explains it (the line around it too,
+		// so a thin grey tag is easy to hit).
+		const auto tag = senderTagRect();
+		if (!tag.isNull()
+			&& tag.marginsAdded(QMargins(4, 0, 4, 0))
+				.united(QRect(tag.x(), _senderRect.y(), tag.width(), _senderRect.height()))
+				.contains(point)) {
+			result.zone = Zone::SenderTag;
+			result.text = _sender.userId;
+			return result;
+		}
 		const auto nameWidth = _senderRect.isNull()
 			? 0
 			: st::historyGroupNameFont->width(_senderName);

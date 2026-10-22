@@ -23,6 +23,7 @@ struct Group {
 	QString state;              // active
 	QString status;             // member (anything else: not in the group any more)
 	QString role;               // owner | admin | member
+	QString myTag;              // my own tag in the group ("" = none)
 	QStringList rights;         // admin rights I hold
 	QStringList permissions;    // what I may do now: the UI is enabled from these
 	QStringList defaultPermissions; // what an ordinary member may do
@@ -73,7 +74,8 @@ struct GroupMember {
 	QString user;
 	QString role;               // owner | admin | member
 	QStringList rights;
-	QString adminTitle;
+	QString adminTitle;         // only for the owner and admins (= their tag)
+	QString tag;                // everybody's tag ("" = none)
 	QString status;             // member | banned (the banned list)
 	QStringList denied;         // what a restriction that applies now takes away
 	qint64 restrictedUntil = 0; // unix seconds
@@ -83,6 +85,8 @@ struct GroupMember {
 	[[nodiscard]] bool restricted() const {
 		return !denied.isEmpty();
 	}
+	// The tag; for an admin of a server without tags, the admin title.
+	[[nodiscard]] QString currentTag() const;
 	[[nodiscard]] static GroupMember FromJson(const QJsonObject &json);
 	[[nodiscard]] QJsonObject toJson() const;
 };
@@ -152,6 +156,8 @@ struct GroupAdminLogEntry {
 	QString linkName;           // invite_create, invite_revoke
 	bool requiresApproval = false;
 	bool deleteMessages = false; // ban
+	QString tag;                // edit_tag: the tag now ("" = removed)…
+	QString prevTag;            // …and before ("" = there was none)
 
 	[[nodiscard]] static GroupAdminLogEntry FromJson(const QJsonObject &json);
 };

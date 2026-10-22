@@ -2098,6 +2098,43 @@
 "lng_groups_link_joined_none" = "کسی که با این لینک آمده در گروه نیست";
 "lng_groups_link_joined_note" = "فقط کسانی که هنوز عضوند نشان داده می‌شوند.";
 
+// ---- groups: member tags ----
+// The tag next to a member's name (Telegram's member tags); the badge words of
+// the owner and an admin without a tag of their own.
+"lng_groups_tag_owner" = "مالک";
+"lng_groups_tag_admin" = "ادمین";
+"lng_groups_tag_info_title_member" = "تگ‌های اعضا";
+"lng_groups_tag_info_title_admin" = "تگ‌های ادمین";
+"lng_groups_tag_info_title_owner" = "تگ‌های مالک";
+"lng_groups_tag_info_text_member" = "این تگ خاکستری {tag} تگ عضوِ {author} در {group} است.";
+"lng_groups_tag_info_text_admin" = "این تگ سبز {tag} تگ ادمینِ {author} در {group} است.";
+"lng_groups_tag_info_text_owner" = "این تگ بنفش {tag} تگ مالکِ {author} در {group} است.";
+"lng_groups_tag_info_preview_member" = "تگ عضو";
+"lng_groups_tag_info_preview_admin" = "تگ ادمین";
+"lng_groups_tag_info_preview_owner" = "تگ مالک";
+"lng_groups_tag_info_add_mine" = "افزودن تگ من";
+"lng_groups_tag_info_edit_mine" = "ویرایش تگ من";
+"lng_groups_tag_info_admins_only" = "فقط ادمین‌ها می‌توانند تگ‌ها را در این گروه تغییر دهند.";
+"lng_groups_tag_info_understood" = "متوجه شدم";
+"lng_groups_tag_edit" = "ویرایش تگ";
+"lng_groups_tag_add" = "افزودن تگ";
+"lng_groups_tag_add_member" = "افزودن تگ عضو";
+"lng_groups_tag_edit_member" = "ویرایش تگ عضو";
+"lng_groups_tag_placeholder" = "تگ";
+"lng_groups_tag_about_self" = "نقش، عنوان یا اسمی که در این گروه با آن شناخته می‌شوی را بنویس. تگ تو برای همهٔ اعضا دیده می‌شود.";
+"lng_groups_tag_about_other" = "یک تگ کوتاه کنار نام {name} بگذار.";
+"lng_groups_tag_invalid" = "تگ نامعتبر است";
+"lng_groups_perm_edit_tag" = "ویرایش تگ خود";
+"lng_groups_right_manage_tags" = "ویرایش تگ اعضا";
+"lng_groups_admin_tag_note" = "کنار نامش در گروه نشان داده می‌شود؛ بدون تگ «ادمین» دیده می‌شود.";
+"lng_groups_log_kind_tags" = "تغییر تگ‌ها";
+"lng_groups_log_tag_changed" = "{actor} تگ {target} را از «{previous}» به «{tag}» تغییر داد";
+"lng_groups_log_tag_set" = "{actor} برای {target} تگ «{tag}» گذاشت";
+"lng_groups_log_tag_removed" = "{actor} تگ {target} را برداشت (قبلاً «{previous}» بود)";
+"lng_groups_log_own_tag_changed" = "{actor} تگ خود را از «{previous}» به «{tag}» تغییر داد";
+"lng_groups_log_own_tag_set" = "{actor} تگ خود را «{tag}» گذاشت";
+"lng_groups_log_own_tag_removed" = "{actor} تگ خود را برداشت (قبلاً «{previous}» بود)";
+
 // ---- settings: privacy and account extras ----
 "lng_settings_ls_always" = "همیشه نشان بده به";
 "lng_settings_ls_never" = "هرگز نشان نده به";

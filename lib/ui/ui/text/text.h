@@ -150,6 +150,12 @@ public:
 	[[nodiscard]] StateResult getState(
 		QPoint point,
 		const PaintContext &geometry) const;
+	// Where a range of the text is drawn for `geometry`: one rectangle per
+	// line (a line high), relative to geometry.position. To mark a part of
+	// a text (a coloured pill under a word).
+	[[nodiscard]] std::vector<QRectF> rangeRects(
+		Selection range,
+		const PaintContext &geometry) const;
 
 	// Expands a selection to whole words / paragraphs.
 	[[nodiscard]] Selection adjustSelection(

@@ -54,6 +54,7 @@ constexpr auto kMaxUnknownAsked = 500;
 void TakePersonal(Group &to, const Group &from) {
 	to.status = from.status;
 	to.role = from.role;
+	to.myTag = from.myTag;
 	to.rights = from.rights;
 	to.permissions = from.permissions;
 	to.canSend = from.canSend;
@@ -434,6 +435,11 @@ bool Groups::applyFrame(
 		const auto me = _session->userId();
 		const auto owner = Json::String(data, "owner"_L1);
 		const auto member = data.value("member"_L1).toObject();
+		if (!member.isEmpty()) {
+			// A role or a tag changed (or somebody joined / left): what the
+			// badges of their messages say follows at once.
+			noteMember(group, GroupMember::FromJson(member));
+		}
 		const auto defaults = data.contains("default_permissions"_L1);
 		const auto slow = data.contains("slow_mode_s"_L1);
 		// `members_hidden` is mine alone: the header says it.
@@ -517,6 +523,7 @@ void Groups::applyMessageFrame(const QString &group, const QJsonObject &data, bo
 		message.chat = group;
 	}
 	message.resolveLocal(&row->info, _session->userId());
+	noteSenders(group, { message });
 	const auto mine = message.mine;
 	const auto isNew = message.seq > row->lastSeq;
 	const auto visible = message.visible();
@@ -633,6 +640,7 @@ void Groups::applyChangedMessage(const QString &group, const QJsonObject &data, 
 	}
 	const auto row = chats.chat(group);
 	message.resolveLocal(row ? &row->info : nullptr, _session->userId());
+	noteSenders(group, { message });
 	// Frames are the same for every member, so they never carry my reaction.
 	if (const auto existing = messages.find(group, message.seq)) {
 		message.myReaction = existing->myReaction;
@@ -826,6 +834,7 @@ void Groups::applyDifference(
 			message.chat = group;
 		}
 		message.resolveLocal(&row->info, me);
+		noteSenders(group, { message });
 		const auto isNew = message.seq > lastSeqBefore;
 		const auto deleted = !message.visible();
 		changes.push_back({ message.seq, isNew, message.mine, deleted });
@@ -1112,6 +1121,7 @@ bool Groups::applyEntry(
 	if (!IsGroupId(header.id) || !header.isMember()) {
 		return false;
 	}
+	learnFeatures(header);
 	auto &chats = _session->chats();
 	const auto previous = chats.chat(header.id);
 	const auto heldPts = (previous && previous->isGroup) ? previous->groupPts : -1;
@@ -1147,6 +1157,7 @@ bool Groups::applyEntry(
 				last.chat = header.id;
 			}
 			last.resolveLocal(&row.info, _session->userId());
+			noteSenders(header.id, { last });
 			row.lastMine = last.mine;
 			row.lastMessage = std::move(last);
 		} else {
@@ -1343,6 +1354,7 @@ void Groups::applyHeader(const Group &header) {
 	if (!header.valid() || !IsGroupId(header.id)) {
 		return;
 	}
+	learnFeatures(header);
 	auto &chats = _session->chats();
 	const auto previous = chats.chat(header.id);
 	if (!previous || !previous->isGroup) {
@@ -1413,6 +1425,7 @@ void Groups::historyPage(const Group &header, bool newest) {
 	if (!_started || !enabled() || !header.valid()) {
 		return;
 	}
+	learnFeatures(header);
 	auto &chats = _session->chats();
 	const auto previous = chats.chat(header.id);
 	if (!previous || !previous->isGroup) {
@@ -1590,6 +1603,7 @@ bool Groups::handleError(const QString &group, const Api::Error &error) {
 void Groups::drop(const QString &group, const QString &status) {
 	const auto was = held(group);
 	forgetState(group);
+	_senderTags.remove(group);
 	// Its queued sends go with it: they would fail for good.
 	_session->outbox().discardChat(group);
 	if (!was) {
@@ -1807,6 +1821,7 @@ void Groups::loadMembers(
 		auto ids = QStringList();
 		for (const auto &member : std::as_const(page.members)) {
 			ids.push_back(member.user);
+			noteMember(group, member);
 		}
 		// Cards first, so the rows appear with their names.
 		_session->users().ensure(ids, guard, [=] {
@@ -1894,14 +1909,19 @@ void Groups::setAdmin(
 		{ u"group"_s, group },
 		{ u"user"_s, user },
 		{ u"rights"_s, Json::Array(rights) },
+		// The list is complete: `manage_tags` is in it or taken away (an
+		// older app leaves the flag out and the server keeps the right).
+		{ u"with_tags"_s, true },
 	};
 	if (title) {
 		body.insert(u"title"_s, title->simplified());
 	}
 	call(u"groups.admin.set"_s, group, body, guard, [=, this](const QJsonObject &result) {
+		const auto member = GroupMember::FromJson(result);
+		noteMember(group, member);
 		Q_EMIT membersChanged(group);
 		if (done) {
-			done(GroupMember::FromJson(result));
+			done(member);
 		}
 	}, std::move(fail));
 }
@@ -1914,9 +1934,12 @@ void Groups::unsetAdmin(
 		Fail fail) {
 	const auto body = QJsonObject{ { u"group"_s, group }, { u"user"_s, user } };
 	call(u"groups.admin.unset"_s, group, body, guard, [=, this](const QJsonObject &result) {
+		// A former admin keeps their tag (as a member's now).
+		const auto member = GroupMember::FromJson(result);
+		noteMember(group, member);
 		Q_EMIT membersChanged(group);
 		if (done) {
-			done(GroupMember::FromJson(result));
+			done(member);
 		}
 	}, std::move(fail));
 }
@@ -1933,14 +1956,18 @@ void Groups::restrict(
 		{ u"group"_s, group },
 		{ u"user"_s, user },
 		{ u"denied"_s, Json::Array(denied) },
+		// `edit_tag` is in the list or allowed (see setAdmin).
+		{ u"with_tags"_s, true },
 	};
 	if (until > 0 && !denied.isEmpty()) {
 		body.insert(u"until"_s, double(until));
 	}
 	call(u"groups.restrict"_s, group, body, guard, [=, this](const QJsonObject &result) {
+		const auto member = GroupMember::FromJson(result);
+		noteMember(group, member);
 		Q_EMIT membersChanged(group);
 		if (done) {
-			done(GroupMember::FromJson(result));
+			done(member);
 		}
 	}, std::move(fail));
 }
@@ -1986,7 +2013,8 @@ void Groups::setPermissions(
 		base::Guard guard,
 		Fn<void(const Group &)> done,
 		Fail fail) {
-	auto body = QJsonObject();
+	// `edit_tag` is in the list or taken away (see setAdmin).
+	auto body = QJsonObject{ { u"with_tags"_s, true } };
 	if (defaultPermissions) {
 		body.insert(u"default_permissions"_s, Json::Array(*defaultPermissions));
 	}
@@ -2466,6 +2494,154 @@ void Groups::loadMentions(
 			}
 		})
 		.send();
+}
+
+// ---- member tags
+
+bool Groups::HasTagFeatures(const Group &header) {
+	// The owner holds every right and every admin the permission, and new
+	// groups (and existing ones, by the server's migration) give it to
+	// members: one header of a server with tags almost always says so.
+	return header.permissions.contains(u"edit_tag"_s)
+		|| header.defaultPermissions.contains(u"edit_tag"_s)
+		|| header.rights.contains(u"manage_tags"_s)
+		|| !header.myTag.isEmpty();
+}
+
+void Groups::learnFeatures(const Group &header) {
+	if (!_memberTags && HasTagFeatures(header)) {
+		_memberTags = true;
+	}
+}
+
+bool Groups::memberTagsIn(const QString &group) const {
+	if (_memberTags) {
+		return true;
+	}
+	const auto header = this->group(group);
+	return header && HasTagFeatures(*header);
+}
+
+std::optional<MemberTags::Sender> Groups::senderTag(
+		const QString &group,
+		const QString &user) const {
+	const auto i = _senderTags.constFind(group);
+	if (i == _senderTags.cend()) {
+		return std::nullopt;
+	}
+	const auto j = i->constFind(user);
+	return (j == i->cend()) ? std::nullopt : std::make_optional(*j);
+}
+
+void Groups::noteSender(
+		const QString &group,
+		const QString &user,
+		const MemberTags::Sender &sender,
+		QStringList &changed) {
+	auto &senders = _senderTags[group];
+	const auto i = senders.find(user);
+	if (i == senders.end()) {
+		senders.insert(user, sender);
+	} else if (*i != sender) {
+		*i = sender;
+	} else {
+		return;
+	}
+	if (!changed.contains(user)) {
+		changed.push_back(user);
+	}
+}
+
+void Groups::noteSenders(const QString &group, const QVector<Message> &messages) {
+	if (!IsGroupId(group)) {
+		return;
+	}
+	auto changed = QStringList();
+	for (const auto &message : messages) {
+		// Service notes, tombstones and my queued sends say nothing of
+		// anybody's tag.
+		if (message.sender.isEmpty()
+			|| message.local()
+			|| message.deleted
+			|| message.kind == MessageKind::System) {
+			continue;
+		}
+		if (!message.senderTag.isEmpty() || !message.senderRole.isEmpty()) {
+			_memberTags = true;
+		}
+		const auto sender = MemberTags::FromMessage(
+			message.senderRole,
+			message.senderTag,
+			_memberTags);
+		if (sender) {
+			noteSender(group, message.sender, *sender, changed);
+		}
+	}
+	if (!changed.isEmpty()) {
+		Q_EMIT senderTagsChanged(group, changed);
+	}
+}
+
+void Groups::noteMember(const QString &group, const GroupMember &member) {
+	if (!IsGroupId(group) || member.user.isEmpty()) {
+		return;
+	}
+	if (!member.tag.isEmpty()) {
+		_memberTags = true;
+	}
+	auto changed = QStringList();
+	noteSender(
+		group,
+		member.user,
+		MemberTags::FromMember(
+			member.status,
+			member.role,
+			member.tag,
+			member.adminTitle),
+		changed);
+	const auto me = _session->userId();
+	if (!me.isEmpty() && member.user == me) {
+		const auto mine = (member.status.isEmpty() || member.status == u"member")
+			? member.currentTag()
+			: QString();
+		const auto row = _session->chats().chat(group);
+		if (row && row->group && row->group->myTag != mine) {
+			_session->chats().patch(group, [&](Chat &c) {
+				if (c.group) {
+					c.group->myTag = mine;
+				}
+			});
+		}
+	}
+	if (!changed.isEmpty()) {
+		Q_EMIT senderTagsChanged(group, changed);
+	}
+}
+
+void Groups::setTag(
+		const QString &group,
+		const QString &user,
+		const QString &tag,
+		base::Guard guard,
+		Fn<void(const GroupMember &)> done,
+		Fail fail) {
+	const auto body = QJsonObject{
+		{ u"group"_s, group },
+		{ u"user"_s, user },
+		{ u"tag"_s, MemberTags::Typed(tag) },
+	};
+	call(u"groups.members.tag"_s, group, body, guard, [=, this](
+			const QJsonObject &result) {
+		auto member = GroupMember::FromJson(result);
+		if (member.user.isEmpty()) {
+			member.user = user;
+		}
+		_memberTags = true;
+		noteMember(group, member);
+		if (done) {
+			done(member);
+		}
+	}, std::move(fail));
 }
 
 } // namespace Data

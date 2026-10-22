@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <vector>
 
 namespace Data {
 namespace {
@@ -322,6 +323,7 @@ const QStringList &RightNames() {
 		u"invite_users"_s,
 		u"pin_messages"_s,
 		u"add_admins"_s,
+		u"manage_tags"_s,
 	};
 	return kResult;
 }
@@ -334,8 +336,45 @@ const QStringList &PermissionNames() {
 		u"add_members"_s,
 		u"pin_messages"_s,
 		u"change_info"_s,
+		u"edit_tag"_s,
 	};
 	return kResult;
+}
+
+const QStringList &ShownRights() {
+	static const auto kResult = QStringList{
+		u"change_info"_s,
+		u"delete_messages"_s,
+		u"ban_users"_s,
+		u"invite_users"_s,
+		u"pin_messages"_s,
+		u"manage_tags"_s,
+		u"add_admins"_s,
+	};
+	return kResult;
+}
+
+const QStringList &ShownPermissions() {
+	static const auto kResult = QStringList{
+		u"send_messages"_s,
+		u"send_media"_s,
+		u"send_links"_s,
+		u"add_members"_s,
+		u"pin_messages"_s,
+		u"edit_tag"_s,
+		u"change_info"_s,
+	};
+	return kResult;
+}
+
+int RightBit(const QString &name) {
+	const auto index = RightNames().indexOf(name);
+	return (index >= 0) ? (1 << index) : 0;
+}
+
+int PermissionBit(const QString &name) {
+	const auto index = PermissionNames().indexOf(name);
+	return (index >= 0) ? (1 << index) : 0;
 }
 
 int RightsMask(const QStringList &names) {
@@ -380,7 +419,8 @@ int Permissions(const Member &member, int defaults) {
 	} else if (member.role == u"owner") {
 		return kPermissionsAll;
 	} else if (member.role == u"admin") {
-		auto result = defaults | kPermissionsSend;
+		// Like sending, an admin's own tag is never taken away.
+		auto result = defaults | kPermissionsSend | kEditTag;
 		const auto rights = Rights(member);
 		if (rights & kChangeInfo) {
 			result |= kChangeInfoPermission;
@@ -729,6 +769,7 @@ namespace {
 			u"pin"_s, u"unpin"_s, u"delete_message"_s,
 			u"delete_messages"_s, u"delete_all_messages"_s },
 		QStringList{ u"invite_create"_s, u"invite_revoke"_s },
+		QStringList{ u"edit_tag"_s },
 	};
 	return result;
 }
@@ -826,6 +867,17 @@ Form FormOf(const GroupAdminLogEntry &entry) {
 		return Form::DeleteAll;
 	} else if (action == u"transfer") {
 		return Form::Transfer;
+	} else if (action == u"edit_tag") {
+		const auto tag = !entry.tag.trimmed().isEmpty();
+		const auto previous = !entry.prevTag.trimmed().isEmpty();
+		const auto own = entry.target.isEmpty() || (entry.target == entry.actor);
+		if (tag && previous) {
+			return own ? Form::OwnTagChanged : Form::TagChanged;
+		} else if (tag) {
+			return own ? Form::OwnTagSet : Form::TagSet;
+		} else if (previous) {
+			return own ? Form::OwnTagRemoved : Form::TagRemoved;
+		}
 	}
 	return Form::Generic;
 }
@@ -848,6 +900,9 @@ bool NamesTarget(Form form) {
 	case Form::DeleteMessagesOf:
 	case Form::DeleteAll:
 	case Form::Transfer:
+	case Form::TagChanged:
+	case Form::TagSet:
+	case Form::TagRemoved:
 		return true;
 	default:
 		return false;
@@ -900,5 +955,207 @@ QVector<int> SlowModeSteps(const QStringList &values) {
 }
 
 } // namespace GroupAdminLog
+
+namespace MemberTags {
+namespace {
+
+// Pictographs that are emoji by themselves (whatever follows them).
+[[nodiscard]] bool IsPictograph(char32_t code) {
+	return (code >= 0x1F000 && code <= 0x1FAFF) // flags, pictographs, emoticons, skin tones
+		|| (code >= 0x2600 && code <= 0x27BF)   // miscellaneous symbols, dingbats
+		|| (code >= 0x2B05 && code <= 0x2B07)
+		|| (code >= 0x2B1B && code <= 0x2B1C)
+		|| code == 0x2B50
+		|| code == 0x2B55
+		|| (code >= 0x231A && code <= 0x231B)
+		|| code == 0x2328
+		|| code == 0x23CF
+		|| (code >= 0x23E9 && code <= 0x23F3)
+		|| (code >= 0x23F8 && code <= 0x23FA)
+		|| (code >= 0xE0020 && code <= 0xE007F); // the tags of subdivision flags
+}
+
+[[nodiscard]] bool IsKeycapBase(char32_t code) {
+	return (code >= '0' && code <= '9') || code == '#' || code == '*';
+}
+
+constexpr auto kZeroWidthJoiner = char32_t(0x200D);
+constexpr auto kTextPresentation = char32_t(0xFE0E);
+constexpr auto kEmojiPresentation = char32_t(0xFE0F);
+constexpr auto kKeycap = char32_t(0x20E3);
+
+[[nodiscard]] int CountCodePoints(const QString &text) {
+	return int(text.toUcs4().size());
+}
+
+} // namespace
+
+Role RoleOf(QStringView wire) {
+	return (wire == u"owner")
+		? Role::Owner
+		: (wire == u"admin")
+		? Role::Admin
+		: Role::Member;
+}
+
+QString WireRole(Role role) {
+	switch (role) {
+	case Role::Owner: return u"owner"_s;
+	case Role::Admin: return u"admin"_s;
+	case Role::Member: break;
+	}
+	return u"member"_s;
+}
+
+QString RemoveEmoji(const QString &text) {
+	const auto codes = text.toUcs4();
+	const auto count = int(codes.size());
+	auto emoji = std::vector<bool>(count, false);
+	for (auto i = 0; i != count; ++i) {
+		const auto code = codes[i];
+		if (IsPictograph(code)
+			|| code == kEmojiPresentation
+			|| code == kTextPresentation) {
+			emoji[i] = true;
+			// «©️», «‼️», «↔️»: a symbol that asks to be drawn as emoji.
+			if (code == kEmojiPresentation && i > 0) {
+				emoji[i - 1] = true;
+			}
+		} else if (code == kKeycap) {
+			emoji[i] = true;
+			// «1️⃣»: the digit, the selector (if any) and the keycap.
+			auto j = i - 1;
+			if (j >= 0 && codes[j] == kEmojiPresentation) {
+				--j;
+			}
+			if (j >= 0 && IsKeycapBase(codes[j])) {
+				emoji[j] = true;
+			}
+		}
+	}
+	// A joiner inside an emoji sequence goes with it (the one of Persian
+	// words, U+200C, and a joiner between letters stay).
+	for (auto i = 0; i != count; ++i) {
+		if (codes[i] == kZeroWidthJoiner
+			&& ((i > 0 && emoji[i - 1]) || (i + 1 < count && emoji[i + 1]))) {
+			emoji[i] = true;
+		}
+	}
+	auto kept = QList<char32_t>();
+	kept.reserve(count);
+	for (auto i = 0; i != count; ++i) {
+		if (!emoji[i]) {
+			kept.push_back(codes[i]);
+		}
+	}
+	return (kept.size() == count)
+		? text
+		: QString::fromUcs4(kept.constData(), kept.size());
+}
+
+QString Shown(const QString &tag) {
+	return RemoveEmoji(tag).simplified();
+}
+
+QString Typed(const QString &typed) {
+	return Shown(typed);
+}
+
+bool TypedOk(const QString &typed, int max) {
+	return CountCodePoints(Typed(typed)) <= max;
+}
+
+Badge BadgeFor(
+		Role role,
+		const QString &tag,
+		const QString &ownerDefault,
+		const QString &adminDefault) {
+	auto result = Badge();
+	result.role = role;
+	result.text = Shown(tag);
+	if (result.text.isEmpty()) {
+		result.text = (role == Role::Owner)
+			? ownerDefault
+			: (role == Role::Admin)
+			? adminDefault
+			: QString();
+	}
+	return result;
+}
+
+bool HasBadge(bool group, bool mine, bool service) {
+	return group && !mine && !service;
+}
+
+std::optional<Sender> FromMessage(
+		const QString &senderRole,
+		const QString &senderTag,
+		bool tagAware) {
+	if (senderRole.isEmpty() && senderTag.isEmpty() && !tagAware) {
+		return std::nullopt;
+	}
+	return Sender{ senderTag, RoleOf(senderRole) };
+}
+
+Sender FromMember(
+		const QString &status,
+		const QString &role,
+		const QString &tag,
+		const QString &adminTitle) {
+	if (!status.isEmpty() && status != u"member") {
+		return Sender();
+	}
+	const auto parsed = RoleOf(role);
+	return Sender{
+		(tag.isEmpty() && parsed != Role::Member) ? adminTitle : tag,
+		parsed,
+	};
+}
+
+bool CanEditOwn(
+		const QString &myRole,
+		bool editTagPermission,
+		bool member) {
+	if (!member) {
+		return false;
+	}
+	return (RoleOf(myRole) != Role::Member) || editTagPermission;
+}
+
+bool CanEditOther(
+		const GroupRights::Member &me,
+		const GroupRights::Member &target) {
+	return target.in()
+		&& GroupRights::CanActOn(0, me, target, GroupRights::kActManageTags);
+}
+
+RowTag RowTagFor(
+		Role role,
+		const QString &tag,
+		bool self,
+		bool canEdit,
+		const QString &ownerDefault,
+		const QString &adminDefault,
+		const QString &addText) {
+	auto result = RowTag();
+	result.role = role;
+	result.interactive = canEdit;
+	const auto shown = Shown(tag);
+	if (self && canEdit && shown.isEmpty() && role == Role::Member) {
+		result.mode = RowMode::Add;
+		result.text = addText;
+	} else if (!shown.isEmpty()) {
+		result.mode = (role == Role::Member) ? RowMode::Text : RowMode::Pill;
+		result.text = shown;
+	} else if (role != Role::Member) {
+		result.mode = RowMode::Pill;
+		result.text = (role == Role::Owner) ? ownerDefault : adminDefault;
+	} else {
+		result.interactive = false;
+	}
+	return result;
+}
+
+} // namespace MemberTags
 
 } // namespace Data

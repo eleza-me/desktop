@@ -5,6 +5,7 @@
 #include "groups/groups_admin.h"
 #include "groups/groups_boxes.h"
 #include "groups/groups_info.h"
+#include "groups/groups_tags.h"
 #include "lang_auto.h"
 #include "main/main_session.h"
 #include "window/window_embeds.h"
@@ -12,6 +13,7 @@
 #include "window/window_session_controller.h"
 
 #include <QtCore/QPointer>
+#include <QtCore/QUrl>
 #include <QtCore/QTimer>
 #include <QtGui/QCursor>
 
@@ -43,6 +45,8 @@ constexpr auto kDebugRoutePollCount = 40;
 //   debug/group-hide/<g>             «پنهان کردن اعضا»
 //   debug/group-reactions/<g>/<seq>  who reacted to a message
 //   debug/group-link-members/<g>/<link>  who joined through an invite link
+//   debug/group-tag-info/<g>/<u>/<role>[/<tag>]  the box a tap on a member tag opens
+//   debug/group-tag-edit/<g>/<u>/<role>[/<tag>]  «ویرایش تگ»
 bool ShowDebugRoute(
 		Window::SessionController *controller,
 		const QString &name) {
@@ -97,6 +101,14 @@ bool ShowDebugRoute(
 		ShowInviteMembersBox(controller, group, extra, QString());
 	} else if (what == u"member-menu" && !extra.isEmpty()) {
 		ShowMemberMenu(controller, group, member(), QCursor::pos(), nullptr);
+	} else if ((what == u"tag-info" || what == u"tag-edit") && !extra.isEmpty()) {
+		const auto role = Data::MemberTags::RoleOf(parts.value(3));
+		const auto tag = QUrl::fromPercentEncoding(parts.value(4).toUtf8());
+		if (what == u"tag-info") {
+			ShowTagInfoBox(controller, group, extra, TagBadge(role, tag).text, role);
+		} else {
+			ShowEditTagBox(controller, group, extra, { tag, role });
+		}
 	} else {
 		return false;
 	}

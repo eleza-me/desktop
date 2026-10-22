@@ -547,6 +547,9 @@ void Messages::loadPage(
 				// The header moves the row; the newest page is what the
 				// cached messages of the group are current against.
 				_session->groups().historyPage(*page.group, newest);
+				// Every message carries its sender's tag and role as they are
+				// now: the badges of the older ones follow.
+				_session->groups().noteSenders(chat, page.messages);
 				auto people = QStringList();
 				for (const auto &message : std::as_const(page.messages)) {
 					if (!people.contains(message.sender)) {

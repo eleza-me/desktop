@@ -53,6 +53,10 @@ EXTRA = [
     ("userpicBg6", "#5C8FD6", "#5C8FD6", "initials avatar: blue"),
     ("userpicBg7", "#8E7BD0", "#8E7BD0", "initials avatar: violet"),
     ("userpicBg8", "#C973A6", "#C973A6", "initials avatar: pink"),
+    ("rankOwnerFg", "#956AC8", "#956AC8", "the owner's member tag: text, and its pill at 15%"),
+    ("rankAdminFg", "#49A355", "#49A355", "an admin's member tag: text, and its pill at 15%"),
+    ("rankUserFg", "{ink/450}", "{ink/350}", "a member's tag: grey text, no pill"),
+    ("rankAddFg", "#2F80D1", "#6AB0F3", "the light blue «add tag» pill of my own member row"),
 ]
 
 

@@ -762,6 +762,8 @@ Message Message::FromJson(const QJsonObject &json) {
 	if (auto story = Optional<StoryRef>(json, "story"_L1); story && !story->storyId.isEmpty()) {
 		result.story = std::move(story);
 	}
+	result.senderTag = Name(json, "sender_tag"_L1);
+	result.senderRole = String(json, "sender_role"_L1);
 	return result;
 }
 
@@ -823,6 +825,8 @@ QJsonObject Message::toJson() const {
 	if (story) {
 		result.insert("story"_L1, story->toJson());
 	}
+	Put(result, "sender_tag"_L1, senderTag);
+	Put(result, "sender_role"_L1, senderRole);
 	return result;
 }
 

@@ -31,6 +31,7 @@ C++ و Qt نوشته شده و همهٔ رابط کاربری آن را موتو
 - ساختن گروه، عضویت با پیوند دعوت یا درخواست عضویت، اشاره (@) به اعضا، پاسخ و سنجاق پیام
 - نام و عکس فرستنده کنار هر پیام، سطح اعلان برای هر گروه (همه، فقط اشاره‌ها، هیچ)
 - مدیریت: مدیران و اختیاراتشان، محدود و محروم کردن، مجوزهای اعضا، پیوندهای دعوت، درخواست‌های عضویت
+- تگ اعضا: نقش یا عنوان هر عضو کنار نامش؛ مالک بنفش، ادمین سبز و عضو خاکستری
 
 **تماس صوتی و تصویری**
 - تماس دونفره با کاربران الزا روی اندروید، آیفون و دسکتاپ، از بالای گفتگو یا از نمایه
@@ -130,7 +131,8 @@ smoothly. It speaks Persian (right-to-left) and English, in light and dark.
 - **Messenger** — text, media, voice, files, stickers; replies and quotes, edits, reactions,
   forwarding, pins, spoilers, link previews, synced drafts, offline send queue, silent send.
 - **Groups** — create a group, join by invite link, mentions, per-group notification level,
-  admins with rights, restrictions and bans, member permissions, invite links, join requests.
+  admins with rights, restrictions and bans, member permissions, invite links, join requests,
+  member tags next to the names (the owner's purple, an admin's green, a member's grey).
 - **Voice and video calls** — one-to-one calls with Eleza users on Android, iPhone and desktop: an
   incoming-call window that rings even when Eleza is closed to the tray, noise and echo removal,
   device selection, automatic reconnection, call history in the chat.

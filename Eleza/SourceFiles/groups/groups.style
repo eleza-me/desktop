@@ -144,3 +144,69 @@ groupsMediaIconFile: icon {{ "file", brandText }};
 groupsMediaIconLink: icon {{ "link", brandText }};
 groupsMediaIconVoice: icon {{ "mic", brandText }};
 groupsMediaStateHeight: 120px;
+
+// ---- member tags
+groupsMenuTag: icon {{ "tag", menuIconFg, 20px }};
+// The tag at the end of a member row.
+groupsMemberTagPillFont: font(13px);
+groupsMemberTagHeight: 24px;     // a pill (owner / admin, the «add tag» button, a tag I may edit)
+groupsMemberTagPadding: 10px;    // its sides
+groupsMemberTagMax: 140px;       // a long tag is cut there
+
+// The box a tap on a tag opens (Telegram's TagInfoBox).
+groupsTagInfoClose: IconButton(smallCloseButton) {
+}
+groupsTagInfoCloseTop: 10px;
+groupsTagInfoLogo: 76px;
+groupsTagInfoIcon: icon {{ "tag-user", staticWhite, 44px }};
+groupsTagInfoLogoPadding: margins(24px, 28px, 24px, 16px);
+groupsTagInfoTitleStyle: TextStyle(defaultTextStyle) {
+	font: font(19px bold);
+	lineHeight: 26px;
+}
+groupsTagInfoTitle: FlatLabel(defaultFlatLabel) {
+	style: groupsTagInfoTitleStyle;
+	align: align(top);
+}
+groupsTagInfoTitlePadding: margins(24px, 0px, 24px, 8px);
+groupsTagInfoTextStyle: TextStyle(defaultTextStyle) {
+	font: font(15px);
+	lineHeight: 26px;
+}
+groupsTagInfoTextBold: font(15px semibold);
+groupsTagInfoTextPadding: margins(28px, 0px, 28px, 16px);
+groupsTagInfoPillFont: font(13px);
+groupsTagInfoPillHeight: 20px;
+groupsTagInfoPillPadding: 7px;
+groupsTagInfoAdminsOnly: FlatLabel(defaultFlatLabel) {
+	style: smallTextStyle;
+	textFg: textTertiary;
+	align: align(top);
+}
+groupsTagInfoAdminsOnlyPadding: margins(24px, 4px, 24px, 4px);
+// The two cards: a member's tag and an admin's (or the owner's).
+groupsTagInfoPreviewHeight: 96px;
+groupsTagInfoPreviewGap: 10px;
+groupsTagInfoPreviewRadius: 14px;
+groupsTagInfoPreviewPadding: margins(24px, 4px, 24px, 18px);
+groupsTagInfoBubbleTop: 14px;
+groupsTagInfoBubbleBottom: 14px;
+groupsTagInfoBubbleEnd: 16px;     // between the bubble and the card's end
+groupsTagInfoBubblePadding: 12px; // inside the bubble
+groupsTagInfoBubbleRadius: 14px;
+groupsTagInfoBadgeTop: 9px;
+groupsTagInfoLineHeight: 7px;
+groupsTagInfoLineSkip: 6px;
+groupsTagInfoTimeFont: font(11px);
+groupsTagInfoFade: 40px;
+
+// The box that sets a tag (Telegram's EditCustomRankBox): a preview of the
+// bubble, the field, what the tag is.
+groupsTagEditPreviewPadding: margins(16px, 16px, 16px, 16px);
+groupsTagEditBubbleWidth: 250px;
+groupsTagEditBubblePadding: margins(12px, 8px, 12px, 10px);
+groupsTagEditBubbleRadius: 16px;
+groupsTagEditLineHeight: 7px;
+groupsTagEditLineSkip: 6px;
+groupsTagEditFieldPadding: margins(24px, 14px, 24px, 6px);
+groupsTagEditAboutPadding: margins(24px, 4px, 24px, 12px);

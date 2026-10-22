@@ -101,8 +101,12 @@ historyGroupUserpicSkip: 6px;
 historyGroupUserpicShift: 2px;  // the picture sits a little into the side skip
 historyGroupNameFont: font(12px semibold);
 historyGroupNameHeight: 19px;
-historyGroupTagFont: font(11px);
+// The member tag at the end of the name line (Telegram's RightBadge): the
+// owner's and an admin's on a pill of their colour, a member's as grey text.
+historyGroupTagFont: font(12px);
 historyGroupTagSkip: 10px;
+historyGroupTagHeight: 17px;     // the pill
+historyGroupTagPadding: 6px;     // the pill's sides
 historyForwardedFont: font(12px semibold);
 historyForwardedHeight: 19px;
 historyForwardedIcon: icon {{ "forward:mirror-ltr", brandText, 14px }};

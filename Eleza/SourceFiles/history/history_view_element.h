@@ -10,6 +10,7 @@
 // peer's the left one in both interface directions.
 #pragma once
 
+#include "data/data_group_rules.h"
 #include "data/data_types.h"
 #include "history/history_logic.h"
 #include "history/history_themes.h"
@@ -59,6 +60,7 @@ enum class Zone {
 	Retry,         // the «!» of a failed message
 	ViaBot,
 	Sender,        // a group: the name above a bubble or the picture next to it
+	SenderTag,     // a group: the sender's tag at the end of the name line (`text`: the user)
 	Date,          // the day pill / a service message
 };
 
@@ -103,7 +105,10 @@ struct PlaybackState {
 struct SenderInfo {
 	QString userId;
 	QString name;       // empty: no name line (a group that hides nothing still may have no card yet)
-	QString tag;        // «مالک», «مدیر» or an admin's own title; empty for a member
+	// The member tag (Data::MemberTags::BadgeFor): «مالک», «ادمین» or the
+	// tag; empty for a member without one.
+	QString tag;
+	Data::MemberTags::Role tagRole = Data::MemberTags::Role::Member;
 	int colorIndex = 0; // Data::GroupRules::NameColorIndex: the same person, the same colour
 };
 
@@ -279,6 +284,10 @@ public:
 	[[nodiscard]] bool isService() const {
 		return _service;
 	}
+	// A group's incoming message: who wrote it, with their tag.
+	[[nodiscard]] const SenderInfo &sender() const {
+		return _sender;
+	}
 
 	// ---- text
 	[[nodiscard]] bool hasText() const;
@@ -345,6 +354,8 @@ private:
 	void paintKeyboard(Painter &p, const PaintContext &context) const;
 	void paintRetry(Painter &p) const;
 	void paintSender(Painter &p, const ChatColors &colors) const;
+	[[nodiscard]] bool senderTagPill() const;
+	[[nodiscard]] QRect senderTagRect() const;
 	[[nodiscard]] bool showsSenderName() const;
 	[[nodiscard]] int userpicSpace() const;
 
@@ -377,7 +388,8 @@ private:
 	bool _group = false;       // an incoming message of a group
 	SenderInfo _sender;
 	QString _senderName;       // elided for the laid out width
-	QString _senderTag;
+	QString _senderTag;        // elided for the laid out width
+	int _senderTagWidth = 0;   // the badge (a pill with its sides, or the text)
 
 	// ---- layout (physical coordinates inside the row)
 	int _dateTop = 0;

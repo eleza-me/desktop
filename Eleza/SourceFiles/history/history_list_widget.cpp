@@ -1,8 +1,8 @@
 #include "history/history_list_widget.h"
 #include "support/media_image.h"
-#include "data/data_json.h"
 #include "data/data_groups.h"
 #include "data/data_group_rules.h"
+#include "groups/groups_tags.h"
 
 #include "api/api_client_config.h"
 #include "data/data_chats.h"
@@ -88,6 +88,15 @@ ListWidget::ListWidget(
 			[this](const QString &group) {
 				if (group == _chatId) {
 					loadRoles();
+				}
+			});
+		connect(
+			&data.groups(),
+			&Data::Groups::senderTagsChanged,
+			this,
+			[this](const QString &group, const QStringList &users) {
+				if (group == _chatId && !_debugMode) {
+					senderTagsChanged(users);
 				}
 			});
 		loadRoles();
@@ -294,7 +303,12 @@ View::SenderInfo ListWidget::elementSender(const Data::Message &message) {
 	}
 	result.userId = message.sender;
 	result.name = Support::MemberName(_session, message.sender);
-	result.tag = _roles.value(message.sender);
+	// The tag as it is now (a change shows on old messages too), else what
+	// the message itself said.
+	const auto known = Groups::KnownTag(_controller, _chatId, message.sender, &message);
+	const auto badge = Groups::TagBadge(known.role, known.tag);
+	result.tag = badge.text;
+	result.tagRole = badge.role;
 	result.colorIndex = Data::GroupRules::NameColorIndex(message.sender, 8);
 	return result;
 }
@@ -312,8 +326,9 @@ QString ListWidget::elementServiceText(const Data::Message &message) {
 	return _group ? Support::MessagePreview(_session, message) : QString();
 }
 
-// Who is the owner and who an admin (with a title of their own or without):
-// the tag next to a name. One page of admins is all a chat screen needs.
+// Who is the owner and who an admin (with a tag of their own or without):
+// the badge next to a name. One page of admins is all a chat screen needs;
+// the page goes into Data::Groups (senderTag), which says what changed.
 void ListWidget::loadRoles() {
 	auto &groups = _session->data().groups();
 	if (!_group || !groups.enabled()) {
@@ -330,34 +345,31 @@ void ListWidget::loadRoles() {
 			loadRoles();
 		}
 	};
-	groups.loadMembers(_chatId, filter, QString(), this, [=, this](
-			const Data::GroupMembersPage &page) {
-		auto roles = QHash<QString, QString>();
-		for (const auto &member : page.members) {
-			if (member.role == u"owner") {
-				roles.insert(member.user, tr::lng_groups_role_owner(tr::now));
-			} else if (member.role == u"admin") {
-				roles.insert(member.user, member.adminTitle.trimmed().isEmpty()
-					? tr::lng_groups_role_admin(tr::now)
-					: Data::Json::CleanName(member.adminTitle.simplified()));
-			}
-		}
-		if (roles != _roles) {
-			_roles = roles;
-			for (auto &row : _rows) {
-				if (!row.element->data().mine && !row.element->isService()) {
-					row.element->unloadHeavy();
-					row.element->invalidate();
-					row.exact = false;
-				}
-			}
-			relayoutKeepingAnchor();
-			update();
-		}
+	groups.loadMembers(_chatId, filter, QString(), this, [=](
+			const Data::GroupMembersPage &) {
 		finish();
 	}, [=](const Api::Error &) {
 		finish();
 	});
+}
+
+void ListWidget::senderTagsChanged(const QStringList &users) {
+	auto changed = false;
+	for (auto &row : _rows) {
+		const auto &message = row.element->data();
+		if (!message.mine
+			&& !row.element->isService()
+			&& users.contains(message.sender)) {
+			row.element->unloadHeavy();
+			row.element->invalidate();
+			row.exact = false;
+			changed = true;
+		}
+	}
+	if (changed) {
+		relayoutKeepingAnchor();
+		update();
+	}
 }
 
 QString ListWidget::senderName(const Data::Message &message) {

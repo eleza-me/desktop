@@ -37,6 +37,7 @@ Group Group::FromJson(const QJsonObject &json) {
 	result.state = String(json, "state"_L1);
 	result.status = String(json, "status"_L1);
 	result.role = String(json, "role"_L1);
+	result.myTag = Name(json, "my_tag"_L1);
 	result.rights = Strings(json.value("rights"_L1));
 	result.permissions = Strings(json.value("permissions"_L1));
 	result.defaultPermissions = Strings(json.value("default_permissions"_L1));
@@ -77,6 +78,7 @@ QJsonObject Group::toJson() const {
 	Put(result, "state"_L1, state);
 	Put(result, "status"_L1, status);
 	Put(result, "role"_L1, role);
+	Put(result, "my_tag"_L1, myTag);
 	result.insert("rights"_L1, Array(rights));
 	result.insert("permissions"_L1, Array(permissions));
 	result.insert("default_permissions"_L1, Array(defaultPermissions));
@@ -107,12 +109,19 @@ QJsonObject Group::toJson() const {
 	return result;
 }
 
+QString GroupMember::currentTag() const {
+	return (tag.isEmpty() && (role == u"owner" || role == u"admin"))
+		? adminTitle
+		: tag;
+}
+
 GroupMember GroupMember::FromJson(const QJsonObject &json) {
 	auto result = GroupMember();
 	result.user = String(json, "user"_L1);
 	result.role = String(json, "role"_L1);
 	result.rights = Strings(json.value("rights"_L1));
 	result.adminTitle = Name(json, "admin_title"_L1);
+	result.tag = Name(json, "tag"_L1);
 	result.status = String(json, "status"_L1);
 	result.denied = Strings(json.value("denied"_L1));
 	result.restrictedUntil = Int64(json, "restricted_until"_L1);
@@ -127,6 +136,7 @@ QJsonObject GroupMember::toJson() const {
 	result.insert("role"_L1, role);
 	result.insert("rights"_L1, Array(rights));
 	Put(result, "admin_title"_L1, adminTitle);
+	Put(result, "tag"_L1, tag);
 	Put(result, "status"_L1, status);
 	Put(result, "denied"_L1, Array(denied));
 	Put(result, "restricted_until"_L1, restrictedUntil);
@@ -199,6 +209,8 @@ GroupAdminLogEntry GroupAdminLogEntry::FromJson(const QJsonObject &json) {
 	result.linkName = Name(detail, "link_name"_L1);
 	result.requiresApproval = Bool(detail, "requires_approval"_L1);
 	result.deleteMessages = Bool(detail, "delete_messages"_L1);
+	result.tag = Name(detail, "tag"_L1);
+	result.prevTag = Name(detail, "prev_tag"_L1);
 	return result;
 }
 

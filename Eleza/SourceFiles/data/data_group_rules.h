@@ -12,6 +12,9 @@
 //   MentionRules      «@…» while typing, entity offsets, "does it address me"
 //   GroupAdminLog     the sentence of an entry of the admin log, its filter
 //                     by kind of action, the steps of slow mode
+//   MemberTags        the tag next to a sender's name (Telegram's member
+//                     tags): which text, which look, who may set it, the tag
+//                     of a row of the member list
 //
 // A group has two counters. `seq` numbers its messages; `pts` numbers its
 // changes (a new message, an edit, a delete for everyone, a reaction, a
@@ -195,7 +198,8 @@ struct TimeLeft {
 namespace GroupRights {
 
 // Admin rights and member permissions. On the wire both are lists of names;
-// the masks only make the table short. Bit i = name i of the wire order.
+// the masks only make the table short. Bit i = name i of the wire order
+// (the server's bits: a later name only ever comes last).
 enum Right : int {
 	kChangeInfo = 1 << 0,
 	kDeleteMessages = 1 << 1,
@@ -203,7 +207,8 @@ enum Right : int {
 	kInviteUsers = 1 << 3,
 	kPinMessagesRight = 1 << 4,
 	kAddAdmins = 1 << 5,
-	kRightsAll = (1 << 6) - 1,
+	kManageTags = 1 << 6,     // set other people's tags
+	kRightsAll = (1 << 7) - 1,
 };
 enum Permission : int {
 	kSendMessages = 1 << 0,
@@ -212,14 +217,26 @@ enum Permission : int {
 	kAddMembers = 1 << 3,
 	kPinMessages = 1 << 4,
 	kChangeInfoPermission = 1 << 5,
-	kPermissionsAll = (1 << 6) - 1,
+	kEditTag = 1 << 6,        // set my own tag
+	kPermissionsAll = (1 << 7) - 1,
 	kPermissionsSend = kSendMessages | kSendMedia | kSendLinks,
 	// What an ordinary member of a new group may do.
-	kDefaultPermissions = kSendMessages | kSendMedia | kSendLinks | kAddMembers,
+	kDefaultPermissions = kSendMessages
+		| kSendMedia
+		| kSendLinks
+		| kAddMembers
+		| kEditTag,
 };
 
 [[nodiscard]] const QStringList &RightNames();
 [[nodiscard]] const QStringList &PermissionNames();
+// The order the screens list them in (Telegram's): «edit member tags»
+// before «add admins», «edit own tag» after «pin» and before «change info».
+[[nodiscard]] const QStringList &ShownRights();
+[[nodiscard]] const QStringList &ShownPermissions();
+// The bit of a name (0 for a name this build does not know).
+[[nodiscard]] int RightBit(const QString &name);
+[[nodiscard]] int PermissionBit(const QString &name);
 // A name this build does not know is left out; unknown bits are never listed.
 [[nodiscard]] int RightsMask(const QStringList &names);
 [[nodiscard]] int PermissionsMask(const QStringList &names);
@@ -243,9 +260,9 @@ struct Member {
 
 // All for the owner, the granted ones for an admin, none for anyone else.
 [[nodiscard]] int Rights(const Member &member);
-// The owner everything; an admin the defaults, every send permission and
-// what their rights imply; a member the defaults minus what a restriction
-// that applies now denies.
+// The owner everything; an admin the defaults, every send permission, their
+// own tag and what their rights imply; a member the defaults minus what a
+// restriction that applies now denies.
 [[nodiscard]] int Permissions(const Member &member, int defaults);
 
 // Something a member may want to do: the permissions and the rights it
@@ -269,6 +286,9 @@ inline constexpr auto kActAddAdmins = Action{ 0, kAddAdmins, false };
 // permission of the same name.
 inline constexpr auto kActHistory = Action{ 0, kChangeInfo, false };
 inline constexpr auto kActOwner = Action{ 0, 0, true };
+// My own tag; somebody else's (with the target rule of CanActOn).
+inline constexpr auto kActEditOwnTag = Action{ kEditTag, 0, false };
+inline constexpr auto kActManageTags = Action{ 0, kManageTags, false };
 [[nodiscard]] Action ActSend(int permissions);
 
 // The send permissions a message needs: every message send_messages;
@@ -407,6 +427,13 @@ enum class Form {
 	DeleteMessagesOf, // a bulk delete of one person's messages (target set)
 	DeleteAll,
 	Transfer,
+	// edit_tag: somebody's tag (detail tag / prev_tag), or the actor's own.
+	TagChanged,
+	TagSet,
+	TagRemoved,
+	OwnTagChanged,
+	OwnTagSet,
+	OwnTagRemoved,
 };
 [[nodiscard]] Form FormOf(const GroupAdminLogEntry &entry);
 // The sentence names the person the action was done to.
@@ -419,6 +446,7 @@ enum Category : int {
 	Settings,
 	Messages,
 	Links,
+	Tags,      // «تغییر تگ‌ها»: edit_tag
 	kCategoryCount,
 };
 [[nodiscard]] QStringList Actions(int category);
@@ -436,5 +464,134 @@ enum Category : int {
 [[nodiscard]] QVector<int> SlowModeSteps(const QStringList &values);
 
 } // namespace GroupAdminLog
+
+// The tag of a member of a group (Telegram's member tags). Every member may
+// carry one: one line, at most `groups.admin_title_max_chars` characters. An
+// admin's title is their tag. Next to a sender's name it is a badge:
+//
+//   owner   the tag, or «مالک»: purple text on a purple pill
+//   admin   the tag, or «ادمین»: green text on a green pill
+//   member  the tag in grey, no pill; no tag: nothing
+//
+// A message of a group carries its sender's current tag and role
+// (`sender_tag`, `sender_role`); the chat screen keeps one map of them per
+// group (Data::Groups::senderTag) so that a change shows on old messages too.
+namespace MemberTags {
+
+enum class Role {
+	Member,
+	Admin,
+	Owner,
+};
+// "owner" / "admin"; anything else (a member, a former one, "") is Member.
+[[nodiscard]] Role RoleOf(QStringView wire);
+// "owner" / "admin" / "member".
+[[nodiscard]] QString WireRole(Role role);
+
+// A tag as a badge shows it: one line, emoji removed, blanks collapsed
+// (Telegram: RemoveEmoji(SingleLine(text))).
+[[nodiscard]] QString Shown(const QString &tag);
+// A tag as typed, made fit to send: the same cleaning, trimmed ("" removes it).
+[[nodiscard]] QString Typed(const QString &typed);
+// At most `max` characters (code points) after cleaning; empty is fine.
+[[nodiscard]] bool TypedOk(const QString &typed, int max);
+// The emoji of a text taken out (pictographs, flags, keycaps, the joiners
+// and modifiers of a sequence).
+[[nodiscard]] QString RemoveEmoji(const QString &text);
+
+struct Badge {
+	QString text;              // empty: no badge
+	Role role = Role::Member;
+
+	[[nodiscard]] bool empty() const {
+		return text.isEmpty();
+	}
+	// Owner and admin badges are pills; a member's is plain grey text.
+	[[nodiscard]] bool pill() const {
+		return role != Role::Member;
+	}
+};
+// The badge of a sender: the tag (Shown) or the role's own word.
+[[nodiscard]] Badge BadgeFor(
+	Role role,
+	const QString &tag,
+	const QString &ownerDefault,
+	const QString &adminDefault);
+// Only an incoming message of a group that is not a service note has one.
+[[nodiscard]] bool HasBadge(bool group, bool mine, bool service);
+
+// What one person is known as in one group.
+struct Sender {
+	QString tag;
+	Role role = Role::Member;
+
+	friend bool operator==(const Sender &a, const Sender &b) {
+		return (a.tag == b.tag) && (a.role == b.role);
+	}
+	friend bool operator!=(const Sender &a, const Sender &b) {
+		return !(a == b);
+	}
+};
+// What a message of the server says of its sender. Both fields are left out
+// for an ordinary member without a tag and for a former member — which only a
+// server that has tags means (`tagAware`); an older one says nothing.
+[[nodiscard]] std::optional<Sender> FromMessage(
+	const QString &senderRole,
+	const QString &senderTag,
+	bool tagAware);
+// What a member row says (`adminTitle`: the tag of an admin as an older
+// server sends it). Nobody who is not in the group has a role or a tag.
+[[nodiscard]] Sender FromMember(
+	const QString &status,
+	const QString &role,
+	const QString &tag,
+	const QString &adminTitle);
+
+// ---- who may set a tag (the server has the last word)
+// My own: the owner and the admins always, a member with `edit_tag` in the
+// permissions of my header; nobody who is not in the group.
+[[nodiscard]] bool CanEditOwn(
+	const QString &myRole,
+	bool editTagPermission,
+	bool member);
+// Somebody else's: the right `manage_tags`; an ordinary member's tag, an
+// admin's only for the owner, the owner's for nobody. The target must be in
+// the group.
+[[nodiscard]] bool CanEditOther(
+	const GroupRights::Member &me,
+	const GroupRights::Member &target);
+
+// ---- the tag of a row of the member list (Telegram's MemberListRow)
+enum class RowMode {
+	None,
+	Pill,  // an owner or an admin: their tag or the role's word, coloured
+	Text,  // a member's tag, grey
+	Add,   // my own row without a tag: «افزودن تگ» (light blue)
+};
+struct RowTag {
+	RowMode mode = RowMode::None;
+	QString text;
+	Role role = Role::Member;
+	bool interactive = false; // a click opens the edit box
+
+	friend bool operator==(const RowTag &a, const RowTag &b) {
+		return (a.mode == b.mode)
+			&& (a.text == b.text)
+			&& (a.role == b.role)
+			&& (a.interactive == b.interactive);
+	}
+};
+// `canEdit`: I may set this row's tag (CanEditOwn for my row, CanEditOther
+// for another one).
+[[nodiscard]] RowTag RowTagFor(
+	Role role,
+	const QString &tag,
+	bool self,
+	bool canEdit,
+	const QString &ownerDefault,
+	const QString &adminDefault,
+	const QString &addText);
+
+} // namespace MemberTags
 
 } // namespace Data
