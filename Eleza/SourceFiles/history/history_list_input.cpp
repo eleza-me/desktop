@@ -189,6 +189,15 @@ void ListWidget::mouseMoveEvent(QMouseEvent *e) {
 		updateHover(e->pos());
 		return;
 	}
+	if (_press.hit.zone == View::Zone::VoiceSeek && _selected.isEmpty()) {
+		// Dragging along the waveform / the seek line of the track playing.
+		const auto target = targetAt(e->pos());
+		if (target.key == _press.key
+			&& target.hit.zone == View::Zone::VoiceSeek) {
+			Media::Player().seek(target.hit.ratio);
+		}
+		return;
+	}
 	if (!_dragging
 		&& (e->pos() - _pressPosition).manhattanLength()
 			>= QApplication::startDragDistance()) {
@@ -1137,29 +1146,11 @@ void ListWidget::placeInlineVideos() {
 }
 
 void ListWidget::toggleVoice(const Data::Message &message) {
-	auto track = Media::AudioTrack();
-	const auto local = !message.localPath.isEmpty()
-		&& QFileInfo::exists(message.localPath);
-	if (message.seq > 0) {
-		track.id = Media::AudioTrack::IdForMessage(message.chat, message.seq);
-	} else if (local) {
-		track.id = u"local:"_s + message.clientMessageId;
-	} else {
+	// A song plays with the chat's songs (newest first), a voice goes on
+	// to the next one below when it ends: the player builds the queue.
+	const auto track = Media::AudioTrack::ForMessage(message);
+	if (track.id.isEmpty()) {
 		return;
-	}
-	if (local) {
-		track.filePath = message.localPath;
-	} else {
-		track.ref = Data::MediaRef::Attachment(message.chat, message.seq);
-	}
-	track.voice = (message.kind == Data::MessageKind::Voice);
-	track.durationMs = message.media ? message.media->durationMs : 0;
-	if (message.audio) {
-		track.title = message.audio->title;
-		track.performer = message.audio->performer;
-	}
-	if (track.title.isEmpty()) {
-		track.title = track.voice ? tr::lng_media_voice(tr::now) : message.text;
 	}
 	const auto &player = Media::Player();
 	const auto starting = !player.isCurrent(track.id);

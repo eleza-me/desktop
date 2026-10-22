@@ -97,6 +97,7 @@ struct PlaybackState {
 	double progress = 0.;
 	qint64 positionMs = 0;
 	double speed = 1.;
+	double loadProgress = 0.; // of the download while loading
 };
 
 // Who wrote an incoming message of a group.

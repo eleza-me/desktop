@@ -554,6 +554,15 @@ public:
 				st::historyFileCancelIcon,
 				accent,
 				st::textOnBrand->c);
+		} else if (playback.loading && playback.loadProgress > 0.) {
+			// How much of the file is here; a click cancels.
+			PaintProgressRing(
+				p,
+				circle,
+				playback.loadProgress,
+				st::historyFileCancelIcon,
+				accent,
+				st::textOnBrand->c);
 		} else if (playback.loading) {
 			auto hq = PainterHighQualityEnabler(p);
 			Ui::InfiniteRadialAnimation::DrawFrame(
@@ -575,11 +584,17 @@ public:
 			- st::historyVoicePlaySize
 			- st::historyVoiceSkip;
 		const auto duration = message.media ? message.media->durationMs : 0;
-		const auto timeText = playback.current
+		auto timeText = playback.current
 			? (MediaDurationText(playback.positionMs)
 				+ u" / "_s
 				+ MediaDurationText(duration))
 			: MediaDurationText(duration);
+		if (music && !playback.current && message.media && message.media->size > 0) {
+			// The length and the size before it plays.
+			timeText = Lang::Isolated(timeText)
+				+ u" · "_s
+				+ Lang::Isolated(Lang::Bytes(message.media->size));
+		}
 		if (music) {
 			p.setPen(context.outgoing ? colors.textOut : colors.textIn);
 			DrawLine(
@@ -612,14 +627,17 @@ public:
 				p.setBrush(faded);
 				p.drawRoundedRect(line, line.height() / 2., line.height() / 2.);
 				p.setBrush(accent);
+				const auto done = line.width() * std::clamp(playback.progress, 0., 1.);
 				p.drawRoundedRect(
-					QRectF(
-						line.x(),
-						line.y(),
-						line.width() * std::clamp(playback.progress, 0., 1.),
-						line.height()),
+					QRectF(line.x(), line.y(), done, line.height()),
 					line.height() / 2.,
 					line.height() / 2.);
+				// The knob to drag.
+				const auto knob = st::historyAudioSeekKnob / 2.;
+				p.drawEllipse(
+					QPointF(line.x() + done, line.y() + line.height() / 2.),
+					knob,
+					knob);
 			}
 			p.setPen(dim);
 			p.setFont(st::historyVoiceTimeFont);
@@ -796,8 +814,10 @@ private:
 		if (message.audio && !message.audio->performer.isEmpty()) {
 			return message.audio->performer;
 		}
-		return (message.media && message.media->size > 0)
-			? Lang::Bytes(message.media->size)
+		// The file's name when the title came from the tags.
+		const auto name = message.text.trimmed();
+		return (message.audio && !message.audio->title.isEmpty())
+			? name
 			: QString();
 	}
 

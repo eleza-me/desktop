@@ -196,24 +196,6 @@ void LaunchFile(const QString &path) {
 	return isolated.join(u" · "_s);
 }
 
-[[nodiscard]] AudioTrack TrackFor(const Data::Message &message) {
-	auto track = AudioTrack();
-	track.id = AudioTrack::IdForMessage(message.chat, message.seq);
-	track.ref = Data::MediaRef::Attachment(message.chat, message.seq);
-	track.voice = (message.kind == Data::MessageKind::Voice);
-	track.durationMs = message.media ? message.media->durationMs : 0;
-	if (message.audio) {
-		track.title = message.audio->title;
-		track.performer = message.audio->performer;
-	}
-	if (track.title.isEmpty()) {
-		track.title = track.voice
-			? tr::lng_media_voice(tr::now)
-			: message.text.trimmed();
-	}
-	return track;
-}
-
 // ---- the list of one tab at a time
 
 class List final : public Ui::RpWidget {
@@ -1119,7 +1101,7 @@ void List::paintRow(
 			: QString(message.text).replace(link, QString()).trimmed();
 	} break;
 	case SharedMediaTab::Music: {
-		const auto track = TrackFor(message);
+		const auto track = AudioTrack::ForMessage(message);
 		title = track.title.isEmpty() ? tr::lng_media_music(tr::now) : track.title;
 		if (!track.performer.isEmpty()) {
 			status.push_back(track.performer);
@@ -1354,9 +1336,27 @@ void List::open(const Data::Message &message) {
 		if (message.kind == Data::MessageKind::VideoNote) {
 			openViewer(message);
 		} else {
-			const auto track = TrackFor(message);
+			const auto track = AudioTrack::ForMessage(message);
 			const auto starting = !Player().isCurrent(track.id);
-			Player().toggle(track, _session);
+			// The tab's songs are the queue, newest first; a voice goes on
+			// to the voices after it.
+			auto queue = QVector<AudioTrack>();
+			const auto &items = state().shown;
+			if (!track.voice) {
+				for (const auto &other : items) {
+					queue.push_back(AudioTrack::ForMessage(other));
+				}
+			} else {
+				queue.push_back(track);
+				for (auto i = items.size(); i != 0;) {
+					const auto &other = items[--i];
+					if (other.kind == Data::MessageKind::Voice
+						&& other.seq > message.seq) {
+						queue.push_back(AudioTrack::ForMessage(other));
+					}
+				}
+			}
+			Player().toggle(track, _session, std::move(queue));
 			if (starting
 				&& track.voice
 				&& !message.mine

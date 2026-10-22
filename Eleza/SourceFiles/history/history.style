@@ -146,6 +146,7 @@ historyVoicePauseIcon: icon {{ "pause", textOnBrand, 20px }};
 historyAudioTitleFont: font(14px medium);
 historyAudioPerformerFont: font(12px);
 historyAudioSeekHeight: 3px;
+historyAudioSeekKnob: 10px;
 
 // files
 historyFileIconSize: 42px;

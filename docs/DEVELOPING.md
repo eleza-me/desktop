@@ -138,6 +138,7 @@ to answer every "open" dialog at once and `ELEZA_DEBUG_SAVE=/path/out.bin` for "
 | `debug/title[/<states>]` | what the custom title bar shows, the states of `--debug-title-bar` (`debug/title/inactive,hover-close`); without states: back to normal |
 | `debug/notification`, `debug/notifications` | one / three sample notification toasts |
 | `debug/viewer[?file=<path>][&video=<path>]` | the image viewer with generated pictures (and your file / video) |
+| `debug/player[/voice\|/box]` | the «now playing» bar with made-up songs (or a voice message), paused, nothing opened (no audio device needed); `box` opens the music player too |
 | `debug/crop`, `debug/about`, `debug/peers`, `debug/peers-multi` | the shared boxes |
 | `debug/logout`, `debug/link`, `debug/error`, `debug/upgrade` | sign-out confirmation, external link confirmation, an error toast, the "update required" screen |
 | `debug/session-expired` | ends the session as the server would |
@@ -470,7 +471,7 @@ All in `lib/ui/ui/**`; every header starts with an example. The gallery (`--gall
 | «گزارش» (post / reply / account / conversation / group / a message of a group) | `Boxes::ShowReportBox(controller, args)` |
 | Shared media of a chat or a group (tabs with counts, server pages) | `controller->openRoute(Window::Routes::ChatMedia(chatId))` / `GroupMedia(groupId)` (`media/media_shared.h`); the data side: `data/data_shared_media.h` |
 | Full-window photo / video viewer | `Media::ShowImageViewer(controller->window(), items, index, options)`; `options.paging` pages past the items handed (by `ViewerItem::key`), `options.origin` gives the item's place on screen (it grows out of it and closes into it) |
-| Voice / music playback | `Media::Player().toggle(track, &session)`; signals `stateChanged`, `positionChanged`; `cycleSpeed()` |
+| Voice / music playback | `Media::Player().toggle(Media::AudioTrack::ForMessage(message), &session[, queue])`; signals `stateChanged`, `positionChanged`, `queueChanged`, `failed(id, reason)`; `next()` / `previous()`, `cycleSpeed()`, repeat / shuffle / reverse. The «now playing» bar and the music player are `media/media_player_widgets.h`; `Media::OpenTrackPlace(controller, track)` goes to a track's message (a chat open further back comes to the front: `controller->showExistingSection(key)`) |
 | Inline video | `Media::VideoPlayerWidget` (`setSource(localPath)`, `setPoster`, `play`) |
 
 Failed fire-and-forget actions of the stores (`Data::Session::actionFailed`) already show a

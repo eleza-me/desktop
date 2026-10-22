@@ -59,7 +59,8 @@ Eleza/
     stories/              stories: the tray on top of the feed, rings around faces, the
                           full-window viewer, posting, the viewers box, Settings → Privacy →
                           «استوری» (the data side: data/data_stories.h, data_story_types.h)
-    media/                audio/voice player, video player widget, image viewer
+    media/                the app's audio player (queue, «now playing» bar, music player), video
+                          player widget, image viewer, the shared media page of chats and groups
     calls/                voice and video calls (ELEZA_ENABLE_CALLS): the call state machine, the
                           media layer over the LiveKit library, the camera, the call bar / view /
                           incoming window

@@ -426,6 +426,7 @@ View::PlaybackState ListWidget::elementPlayback(const Data::Message &message) {
 	result.current = true;
 	result.playing = player.isPlaying(id);
 	result.loading = player.isLoading(id);
+	result.loadProgress = player.loadProgress();
 	result.progress = player.progress();
 	result.positionMs = player.positionMs();
 	result.speed = player.speed();

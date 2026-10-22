@@ -103,6 +103,8 @@ void Settings::read() {
 		1.);
 	const auto speed = root.value(QStringLiteral("voice_speed")).toDouble(1.);
 	_voicePlaybackSpeed = (speed == 1.5 || speed == 2.) ? speed : 1.;
+	_musicRepeat = std::clamp(root.value(QStringLiteral("music_repeat")).toInt(0), 0, 2);
+	_musicShuffle = root.value(QStringLiteral("music_shuffle")).toBool(false);
 	_sendByCtrlEnter = root.value(
 		QStringLiteral("send_by_ctrl_enter")).toBool(false);
 	const auto systemTitleBar = root.value(QStringLiteral("system_title_bar"));
@@ -180,6 +182,8 @@ QJsonObject Settings::serialize() const {
 	}
 	root.insert(QStringLiteral("playback_volume"), _playbackVolume);
 	root.insert(QStringLiteral("voice_speed"), _voicePlaybackSpeed);
+	root.insert(QStringLiteral("music_repeat"), _musicRepeat);
+	root.insert(QStringLiteral("music_shuffle"), _musicShuffle);
 	root.insert(QStringLiteral("send_by_ctrl_enter"), _sendByCtrlEnter);
 	if (_systemTitleBar) {
 		root.insert(QStringLiteral("system_title_bar"), *_systemTitleBar);
@@ -319,6 +323,21 @@ void Settings::setVoicePlaybackSpeed(double speed) {
 	}
 	if (_voicePlaybackSpeed != speed) {
 		_voicePlaybackSpeed = speed;
+		scheduleWrite();
+	}
+}
+
+void Settings::setMusicRepeat(int mode) {
+	mode = std::clamp(mode, 0, 2);
+	if (_musicRepeat != mode) {
+		_musicRepeat = mode;
+		scheduleWrite();
+	}
+}
+
+void Settings::setMusicShuffle(bool shuffle) {
+	if (_musicShuffle != shuffle) {
+		_musicShuffle = shuffle;
 		scheduleWrite();
 	}
 }
