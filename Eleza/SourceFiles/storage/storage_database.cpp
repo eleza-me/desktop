@@ -431,6 +431,17 @@ void Database::mergeMessages(const QVector<MessageRow> &messages) {
 	});
 }
 
+void Database::dropDetachedMessages(const QString &chat, qint64 firstSeq) {
+	post([chat, firstSeq](details::DatabaseWorker &worker) {
+		if (worker.ready()) {
+			worker.exec(
+				u"DELETE FROM messages WHERE chat = ? AND seq < ? "
+				"AND (SELECT MAX(seq) FROM messages WHERE chat = ?) < ?"_s,
+				{ chat, firstSeq, chat, firstSeq - 1 });
+		}
+	});
+}
+
 void Database::deleteMessage(const QString &chat, qint64 seq) {
 	post([chat, seq](details::DatabaseWorker &worker) {
 		if (worker.ready()) {

@@ -231,6 +231,9 @@ private:
 		std::optional<Group> group; // the header of a group's page
 		bool hasMoreBefore = true;
 		bool hasMoreAfter = false;
+		// The oldest seq the server returned, messages that are not shown
+		// (deleted ones) included: where the page begins.
+		qint64 firstSeq = 0;
 	};
 
 	[[nodiscard]] History &historyRef(const QString &chat);
@@ -241,6 +244,13 @@ private:
 		Fn<void(const Page &)> done,
 		Fn<void(const Api::Error &)> fail);
 	void persist(const QString &chat, const QVector<Message> &messages);
+	// A window that reaches the newest message begins at `firstSeq`, and
+	// with `complete` nothing older exists. The older messages held in
+	// memory and in the database go unless they are one run with it:
+	// messages written while the chat was not open are never cached, and
+	// the older pages are read from the cache first, so a hole between the
+	// two would never be filled.
+	void dropDetached(const QString &chat, qint64 firstSeq, bool complete);
 	void simple(
 		const QString &method,
 		const QJsonObject &body,

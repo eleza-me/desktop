@@ -104,6 +104,89 @@ namespace {
 	return true;
 }
 
+
+// A page of c1's history: the messages `from`..`to` (newest first, as the
+// server sends them) under the header of c1 at `lastSeq`.
+[[nodiscard]] QJsonObject HistoryPage(
+		qint64 from,
+		qint64 to,
+		bool moreBefore,
+		qint64 lastSeq,
+		std::optional<bool> moreAfter = std::nullopt) {
+	auto header = Test::Fixture("history_c1.json").value("chat"_L1).toObject();
+	header.insert(u"last_seq"_s, double(lastSeq));
+	auto messages = QJsonArray();
+	for (auto seq = to; seq >= from; --seq) {
+		messages.push_back(MessageJson(u"c1"_s, seq, u"u_sara"_s, QString::number(seq)));
+	}
+	auto result = QJsonObject{
+		{ u"chat"_s, header },
+		{ u"messages"_s, messages },
+		{ u"has_more_before"_s, moreBefore },
+	};
+	if (moreAfter) {
+		result.insert(u"has_more_after"_s, *moreAfter);
+	}
+	return result;
+}
+
+[[nodiscard]] qint64 Param(const Call &call, const char *name) {
+	return call.body.value(QLatin1StringView(name)).toString().toLongLong();
+}
+
+[[nodiscard]] QVector<qint64> Seqs(qint64 from, qint64 to) {
+	auto result = QVector<qint64>();
+	for (auto seq = from; seq <= to; ++seq) {
+		result.push_back(seq);
+	}
+	return result;
+}
+
+// The server messages of a chat's timeline, oldest first.
+[[nodiscard]] QVector<qint64> HeldSeqs(const Harness &harness, const QString &chat) {
+	auto result = QVector<qint64>();
+	for (const auto &message : harness.messages().history(chat).items) {
+		if (message.seq > 0) {
+			result.push_back(message.seq);
+		}
+	}
+	return result;
+}
+
+// What the database holds of a chat, oldest first.
+[[nodiscard]] QVector<qint64> CachedSeqs(const Harness &harness, const QString &chat) {
+	auto result = QVector<qint64>();
+	auto done = false;
+	harness.database->messages(chat, 1000, 0, base::Guard(), [&](QVector<QJsonObject> rows) {
+		for (const auto &row : rows) {
+			result.push_back(Message::FromStored(row).seq);
+		}
+		done = true;
+	});
+	const auto read = Test::WaitFor([&] { return done; });
+	Q_ASSERT(read);
+	Q_UNUSED(read);
+	return result;
+}
+
+// Opens c1 as the chat screen does: the cache first, then the newest page.
+[[nodiscard]] bool OpenC1(Harness &harness) {
+	auto cached = false;
+	harness.messages().loadCached(u"c1"_s, base::Guard(), [&](int) { cached = true; });
+	if (!Test::WaitFor([&] { return cached; })) {
+		return false;
+	}
+	auto loaded = false;
+	harness.messages().loadLatest(u"c1"_s, base::Guard(), [&] { loaded = true; });
+	return Test::WaitFor([&] { return loaded; });
+}
+
+// A first run that reads c1 (1..9, the fixture) and caches it.
+[[nodiscard]] bool CacheC1(const QString &path) {
+	auto harness = Harness(path);
+	return Connect(harness, 100) && (CachedSeqs(harness, u"c1"_s) == Seqs(1, 9));
+}
+
 } // namespace
 
 class TestSync final : public QObject {
@@ -129,6 +212,8 @@ private Q_SLOTS:
 	void ptsSurvivesRestart();
 	void fallbackOnlyWhileDisconnected();
 	void offlineStartReadsStateAtOnce();
+	void newestPageAttachesToTheCache();
+	void windowReachingTheEndIsCached();
 
 };
 
@@ -780,6 +865,131 @@ void TestSync::offlineStartReadsStateAtOnce() {
 	QVERIFY(Test::WaitFor([&] { return harness.transport.count(u"sync.difference"_s) == 2; }));
 	QCOMPARE(DifferenceFrom(harness).back(), u"301"_s);
 	QCOMPARE(harness.transport.count(u"sync.state"_s), 1);
+}
+
+// Messages written while a chat is not open are never cached, so the
+// newest page may begin far after the cached run: the run goes (memory and
+// database) instead of leaving a hole that the cache would serve forever.
+void TestSync::newestPageAttachesToTheCache() {
+	auto dir = QTemporaryDir();
+	QVERIFY(dir.isValid());
+	const auto pathA = dir.filePath(u"a.db"_s);
+	QVERIFY(CacheC1(pathA));
+	{
+		// 100 messages later.
+		auto harness = Harness(pathA);
+		harness.on(u"chat.history"_s, [](const Call &call) {
+			const auto before = Param(call, "before");
+			return Reply::Ok(!before
+				? HistoryPage(60, 109, true, 109)
+				: HistoryPage(std::max<qint64>(before - 50, 1), before - 1, before > 51, 109));
+		});
+		QVERIFY(harness.start());
+		QVERIFY(OpenC1(harness));
+		QCOMPARE(HeldSeqs(harness, u"c1"_s), Seqs(60, 109));
+		QCOMPARE(CachedSeqs(harness, u"c1"_s), Seqs(60, 109));
+		// Scrolling up reads the gap from the server, not the old run.
+		auto added = -1;
+		harness.messages().loadOlder(u"c1"_s, base::Guard(), [&](int count) { added = count; });
+		QVERIFY(Test::WaitFor([&] { return added >= 0; }));
+		QCOMPARE(added, 50);
+		QCOMPARE(Param(harness.transport.calls[harness.transport.lastIndexOf(u"chat.history"_s)], "before"), 60);
+		QCOMPARE(HeldSeqs(harness, u"c1"_s), Seqs(10, 109));
+		QCOMPARE(CachedSeqs(harness, u"c1"_s), Seqs(10, 109));
+	}
+	const auto pathB = dir.filePath(u"b.db"_s);
+	QVERIFY(CacheC1(pathB));
+	{
+		// A page that continues the cached run keeps it.
+		auto harness = Harness(pathB);
+		harness.on(u"chat.history"_s, [](const Call &) {
+			return Reply::Ok(HistoryPage(10, 59, true, 59));
+		});
+		QVERIFY(harness.start());
+		QVERIFY(OpenC1(harness));
+		QCOMPARE(HeldSeqs(harness, u"c1"_s), Seqs(1, 59));
+		QCOMPARE(CachedSeqs(harness, u"c1"_s), Seqs(1, 59));
+	}
+	const auto pathC = dir.filePath(u"c.db"_s);
+	QVERIFY(CacheC1(pathC));
+	{
+		// Nothing before the page (1..5 are no longer mine to see): what is
+		// cached before it goes.
+		auto harness = Harness(pathC);
+		harness.on(u"chat.history"_s, [](const Call &) {
+			return Reply::Ok(HistoryPage(6, 9, false, 9));
+		});
+		QVERIFY(harness.start());
+		QVERIFY(OpenC1(harness));
+		QCOMPARE(HeldSeqs(harness, u"c1"_s), Seqs(6, 9));
+		QCOMPARE(CachedSeqs(harness, u"c1"_s), Seqs(6, 9));
+		QVERIFY(!harness.messages().history(u"c1"_s).hasMoreBefore);
+	}
+	const auto pathD = dir.filePath(u"d.db"_s);
+	QVERIFY(CacheC1(pathD));
+	{
+		// An empty newest page: nothing is left up to the header's last seq.
+		auto harness = Harness(pathD);
+		harness.on(u"chat.history"_s, [](const Call &) {
+			return Reply::Ok(HistoryPage(1, 0, false, 9));
+		});
+		QVERIFY(harness.start());
+		QVERIFY(OpenC1(harness));
+		QVERIFY(HeldSeqs(harness, u"c1"_s).isEmpty());
+		QVERIFY(CachedSeqs(harness, u"c1"_s).isEmpty());
+	}
+}
+
+// A window around a message that reaches the newest one (at once, or by
+// reading newer pages) is what live messages continue: it replaces a cached
+// run it does not reach and is cached itself.
+void TestSync::windowReachingTheEndIsCached() {
+	auto dir = QTemporaryDir();
+	QVERIFY(dir.isValid());
+	const auto pathE = dir.filePath(u"e.db"_s);
+	QVERIFY(CacheC1(pathE));
+	{
+		auto harness = Harness(pathE);
+		harness.on(u"chat.history"_s, [](const Call &) {
+			return Reply::Ok(HistoryPage(75, 120, true, 120, false));
+		});
+		QVERIFY(harness.start());
+		harness.transport.setOnline(true);
+		harness.transport.emitFrame(Hello(100));
+		auto cached = false;
+		harness.messages().loadCached(u"c1"_s, base::Guard(), [&](int) { cached = true; });
+		QVERIFY(Test::WaitFor([&] { return cached; }));
+		auto done = false;
+		harness.messages().loadAround(u"c1"_s, 100, base::Guard(), [&] { done = true; });
+		QVERIFY(Test::WaitFor([&] { return done; }));
+		QVERIFY(harness.messages().live(u"c1"_s));
+		harness.transport.emitFrame(Update(101, u"message"_s, MessageJson(u"c1"_s, 121, u"u_sara"_s, u"new"_s)));
+		QCOMPARE(HeldSeqs(harness, u"c1"_s), Seqs(75, 121));
+		QCOMPARE(CachedSeqs(harness, u"c1"_s), Seqs(75, 121));
+	}
+	const auto pathF = dir.filePath(u"f.db"_s);
+	QVERIFY(CacheC1(pathF));
+	{
+		auto harness = Harness(pathF);
+		harness.on(u"chat.history"_s, [](const Call &call) {
+			return Reply::Ok(Param(call, "after")
+				? HistoryPage(126, 130, true, 130, false)
+				: HistoryPage(75, 125, true, 130, true));
+		});
+		QVERIFY(harness.start());
+		auto done = false;
+		harness.messages().loadAround(u"c1"_s, 100, base::Guard(), [&] { done = true; });
+		QVERIFY(Test::WaitFor([&] { return done; }));
+		QVERIFY(!harness.messages().live(u"c1"_s));
+		// A detached window is not cached.
+		QCOMPARE(CachedSeqs(harness, u"c1"_s), Seqs(1, 9));
+		auto added = -1;
+		harness.messages().loadNewer(u"c1"_s, base::Guard(), [&](int count) { added = count; });
+		QVERIFY(Test::WaitFor([&] { return added >= 0; }));
+		QCOMPARE(added, 5);
+		QVERIFY(harness.messages().live(u"c1"_s));
+		QCOMPARE(CachedSeqs(harness, u"c1"_s), Seqs(75, 130));
+	}
 }
 
 QTEST_GUILESS_MAIN(TestSync)
