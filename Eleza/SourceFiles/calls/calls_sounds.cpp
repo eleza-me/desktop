@@ -27,9 +27,19 @@ Sounds::Sounds(QObject *parent)
 Sounds::~Sounds() = default;
 
 void Sounds::setRingtoneVolume(double volume) {
+	const auto was = _ringtoneVolume;
 	_ringtoneVolume = std::clamp(volume, 0., 1.);
 	if (_ringtone) {
 		_ringtone->setVolume(float(_ringtoneVolume));
+	}
+	// Ringing began silent, so the ringtone was never started.
+	if (_loop == Loop::Ringtone
+		&& _enabled
+		&& was <= 0.
+		&& _ringtoneVolume > 0.
+		&& (!_ringtone || !_ringtone->isPlaying())) {
+		_loop = Loop::None;
+		loop(Loop::Ringtone);
 	}
 }
 
