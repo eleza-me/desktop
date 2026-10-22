@@ -561,7 +561,7 @@ void SendFilesBoxContent::showSelfDestructMenu() {
 			&& (!value
 				|| (value->viewOnce == _selfDestruct->viewOnce
 					&& value->seconds == _selfDestruct->seconds));
-		item.callback = [=] { setSelfDestruct(value); };
+		item.callback = [this, value] { setSelfDestruct(value); };
 		menu->addItem(std::move(item));
 	};
 	add(tr::lng_history_sd_off(tr::now), std::nullopt);

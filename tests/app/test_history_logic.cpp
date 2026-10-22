@@ -596,7 +596,7 @@ private Q_SLOTS:
 
 	void messageText() {
 		auto message = Text(1, false, At(5, 10, 0), U("ببین https://eleza.me و @sara #تهران"));
-		message.entities.push_back(Data::Entity{ u"spoiler"_s, 0, 4, QString(), QString() });
+		message.entities.push_back(Data::Entity{ u"spoiler"_s, 0, 4, QString(), QString(), QString() });
 		const auto text = History::TextForMessage(message);
 		auto spoilers = 0;
 		auto links = 0;
