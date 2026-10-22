@@ -54,6 +54,7 @@ constexpr auto kSuggestionsPage = 20;
 constexpr auto kBrowseStaleMs = qint64(5) * 60 * 1000;
 constexpr auto kMaxHiddenPeople = 500;
 constexpr auto kTopicInfoLimit = 12;
+constexpr auto kTopicInfoRetryMs = qint64(60) * 1000;
 constexpr auto kPosterFit = QSize(480, 640);
 
 const auto kRecentKey = u"search.recent"_s;
@@ -1355,13 +1356,24 @@ void Widget::buildResults() {
 }
 
 void Widget::requestTopicInfo(const QStringList &slugs) {
+	// At most so many at once; the others are asked for when the rows are
+	// built again.
+	const auto now = NowMs();
 	for (const auto &slug : slugs) {
-		if (_topicInfoRequested.contains(slug)
-			|| _topicInfoRequested.size() >= kTopicInfoLimit * 8) {
+		if (_topicInfoRequested.size() >= kTopicInfoLimit * 8) {
+			break;
+		} else if (_topicInfoRequested.contains(slug)
+			|| _topicInfo.contains(slug)) {
+			continue;
+		} else if (const auto failed = _topicInfoFailedAt.constFind(slug);
+			failed != _topicInfoFailedAt.cend()
+				&& now - *failed < kTopicInfoRetryMs) {
 			continue;
 		}
 		_topicInfoRequested.insert(slug);
 		data().feed().topic(slug, this, [=, this](const Data::TopicInfo &info) {
+			_topicInfoRequested.remove(slug);
+			_topicInfoFailedAt.remove(slug);
 			_topicInfo.insert(slug, info);
 			for (auto i = 0; i != int(_rows.size()); ++i) {
 				auto &row = *_rows[i];
@@ -1377,8 +1389,10 @@ void Widget::requestTopicInfo(const QStringList &slugs) {
 					_list->updateRow(i);
 				}
 			}
-		}, [](const Api::Error &) {
-			// The row stays without counts.
+		}, [=, this](const Api::Error &) {
+			// The row stays without counts for now.
+			_topicInfoRequested.remove(slug);
+			_topicInfoFailedAt.insert(slug, NowMs());
 		});
 	}
 }

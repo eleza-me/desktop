@@ -188,7 +188,8 @@ private:
 	QSet<QString> _leaving;
 	QHash<QString, Poster> _posters;
 	QHash<QString, Data::TopicInfo> _topicInfo;
-	QSet<QString> _topicInfoRequested;
+	QSet<QString> _topicInfoRequested; // in flight
+	QHash<QString, qint64> _topicInfoFailedAt; // asked again a while after
 	QSet<QString> _followBusy;
 	QString _query;
 	QString _scope;
