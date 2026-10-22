@@ -900,7 +900,8 @@ void Widget::loadMoreResults() {
 	results.loadingMore = true;
 	const auto generation = results.generation;
 	const auto scope = _scope;
-	data().graph().search(_query, scope, results.nextOffset, this, [=, this](
+	const auto offset = results.nextOffset;
+	data().graph().search(_query, scope, offset, this, [=, this](
 			const Data::SearchResults &page) {
 		if (generation != _results->generation) {
 			return;
@@ -947,16 +948,27 @@ void Widget::loadMoreResults() {
 				}
 			}
 		}
-		// A page that brought nothing new ends the list.
-		results.nextOffset = added ? page.nextOffset : 0;
+		// The offset only goes forward: a page whose rows were all known
+		// or left out (hidden posts, filtered conversations) goes on.
+		results.nextOffset = (page.nextOffset > offset) ? page.nextOffset : 0;
 		rebuild();
+		if (!added && results.nextOffset > 0) {
+			loadMoreResults();
+		}
 	}, [=, this](const Api::Error &error) {
 		if (generation != _results->generation) {
 			return;
 		}
 		_results->loadingMore = false;
 		_results->nextOffset = 0;
-		Support::ShowError(controller(), error);
+		// The server pages only so deep (search.max_page × 10) and answers
+		// an offset past that with `search.query_invalid`: the list ends.
+		const auto tooDeep = (offset > 0)
+			&& (error.status == 400)
+			&& (error.code == u"search.query_invalid");
+		if (!tooDeep) {
+			Support::ShowError(controller(), error);
+		}
 		rebuild();
 	});
 	rebuild();
