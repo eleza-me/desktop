@@ -1,5 +1,6 @@
 #include "media/media_image_viewer.h"
 
+#include "core/core_application.h"
 #include "data/data_image_decode.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
@@ -76,6 +77,18 @@ ImageViewer *ShowImageViewer(
 		std::move(items),
 		index);
 	window->registerDarkOverlay(viewer);
+	if (window->sessionController()) {
+		// The account's photos do not stay over the intro after a sign-out.
+		QObject::connect(
+			&Core::App(),
+			&Core::Application::sessionShownChanged,
+			viewer,
+			[=] {
+				if (!window->sessionController()) {
+					viewer->close();
+				}
+			});
+	}
 	viewer->show();
 	viewer->raise();
 	viewer->setFocus();
