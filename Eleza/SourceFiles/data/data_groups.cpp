@@ -70,6 +70,8 @@ void TakePersonal(Group &to, const Group &from) {
 	to.joinRequests = from.joinRequests;
 	to.lastReadSeq = std::max(to.lastReadSeq, from.lastReadSeq);
 	to.outboxReadSeq = std::max(to.outboxReadSeq, from.outboxReadSeq);
+	to.actionBar = from.actionBar;
+	to.addedBy = from.addedBy;
 }
 
 // What a header says about the group as of its pts (not the counters).
@@ -1371,6 +1373,10 @@ void Groups::applyUser(const QJsonObject &d) {
 			// The messages at or below the mark are gone for me.
 			messages.clear(group, cleared + 1);
 		}
+	}
+	if (Json::Bool(d, "action_bar_dismissed"_L1)) {
+		// The report / block bar went on another device (×, a report).
+		chats.forgetActionBar(group);
 	}
 	if (const auto hidden = Json::Int64(d, "hidden_seq"_L1); hidden > 0) {
 		messages.dropMessages(group, { hidden }, true);

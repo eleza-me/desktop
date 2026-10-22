@@ -295,6 +295,7 @@ ChatInfo ChatInfo::FromJson(const QJsonObject &json) {
 	result.draft = Optional<Draft>(json, "draft"_L1);
 	result.pins = Int64s(json.value("pins"_L1));
 	result.liveShares = Int(json, "live_shares"_L1);
+	result.actionBar = String(json, "action_bar"_L1);
 	return result;
 }
 
@@ -325,6 +326,7 @@ QJsonObject ChatInfo::toJson() const {
 	}
 	Put(result, "pins"_L1, Array(pins));
 	Put(result, "live_shares"_L1, liveShares);
+	Put(result, "action_bar"_L1, actionBar);
 	return result;
 }
 

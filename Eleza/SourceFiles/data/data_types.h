@@ -158,6 +158,9 @@ struct ChatInfo {
 	std::optional<Draft> draft;
 	QVector<qint64> pins;   // pinned message seqs
 	int liveShares = 0;
+	// The report / block bar: "stranger" (somebody I have no tie with
+	// wrote first); empty: no bar.
+	QString actionBar;
 
 	[[nodiscard]] bool valid() const {
 		return !chat.isEmpty();

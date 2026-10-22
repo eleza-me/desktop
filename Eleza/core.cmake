@@ -32,6 +32,8 @@ set(_eleza_core_files
 	crypto/crypto_device_key.h
 	crypto/crypto_primitives.cpp
 	crypto/crypto_primitives.h
+	data/data_action_bar.cpp
+	data/data_action_bar.h
 	data/data_blurhash.cpp
 	data/data_blurhash.h
 	data/data_bots.cpp

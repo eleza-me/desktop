@@ -160,6 +160,7 @@ void Sync::handle(const Rt::Frame &frame) {
 		// What waited for the connection goes out now.
 		_session->outbox().retryAll();
 		_session->chats().flushDrafts();
+		_session->chats().flushActionBarDismissals();
 		// Connected (first connect, reconnect, resume — every time): what
 		// the frames of the gap would have said about my groups.
 		_session->groups().requestSync();
@@ -371,6 +372,10 @@ void Sync::applyLive(
 		if (const auto hidden = Json::Int64(d, "hidden_seq"_L1)) {
 			// I deleted one message for myself on another device.
 			messages.removeMessage(chat, Message::KeyForSeq(hidden));
+		}
+		if (Json::Bool(d, "action_bar_dismissed"_L1)) {
+			// The report / block bar went on another device (×, a report).
+			chats.forgetActionBar(chat);
 		}
 	} else if (kind == u"message_pinned" || kind == u"message_unpinned") {
 		const auto seq = Json::Int64(d, "seq"_L1);
