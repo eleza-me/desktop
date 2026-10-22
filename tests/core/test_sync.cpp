@@ -238,6 +238,7 @@ private Q_SLOTS:
 	void windowReachingTheEndIsCached();
 	void changesOutsideTheWindowReachTheCache();
 	void differenceItemsWithoutPayload();
+	void removedChatGoes();
 
 };
 
@@ -1156,6 +1157,66 @@ void TestSync::differenceItemsWithoutPayload() {
 	QVERIFY(Test::WaitFor([&] { return harness.transport.count(u"chat.history"_s) > before; }));
 	QVERIFY(Test::WaitFor([&] { return messages.live(u"c1"_s); }));
 	QCOMPARE(HeldSeqs(harness, u"c1"_s), (QVector<qint64>{ 8 }));
+}
+
+// "removed" marks every item of a chat that is no longer mine to see (a
+// request I declined, a conversation that ended behind masks or was
+// purged): no header, no message, whatever the kind. The chat goes — row,
+// timeline and cache — not one message of it.
+void TestSync::removedChatGoes() {
+	auto dir = QTemporaryDir();
+	QVERIFY(dir.isValid());
+	auto harness = Harness(dir.filePath(u"cache.db"_s));
+	QVERIFY(Connect(harness, 100));
+	QCOMPARE(CachedSeqs(harness, u"c1"_s), Seqs(1, 9));
+	const auto removed = [](qint64 pts, const QString &kind, const QString &chat, qint64 seq) {
+		auto result = QJsonObject{
+			{ u"pts"_s, QString::number(pts) },
+			{ u"kind"_s, kind },
+			{ u"chat"_s, chat },
+			{ u"removed"_s, true },
+		};
+		if (seq) {
+			result.insert(u"seq"_s, QString::number(seq));
+		}
+		return result;
+	};
+	auto &chats = harness.chats();
+	auto gone = QSignalSpy(&chats, &Chats::chatRemoved);
+	harness.on(u"sync.difference"_s, [&](const Call &call) {
+		if (call.body.value("pts"_L1).toString() != u"100") {
+			return Reply::Ok(Difference(102, QJsonArray()));
+		}
+		auto draft = removed(102, u"draft"_s, u"c1"_s, 0);
+		draft.insert(u"data"_s, QJsonObject{ { u"chat"_s, u"c1"_s }, { u"draft"_s, QJsonValue() } });
+		return Reply::Ok(Difference(102, QJsonArray{
+			removed(101, u"edited"_s, u"c1"_s, 7),
+			draft,
+		}));
+	});
+	harness.sync().catchUp();
+	QVERIFY(Test::WaitFor([&] { return !harness.sync().updating(); }));
+	QCOMPARE(harness.sync().pts().value_or(-1), 102);
+	QVERIFY(chats.chat(u"c1"_s) == nullptr);
+	QCOMPARE(gone.size(), 1);
+	QCOMPARE(gone[0][0].toString(), u"c1"_s);
+	QVERIFY(!harness.messages().held(u"c1"_s));
+	QVERIFY(CachedSeqs(harness, u"c1"_s).isEmpty());
+	// The other chats stay.
+	QVERIFY(chats.chat(u"c2"_s) != nullptr);
+
+	// The same in a replay over the connection.
+	harness.transport.emitFrame(Hello(103, true));
+	auto frame = Rt::Frame();
+	frame.type = Type::Replayed;
+	frame.pts = 103;
+	frame.kind = u"read"_s;
+	frame.data = removed(103, u"read"_s, u"c2"_s, 0);
+	harness.transport.emitFrame(frame);
+	harness.transport.emitFrame(Signal(Type::Resumed));
+	QCOMPARE(harness.sync().pts().value_or(-1), 103);
+	QVERIFY(chats.chat(u"c2"_s) == nullptr);
+	QCOMPARE(gone.size(), 2);
 }
 
 QTEST_GUILESS_MAIN(TestSync)
