@@ -12,7 +12,10 @@
 // Features: word wrap with multi-line elision, bidi (the base direction of every
 // paragraph is detected from its content), links with hover / click hit-testing
 // (getState), spoilers hidden behind "dust" until revealed, selection painting.
-// Emoji are left to the font fallback.
+// Emoji of Telegram's pack (ui/emoji) are drawn as its pictures: the text keeps
+// them as they are (selection, copy, offsets), the layout gives each the width
+// of its picture and hit tests treat it as one character. Emoji the pack lacks
+// are left to the font fallback.
 //
 // The object caches its layout for the last used width, so keep one String per
 // painted item instead of recreating it in paintEvent.

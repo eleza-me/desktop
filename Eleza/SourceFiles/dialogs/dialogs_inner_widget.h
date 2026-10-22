@@ -27,6 +27,10 @@ namespace Ui {
 class PopupMenu;
 } // namespace Ui
 
+namespace Ui::Text {
+class String;
+} // namespace Ui::Text
+
 namespace Window {
 class SessionController;
 } // namespace Window
@@ -109,6 +113,11 @@ private:
 		QString textElided;
 		int textElidedFor = -1;
 		int prefixWidth = 0;
+		// The title / preview when they have emoji of the pack: drawn as its
+		// pictures (null: plain text).
+		std::shared_ptr<Ui::Text::String> titleText;
+		bool titleTextTopic = false;
+		std::shared_ptr<Ui::Text::String> previewText;
 	};
 	struct Thumb {
 		QString key;

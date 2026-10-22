@@ -14,8 +14,10 @@
 #include "storage/storage_key_value.h"
 #include "support/chat_text.h"
 #include "ui/effects/shadow.h"
+#include "ui/emoji/emoji_pack.h"
 #include "ui/image/userpic.h"
 #include "ui/painter.h"
+#include "ui/text/text.h"
 #include "ui/text/text_entity.h"
 #include "ui/ui_utility.h"
 #include "ui/widgets/misc_widgets.h"
@@ -32,6 +34,19 @@ namespace Dialogs {
 namespace {
 
 constexpr auto kClockInterval = 30 * 1000;
+
+// A title / preview with emoji of the pack, drawn as its pictures; null when
+// the text has none (it is painted as plain text then).
+[[nodiscard]] std::shared_ptr<Ui::Text::String> EmojiText(
+		const style::TextStyle &st,
+		const QString &text) {
+	if (!Ui::Emoji::Available()
+		|| !Ui::Emoji::MayHaveEmoji(text)
+		|| Ui::Emoji::FindAll(text, 1).empty()) {
+		return nullptr;
+	}
+	return std::make_shared<Ui::Text::String>(st, text);
+}
 constexpr auto kPresenceWatchLimit = 60;
 constexpr auto kBottomSkip = 8;
 
@@ -399,6 +414,8 @@ void InnerWidget::prepare(Row &row) {
 	row.prepared = true;
 	row.titleElidedFor = -1;
 	row.textElidedFor = -1;
+	row.titleText = nullptr;
+	row.previewText = nullptr;
 	if (row.type != Row::Type::Chat) {
 		row.title = (row.type == Row::Type::Requests)
 			? tr::lng_dialogs_requests(tr::now)
@@ -739,8 +756,21 @@ void InnerWidget::paintRow(
 	const auto nameAvailable = std::max(nameRight - left - marks, 0);
 	if (row.titleElidedFor != nameAvailable) {
 		row.titleElidedFor = nameAvailable;
-		row.titleElided = nameFont->elided(row.title, nameAvailable);
-		row.titleElidedWidth = nameFont->width(row.titleElided);
+		if (!row.titleText || row.titleTextTopic != topic) {
+			row.titleTextTopic = topic;
+			row.titleText = EmojiText(
+				topic ? st::dialogsTopicTextStyle : st::dialogsNameTextStyle,
+				row.title);
+		}
+		if (row.titleText) {
+			row.titleElided = QString();
+			row.titleElidedWidth = std::min(
+				row.titleText->maxWidth(),
+				nameAvailable);
+		} else {
+			row.titleElided = nameFont->elided(row.title, nameAvailable);
+			row.titleElidedWidth = nameFont->width(row.titleElided);
+		}
 	}
 	const auto nameTop = st::dialogsNameTop
 		+ (st::dialogsNameFont->height - nameFont->height) / 2;
@@ -748,12 +778,21 @@ void InnerWidget::paintRow(
 	p.setPen((isChat && chat.anonymous)
 		? st::dialogsAnonFg
 		: st::dialogsNameFg);
-	p.drawTextLeft(
-		left,
-		nameTop,
-		outer,
-		row.titleElided,
-		row.titleElidedWidth);
+	if (row.titleText) {
+		row.titleText->drawLeftElided(
+			p,
+			left,
+			nameTop,
+			row.titleElidedWidth,
+			outer);
+	} else {
+		p.drawTextLeft(
+			left,
+			nameTop,
+			outer,
+			row.titleElided,
+			row.titleElidedWidth);
+	}
 	auto markLeft = left + row.titleElidedWidth + st::dialogsNameIconSkip;
 	const auto markTop = [&](const style::icon &icon) {
 		return st::dialogsNameTop
@@ -851,8 +890,13 @@ void InnerWidget::paintRow(
 	}
 	const auto textAvailable = std::max(textRight - textLeft, 0);
 	if (row.textElidedFor != textAvailable) {
+		if (row.textElidedFor < 0) {
+			row.previewText = EmojiText(st::dialogsPreviewTextStyle, preview.text);
+		}
 		row.textElidedFor = textAvailable;
-		row.textElided = textFont->elided(preview.text, textAvailable);
+		row.textElided = row.previewText
+			? QString()
+			: textFont->elided(preview.text, textAvailable);
 	}
 	switch (preview.kind) {
 	case Preview::Kind::Activity:
@@ -867,7 +911,16 @@ void InnerWidget::paintRow(
 	default:
 		p.setPen(st::dialogsTextFg);
 	}
-	p.drawTextLeft(textLeft, st::dialogsTextTop, outer, row.textElided);
+	if (row.previewText) {
+		row.previewText->drawLeftElided(
+			p,
+			textLeft,
+			st::dialogsTextTop,
+			textAvailable,
+			outer);
+	} else {
+		p.drawTextLeft(textLeft, st::dialogsTextTop, outer, row.textElided);
+	}
 	p.translate(0, -top);
 }
 

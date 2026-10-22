@@ -52,6 +52,16 @@ dialogsTickFailed: icon {{ "warning", statusError, 16px }};
 dialogsTickSkip: 3px;
 
 dialogsTextFont: font(14px);
+// A title / preview with emoji of the pack (drawn through Ui::Text::String).
+dialogsNameTextStyle: TextStyle(defaultTextStyle) {
+	font: dialogsNameFont;
+}
+dialogsTopicTextStyle: TextStyle(defaultTextStyle) {
+	font: dialogsTopicFont;
+}
+dialogsPreviewTextStyle: TextStyle(defaultTextStyle) {
+	font: dialogsTextFont;
+}
 dialogsTextFg: textSecondary;
 dialogsTextFgService: brandText;
 dialogsTextFgDraft: statusError;

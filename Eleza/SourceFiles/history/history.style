@@ -32,17 +32,19 @@ historyTextStyle: TextStyle(defaultTextStyle) {
 }
 historyTextFg: textPrimary;
 historyAnonTextFg: anonContent;
+// Emoji-only texts. The pack's emoji are 1.3 of the font (64 px pictures:
+// sharper at these sizes than at the fonts' old 42 / 36 / 30 px).
 historyJumboStyle1: TextStyle(defaultTextStyle) {
-	font: font(42px);
-	lineHeight: 54px;
+	font: font(38px);
+	lineHeight: 52px;
 }
 historyJumboStyle2: TextStyle(defaultTextStyle) {
-	font: font(36px);
-	lineHeight: 46px;
+	font: font(32px);
+	lineHeight: 44px;
 }
 historyJumboStyle3: TextStyle(defaultTextStyle) {
-	font: font(30px);
-	lineHeight: 40px;
+	font: font(27px);
+	lineHeight: 38px;
 }
 
 // time, «edited», ticks
@@ -238,6 +240,7 @@ historyReactionPadding: margins(7px, 0px, 8px, 0px);
 historyReactionSkip: 4px;
 historyReactionTop: 5px;
 historyReactionEmojiFont: font(14px);
+historyReactionEmojiSize: 18px;
 historyReactionCountFont: font(12px semibold);
 historyReactionMineFg: textOnBrand;
 historyReactionOutsideBg: glassOnMedia;
@@ -536,11 +539,20 @@ historyPanelHeaderFg: textTertiary;
 historyPanelHeaderHeight: 30px;
 historyPanelHeaderPadding: 8px;
 historyEmojiCell: 40px;
-historyEmojiFont: font(24px);
+historyEmojiSize: 30px; // the pack's picture in a cell
+historyEmojiFont: font(24px); // the fonts' emoji where the pack has none
 historyEmojiOverBg: stateHover;
 historyEmojiOverRadius: 8px;
 historyEmojiCategoryHeight: 40px;
+historyEmojiCategorySize: 22px;
 historyEmojiCategoryFont: font(18px);
+historyEmojiTonesPadding: 4px;
+historyEmojiTonesRadius: 12px;
+historyEmojiTonesShadow: Shadow(defaultShadow) {
+	blur: 8px;
+	offset: point(0px, 2px);
+	extend: margins(8px, 6px, 8px, 10px);
+}
 historyEmojiCategoryActiveBg: stateSelected;
 historyStickerPadding: 6px;
 historyStickerRecentIcon: icon {{ "clock", textSecondary, 22px }};
@@ -552,6 +564,7 @@ historyReactionsStripHeight: 44px;
 historyReactionsStripPadding: 6px;
 historyReactionsStripCell: 36px;
 historyReactionsStripFont: font(22px);
+historyReactionsStripEmojiSize: 26px;
 historyReactionsStripOverBg: stateHover;
 historyReactionsStripSelectedBg: stateActive;
 historyReactionsStripExpand: icon {{ "chevron-down", textSecondary, 20px }};

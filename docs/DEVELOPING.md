@@ -436,6 +436,12 @@ All in `lib/ui/ui/**`; every header starts with an example. The gallery (`--gall
 * **Text**: keep one `Ui::Text::String` per painted item (`setText` / `setMarkedText` with
   entities in UTF-16 units), `countHeight(width)`, `draw` / `drawLeftElided`, `getState` for
   link hit-testing. `Ui::FlatLabel` wraps it as a widget (selectable, links).
+* **Emoji** (`ui/emoji/*.h`): `Ui::Text::String` and `Ui::InputField` draw Telegram's emoji
+  (the pack's pictures) by themselves; text painted with `QPainter::drawText` keeps the
+  fonts' emoji. One emoji in a cell / chip: `Ui::Emoji::PaintOne(p, emoji, rect, size,
+  fallbackFont)` (and `OneWidth` to measure it). Pictures are decoded on a pool thread
+  when first drawn; a widget that drew a missing one is repainted, a picture painted into
+  an image needs `Ui::Emoji::OnUpdated(guard, callback)`.
 * **Lists**: `Ui::ScrollArea` + `Ui::ListWidget` with your `Ui::ListDelegate`
   (`rowsCount`, `rowHeight`, `paintRow`); the list paints hover / active / ripple and gives
   `rowClicked`, `rowContextMenu`, keyboard selection. `scroll->nearBottom` for pagination.

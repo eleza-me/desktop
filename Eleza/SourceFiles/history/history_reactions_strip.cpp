@@ -1,5 +1,6 @@
 #include "history/history_reactions_strip.h"
 
+#include "ui/emoji/emoji_pack.h"
 #include "ui/painter.h"
 #include "styles/style_history.h"
 
@@ -102,7 +103,12 @@ void ReactionsStrip::paintEvent(QPaintEvent *e) {
 			p.drawEllipse(rect.marginsRemoved(QMargins(1, 1, 1, 1)));
 		}
 		p.setPen(st::textPrimary);
-		p.drawText(rect, Qt::AlignCenter, _emoji[i]);
+		Ui::Emoji::PaintOne(
+			p,
+			_emoji[i],
+			rect,
+			st::historyReactionsStripEmojiSize,
+			st::historyReactionsStripFont->f);
 	}
 	if (hasToggle()) {
 		const auto rect = cellRect(int(_emoji.size()));

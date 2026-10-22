@@ -1,5 +1,6 @@
 // The style runtime and a few widgets: palette switching, fonts, icons, animations.
 #include "ui/effects/animations.h"
+#include "ui/emoji/emoji_pack.h"
 #include "ui/image/image_prepare.h"
 #include "ui/image/userpic.h"
 #include "ui/style/style_core.h"
@@ -12,6 +13,10 @@
 #include "styles/style_widgets.h"
 
 #include <QtCore/QDir>
+#include <QtGui/QAbstractTextDocumentLayout>
+#include <QtGui/QTextBlock>
+#include <QtGui/QTextDocument>
+#include <QtGui/QTextLayout>
 #include <QtWidgets/QTextEdit>
 #include <QtTest/QtTest>
 
@@ -244,6 +249,36 @@ private Q_SLOTS:
 		QCOMPARE(code->code(), QStringLiteral("12345"));
 		QCOMPARE(finished, QStringLiteral("12345"));
 		QCOMPARE(Ui::LatinizeDigits(QString::fromUtf8("۰۹۱۲")), QStringLiteral("0912"));
+	}
+
+	void inputFieldEmoji() {
+		// The editor keeps its text; an emoji of the pack takes the place of
+		// its picture, whatever the fonts have for it.
+		QVERIFY(Ui::Emoji::Available());
+		auto window = QWidget();
+		window.resize(400, 100);
+		const auto field = new Ui::InputField(
+			&window,
+			st::defaultInputField,
+			QString(),
+			QString::fromUtf8("a😀b👨‍👩‍👧c"));
+		field->resizeToWidth(380);
+		QCOMPARE(field->text(), QString::fromUtf8("a😀b👨‍👩‍👧c"));
+		const auto document = field->rawTextEdit()->document();
+		document->documentLayout()->documentSize(); // laid out
+		const auto block = document->firstBlock();
+		QVERIFY(block.layout() && block.layout()->lineCount() == 1);
+		const auto line = block.layout()->lineAt(0);
+		const auto width = [&](int from, int till) {
+			return std::abs(line.cursorToX(till) - line.cursorToX(from));
+		};
+		const auto one = width(1, 3);
+		const auto family = width(4, 4 + int(QString::fromUtf8("👨‍👩‍👧").size()));
+		QVERIFY(one > 10);
+		QVERIFY2(std::abs(one - family) < 1., qPrintable(QString::number(one) + u' ' + QString::number(family)));
+		// Typing keeps it so.
+		field->insertText(QString::fromUtf8("🇮🇷"));
+		QVERIFY(field->text().endsWith(QString::fromUtf8("🇮🇷")));
 	}
 
 	void images() {

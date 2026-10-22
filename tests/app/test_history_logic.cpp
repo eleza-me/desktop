@@ -239,6 +239,10 @@ private Q_SLOTS:
 		QCOMPARE(History::JumboEmojiCount(U("❤️")), 1);
 		QCOMPARE(History::JumboEmojiCount(QString::fromUcs4(U"\U0001F64B\u200D\u2642\uFE0F")), 1);
 		QCOMPARE(History::JumboEmojiCount(U("❤️🇮🇷👍🏽")), 3);
+		// A keycap, a subdivision flag.
+		QCOMPARE(History::JumboEmojiCount(U("1️⃣")), 1);
+		QCOMPARE(History::JumboEmojiCount(U("🏴󠁧󠁢󠁳󠁣󠁴󠁿 #⃣")), 2);
+		QCOMPARE(History::JumboEmojiCount(U("1️⃣2️⃣3️⃣4️⃣")), 0);
 	}
 
 	void quoteFromSelection() {
