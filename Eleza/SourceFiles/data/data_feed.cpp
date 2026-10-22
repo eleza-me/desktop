@@ -26,6 +26,18 @@ constexpr auto kCreateAttempts = 60;
 	return u"none"_s;
 }
 
+// `callback`, invoked only while `guard` is alive (and only when it is set).
+[[nodiscard]] Fn<void()> GuardedCall(base::Guard guard, Fn<void()> callback) {
+	if (!callback) {
+		return nullptr;
+	}
+	return [guard = std::move(guard), callback = std::move(callback)] {
+		if (guard.alive()) {
+			callback();
+		}
+	};
+}
+
 } // namespace
 
 QJsonObject CreatePost::toJson() const {
@@ -587,17 +599,33 @@ void Feed::notInterested(const QString &id) {
 	});
 }
 
-void Feed::setReplyPolicy(const QString &id, const QString &policy) {
+void Feed::setReplyPolicy(
+		const QString &id,
+		const QString &policy,
+		base::Guard guard,
+		Fn<void()> done) {
+	const auto notify = GuardedCall(std::move(guard), std::move(done));
 	simple(Api::Put, u"/v1/posts/%1/reply-policy"_s.arg(PathSegment(id)), QJsonObject{
 		{ u"reply_policy"_s, policy },
 	}, u"post.reply_policy"_s, id, [=, this] {
 		patch(id, [&](Post &p) { p.replyPolicy = policy; });
+		if (notify) {
+			notify();
+		}
 	});
 }
 
-void Feed::setPinned(const QString &id, bool pinned) {
+void Feed::setPinned(
+		const QString &id,
+		bool pinned,
+		base::Guard guard,
+		Fn<void()> done) {
+	const auto notify = GuardedCall(std::move(guard), std::move(done));
 	const auto applied = [=, this] {
 		patch(id, [&](Post &p) { p.pinned = pinned; });
+		if (notify) {
+			notify();
+		}
 	};
 	if (pinned) {
 		simple(Api::Post, u"/v1/me/pins"_s, QJsonObject{ { u"post"_s, id } }, u"post.pin"_s, id, applied);
@@ -860,22 +888,36 @@ void Feed::topicConversations(
 		.send();
 }
 
-void Feed::followTopic(const QString &slug, bool on) {
+void Feed::followTopic(
+		const QString &slug,
+		bool on,
+		base::Guard guard,
+		Fn<void()> done,
+		Fn<void()> fail) {
 	simple(
 		on ? Api::Post : Api::Delete,
 		u"/v1/topics/%1/follow"_s.arg(PathSegment(slug)),
 		QJsonObject(),
 		u"topic.follow"_s,
-		slug);
+		slug,
+		GuardedCall(guard, std::move(done)),
+		GuardedCall(guard, std::move(fail)));
 }
 
-void Feed::hideTopic(const QString &id, bool hidden) {
+void Feed::hideTopic(
+		const QString &id,
+		bool hidden,
+		base::Guard guard,
+		Fn<void()> done,
+		Fn<void()> fail) {
 	simple(
 		hidden ? Api::Post : Api::Delete,
 		u"/v1/me/hidden-topics/"_s + PathSegment(id),
 		QJsonObject(),
 		u"topic.hide"_s,
-		id);
+		id,
+		GuardedCall(guard, std::move(done)),
+		GuardedCall(guard, std::move(fail)));
 }
 
 void Feed::trending(

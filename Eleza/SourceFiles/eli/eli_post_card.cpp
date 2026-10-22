@@ -40,8 +40,12 @@ constexpr auto kPreviewSide = 32;
 	return (count > 0) ? Lang::CompactCount(count) : QString();
 }
 
+// A GIF (comments only) is a silent looping video with a poster: its poster
+// is drawn, it is never played as a video.
 [[nodiscard]] bool IsVisual(const Data::PostMedia &media) {
-	return media.kind == u"image" || media.kind == u"video";
+	return media.kind == u"image"
+		|| media.kind == u"video"
+		|| media.kind == u"gif";
 }
 
 void FillRounded(QPainter &p, const QRect &rect, int radius, const QBrush &brush) {
@@ -494,9 +498,9 @@ void PostCard::rebuildTiles() {
 			auto entry = Wanted();
 			entry.postId = post.id;
 			entry.media = media;
-			entry.variant = (media.kind == u"video")
-				? Data::MediaVariant::Poster
-				: Data::MediaVariant::Feed;
+			entry.variant = (media.kind == u"image")
+				? Data::MediaVariant::Feed
+				: Data::MediaVariant::Poster;
 			entry.quote = quote;
 			wanted.push_back(entry);
 		}
@@ -1286,7 +1290,7 @@ int PostCard::imageIndexOfTile(int tile) const {
 bool PostCard::tileIsVideo(int tile) const {
 	return (tile >= 0)
 		&& (tile < int(_tiles.size()))
-		&& (_tiles[tile].media.kind != u"image");
+		&& (_tiles[tile].media.kind == u"video");
 }
 
 QImage PostCard::tileImage(int tile) const {
@@ -1682,7 +1686,29 @@ void PostCard::paintTile(Painter &p, const Tile &tile, bool over) const {
 	if (_block == Block::Audio) {
 		return;
 	}
-	const auto video = (tile.media.kind != u"image");
+	const auto gif = (tile.media.kind == u"gif");
+	const auto video = !gif && (tile.media.kind != u"image");
+	if (gif && tile.more == 0) {
+		const auto text = tr::lng_history_gif(tr::now);
+		const auto &padding = st::eliMediaBadgePadding;
+		const auto width = st::eliMediaBadgeFont->width(text)
+			+ padding.left()
+			+ padding.right();
+		const auto height = st::eliMediaBadgeFont->height
+			+ padding.top()
+			+ padding.bottom();
+		const auto badge = QRect(
+			style::RightToLeft()
+				? (tile.rect.right() + 1 - st::eliMediaBadgeSkip - width)
+				: (tile.rect.left() + st::eliMediaBadgeSkip),
+			tile.rect.bottom() + 1 - st::eliMediaBadgeSkip - height,
+			width,
+			height);
+		FillRounded(p, badge, height / 2, st::eliMediaBadgeBg);
+		p.setPen(st::eliMediaBadgeFg);
+		p.setFont(st::eliMediaBadgeFont);
+		p.drawTextCentered(badge, text);
+	}
 	if (video) {
 		const auto small = (std::min(tile.rect.width(), tile.rect.height()) < 120);
 		const auto size = small ? (st::eliMediaPlaySize * 2 / 3) : st::eliMediaPlaySize;

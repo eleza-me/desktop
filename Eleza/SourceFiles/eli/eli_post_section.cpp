@@ -898,6 +898,7 @@ void PostSection::arrange() {
 		node.id = id;
 		node.replyTo = (post->replyTo == _rootId) ? QString() : post->replyTo;
 		node.deleted = post->deleted;
+		node.createdAt = post->createdAt;
 		nodes.push_back(node);
 	}
 	auto first = _mineFirst;

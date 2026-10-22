@@ -20,8 +20,10 @@
 #include "window/window_session_controller.h"
 #include "styles/style_eli.h"
 
+#include <QtGui/QCursor>
 #include <QtGui/QKeyEvent>
 #include <QtGui/QMouseEvent>
+#include <QtWidgets/QApplication>
 
 #include <map>
 
@@ -90,7 +92,8 @@ PostList::PostList(
 			updateRow(i);
 		}
 	}
-}) {
+})
+, _bodyTimer([this] { openPendingBody(); }) {
 	setMouseTracking(true);
 	setFocusPolicy(Qt::StrongFocus);
 
@@ -108,6 +111,7 @@ PostList::PostList(
 		auto removed = false;
 		for (auto i = _rows.begin(); i != _rows.end();) {
 			if (i->card && i->card->post().author == userId) {
+				_freshness.forget(i->id);
 				i = _rows.erase(i);
 				removed = true;
 			} else {
@@ -115,8 +119,14 @@ PostList::PostList(
 			}
 		}
 		if (removed) {
+			// As remove(): the indices of the rows moved.
+			_overRow = -1;
+			_overHit = {};
+			_pressedRow = -1;
 			rebuildIndex();
+			refreshPlaceholder();
 			relayout();
+			Q_EMIT emptyChanged(_rows.empty());
 		}
 	});
 	connect(&data.stories(), &Data::Stories::ringsChanged, this, [this] {
@@ -918,7 +928,24 @@ void PostList::mouseReleaseEvent(QMouseEvent *e) {
 		Q_EMIT moreRequested(_rows[row].id);
 		return;
 	}
+	if (hit.type == HitType::Body
+		&& _rows[row].card->options().mode == CardMode::Feed) {
+		// Not yet: this may be the first click of a double click (a like).
+		_bodyPendingId = _rows[row].id;
+		_bodyTimer.callOnce(QApplication::doubleClickInterval());
+		return;
+	}
 	activate(row, hit, e->globalPosition().toPoint());
+}
+
+void PostList::openPendingBody() {
+	const auto index = indexOf(std::exchange(_bodyPendingId, QString()));
+	if (index < 0 || !_rows[index].card) {
+		return;
+	}
+	auto hit = Hit();
+	hit.type = HitType::Body;
+	activate(index, hit, QCursor::pos());
 }
 
 void PostList::mouseDoubleClickEvent(QMouseEvent *e) {
@@ -930,6 +957,9 @@ void PostList::mouseDoubleClickEvent(QMouseEvent *e) {
 		mousePressEvent(e);
 		return;
 	}
+	// The first click does not open the post.
+	_bodyTimer.cancel();
+	_bodyPendingId = QString();
 	const auto &row = _rows[_overRow];
 	const auto &post = row.card->post();
 	_burstId = row.id;
@@ -1033,16 +1063,21 @@ void PostList::activate(int rowIndex, Hit hit, QPoint globalPosition) {
 	case HitType::Media:
 		if (card.tileIsVideo(hit.index)) {
 			OpenPardeh(_controller, id);
-		} else {
-			OpenImageViewer(_controller, post, card.imageIndexOfTile(hit.index));
+		} else if (const auto image = card.imageIndexOfTile(hit.index); image >= 0) {
+			OpenImageViewer(_controller, post, image);
+		} else if (card.options().mode == CardMode::Feed) {
+			// A GIF: the post, as a click on its text.
+			OpenPost(_controller, id);
 		}
 		break;
 	case HitType::QuoteMedia:
 		if (post.quote) {
 			if (card.tileIsVideo(hit.index)) {
 				OpenPardeh(_controller, post.quote->id);
+			} else if (const auto image = card.imageIndexOfTile(hit.index); image >= 0) {
+				OpenImageViewer(_controller, *post.quote, image);
 			} else {
-				OpenImageViewer(_controller, *post.quote, card.imageIndexOfTile(hit.index));
+				OpenPost(_controller, post.quote->id);
 			}
 		}
 		break;

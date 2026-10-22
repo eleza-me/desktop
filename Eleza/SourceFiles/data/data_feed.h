@@ -94,8 +94,9 @@ public:
 	// `option` < 0 withdraws the vote.
 	void vote(const QString &id, int option, base::Guard guard = base::Guard(), Fn<void(const Post &)> done = nullptr, FailCallback fail = nullptr);
 	void notInterested(const QString &id);
-	void setReplyPolicy(const QString &id, const QString &policy);
-	void setPinned(const QString &id, bool pinned);
+	// `done` (while `guard` lives) once the server applied it.
+	void setReplyPolicy(const QString &id, const QString &policy, base::Guard guard = {}, Fn<void()> done = nullptr);
+	void setPinned(const QString &id, bool pinned, base::Guard guard = {}, Fn<void()> done = nullptr);
 	// https://eleza.me/s/<slug>
 	void shareLink(const QString &id, base::Guard guard, Fn<void(const QString &)> done, FailCallback fail = nullptr);
 	// Every share link of my post stops working (new ones can be made).
@@ -119,8 +120,9 @@ public:
 	// tab: "top" | "new".
 	void topicPosts(const QString &slug, const QString &tab, const QString &before, base::Guard guard, Fn<void(const PostsPage &)> done, FailCallback fail = nullptr);
 	void topicConversations(const QString &slug, base::Guard guard, Fn<void(const QStringList &)> done);
-	void followTopic(const QString &slug, bool on);
-	void hideTopic(const QString &id, bool hidden);
+	// `done` / `fail` while `guard` lives (a failure is reported as well).
+	void followTopic(const QString &slug, bool on, base::Guard guard = {}, Fn<void()> done = nullptr, Fn<void()> fail = nullptr);
+	void hideTopic(const QString &id, bool hidden, base::Guard guard = {}, Fn<void()> done = nullptr, Fn<void()> fail = nullptr);
 	void trending(base::Guard guard, Fn<void(const QVector<Trend> &)> done, FailCallback fail = nullptr);
 
 	// ---- lists

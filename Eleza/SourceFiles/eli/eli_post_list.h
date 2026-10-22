@@ -185,6 +185,7 @@ private:
 	void updateHover(QPoint position);
 	void setHover(int row, Hit hit);
 	void activate(int row, Hit hit, QPoint globalPosition);
+	void openPendingBody();
 	void select(int index);
 	void rangeChanged();
 	void checkViews();
@@ -245,6 +246,10 @@ private:
 	QSet<QString> _halfVisible;
 	base::Timer _viewTimer;
 	base::Timer _minuteTimer;
+	// A click on a post's text opens it after the double click interval,
+	// unless a second click (a like) came first.
+	QString _bodyPendingId;
+	base::Timer _bodyTimer;
 
 };
 

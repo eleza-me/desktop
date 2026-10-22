@@ -313,7 +313,9 @@ QVector<ReplyRow> ArrangeReplies(
 	{
 		auto &top = byParent[rootId];
 		if (newestFirst) {
-			std::reverse(top.begin(), top.end());
+			std::stable_sort(top.begin(), top.end(), [&](int a, int b) {
+				return all[a].createdAt > all[b].createdAt;
+			});
 		}
 		if (!first.isEmpty()) {
 			// (stable: the others keep the order of the sort)

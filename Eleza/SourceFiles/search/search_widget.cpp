@@ -54,6 +54,7 @@ constexpr auto kSuggestionsPage = 20;
 constexpr auto kBrowseStaleMs = qint64(5) * 60 * 1000;
 constexpr auto kMaxHiddenPeople = 500;
 constexpr auto kTopicInfoLimit = 12;
+constexpr auto kTopicInfoRetryMs = qint64(60) * 1000;
 constexpr auto kPosterFit = QSize(480, 640);
 
 const auto kRecentKey = u"search.recent"_s;
@@ -900,7 +901,8 @@ void Widget::loadMoreResults() {
 	results.loadingMore = true;
 	const auto generation = results.generation;
 	const auto scope = _scope;
-	data().graph().search(_query, scope, results.nextOffset, this, [=, this](
+	const auto offset = results.nextOffset;
+	data().graph().search(_query, scope, offset, this, [=, this](
 			const Data::SearchResults &page) {
 		if (generation != _results->generation) {
 			return;
@@ -947,16 +949,27 @@ void Widget::loadMoreResults() {
 				}
 			}
 		}
-		// A page that brought nothing new ends the list.
-		results.nextOffset = added ? page.nextOffset : 0;
+		// The offset only goes forward: a page whose rows were all known
+		// or left out (hidden posts, filtered conversations) goes on.
+		results.nextOffset = (page.nextOffset > offset) ? page.nextOffset : 0;
 		rebuild();
+		if (!added && results.nextOffset > 0) {
+			loadMoreResults();
+		}
 	}, [=, this](const Api::Error &error) {
 		if (generation != _results->generation) {
 			return;
 		}
 		_results->loadingMore = false;
 		_results->nextOffset = 0;
-		Support::ShowError(controller(), error);
+		// The server pages only so deep (search.max_page × 10) and answers
+		// an offset past that with `search.query_invalid`: the list ends.
+		const auto tooDeep = (offset > 0)
+			&& (error.status == 400)
+			&& (error.code == u"search.query_invalid");
+		if (!tooDeep) {
+			Support::ShowError(controller(), error);
+		}
 		rebuild();
 	});
 	rebuild();
@@ -1343,13 +1356,24 @@ void Widget::buildResults() {
 }
 
 void Widget::requestTopicInfo(const QStringList &slugs) {
+	// At most so many at once; the others are asked for when the rows are
+	// built again.
+	const auto now = NowMs();
 	for (const auto &slug : slugs) {
-		if (_topicInfoRequested.contains(slug)
-			|| _topicInfoRequested.size() >= kTopicInfoLimit * 8) {
+		if (_topicInfoRequested.size() >= kTopicInfoLimit * 8) {
+			break;
+		} else if (_topicInfoRequested.contains(slug)
+			|| _topicInfo.contains(slug)) {
+			continue;
+		} else if (const auto failed = _topicInfoFailedAt.constFind(slug);
+			failed != _topicInfoFailedAt.cend()
+				&& now - *failed < kTopicInfoRetryMs) {
 			continue;
 		}
 		_topicInfoRequested.insert(slug);
 		data().feed().topic(slug, this, [=, this](const Data::TopicInfo &info) {
+			_topicInfoRequested.remove(slug);
+			_topicInfoFailedAt.remove(slug);
 			_topicInfo.insert(slug, info);
 			for (auto i = 0; i != int(_rows.size()); ++i) {
 				auto &row = *_rows[i];
@@ -1365,8 +1389,10 @@ void Widget::requestTopicInfo(const QStringList &slugs) {
 					_list->updateRow(i);
 				}
 			}
-		}, [](const Api::Error &) {
-			// The row stays without counts.
+		}, [=, this](const Api::Error &) {
+			// The row stays without counts for now.
+			_topicInfoRequested.remove(slug);
+			_topicInfoFailedAt.insert(slug, NowMs());
 		});
 	}
 }
@@ -2444,18 +2470,53 @@ void Widget::showRowMenu(int index, QPoint globalPosition) {
 		if (row.kind == kTrend && !topicId.isEmpty()) {
 			menu->addSeparator();
 			menu->addAction(tr::lng_eli_topic_not_interested(tr::now), [=] {
-				window->session().data().feed().hideTopic(topicId, true);
-				if (!weak || !weak->_browse->trends) {
+				if (!weak) {
 					return;
 				}
-				auto &trends = *weak->_browse->trends;
-				trends.erase(
-					std::remove_if(trends.begin(), trends.end(), [&](
-							const Data::Trend &trend) {
-						return trend.id == topicId;
-					}),
-					trends.end());
-				window->showToast(tr::lng_search_topic_hidden(tr::now));
+				// The row leaves at once and comes back where it was when
+				// the server did not take it.
+				auto removed = std::optional<Data::Trend>();
+				auto at = 0;
+				if (weak->_browse->trends) {
+					auto &trends = *weak->_browse->trends;
+					for (auto i = 0; i != int(trends.size()); ++i) {
+						if (trends[i].id == topicId) {
+							removed = trends[i];
+							at = i;
+							trends.remove(i);
+							break;
+						}
+					}
+				}
+				const auto generation = weak->_browse->generation;
+				window->session().data().feed().hideTopic(
+					topicId,
+					true,
+					weak.data(),
+					[=] { window->showToast(tr::lng_search_topic_hidden(tr::now)); },
+					[=] {
+						if (!weak
+							|| !removed
+							|| weak->_browse->generation != generation
+							|| !weak->_browse->trends) {
+							return;
+						}
+						auto &trends = *weak->_browse->trends;
+						const auto known = std::any_of(
+							trends.cbegin(),
+							trends.cend(),
+							[&](const Data::Trend &trend) {
+								return trend.id == topicId;
+							});
+						if (!known) {
+							trends.insert(
+								std::min(at, int(trends.size())),
+								*removed);
+							if (weak->_query.isEmpty()) {
+								weak->rebuild();
+							}
+						}
+					});
 				if (weak->_query.isEmpty()) {
 					weak->rebuild();
 				}

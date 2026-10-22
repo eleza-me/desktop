@@ -383,18 +383,11 @@ void Graph::searchPeople(
 	}
 	_session->api().request(Api::Get, u"/v1/search"_s)
 		.query(u"q"_s, trimmed)
-		.query(u"type"_s, u"people"_s)
-		.query(u"limit"_s, 20)
+		.query(u"type"_s, u"users"_s) // users | posts | topics | conversations
 		.guard(this)
 		.done([=, this](const QJsonObject &result) {
-			auto value = result.value("people"_L1);
-			if (!value.isArray()) {
-				value = result.value("users"_L1);
-			}
-			if (!value.isArray()) {
-				value = result.value("results"_L1);
-			}
-			const auto list = Json::List<Profile>(value);
+			// A page of the server's search.max_page people.
+			const auto list = Json::List<Profile>(result.value("users"_L1));
 			_session->users().seed(list);
 			if (done && guard.alive()) {
 				done(list);
