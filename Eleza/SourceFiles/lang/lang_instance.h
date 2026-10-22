@@ -18,6 +18,7 @@
 #include <QtCore/QString>
 
 #include <functional>
+#include <initializer_list>
 
 namespace Lang {
 
@@ -84,6 +85,14 @@ struct Catalog {
 // Defined in the generated lang_auto.cpp.
 [[nodiscard]] Catalog GeneratedCatalog();
 
+struct TagValue {
+	const char *tag;
+	const QString &value;
+};
+
+// Puts the values in place of their {tag}s in one pass: a value that has
+// "{tag}" in it (somebody's name) is left as it is.
+void ReplaceTags(QString &text, std::initializer_list<TagValue> tags);
 void ReplaceTag(QString &text, const char *tag, const QString &value);
 
 } // namespace internal

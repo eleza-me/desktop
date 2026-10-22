@@ -10,11 +10,16 @@
 //
 //   1. One updater per install directory (a named mutex).
 //   2. Waits for the app to exit (the process id from the request).
-//   3. Install directory not writable (a copy under Program Files): starts
-//      itself again with the "runas" verb — the system asks for administrator
-//      rights — waits for that copy and takes its result. The elevated copy
-//      only swaps the files; the app is started again by this one, so it never
-//      runs with administrator rights.
+//   3. Install directory not writable (a copy under Program Files): starts the
+//      Updater.exe of the install directory with the "runas" verb — the system
+//      asks for administrator rights — waits for it and takes its exit code.
+//      That one, not the copy among the user's files, runs elevated: only an
+//      administrator can change it (or put a DLL next to it). It trusts
+//      nothing of the request that it cannot check (see RunElevatedInstall)
+//      and only swaps the files: it writes nothing among the user's files (no
+//      log, no result, the new files are copied out of the staging directory,
+//      never moved), and the app is started again by this process, so it
+//      never runs with administrator rights.
 //   4. Swaps the files, with a rollback when anything fails; writes the result
 //      file for the next start of the app.
 //   5. Starts Eleza.exe again with the arguments it had.
@@ -34,6 +39,7 @@
 #include <shellapi.h>
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -44,12 +50,16 @@ constexpr auto kParentExitTimeoutMs = DWORD(60 * 1000);
 constexpr auto kRenameRetries = 40;
 constexpr auto kRenameRetryDelayMs = 250;
 
+constexpr auto kUpdaterName = L"Updater.exe";
+
 enum ExitCode : int {
 	kExitInstalled = 0,
-	kExitFailed = 1,
+	kExitFailed = 1, // the old version is intact
 	kExitBadArguments = 2,
 	kExitAlreadyRunning = 3,
 	kExitParentAlive = 4,
+	kExitBroken = 5, // failed and could not be undone completely
+	kExitRefused = 6, // the elevated copy did not accept the request
 };
 
 [[nodiscard]] std::wstring Utf8ToWide(const std::string &text) {
@@ -141,6 +151,26 @@ void AppendArgument(std::wstring &to, const std::wstring &argument) {
 	return std::wstring(L"Local\\ElezaUpdater-") + text;
 }
 
+// The same path, letters of either case (the way MutexName() folds them).
+[[nodiscard]] bool SamePath(const Install::Path &a, const Install::Path &b) {
+	const auto fold = [](const Install::Path &path) {
+		auto result = path.lexically_normal().native();
+		while (result.size() > 3
+			&& (result.back() == L'\\' || result.back() == L'/')) {
+			result.pop_back();
+		}
+		for (auto &ch : result) {
+			if (ch >= L'A' && ch <= L'Z') {
+				ch = wchar_t(ch - L'A' + L'a');
+			} else if (ch == L'/') {
+				ch = L'\\';
+			}
+		}
+		return result;
+	};
+	return fold(a) == fold(b);
+}
+
 // Waits until the app is gone. False when it is still there after the timeout.
 [[nodiscard]] bool WaitForParent(unsigned long pid, const Install::Log &log) {
 	if (!pid) {
@@ -174,13 +204,23 @@ void AppendArgument(std::wstring &to, const std::wstring &argument) {
 		&& RemoveDirectoryW(probe.c_str());
 }
 
-// Runs this program again as administrator and waits for it. False when the
-// rights were not given (or it could not be started).
-[[nodiscard]] bool RunElevated(const std::wstring &paramsPath, const Install::Log &log) {
-	const auto self = OwnPath();
-	if (self.empty()) {
-		return false;
+// Runs the updater of the install directory as administrator and waits for
+// it. Its exit code, or nothing when the rights were not given (or it could
+// not be started).
+[[nodiscard]] std::optional<DWORD> RunElevated(
+		const Install::Path &installDir,
+		const std::wstring &paramsPath,
+		const Install::Log &log) {
+	// Not this copy: it lies among the user's files, where anything running
+	// as the user could replace it, or put a DLL next to it, while the system
+	// asks for the rights.
+	const auto updater = installDir / kUpdaterName;
+	auto ops = Install::FileOps();
+	if (ops.kind(updater) != Install::EntryKind::File) {
+		log("the install directory has no updater");
+		return std::nullopt;
 	}
+	const auto self = updater.native();
 	auto parameters = std::wstring();
 	AppendArgument(parameters, L"--params=" + paramsPath);
 	AppendArgument(parameters, L"--elevated");
@@ -212,13 +252,98 @@ void AppendArgument(std::wstring &to, const std::wstring &argument) {
 		log((GetLastError() == ERROR_CANCELLED)
 			? "administrator rights were declined"
 			: "could not ask for administrator rights");
-		return false;
+		return std::nullopt;
 	} else if (!info.hProcess) {
-		return false;
+		return std::nullopt;
 	}
 	WaitForSingleObject(info.hProcess, INFINITE);
+	auto code = DWORD(kExitFailed);
+	if (!GetExitCodeProcess(info.hProcess, &code)) {
+		code = DWORD(kExitFailed);
+	}
 	CloseHandle(info.hProcess);
-	return true;
+	return code;
+}
+
+// The elevated side's file operations: a file of the new version is copied
+// out of the staging directory, never moved, so that what is done there with
+// administrator rights is only reading.
+class ElevatedOps final : public Install::FileOps {
+public:
+	explicit ElevatedOps(Install::Path stagedDir)
+	: _stagedDir(std::move(stagedDir)) {
+	}
+
+	bool rename(const Install::Path &from, const Install::Path &to) override {
+		const auto relative = from.lexically_relative(_stagedDir);
+		if (!relative.empty() && relative.begin()->native() != L"..") {
+			return false;
+		}
+		return FileOps::rename(from, to);
+	}
+
+private:
+	Install::Path _stagedDir;
+
+};
+
+// The swap with administrator rights. The request lies among the user's files,
+// so only what can be checked is used:
+//   * the install directory is the one this program lies in (it is started
+//     from there, see RunElevated), and it is a copy of Eleza: the executable
+//     and the list of files are there;
+//   * the new version is <the request's directory>/<version>, neither of the
+//     two a link or a junction;
+//   * the log, the result and the removal of the staging directory are left
+//     to the copy that started this one, which runs as the user.
+[[nodiscard]] int RunElevatedInstall(
+		const Install::Path &paramsPath,
+		const Install::HelperParams &params) {
+	auto plain = Install::FileOps();
+	const auto self = OwnPath();
+	if (self.empty()
+		|| !SamePath(Install::Path(self).parent_path(), params.installDir)) {
+		return kExitRefused;
+	}
+	const auto installDir = Install::Path(self).parent_path();
+	const auto updatesDir = paramsPath.parent_path();
+	const auto stagedDir = updatesDir / Install::PathFromUtf8(params.version);
+	if (plain.kind(installDir / Install::PathFromUtf8(params.executable))
+			!= Install::EntryKind::File
+		|| plain.kind(installDir / Install::kFileListName)
+			!= Install::EntryKind::File
+		|| plain.kind(updatesDir) != Install::EntryKind::Directory
+		|| plain.kind(stagedDir) != Install::EntryKind::Directory
+		|| !SamePath(stagedDir, params.stagedDir)) {
+		return kExitRefused;
+	}
+	auto ops = ElevatedOps(stagedDir);
+	auto request = Install::Request();
+	request.installDir = installDir;
+	request.stagedDir = stagedDir;
+	request.version = params.version;
+	request.lastFile = params.executable;
+	request.retries = kRenameRetries;
+	request.retryDelayMs = kRenameRetryDelayMs;
+	const auto applied = Install::Apply(request, ops);
+	if (applied.status != Install::Status::Installed) {
+		return (applied.status == Install::Status::Broken)
+			? kExitBroken
+			: kExitFailed;
+	}
+	// The old version is not in use any more, but for this program itself:
+	// it was moved into the backup while running and goes at the next start
+	// of the system.
+	const auto backup = installDir
+		/ (std::string(Install::kBackupPrefix) + params.version);
+	if (!Install::RemoveTree(ops, backup)) {
+		MoveFileExW(
+			(backup / kUpdaterName).c_str(),
+			nullptr,
+			MOVEFILE_DELAY_UNTIL_REBOOT);
+		MoveFileExW(backup.c_str(), nullptr, MOVEFILE_DELAY_UNTIL_REBOOT);
+	}
+	return kExitInstalled;
 }
 
 void StartApp(const Install::HelperParams &params, const Install::Log &log) {
@@ -295,27 +420,18 @@ void WriteFailure(
 	if (!Install::ReadParams(ops, Install::Path(paramsPath), params)) {
 		return kExitBadArguments;
 	}
+	if (elevated) {
+		// The first copy holds the mutex, has waited for the app, writes the
+		// result and starts the app again: here only the files.
+		return RunElevatedInstall(Install::Path(paramsPath), params);
+	}
 	const auto fileLog = Install::FileLog(ops, params.logPath);
 	const auto log = Install::Log([&](const std::string &line) {
 		if (fileLog) {
-			fileLog((elevated ? "[elevated] " : "") + line);
+			fileLog(line);
 		}
 	});
 	log("updater started for " + params.version);
-
-	if (elevated) {
-		// The first copy holds the mutex, has waited for the app and starts
-		// it again: here only the files.
-		const auto result = Install::RunInstall(
-			params,
-			ops,
-			log,
-			kRenameRetries,
-			kRenameRetryDelayMs);
-		return (result.status == Install::Status::Installed)
-			? kExitInstalled
-			: kExitFailed;
-	}
 
 	// Kept until the process ends; the system closes the handle.
 	const auto mutex = CreateMutexW(
@@ -336,11 +452,34 @@ void WriteFailure(
 	auto installed = false;
 	if (!IsWritable(params.installDir)) {
 		log("the install directory is not writable, asking for administrator rights");
-		if (RunElevated(paramsPath, log)) {
+		if (const auto code = RunElevated(params.installDir, paramsPath, log)) {
+			// The elevated copy writes nothing here: the result is its code.
 			auto result = Install::HelperResult();
-			installed = Install::ReadResult(ops, params.resultPath, result)
-				&& (result.version == params.version)
-				&& (result.status == Install::Status::Installed);
+			result.version = params.version;
+			switch (int(*code)) {
+			case kExitInstalled:
+				result.status = Install::Status::Installed;
+				break;
+			case kExitBroken:
+				result.status = Install::Status::Broken;
+				result.error = "the files could not be replaced or put back";
+				break;
+			case kExitRefused:
+				result.error = "the elevated updater refused the request";
+				break;
+			default:
+				result.error = "the files could not be replaced";
+				break;
+			}
+			log("the elevated updater finished with code "
+				+ std::to_string(*code));
+			installed = (result.status == Install::Status::Installed);
+			if (!Install::WriteResult(ops, params.resultPath, result)) {
+				log("could not write the result file");
+			}
+			if (installed) {
+				Install::RemoveTree(ops, params.stagedDir);
+			}
 		} else {
 			WriteFailure(ops, params, "administrator rights are needed");
 		}

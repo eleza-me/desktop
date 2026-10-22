@@ -1,5 +1,6 @@
 #include "lang/lang_format.h"
 
+#include "base/text_direction.h"
 #include "lang/lang_countries.h"
 #include "lang/lang_instance.h"
 #include "lang_auto.h"
@@ -156,15 +157,6 @@ const char *const kWeekdaysEn[7] = {
 }
 
 // The decimal point follows the digits: «۱٫۲» in Persian.
-[[nodiscard]] QString LocalizedDecimal(const QString &latin) {
-	if (!IsPersian()) {
-		return latin;
-	}
-	auto result = FaDigits(latin);
-	result.replace(QLatin1Char('.'), QChar(0x066B));
-	return result;
-}
-
 } // namespace
 
 QString FaDigits(const QString &text) {
@@ -199,6 +191,15 @@ QString Num(const QString &text) {
 
 QString Num(qint64 value) {
 	return Num(QString::number(value));
+}
+
+QString Decimal(const QString &latin) {
+	if (!IsPersian()) {
+		return latin;
+	}
+	auto result = FaDigits(latin);
+	result.replace(QLatin1Char('.'), QChar(0x066B));
+	return result;
 }
 
 bool IsJalaliLeapYear(int year) {
@@ -355,7 +356,9 @@ QString RelativeTime(const QDateTime &dateTime, const QDateTime &now) {
 		return tr::lng_minutes_short(tr::now, lt_count, double(diff / 60'000));
 	} else if (diff < 86'400'000) {
 		return tr::lng_hours_short(tr::now, lt_count, double(diff / 3'600'000));
-	} else if (diff < 2 * qint64(86'400'000)) {
+	} else if (dateTime.toLocalTime().date()
+		== now.toLocalTime().date().addDays(-1)) {
+		// By the calendar: 30 hours ago in the small hours was two days ago.
 		return tr::lng_yesterday(tr::now);
 	}
 	return SolarDate(dateTime.date(), false, now.date());
@@ -383,7 +386,7 @@ QString Bytes(qint64 bytes) {
 	} else if (bytes < kilo * kilo) {
 		return Num(Rounded(bytes, kilo)) + QStringLiteral(" KB");
 	} else if (bytes < kilo * kilo * kilo) {
-		return LocalizedDecimal(OneDecimal(bytes, kilo * kilo))
+		return Decimal(OneDecimal(bytes, kilo * kilo))
 			+ QStringLiteral(" MB");
 	}
 	// Whole and fraction apart: `bytes * 100` overflows for a size near the
@@ -395,7 +398,7 @@ QString Bytes(qint64 bytes) {
 		++whole;
 		fraction -= 100;
 	}
-	return LocalizedDecimal(QString::number(whole)
+	return Decimal(QString::number(whole)
 		+ QLatin1Char('.')
 		+ TwoDigits(int(fraction))) + QStringLiteral(" GB");
 }
@@ -413,7 +416,7 @@ QString CompactCount(qint64 value) {
 		? tr::lng_count_thousand(tr::now)
 		: tr::lng_count_million(tr::now);
 	// «۱٫۲ هزار» with a space, "1.2K" without.
-	return LocalizedDecimal(number)
+	return Decimal(number)
 		+ (IsPersian() ? QStringLiteral(" ") : QString())
 		+ suffix;
 }
@@ -488,15 +491,7 @@ QString E164(const QString &input, const QString &defaultCode) {
 }
 
 bool IsRtlText(const QString &text) {
-	for (const auto ch : text) {
-		switch (ch.direction()) {
-		case QChar::DirL: return false;
-		case QChar::DirR:
-		case QChar::DirAL: return true;
-		default: break;
-		}
-	}
-	return IsPersian();
+	return base::FirstStrongIsRtl(text).value_or(IsPersian());
 }
 
 QString Ltr(const QString &text) {

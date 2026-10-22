@@ -1,5 +1,6 @@
 #include "ui/text/text.h"
 
+#include "base/text_direction.h"
 #include "ui/rtl.h"
 
 #include <QtGui/QGlyphRun>
@@ -39,15 +40,7 @@ struct LineInfo {
 };
 
 [[nodiscard]] bool DetectRtl(QStringView text) {
-	for (const auto ch : text) {
-		switch (ch.direction()) {
-		case QChar::DirL: return false;
-		case QChar::DirR:
-		case QChar::DirAL: return true;
-		default: break;
-		}
-	}
-	return style::RightToLeft();
+	return base::FirstStrongIsRtl(text).value_or(style::RightToLeft());
 }
 
 [[nodiscard]] bool IsWordChar(QChar ch) {

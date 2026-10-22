@@ -978,8 +978,10 @@ void Feed::reportReasons(
 			reasons.reply = Json::Strings(result.value("reply"_L1));
 			reasons.account = Json::Strings(result.value("account"_L1));
 			reasons.conversation = Json::Strings(result.value("conversation"_L1));
+			reasons.message = Json::Strings(result.value("message"_L1));
 			reasons.group = Json::Strings(result.value("group"_L1));
 			reasons.groupMessage = Json::Strings(result.value("group_message"_L1));
+			reasons.story = Json::Strings(result.value("story"_L1));
 			if (done) {
 				done(reasons);
 			}

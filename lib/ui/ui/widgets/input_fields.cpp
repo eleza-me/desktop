@@ -1,5 +1,6 @@
 #include "ui/widgets/input_fields.h"
 
+#include "base/text_direction.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/painter.h"
@@ -23,6 +24,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace Ui {
 namespace {
@@ -30,19 +32,43 @@ namespace {
 constexpr auto kCaretBlink = 530;
 
 [[nodiscard]] bool HasStrongDirection(const QString &text, bool *rtl) {
-	for (const auto ch : text) {
-		switch (ch.direction()) {
-		case QChar::DirL:
-			*rtl = false;
-			return true;
-		case QChar::DirR:
-		case QChar::DirAL:
-			*rtl = true;
-			return true;
-		default: break;
+	const auto strong = base::FirstStrongIsRtl(text);
+	if (strong) {
+		*rtl = *strong;
+	}
+	return strong.has_value();
+}
+
+// The length the server checks: code points, a surrogate pair is one.
+[[nodiscard]] int CodePoints(QStringView text) {
+	auto result = 0;
+	const auto size = text.size();
+	for (auto i = qsizetype(0); i != size; ++i, ++result) {
+		if (text[i].isHighSurrogate()
+			&& i + 1 != size
+			&& text[i + 1].isLowSurrogate()) {
+			++i;
 		}
 	}
-	return false;
+	return result;
+}
+
+// Moves `from` back by up to `count` code points, not below `limit`.
+[[nodiscard]] int BackCodePoints(
+		QStringView text,
+		int from,
+		int limit,
+		int *count) {
+	while (*count > 0 && from > limit) {
+		--from;
+		if (from > limit
+			&& text[from].isLowSurrogate()
+			&& text[from - 1].isHighSurrogate()) {
+			--from;
+		}
+		--*count;
+	}
+	return from;
 }
 
 [[nodiscard]] QString ShortcutText(QKeySequence::StandardKey key) {
@@ -232,6 +258,15 @@ InputField::InputField(
 		&QTextDocument::contentsChanged,
 		this,
 		[this] { innerContentsChanged(); });
+	QObject::connect(
+		_inner->document(),
+		&QTextDocument::contentsChange,
+		this,
+		[this](int position, int removed, int added) {
+			Q_UNUSED(removed);
+			_changeFrom = std::min(_changeFrom, position);
+			_changeTill = std::max(_changeTill, position + added);
+		});
 
 	updateDirection();
 	resize(width(), heightForContent());
@@ -253,8 +288,12 @@ void InputField::setText(const QString &text) {
 	if (_mode == Mode::SingleLine) {
 		value.replace(QLatin1Char('\n'), QLatin1Char(' '));
 	}
-	if (_maxLength > 0 && value.size() > _maxLength) {
-		value.truncate(_maxLength);
+	if (_maxLength > 0) {
+		auto excess = CodePoints(value) - _maxLength;
+		if (excess > 0) {
+			value.truncate(
+				BackCodePoints(value, int(value.size()), 0, &excess));
+		}
 	}
 	_inner->setPlainText(value);
 	setCursorToEnd();
@@ -463,15 +502,40 @@ void InputField::innerContentsChanged() {
 		return;
 	}
 	auto text = _inner->toPlainText();
-	if (_maxLength > 0 && text.size() > _maxLength) {
+	auto excess = (_maxLength > 0) ? (CodePoints(text) - _maxLength) : 0;
+	if (excess > 0) {
+		// The excess goes from the end of what was just typed or pasted (the
+		// caret stays after the part that fits), never splitting a surrogate
+		// pair; whatever is still over (a lowered limit) from the end.
 		_correcting = true;
-		auto cursor = _inner->textCursor();
-		cursor.setPosition(_maxLength);
-		cursor.movePosition(QTextCursor::End, QTextCursor::KeepAnchor);
-		cursor.removeSelectedText();
+		const auto size = int(text.size());
+		auto till = std::clamp(_changeTill, 0, size);
+		const auto from = std::clamp(_changeFrom, 0, till);
+		if (till > 0
+			&& till < size
+			&& text[till].isLowSurrogate()
+			&& text[till - 1].isHighSurrogate()) {
+			++till;
+		}
+		const auto remove = [&](int start, int end) {
+			if (start < end) {
+				auto cursor = QTextCursor(_inner->document());
+				cursor.setPosition(start);
+				cursor.setPosition(end, QTextCursor::KeepAnchor);
+				cursor.removeSelectedText();
+			}
+		};
+		remove(BackCodePoints(text, till, from, &excess), till);
+		if (excess > 0) {
+			text = _inner->toPlainText();
+			const auto end = int(text.size());
+			remove(BackCodePoints(text, end, 0, &excess), end);
+		}
 		_correcting = false;
 		text = _inner->toPlainText();
 	}
+	_changeFrom = std::numeric_limits<int>::max();
+	_changeTill = -1;
 	const auto changedText = (text != _lastText);
 	_lastText = text;
 	const auto hasText = !text.isEmpty();

@@ -29,6 +29,7 @@
 #include <QtWidgets/QTextEdit>
 
 #include <functional>
+#include <limits>
 #include <optional>
 
 namespace Ui {
@@ -79,6 +80,8 @@ public:
 	void insertText(const QString &text);
 
 	void setPlaceholder(const QString &placeholder);
+	// In code points, as the server counts: what is typed or pasted past it
+	// is cut from the end of the insertion.
 	void setMaxLength(int length);
 	void setSubmitSettings(SubmitSettings settings);
 	// Fixes the text direction (usernames, links); default: follows the content.
@@ -137,6 +140,9 @@ private:
 	Inner *_inner = nullptr;
 	QString _placeholder;
 	int _maxLength = 0;
+	// The document range changed since the last innerContentsChanged().
+	int _changeFrom = std::numeric_limits<int>::max();
+	int _changeTill = -1;
 	SubmitSettings _submitSettings = SubmitSettings::Enter;
 	std::optional<Qt::LayoutDirection> _forcedDirection;
 	int _directionState = -1;

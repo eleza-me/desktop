@@ -468,6 +468,14 @@ void FileOps::sleep(int milliseconds) {
 #endif // !_WIN32
 }
 
+bool FileOps::caseInsensitiveNames() {
+#ifdef _WIN32
+	return true;
+#else // _WIN32
+	return false;
+#endif // !_WIN32
+}
+
 bool RemoveTree(FileOps &ops, const Path &directory) {
 	switch (ops.kind(directory)) {
 	case EntryKind::Missing: return true;

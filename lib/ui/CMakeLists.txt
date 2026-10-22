@@ -1,4 +1,4 @@
-# ElezaUi — the custom-painted widget library. Depends only on Qt.
+# ElezaUi — the custom-painted widget library. Depends only on Qt and ElezaBase (QtCore only).
 file(GLOB_RECURSE eleza_ui_sources CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/ui/*.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ui/*.h")
@@ -11,7 +11,7 @@ add_library(ElezaUi STATIC ${eleza_ui_sources})
 add_library(Eleza::Ui ALIAS ElezaUi)
 
 target_include_directories(ElezaUi PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
-target_link_libraries(ElezaUi PUBLIC Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Svg)
+target_link_libraries(ElezaUi PUBLIC ElezaBase Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Svg)
 eleza_target_defaults(ElezaUi)
 
 eleza_generate_palette(ElezaUi "${ELEZA_PALETTE_FILE}")
