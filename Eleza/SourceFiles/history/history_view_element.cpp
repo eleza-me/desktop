@@ -1,6 +1,7 @@
 #include "history/history_view_element.h"
 
 #include "history/history_view_media.h"
+#include "history/history_view_note_reply.h"
 #include "history/history_album.h"
 #include "data/data_group_rules.h"
 #include "lang/lang_format.h"
@@ -292,6 +293,7 @@ void Element::unloadHeavy() {
 	_reply = nullptr;
 	_preview = nullptr;
 	_media = nullptr;
+	_noteReply = nullptr;
 	_reactions.clear();
 	_keyboard.clear();
 	_loaded = false;
@@ -337,6 +339,9 @@ void Element::ensureLoaded() {
 		return;
 	}
 	createMedia();
+	// A reply to a note shows the note above the bubble, the answer in it.
+	_noteReply = NoteReplyView::Create(_data);
+	const auto &shown = _noteReply ? _noteReply->message() : _data;
 	const auto kind = _data.kind;
 	const auto textKind = (kind == Data::MessageKind::Text)
 		|| (kind == Data::MessageKind::Unknown);
@@ -347,14 +352,14 @@ void Element::ensureLoaded() {
 		|| (kind == Data::MessageKind::StoryReply);
 	if (kind == Data::MessageKind::Unknown && _data.text.trimmed().isEmpty()) {
 		_text.setText(st::historyTextStyle, tr::lng_history_unsupported(tr::now));
-	} else if ((textKind || captionKind) && !_data.text.isEmpty()) {
+	} else if ((textKind || captionKind) && !shown.text.isEmpty()) {
 		if (textKind
 			&& kind == Data::MessageKind::Text
 			&& _data.replyToSeq <= 0
 			&& !_data.forwarded
 			&& !_data.linkPreview
-			&& _data.entities.isEmpty()) {
-			_jumbo = JumboEmojiCount(_data.text);
+			&& shown.entities.isEmpty()) {
+			_jumbo = JumboEmojiCount(shown.text);
 		}
 		if (_jumbo) {
 			_text.setText(
@@ -363,11 +368,11 @@ void Element::ensureLoaded() {
 					: (_jumbo == 2)
 					? st::historyJumboStyle2
 					: st::historyJumboStyle3,
-				_data.text.trimmed());
+				shown.text.trimmed());
 		} else {
 			_text.setMarkedText(
 				st::historyTextStyle,
-				TextForMessage(_data, _delegate->elementBotCommands()));
+				TextForMessage(shown, _delegate->elementBotCommands()));
 			if (_text.hasSpoilers()) {
 				_text.setSpoilersRevealed(_delegate->elementRevealed(_key));
 			}
@@ -628,6 +633,13 @@ void Element::layout(int width) {
 	const auto left = outgoing()
 		? (columnLeft + column - st::historySideSkip - _bubble.width())
 		: (columnLeft + st::historySideSkip + userpics);
+	if (_noteReply) {
+		top += _noteReply->layout(
+			outgoing() ? (left + _bubble.width()) : left,
+			top,
+			maxWidth,
+			outgoing());
+	}
 	const auto shift = QPoint(left, top);
 	const auto move = [&](QRect &rect) {
 		if (!rect.isNull()) {
@@ -1177,6 +1189,9 @@ void Element::paint(Painter &p, const PaintContext &context) {
 	if (_service) {
 		paintService(p);
 		return;
+	}
+	if (_noteReply) {
+		_noteReply->paint(p, colors);
 	}
 	if (!bubbleless()) {
 		paintBubble(p, colors);

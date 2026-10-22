@@ -646,3 +646,19 @@ historyBotIntroTextStyle: TextStyle(defaultTextStyle) {
 	linkFg: staticWhite;
 	linkUnderline: true;
 }
+
+// A reply to a note (history_view_note_reply.h): the caption and the note
+// above the answer's bubble.
+historyNoteReplyCaptionFont: font(12px);
+historyNoteReplyCaptionPadding: margins(9px, 2px, 9px, 3px);
+historyNoteReplyCaptionSkip: 4px;
+historyNoteReplyTextStyle: TextStyle(defaultTextStyle) {
+	font: font(13px);
+	lineHeight: 19px;
+}
+historyNoteReplyPadding: margins(11px, 6px, 11px, 7px);
+historyNoteReplyRadius: 14px;
+historyNoteReplyMaxWidth: 260px;
+historyNoteReplyLines: 3;
+historyNoteReplyOpacity: 0.8;
+historyNoteReplySkip: 3px;

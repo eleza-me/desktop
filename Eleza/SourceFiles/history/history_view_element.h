@@ -33,6 +33,7 @@ namespace History::View {
 
 class Element;
 class Media;
+class NoteReplyView;
 
 enum class Zone {
 	None,
@@ -366,6 +367,7 @@ private:
 	std::unique_ptr<ReplyView> _reply;
 	std::unique_ptr<PreviewView> _preview;
 	std::unique_ptr<Media> _media;
+	std::unique_ptr<NoteReplyView> _noteReply; // the note this text answers
 	std::vector<ReactionChip> _reactions;
 	std::vector<KeyboardButton> _keyboard;
 	QString _metaText;
