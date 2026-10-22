@@ -162,6 +162,22 @@ void Messages::markAllStale() {
 	}
 }
 
+void Messages::markStale(const QString &chat) {
+	if (const auto db = _session->local()) {
+		db->clearMessages(chat);
+	}
+	const auto history = existing(chat);
+	if (!history) {
+		return;
+	}
+	const auto shown = live(chat) && (_session->chats().visibleChat() == chat);
+	history->stale = true;
+	history->loaded = false;
+	if (shown) {
+		loadLatest(chat);
+	}
+}
+
 void Messages::setInfo(const ChatInfo &info) {
 	if (!info.valid()) {
 		return;
@@ -634,13 +650,15 @@ void Messages::loadLatest(
 		Fn<void(const Api::Error &)> fail) {
 	loadPage(chat, PageOptions(), [=, this](const Page &page) {
 		auto &history = historyRef(chat);
-		if (history.hasMoreAfter) {
-			// Coming back from a detached window: start over at the end.
+		if (history.hasMoreAfter || history.stale) {
+			// Coming back from a detached window, or what is held may be
+			// gone: start over at the end.
 			auto &items = history.items;
 			items.erase(std::remove_if(items.begin(), items.end(), [](const Message &message) {
 				return message.seq > 0;
 			}), items.end());
 			history.hasMoreAfter = false;
+			history.stale = false;
 		}
 		// What is held older than the newest page must be one run with it
 		// (an empty page without more before it: the chat has nothing up to
@@ -810,7 +828,7 @@ void Messages::loadAround(
 		base::Guard guard,
 		Fn<void()> done,
 		Fn<void(const Api::Error &)> fail) {
-	if (historyRef(chat).find(seq)) {
+	if (const auto &history = historyRef(chat); !history.stale && history.find(seq)) {
 		if (done && guard.alive()) {
 			done();
 		}
@@ -826,6 +844,7 @@ void Messages::loadAround(
 		items.erase(std::remove_if(items.begin(), items.end(), [](const Message &message) {
 			return message.seq > 0;
 		}), items.end());
+		history.stale = false;
 		history.hasMoreBefore = page.hasMoreBefore;
 		history.hasMoreAfter = page.hasMoreAfter;
 		history.loaded = !page.hasMoreAfter;

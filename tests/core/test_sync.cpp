@@ -237,6 +237,7 @@ private Q_SLOTS:
 	void newestPageAttachesToTheCache();
 	void windowReachingTheEndIsCached();
 	void changesOutsideTheWindowReachTheCache();
+	void differenceItemsWithoutPayload();
 
 };
 
@@ -1071,6 +1072,90 @@ void TestSync::changesOutsideTheWindowReachTheCache() {
 		harness.transport.emitFrame(Update(105, u"member"_s, { { u"chat"_s, u"c1"_s }, { u"hidden_seq"_s, 3 } }));
 		QVERIFY(!CachedMessage(harness, u"c1"_s, 3).has_value());
 	}
+}
+
+// In a difference (and a replay) "cleared" and "member" come bare: the
+// chat, the seq and the header. cleared: the seq is the chat's last one
+// when it was cleared for both. member with a seq: that message was
+// deleted for me; without one: anything of mine, a history cleared for me
+// included, so what is cached of the chat is read again.
+void TestSync::differenceItemsWithoutPayload() {
+	auto dir = QTemporaryDir();
+	QVERIFY(dir.isValid());
+	auto harness = Harness(dir.filePath(u"cache.db"_s));
+	QVERIFY(Connect(harness, 100));
+	const auto header = [](const char *fixture) {
+		return Test::Fixture(fixture).value("chat"_L1).toObject();
+	};
+	const auto bare = [](qint64 pts, const QString &kind, const QString &chat, qint64 seq, const QJsonObject &info) {
+		auto result = QJsonObject{
+			{ u"pts"_s, QString::number(pts) },
+			{ u"kind"_s, kind },
+			{ u"chat"_s, chat },
+			{ u"chat_info"_s, info },
+		};
+		if (seq) {
+			result.insert(u"seq"_s, QString::number(seq));
+		}
+		return result;
+	};
+	auto &chats = harness.chats();
+	auto &messages = harness.messages();
+	QCOMPARE(chats.chat(u"c1"_s)->lastMessage->seq, 9);
+	harness.on(u"sync.difference"_s, [&](const Call &call) {
+		return Reply::Ok((call.body.value("pts"_L1).toString() == u"100")
+			? Difference(102, QJsonArray{
+				bare(101, u"member"_s, u"c1"_s, 9, header("history_c1.json")),
+				bare(102, u"cleared"_s, u"c2"_s, 4, header("history_c2.json")),
+			})
+			: Difference(102, QJsonArray()));
+	});
+	harness.sync().catchUp();
+	QVERIFY(Test::WaitFor([&] { return !harness.sync().updating(); }));
+	QCOMPARE(harness.sync().pts().value_or(-1), 102);
+	QVERIFY(messages.find(u"c1"_s, 9) == nullptr);
+	QCOMPARE(CachedSeqs(harness, u"c1"_s), Seqs(1, 8));
+	QCOMPARE(chats.chat(u"c1"_s)->lastMessage->seq, 8);
+	// c2 was cleared to its end: it leaves the list.
+	QVERIFY(chats.chat(u"c2"_s) == nullptr);
+
+	// Muted, or my history cleared: the item does not say which.
+	const auto inboxLoads = harness.transport.count(u"chat.inbox"_s);
+	const auto pages = harness.transport.count(u"chat.history"_s);
+	harness.on(u"sync.difference"_s, [&](const Call &call) {
+		return Reply::Ok((call.body.value("pts"_L1).toString() == u"102")
+			? Difference(103, QJsonArray{ bare(103, u"member"_s, u"c1"_s, 0, header("history_c1.json")) })
+			: Difference(103, QJsonArray()));
+	});
+	harness.sync().catchUp();
+	QVERIFY(Test::WaitFor([&] { return harness.sync().pts().value_or(-1) == 103 && !harness.sync().updating(); }));
+	QVERIFY(CachedSeqs(harness, u"c1"_s).isEmpty());
+	QVERIFY(messages.history(u"c1"_s).stale);
+	QVERIFY(!messages.live(u"c1"_s));
+	// Not on screen: read again when it opens.
+	QCOMPARE(harness.transport.count(u"chat.history"_s), pages);
+	QVERIFY(Test::WaitFor([&] { return harness.transport.count(u"chat.inbox"_s) > inboxLoads; }, 3000));
+	auto loaded = false;
+	harness.on(u"chat.history"_s, [](const Call &) {
+		return Reply::Ok(HistoryPage(8, 8, false, 9));
+	});
+	messages.loadLatest(u"c1"_s, base::Guard(), [&] { loaded = true; });
+	QVERIFY(Test::WaitFor([&] { return loaded; }));
+	QCOMPARE(HeldSeqs(harness, u"c1"_s), (QVector<qint64>{ 8 }));
+	QVERIFY(!messages.history(u"c1"_s).stale);
+
+	// On screen: read again at once.
+	chats.setVisibleChat(u"c1"_s);
+	const auto before = harness.transport.count(u"chat.history"_s);
+	harness.on(u"sync.difference"_s, [&](const Call &call) {
+		return Reply::Ok((call.body.value("pts"_L1).toString() == u"103")
+			? Difference(104, QJsonArray{ bare(104, u"member"_s, u"c1"_s, 0, header("history_c1.json")) })
+			: Difference(104, QJsonArray()));
+	});
+	harness.sync().catchUp();
+	QVERIFY(Test::WaitFor([&] { return harness.transport.count(u"chat.history"_s) > before; }));
+	QVERIFY(Test::WaitFor([&] { return messages.live(u"c1"_s); }));
+	QCOMPARE(HeldSeqs(harness, u"c1"_s), (QVector<qint64>{ 8 }));
 }
 
 QTEST_GUILESS_MAIN(TestSync)

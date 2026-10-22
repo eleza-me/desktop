@@ -81,6 +81,7 @@ private:
 	void applyLive(const QString &kind, const QJsonObject &payload, qint64 framePts, bool live);
 	void applyMessage(Message message, bool live);
 	void applyCleared(const QString &chat, qint64 clearedTo, bool all);
+	void applyHidden(const QString &chat, qint64 seq);
 	void rememberInfo(const ChatInfo &info);
 	void reloadInboxSoon();
 	void scheduleFallback();

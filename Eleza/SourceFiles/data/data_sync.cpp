@@ -370,8 +370,7 @@ void Sync::applyLive(
 			applyCleared(chat, cleared, false);
 		}
 		if (const auto hidden = Json::Int64(d, "hidden_seq"_L1)) {
-			// I deleted one message for myself on another device.
-			messages.removeMessage(chat, Message::KeyForSeq(hidden));
+			applyHidden(chat, hidden);
 		}
 		if (Json::Bool(d, "action_bar_dismissed"_L1)) {
 			// The report / block bar went on another device (×, a report).
@@ -461,6 +460,34 @@ void Sync::applyCleared(const QString &chat, qint64 clearedTo, bool all) {
 			c.unread = 0;
 			c.unreadCapped = false;
 		});
+	}
+}
+
+// I deleted one message for myself on another device: it leaves the
+// timeline and the cache, and the row when it was the row's preview.
+void Sync::applyHidden(const QString &chat, qint64 seq) {
+	auto &chats = _session->chats();
+	auto &messages = _session->messages();
+	messages.removeMessage(chat, Message::KeyForSeq(seq));
+	const auto row = chats.chat(chat);
+	if (!row || !row->lastMessage || row->lastMessage->seq != seq) {
+		return;
+	}
+	auto last = std::optional<Message>();
+	const auto &items = messages.history(chat).items;
+	for (auto i = items.crbegin(); i != items.crend(); ++i) {
+		if (i->seq > 0) {
+			last = *i;
+			break;
+		}
+	}
+	chats.patch(chat, [&](Chat &c) {
+		c.lastMessage = last;
+		c.lastMine = last && last->mine;
+	});
+	if (!last) {
+		// The message before it is not known here: the inbox has it.
+		reloadInboxSoon();
 	}
 }
 
@@ -593,6 +620,30 @@ void Sync::applyItem(const QJsonObject &item, bool live) {
 	}
 	if (!data.isEmpty()) {
 		applyLive(kind, Payload(kind, data), Json::Int64(item, "pts"_L1), live);
+		return;
+	}
+	// A difference item (also a replayed one) of these kinds has no payload:
+	// the chat, the seq and the header (applied above) are all there is.
+	const auto chat = Json::String(item, "chat"_L1);
+	const auto seq = Json::Int64(item, "seq"_L1);
+	if (chat.isEmpty() || Json::Bool(item, "removed"_L1)) {
+		return;
+	} else if (kind == u"cleared") {
+		// The history cleared for both: the seq is the chat's last one then.
+		if (seq > 0) {
+			applyCleared(chat, seq, true);
+		}
+	} else if (kind == u"member") {
+		if (seq > 0) {
+			// One message deleted for me.
+			applyHidden(chat, seq);
+		} else {
+			// Muted, archived, the report bar dismissed (the header has
+			// those), or my history cleared, which the item does not tell:
+			// the cached messages and the row are read again.
+			_session->messages().markStale(chat);
+			reloadInboxSoon();
+		}
 	}
 }
 

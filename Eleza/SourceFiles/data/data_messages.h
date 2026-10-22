@@ -37,6 +37,7 @@ struct History {
 	bool loaded = false;        // the newest page came from the server in this run
 	bool hasMoreBefore = true;
 	bool hasMoreAfter = false;  // the window does not reach the newest message
+	bool stale = false;         // may hold messages that are gone: read again
 	std::optional<ChatInfo> info;
 	QVector<PinnedMessage> pins; // after loadPins()
 	bool pinsLoaded = false;
@@ -201,6 +202,11 @@ public:
 	void forget(const QString &chat);
 	// After a `too_long` difference: every timeline must be re-read.
 	void markAllStale();
+	// Something changed in the chat that no update spelled out (a history
+	// cleared for me arrives in a difference as a bare "member" item): its
+	// cache goes, and its timeline is read again from the end, at once when
+	// it is on screen, when the chat opens otherwise.
+	void markStale(const QString &chat);
 	// Refetches one message of the window (a reaction changed).
 	void refresh(const QString &chat, qint64 seq);
 
