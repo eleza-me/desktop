@@ -29,15 +29,19 @@ constexpr auto kReplyTextMaxWidth = 260;
 	return st::historyServiceStyle.lineHeight + padding.top() + padding.bottom();
 }
 
-void PaintPill(
-		QPainter &p,
-		const QRect &rect,
-		const QString &text) {
+void PaintPillBg(QPainter &p, const QRect &rect) {
 	auto hq = PainterHighQualityEnabler(p);
 	p.setPen(Qt::NoPen);
 	p.setBrush(ServiceBg());
 	const auto radius = std::min(rect.height() / 2., 14.);
 	p.drawRoundedRect(rect, radius, radius);
+}
+
+void PaintPill(
+		QPainter &p,
+		const QRect &rect,
+		const QString &text) {
+	PaintPillBg(p, rect);
 	p.setPen(st::historyServiceFg);
 	p.setFont(st::historyServiceFont);
 	p.drawText(rect, Qt::AlignCenter, text);
@@ -313,14 +317,32 @@ void Element::ensureLoaded() {
 	_service = IsService(_data);
 	_jumbo = 0;
 	_serviceText = QString();
+	_serviceNames.clear();
+	_serviceString.clear();
 	_forwardedText = QString();
 	_viaText = QString();
 	_group = false;
 	_sender = SenderInfo();
 	if (_service) {
-		_serviceText = _delegate->elementServiceText(_data);
+		auto line = _delegate->elementServiceText(_data);
+		_serviceText = std::move(line.text);
+		_serviceNames = std::move(line.names);
 		if (_serviceText.isEmpty()) {
 			_serviceText = Support::MessagePreview(_data);
+			_serviceNames.clear();
+		}
+		if (!_serviceNames.isEmpty()) {
+			// The names a weight up: a tap on one opens that profile.
+			auto marked = Ui::Text::TextWithEntities{ _serviceText, {} };
+			for (const auto &name : std::as_const(_serviceNames)) {
+				marked.entities.push_back({
+					Ui::Text::EntityType::Bold,
+					name.offset,
+					name.length,
+					QString(),
+				});
+			}
+			_serviceString.setMarkedText(st::historyServiceStyle, marked);
 		}
 		return;
 	}
@@ -680,7 +702,9 @@ void Element::layoutService(int width, int top) {
 	const auto limit = std::min(
 		int(st::historyServiceMaxWidth),
 		width - 2 * st::historySideSkip) - padding.left() - padding.right();
-	const auto natural = font->width(_serviceText);
+	const auto natural = _serviceNames.isEmpty()
+		? font->width(_serviceText)
+		: _serviceString.maxWidth();
 	// The whole text is kept: a wider layout later shows more of it.
 	_serviceShown = (natural > limit && limit > 0)
 		? font->elided(_serviceText, limit)
@@ -1299,7 +1323,27 @@ void Element::paintUnread(Painter &p) const {
 }
 
 void Element::paintService(Painter &p) const {
-	PaintPill(p, _serviceRect, _serviceShown);
+	if (_serviceNames.isEmpty()) {
+		PaintPill(p, _serviceRect, _serviceShown);
+		return;
+	}
+	PaintPillBg(p, _serviceRect);
+	p.setPen(st::historyServiceFg);
+	_serviceString.draw(p, serviceGeometry());
+}
+
+Ui::Text::PaintContext Element::serviceGeometry() const {
+	const auto &padding = st::historyServicePadding;
+	auto result = Ui::Text::PaintContext();
+	result.position = QPoint(
+		_serviceRect.x() + padding.left(),
+		_serviceRect.y() + padding.top());
+	result.availableWidth = std::max(
+		_serviceRect.width() - padding.left() - padding.right(),
+		1);
+	result.align = style::al_center;
+	result.elisionLines = 1;
+	return result;
 }
 
 void Element::paintBubble(Painter &p, const ChatColors &colors) const {
@@ -1708,6 +1752,19 @@ HitResult Element::hitTest(QPoint point) const {
 		return result;
 	} else if (_service) {
 		result.zone = _serviceRect.contains(point) ? Zone::Date : Zone::Side;
+		if (result.zone == Zone::Date && !_serviceNames.isEmpty()) {
+			const auto state = _serviceString.getState(point, serviceGeometry());
+			if (state.uponSymbol) {
+				for (const auto &name : _serviceNames) {
+					if (state.symbol >= name.offset
+						&& state.symbol < name.offset + name.length) {
+						result.zone = Zone::Sender;
+						result.text = name.userId;
+						break;
+					}
+				}
+			}
+		}
 		return result;
 	} else if (!_loaded) {
 		result.zone = _bubble.contains(point) ? Zone::Bubble : Zone::Side;

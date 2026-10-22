@@ -6,6 +6,8 @@
 //   Support::MessagePreview(&session, message)  the same, with the names of people in the notes
 //                                               of a group («سارا، علی را اضافه کرد»)
 //   Support::MemberName(&session, userId)       how a member of a group is called in one word or two
+//   Support::ServiceNoteLine(&session, message) a note's line with where the names of the people
+//                                               in it are («سارا، علی را اضافه کرد»: both open a profile)
 #pragma once
 
 #include "data/data_types.h"
@@ -27,6 +29,46 @@ namespace Support {
 // are asked for when unknown; Data::Users::changed tells when to word the
 // row again). Everything else is MessagePreview(message).
 [[nodiscard]] QString MessagePreview(
+	Main::Session *session,
+	const Data::Message &message);
+
+// A name in a service note: UTF-16 offset and length in NoteLine::text and
+// whose name it is.
+struct NoteName {
+	int offset = 0;
+	int length = 0;
+	QString userId;
+
+	friend bool operator==(const NoteName &, const NoteName &) = default;
+};
+
+// A service note as one line, and the names in it that open a profile.
+struct NoteLine {
+	QString text;
+	QVector<NoteName> names;
+};
+
+// Somebody a note names. `linkable`: a tap on the name opens their profile
+// (never me — a note about me speaks to me — and never a deleted account).
+struct NotePerson {
+	QString name;
+	QString userId;
+	bool me = false;
+	bool linkable = false;
+};
+
+// The note of a group (Data::GroupRules::NoteOf) with `actor` (its sender)
+// and `target` (who it names). Each name is isolated in the sentence and
+// its place recorded, exact in every language and word order and for two
+// people of the same name. Empty for a message that is not such a note.
+[[nodiscard]] NoteLine GroupNoteLine(
+	const Data::Message &message,
+	const NotePerson &actor,
+	const NotePerson &target);
+
+// The line of a service message with the people it names (the notes of a
+// group); a message without names is MessagePreview(session, message).
+[[nodiscard]] NoteLine ServiceNoteLine(
 	Main::Session *session,
 	const Data::Message &message);
 

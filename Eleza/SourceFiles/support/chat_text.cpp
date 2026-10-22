@@ -12,15 +12,20 @@
 namespace Support {
 namespace {
 
-// The note of a group: `actor` did it, `target` is who it names (both
-// already worded; empty = me).
-[[nodiscard]] QString GroupNote(
+// Where the names go in a note while it is worded (private use: never in
+// a translation, never typed by a person).
+constexpr auto kActorMark = QChar(0xE000);
+constexpr auto kTargetMark = QChar(0xE001);
+
+// The note of a group with marks for the names: `actorIsMe` / `targetIsMe`
+// choose the wording that speaks to me.
+[[nodiscard]] QString GroupNotePattern(
 		const Data::Message &message,
-		const QString &actor,
-		const QString &target,
 		bool actorIsMe,
 		bool targetIsMe) {
 	using Note = Data::GroupRules::Note;
+	const auto actor = QString(kActorMark);
+	const auto target = QString(kTargetMark);
 	switch (Data::GroupRules::NoteOf(message.system)) {
 	case Note::Created:
 		return actorIsMe
@@ -63,7 +68,41 @@ namespace {
 	return QString();
 }
 
+// Puts the names where the marks are, each isolated (a Latin name in a
+// Persian sentence keeps its neighbours in place), and records where they
+// landed.
+[[nodiscard]] NoteLine FillNames(
+		const QString &pattern,
+		const NotePerson &actor,
+		const NotePerson &target) {
+	auto result = NoteLine();
+	result.text.reserve(pattern.size() + actor.name.size() + target.name.size() + 4);
+	for (const auto ch : pattern) {
+		if (ch != kActorMark && ch != kTargetMark) {
+			result.text.push_back(ch);
+			continue;
+		}
+		const auto &person = (ch == kActorMark) ? actor : target;
+		const auto isolated = Lang::Isolated(person.name);
+		const auto start = isolated.indexOf(person.name);
+		const auto offset = int(result.text.size()) + std::max(int(start), 0);
+		result.text += isolated;
+		if (person.linkable && !person.userId.isEmpty() && !person.name.isEmpty()) {
+			result.names.push_back({ offset, int(person.name.size()), person.userId });
+		}
+	}
+	return result;
+}
+
 } // namespace
+
+NoteLine GroupNoteLine(
+		const Data::Message &message,
+		const NotePerson &actor,
+		const NotePerson &target) {
+	const auto pattern = GroupNotePattern(message, actor.me, target.me);
+	return pattern.isEmpty() ? NoteLine() : FillNames(pattern, actor, target);
+}
 
 QString MemberName(Main::Session *session, const QString &userId) {
 	if (session && !userId.isEmpty()) {
@@ -97,23 +136,33 @@ QString GroupTimeLeft(qint64 untilSeconds, qint64 nowMs) {
 	return QString();
 }
 
-QString MessagePreview(Main::Session *session, const Data::Message &message) {
+NoteLine ServiceNoteLine(Main::Session *session, const Data::Message &message) {
 	if (message.kind == Data::MessageKind::System
 		&& !message.call
 		&& message.serviceEvent() == Data::ServiceEvent::Group) {
 		const auto me = session ? session->data().users().myId() : QString();
+		const auto person = [&](const QString &userId, bool isMe) {
+			auto result = NotePerson();
+			result.userId = userId;
+			result.me = isMe;
+			result.name = MemberName(session, userId);
+			const auto deleted = session
+				&& !userId.isEmpty()
+				&& session->data().users().peek(userId).deleted;
+			result.linkable = !isMe && !userId.isEmpty() && !deleted;
+			return result;
+		};
 		const auto target = Data::GroupRules::NoteUser(message.system);
-		const auto actorIsMe = message.mine
-			|| (!me.isEmpty() && message.sender == me);
-		const auto targetIsMe = !me.isEmpty() && (target == me);
-		return GroupNote(
+		return GroupNoteLine(
 			message,
-			MemberName(session, message.sender),
-			MemberName(session, target),
-			actorIsMe,
-			targetIsMe);
+			person(message.sender, message.mine || (!me.isEmpty() && message.sender == me)),
+			person(target, !me.isEmpty() && (target == me)));
 	}
-	return MessagePreview(message);
+	return NoteLine{ MessagePreview(message), {} };
+}
+
+QString MessagePreview(Main::Session *session, const Data::Message &message) {
+	return ServiceNoteLine(session, message).text;
 }
 
 QString ChatTitle(Main::Session *session, const Data::Chat &chat) {
@@ -192,14 +241,14 @@ QString MessagePreview(const Data::Message &message) {
 			return tr::lng_chat_chat_theme_changed(tr::now);
 		case Data::ServiceEvent::Continued:
 			return tr::lng_chat_conversation_continued(tr::now);
-		case Data::ServiceEvent::Group:
+		case Data::ServiceEvent::Group: {
 			// Without a session nobody has a name.
-			return GroupNote(
-				message,
-				tr::lng_groups_someone(tr::now),
-				tr::lng_groups_someone(tr::now),
-				message.mine,
-				false);
+			auto someone = NotePerson();
+			someone.name = tr::lng_groups_someone(tr::now);
+			auto actor = someone;
+			actor.me = message.mine;
+			return GroupNoteLine(message, actor, someone).text;
+		}
 		case Data::ServiceEvent::None: break;
 		}
 		return QString();

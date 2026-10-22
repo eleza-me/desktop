@@ -308,8 +308,8 @@ void ListWidget::elementPaintUserpic(
 	}
 }
 
-QString ListWidget::elementServiceText(const Data::Message &message) {
-	return _group ? Support::MessagePreview(_session, message) : QString();
+Support::NoteLine ListWidget::elementServiceText(const Data::Message &message) {
+	return Support::ServiceNoteLine(_session, message);
 }
 
 // Who is the owner and who an admin (with a title of their own or without):

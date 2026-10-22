@@ -207,7 +207,7 @@ private:
 	bool elementBotCommands() override;
 	View::SenderInfo elementSender(const Data::Message &message) override;
 	void elementPaintUserpic(Painter &p, const QRect &rect, const QString &userId) override;
-	QString elementServiceText(const Data::Message &message) override;
+	Support::NoteLine elementServiceText(const Data::Message &message) override;
 
 	// ---- rows
 	[[nodiscard]] const Data::History &history() const;
