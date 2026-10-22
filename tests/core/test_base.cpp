@@ -51,6 +51,19 @@ void TestBase::wipeAndCompare() {
 	auto secret = QByteArray("secret");
 	base::bytes::wipe(secret);
 	QVERIFY(secret.isEmpty());
+	// Storage shared with another holder is released, never zeroed under it
+	// (and never detached just to zero a fresh copy).
+	auto key = QByteArray(32, 'k');
+	auto view = key;
+	base::bytes::wipe(view);
+	QVERIFY(view.isEmpty());
+	QCOMPARE(key, QByteArray(32, 'k'));
+	// A deep copy: each holder wipes storage of its own.
+	auto own = base::bytes::copy(key);
+	QCOMPARE(own, key);
+	QVERIFY(own.constData() != key.constData());
+	QVERIFY(own.isDetached() && key.isDetached());
+	QVERIFY(base::bytes::copy(QByteArray()).isEmpty());
 	QVERIFY(base::bytes::constantTimeEquals(QByteArray("abc"), QByteArray("abc")));
 	QVERIFY(!base::bytes::constantTimeEquals(QByteArray("abc"), QByteArray("abd")));
 	QVERIFY(!base::bytes::constantTimeEquals(QByteArray("abc"), QByteArray("ab")));
