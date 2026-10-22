@@ -38,6 +38,7 @@ namespace {
 		u"media"_s, u"member"_s, u"members"_s, u"mentions"_s,
 		u"messages"_s, u"mute"_s,
 		u"muted-words"_s, u"new"_s, u"nonce"_s, u"not-interested"_s,
+		u"note"_s, u"notes"_s,
 		u"notifications"_s, u"open"_s, u"otp"_s, u"packs"_s,
 		u"password"_s, u"people"_s, u"permissions"_s, u"phone"_s,
 		u"photo"_s, u"pin"_s,
