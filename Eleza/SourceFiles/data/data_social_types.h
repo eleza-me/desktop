@@ -287,8 +287,10 @@ struct ReportReasons {
 	QStringList reply;
 	QStringList account;
 	QStringList conversation;
+	QStringList message;      // a message of a chat
 	QStringList group;        // a group itself
 	QStringList groupMessage; // a message of a group
+	QStringList story;
 };
 
 using FailCallback = Fn<void(const Api::Error &)>;

@@ -1468,6 +1468,7 @@
 "lng_eli_reason_self_harm" = "Self-harm";
 "lng_eli_reason_misinformation" = "Misinformation";
 "lng_eli_reason_impersonation" = "Impersonation";
+"lng_eli_reason_underage" = "Underage";
 "lng_eli_reason_other" = "Other";
 "lng_eli_report_q_post" = "What is wrong with this post?";
 "lng_eli_report_q_reply" = "What is wrong with this reply?";

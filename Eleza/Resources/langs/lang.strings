@@ -1498,6 +1498,7 @@
 "lng_eli_reason_self_harm" = "آسیب به خود";
 "lng_eli_reason_misinformation" = "اطلاعات نادرست";
 "lng_eli_reason_impersonation" = "جعل هویت";
+"lng_eli_reason_underage" = "زیر سن قانونی";
 "lng_eli_reason_other" = "سایر";
 "lng_eli_report_q_post" = "چه چیزی در این پست درست نیست؟";
 "lng_eli_report_q_reply" = "چه چیزی در این نظر درست نیست؟";
