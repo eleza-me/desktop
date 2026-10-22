@@ -10,6 +10,7 @@
 #include "main/main_session.h"
 #include "media/media_video_player.h"
 #include "stories/stories_boxes.h"
+#include "stories/stories_share.h"
 #include "support/error_text.h"
 #include "support/media_image.h"
 #include "ui/effects/animations.h"
@@ -137,6 +138,7 @@ private:
 	[[nodiscard]] QString viewersText() const;
 	[[nodiscard]] QRect postCardRect() const;
 	[[nodiscard]] bool replyShown() const;
+	[[nodiscard]] bool shareShown() const;
 	[[nodiscard]] Hit hitAt(QPoint point) const;
 
 	void openUser(int index, bool fromEnd, const QString &storyId = QString());
@@ -156,6 +158,7 @@ private:
 	void updateGeometries();
 	void showMenu();
 	void sendReply();
+	void shareStory();
 	void react(int index);
 	void openProfile();
 	void openPost();
@@ -182,6 +185,7 @@ private:
 	Ui::IconButton *_nextNav = nullptr;
 	Ui::InputField *_reply = nullptr;
 	Ui::IconButton *_send = nullptr;
+	Ui::IconButton *_share = nullptr;
 	Ui::RoundButton *_seePost = nullptr;
 
 	std::shared_ptr<Ui::ImageSource> _image;
@@ -328,6 +332,9 @@ Viewer::Viewer(
 		_chrome->update();
 	});
 	connect(_reply, &Ui::InputField::changed, this, [this] { updateControls(); });
+	_share = Ui::CreateChild<Ui::IconButton>(_chrome, st::storiesShare);
+	_share->setClickedCallback([this] { shareStory(); });
+	_share->hide();
 
 	_seePost = Ui::CreateChild<Ui::RoundButton>(
 		_chrome,
@@ -795,6 +802,11 @@ bool Viewer::replyShown() const {
 	return story && !mine() && story->canReply;
 }
 
+bool Viewer::shareShown() const {
+	const auto story = current();
+	return story && story->canShare;
+}
+
 QRect Viewer::bottomRect() const {
 	const auto &padding = st::storiesReplyPadding;
 	auto height = padding.top() + padding.bottom();
@@ -822,9 +834,18 @@ QRect Viewer::reactionRect(int index) const {
 QString Viewer::viewersText() const {
 	const auto story = current();
 	const auto count = (story && story->viewerCount > 0) ? story->viewerCount : 0;
-	return count
+	const auto viewers = count
 		? tr::lng_stories_viewers_count(tr::now, lt_count, double(count))
 		: tr::lng_stories_viewers_none(tr::now);
+	const auto shares = story ? story->shareCount : 0;
+	return (shares > 0)
+		? tr::lng_stories_viewers_and_shares(
+			tr::now,
+			lt_viewers,
+			viewers,
+			lt_shares,
+			tr::lng_stories_shares_count(tr::now, lt_count, double(shares)))
+		: viewers;
 }
 
 QRect Viewer::viewersRect() const {
@@ -910,7 +931,9 @@ void Viewer::updateGeometries() {
 	const auto bottom = bottomRect();
 	const auto fieldHeight = st::storiesReplyField.heightMin;
 	const auto fieldTop = bottom.y() + bottom.height() - padding.bottom() - fieldHeight;
-	const auto sendWidth = _send->width();
+	// The send button and the paper plane share the trailing slot: one
+	// sends what is written, the other sends the story on.
+	const auto sendWidth = std::max(_send->width(), _share->width());
 	const auto fieldWidth = std::max(_stage.width() - padding.left() - padding.right() - sendWidth - 4, 40);
 	_reply->resizeToWidth(fieldWidth);
 	const auto fieldRect = inStage(padding.left(), fieldTop, fieldWidth, fieldHeight);
@@ -918,9 +941,24 @@ void Viewer::updateGeometries() {
 	const auto sendRect = inStage(
 		padding.left() + fieldWidth + 4,
 		fieldTop + (fieldHeight - _send->height()) / 2,
-		sendWidth,
+		_send->width(),
 		_send->height());
 	_send->move(sendRect.topLeft());
+	if (replyShown()) {
+		_share->move(inStage(
+			padding.left() + fieldWidth + 4,
+			fieldTop + (fieldHeight - _share->height()) / 2,
+			_share->width(),
+			_share->height()).topLeft());
+	} else {
+		// Mine (next to «بیننده‌ها») or replies closed: the trailing end.
+		const auto content = bottom.marginsRemoved(padding);
+		_share->move(inStage(
+			_stage.width() - padding.right() - _share->width(),
+			content.y() + (content.height() - _share->height()) / 2,
+			_share->width(),
+			_share->height()).topLeft());
+	}
 
 	const auto card = postCardRect();
 	if (!card.isEmpty()) {
@@ -934,8 +972,10 @@ void Viewer::updateGeometries() {
 void Viewer::updateControls() {
 	const auto story = current();
 	const auto reply = replyShown();
+	const auto typed = reply && !_reply->text().trimmed().isEmpty();
 	_reply->setVisible(reply);
-	_send->setVisible(reply && !_reply->text().trimmed().isEmpty());
+	_send->setVisible(typed);
+	_share->setVisible(shareShown() && !typed);
 	if (reply) {
 		_reply->setPlaceholder(tr::lng_stories_reply_hint(
 			tr::now,
@@ -1283,12 +1323,17 @@ void Viewer::paintChrome(Painter &p) {
 			p.drawText(rect, Qt::AlignCenter, reactions[i]);
 		}
 	} else {
+		// Clear of the paper plane on both sides, so it stays centered.
+		const auto skip = shareShown() ? (_share->width() + 4) : 0;
 		p.setFont(st::storiesReplyClosedFont);
 		p.setPen(st::storiesOverFgDim);
 		p.drawText(
-			bottom.marginsRemoved(st::storiesReplyPadding),
+			bottom.marginsRemoved(st::storiesReplyPadding).marginsRemoved(
+				QMargins(skip, 0, skip, 0)),
 			Qt::AlignCenter,
-			tr::lng_stories_replies_closed(tr::now));
+			st::storiesReplyClosedFont->elided(
+				tr::lng_stories_replies_closed(tr::now),
+				std::max(bottom.width() - 2 * skip - 24, 0)));
 	}
 }
 
@@ -1563,6 +1608,18 @@ void Viewer::sendReply() {
 			Support::ShowError(controller, error);
 		}
 	});
+}
+
+void Viewer::shareStory() {
+	const auto story = current();
+	if (!story || !story->canShare) {
+		return;
+	}
+	if (_reply->hasFocus()) {
+		setFocus();
+	}
+	// The story holds still while the sheet is up (a layer is shown).
+	ShowShareBox(_controller, story->id);
 }
 
 void Viewer::react(int index) {

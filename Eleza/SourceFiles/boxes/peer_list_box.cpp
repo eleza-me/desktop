@@ -145,6 +145,31 @@ void PeerListBox::prepare() {
 	});
 	_search->field()->rawTextEdit()->installEventFilter(this);
 
+	if (const auto placeholder = _controller->commentPlaceholder();
+			!placeholder.isEmpty()) {
+		_comment = new Ui::InputField(
+			this,
+			st::boxCommentField,
+			Ui::InputField::Mode::MultiLine,
+			placeholder);
+		if (const auto max = _controller->commentMaxLength(); max > 0) {
+			_comment->setMaxLength(max);
+		}
+		_comment->setSubmitSettings(Ui::InputField::SubmitSettings::Enter);
+		QObject::connect(_comment, &Ui::InputField::submitted, this, [this] {
+			if (_controller->multiSelect() && canSubmit()) {
+				_controller->submit(selectedIds());
+			}
+		});
+		QObject::connect(_comment, &Ui::InputField::cancelled, this, [this] {
+			closeBox();
+		});
+		QObject::connect(_comment, &Ui::RpWidget::heightChanged, this, [this] {
+			// The list gives the field the room it grows into.
+			resizeEvent(nullptr);
+		});
+	}
+
 	if (_session) {
 		// Names and pictures that arrive later.
 		QObject::connect(
@@ -198,8 +223,21 @@ void PeerListBox::resizeEvent(QResizeEvent *e) {
 	_search->resizeToWidth(width() - padding.left() - padding.right());
 	_search->moveToLeft(padding.left(), padding.top());
 	const auto top = padding.top() + _search->height() + padding.bottom();
-	BoxContent::resizeEvent(e);
-	scrollArea()->setGeometry(0, top, width(), std::max(height() - top, 0));
+	auto bottom = 0;
+	if (_comment) {
+		const auto &margins = st::boxCommentPadding;
+		_comment->resizeToWidth(width() - margins.left() - margins.right());
+		bottom = margins.top() + _comment->height() + margins.bottom();
+		_comment->moveToLeft(margins.left(), height() - bottom + margins.top());
+	}
+	if (e) {
+		BoxContent::resizeEvent(e);
+	}
+	scrollArea()->setGeometry(
+		0,
+		top,
+		width(),
+		std::max(height() - top - bottom, 0));
 }
 
 void PeerListBox::paintEvent(QPaintEvent *e) {
@@ -355,13 +393,15 @@ void PeerListBox::rowChosen(int index) {
 	const auto limit = _controller->selectionLimit();
 	const auto selected = _selected.contains(row.id);
 	if (!selected && limit > 0 && _selected.size() >= limit) {
+		_controller->selectionLimitReached();
 		return;
 	}
 	setSelected(row.id, !selected);
 }
 
 bool PeerListBox::canSubmit() const {
-	return !_selected.isEmpty() || _controller->submitWithoutSelection();
+	return !_submitLoading
+		&& (!_selected.isEmpty() || _controller->submitWithoutSelection());
 }
 
 void PeerListBox::refreshSubmit() {
@@ -461,6 +501,21 @@ QStringList PeerListBox::selectedIds() const {
 
 QString PeerListBox::searchQuery() const {
 	return _search ? _search->text().trimmed() : QString();
+}
+
+QString PeerListBox::commentText() const {
+	return _comment ? _comment->text().trimmed() : QString();
+}
+
+void PeerListBox::setSubmitLoading(bool loading) {
+	if (_submitLoading == loading) {
+		return;
+	}
+	_submitLoading = loading;
+	if (_submit) {
+		_submit->setLoading(loading);
+	}
+	refreshSubmit();
 }
 
 Main::Session *PeerListBox::peerListSession() const {
