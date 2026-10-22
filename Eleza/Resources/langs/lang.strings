@@ -2231,3 +2231,6 @@
 "lng_stories_open_of" = "دیدن استوری {name}";
 "lng_stories_pause" = "توقف";
 "lng_stories_play" = "پخش";
+
+// ---- eli and search: comments, notifications, suggestions ----
+"lng_eli_notif_reply_comment" = "{who} به نظرت پاسخ داد";

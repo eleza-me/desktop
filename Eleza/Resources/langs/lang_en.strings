@@ -2201,3 +2201,6 @@
 "lng_stories_open_of" = "See {name}'s story";
 "lng_stories_pause" = "Pause";
 "lng_stories_play" = "Play";
+
+// ---- eli and search: comments, notifications, suggestions ----
+"lng_eli_notif_reply_comment" = "{who} replied to your comment";

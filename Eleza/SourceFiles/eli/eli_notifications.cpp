@@ -12,6 +12,7 @@
 #include "data/data_notifications.h"
 #include "data/data_session.h"
 #include "data/data_users.h"
+#include "eli/eli_logic.h"
 #include "eli/eli_post_card.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
@@ -114,7 +115,9 @@ enum class NotifHit {
 			? tr::lng_eli_notif_like_many(tr::now, lt_who, who)
 			: tr::lng_eli_notif_like(tr::now, lt_who, who);
 	} else if (kind == u"reply") {
-		return tr::lng_eli_notif_reply(tr::now, lt_who, who);
+		return Logic::AnswersComment(entry.refs)
+			? tr::lng_eli_notif_reply_comment(tr::now, lt_who, who)
+			: tr::lng_eli_notif_reply(tr::now, lt_who, who);
 	} else if (kind == u"mention") {
 		return tr::lng_eli_notif_mention(tr::now, lt_who, who);
 	} else if (kind == u"repost") {
@@ -144,8 +147,12 @@ enum class NotifHit {
 		return id.isEmpty() ? QString() : Window::Routes::Post(id);
 	};
 	const auto &kind = entry.kind;
-	if (kind == u"reply") {
-		return post(ref("reply").isEmpty() ? ref("post") : ref("reply"));
+	if (kind == u"reply" || kind == u"mention") {
+		// The post at that comment: its thread first, the comment lit up.
+		const auto target = Logic::CommentTargetOf(kind, entry.refs);
+		return target.post.isEmpty()
+			? QString()
+			: Window::Routes::Post(target.post, target.rootHint);
 	} else if (kind == u"quote") {
 		return post(ref("quote").isEmpty() ? ref("post") : ref("quote"));
 	} else if (kind == u"conversation_joined") {
