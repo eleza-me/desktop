@@ -24,6 +24,9 @@ namespace {
 
 constexpr auto kReplyTextMaxWidth = 260;
 
+// How many lines a service line with names may take.
+constexpr auto kServiceLines = 3;
+
 [[nodiscard]] int PillHeight() {
 	const auto &padding = st::historyServicePadding;
 	return st::historyServiceStyle.lineHeight + padding.top() + padding.bottom();
@@ -713,14 +716,25 @@ void Element::layoutService(int width, int top) {
 	_serviceShown = (natural > limit && limit > 0)
 		? font->elided(_serviceText, limit)
 		: _serviceText;
-	const auto textWidth = std::min(natural, std::max(limit, 1));
+	auto textWidth = std::min(natural, std::max(limit, 1));
+	auto pillHeight = PillHeight();
+	if (!_serviceNames.isEmpty() && natural > textWidth) {
+		// A line with names (a note, self-destructing media) wraps rather
+		// than lose its end: up to three lines, as narrow as they allow.
+		textWidth = std::max(
+			_serviceString.countMaxLineWidth(textWidth, kServiceLines),
+			1);
+		pillHeight = padding.top()
+			+ _serviceString.countHeight(textWidth, kServiceLines)
+			+ padding.bottom();
+	}
 	const auto pillWidth = textWidth + padding.left() + padding.right();
 	_serviceRect = QRect(
 		(width - pillWidth) / 2,
 		top,
 		pillWidth,
-		PillHeight());
-	_height = top + PillHeight() + 1;
+		pillHeight);
+	_height = top + pillHeight + 1;
 }
 
 void Element::layoutBubble(int maxWidth) {
@@ -1346,7 +1360,7 @@ Ui::Text::PaintContext Element::serviceGeometry() const {
 		_serviceRect.width() - padding.left() - padding.right(),
 		1);
 	result.align = style::al_center;
-	result.elisionLines = 1;
+	result.elisionLines = kServiceLines;
 	return result;
 }
 
