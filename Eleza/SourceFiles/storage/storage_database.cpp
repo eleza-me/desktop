@@ -2,6 +2,8 @@
 
 #include "base/platform_file.h"
 
+#include <utility>
+
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
@@ -280,11 +282,13 @@ void Database::post(Method &&method) {
 }
 
 template <typename Result>
-void Database::reply(base::Guard guard, Fn<void(Result)> done, Result result) {
-	// Called on the worker thread: hop back to the owner's thread.
+void Database::reply(base::Guard &guard, Fn<void(Result)> &done, Result result) {
+	// Called on the worker thread: hop back to the owner's thread. The
+	// callback (and whatever it holds) is taken out of the worker's task, so
+	// it is never destroyed on the worker thread.
 	QMetaObject::invokeMethod(this, [
-		guard = std::move(guard),
-		done = std::move(done),
+		guard = std::exchange(guard, base::Guard()),
+		done = std::exchange(done, nullptr),
 		result = std::move(result)
 	]() mutable {
 		if (done && guard.alive()) {
@@ -310,7 +314,7 @@ void Database::removeMeta(const QString &key) {
 }
 
 void Database::meta(const QString &key, base::Guard guard, Fn<void(QJsonValue)> done) {
-	post([=, this](details::DatabaseWorker &worker) {
+	post([=, this](details::DatabaseWorker &worker) mutable {
 		reply<QJsonValue>(guard, done, worker.single(u"meta"_s, key));
 	});
 }
@@ -332,7 +336,7 @@ void Database::removeValue(const QString &key) {
 }
 
 void Database::value(const QString &key, base::Guard guard, Fn<void(QJsonValue)> done) {
-	post([=, this](details::DatabaseWorker &worker) {
+	post([=, this](details::DatabaseWorker &worker) mutable {
 		reply<QJsonValue>(guard, done, worker.single(u"kv"_s, key));
 	});
 }
@@ -369,7 +373,7 @@ void Database::deleteChat(const QString &id) {
 }
 
 void Database::chats(base::Guard guard, Fn<void(QVector<QJsonObject>)> done) {
-	post([=, this](details::DatabaseWorker &worker) {
+	post([=, this](details::DatabaseWorker &worker) mutable {
 		reply<QVector<QJsonObject>>(guard, done, worker.rows(u"SELECT data FROM chats"_s));
 	});
 }
@@ -453,7 +457,7 @@ void Database::messages(
 		qint64 beforeSeq,
 		base::Guard guard,
 		Fn<void(QVector<QJsonObject>)> done) {
-	post([=, this](details::DatabaseWorker &worker) {
+	post([=, this](details::DatabaseWorker &worker) mutable {
 		auto list = (beforeSeq > 0)
 			? worker.rows(
 				u"SELECT data FROM messages WHERE chat = ? AND seq < ? ORDER BY seq DESC LIMIT ?"_s,
@@ -472,7 +476,7 @@ void Database::messagesAfter(
 		qint64 afterSeq,
 		base::Guard guard,
 		Fn<void(QVector<QJsonObject>)> done) {
-	post([=, this](details::DatabaseWorker &worker) {
+	post([=, this](details::DatabaseWorker &worker) mutable {
 		reply<QVector<QJsonObject>>(guard, done, worker.rows(
 			u"SELECT data FROM messages WHERE chat = ? AND seq > ? ORDER BY seq ASC LIMIT ?"_s,
 			{ chat, afterSeq, limit }));
@@ -501,7 +505,7 @@ void Database::users(
 		const QStringList &ids,
 		base::Guard guard,
 		Fn<void(QHash<QString, QJsonObject>)> done) {
-	post([=, this](details::DatabaseWorker &worker) {
+	post([=, this](details::DatabaseWorker &worker) mutable {
 		auto result = QHash<QString, QJsonObject>();
 		if (worker.ready()) {
 			for (const auto &id : ids) {
@@ -546,7 +550,7 @@ void Database::deleteOutbox(const QString &id) {
 }
 
 void Database::outbox(base::Guard guard, Fn<void(QVector<QJsonObject>)> done) {
-	post([=, this](details::DatabaseWorker &worker) {
+	post([=, this](details::DatabaseWorker &worker) mutable {
 		reply<QVector<QJsonObject>>(guard, done, worker.rows(
 			u"SELECT data FROM outbox ORDER BY created ASC, position ASC"_s));
 	});
@@ -569,7 +573,7 @@ void Database::deleteDraft(const QString &chat) {
 }
 
 void Database::drafts(base::Guard guard, Fn<void(QHash<QString, QJsonObject>)> done) {
-	post([=, this](details::DatabaseWorker &worker) {
+	post([=, this](details::DatabaseWorker &worker) mutable {
 		auto result = QHash<QString, QJsonObject>();
 		auto query = QSqlQuery();
 		if (worker.ready() && worker.exec(u"SELECT chat, data FROM drafts"_s, {}, &query)) {
@@ -595,8 +599,11 @@ void Database::clearAll() {
 }
 
 void Database::flush(base::Guard guard, Fn<void()> done) {
-	post([=, this](details::DatabaseWorker &) {
-		QMetaObject::invokeMethod(this, [guard, done] {
+	post([=, this](details::DatabaseWorker &) mutable {
+		QMetaObject::invokeMethod(this, [
+			guard = std::exchange(guard, base::Guard()),
+			done = std::exchange(done, nullptr)
+		] {
 			if (done && guard.alive()) {
 				done();
 			}

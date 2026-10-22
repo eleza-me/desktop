@@ -291,6 +291,33 @@ void TestStorage::callbacksRespectGuardAndThread() {
 	db.meta(u"counter"_s, &owner, [&](QJsonValue value) { last = value.toInt(); });
 	QTRY_COMPARE(last, 199);
 	db.flushSync();
+
+	// What a callback holds dies on the owner's thread, never on the worker
+	// (even when the worker's task is the last to let go of it).
+	struct Holder {
+		QVector<QThread*> *threads = nullptr;
+		~Holder() {
+			threads->push_back(QThread::currentThread());
+		}
+	};
+	auto threads = QVector<QThread*>();
+	auto answered = 0;
+	for (auto i = 0; i != 20; ++i) {
+		auto holder = std::make_shared<Holder>();
+		holder->threads = &threads;
+		db.meta(u"k"_s, &owner, [&answered, holder](QJsonValue) { ++answered; });
+		db.chats(&owner, [holder](QVector<QJsonObject>) {});
+		db.flush(&owner, [holder] {});
+		auto dropped = std::make_shared<Holder>();
+		dropped->threads = &threads;
+		db.meta(u"k"_s, base::Guard(), nullptr);
+		db.users({ u"u1"_s }, &owner, [dropped](QHash<QString, QJsonObject>) {});
+	}
+	QTRY_COMPARE(threads.size(), 40);
+	QCOMPARE(answered, 20);
+	for (const auto thread : threads) {
+		QCOMPARE(thread, QThread::currentThread());
+	}
 }
 
 void TestStorage::persistsAcrossReopenAndWipes() {
