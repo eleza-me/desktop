@@ -266,6 +266,24 @@ ListDiff DiffRows(
 	return result;
 }
 
+int SurvivingAnchor(const ListDiff &diff, int anchor) {
+	const auto count = int(diff.oldToNew.size());
+	if (anchor < 0 || anchor >= count) {
+		return -1;
+	}
+	for (auto i = anchor; i >= 0; --i) {
+		if (diff.oldToNew[i] >= 0) {
+			return i;
+		}
+	}
+	for (auto i = anchor + 1; i < count; ++i) {
+		if (diff.oldToNew[i] >= 0) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 bool SameLayout(const Data::Message &a, const Data::Message &b) {
 	const auto failedA = (a.status == Data::MessageStatus::Failed);
 	const auto failedB = (b.status == Data::MessageStatus::Failed);

@@ -728,6 +728,20 @@ void ListWidget::applyRows(const QVector<Data::Message> &timeline) {
 		now.push_back(RowId::From(message));
 	}
 	const auto diff = DiffRows(was, now);
+	if (!_anchor.bottom) {
+		// The row the reading position holds on to may go in this rebuild
+		// (deleted, maybe while older rows come in above it): a neighbour
+		// that stays takes its place, so what is being read does not jump.
+		const auto anchor = indexOfKey(_anchor.key);
+		const auto kept = SurvivingAnchor(diff, anchor);
+		if (kept >= 0 && kept != anchor) {
+			const auto bottom = [&](int index) {
+				return rowTop(index) + _rows[index].height;
+			};
+			_anchor.offset += bottom(anchor) - bottom(kept);
+			_anchor.key = _rows[kept].element->key();
+		}
+	}
 	auto flags = ComputeRowFlags(items, _firstUnreadSeq);
 	const auto firstBack = int(items.size()) - diff.addedAtBack;
 	auto sentByMe = false;
