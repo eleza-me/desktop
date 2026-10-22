@@ -291,6 +291,29 @@ private Q_SLOTS:
 			(Selection{ 1, 3 }));
 	}
 
+	void isolatesDoNotTurnTheParagraph() {
+		// «<name> · 12 min» in an English interface: the Persian name is
+		// isolated, the line stays left-to-right (and the reverse).
+		const auto isolated = [](const char *name) {
+			return QString(QChar(0x2068)) + U(name) + QChar(0x2069);
+		};
+		for (const auto rtl : { false, true }) {
+			style::SetRightToLeft(rtl);
+			const auto english = String(
+				st::defaultTextStyle,
+				isolated("سارا") + U(" · 12 min"));
+			QVERIFY(!english.countLastLine(400).rtl);
+			const auto persian = String(
+				st::defaultTextStyle,
+				isolated("Sara") + U(" · ۱۲ دقیقه"));
+			QVERIFY(persian.countLastLine(400).rtl);
+			// Nothing strong outside: the interface's direction.
+			const auto only = String(st::defaultTextStyle, isolated("سارا"));
+			QCOMPARE(only.countLastLine(400).rtl, rtl);
+		}
+		style::SetRightToLeft(false);
+	}
+
 	void paints() {
 		// Drawing mixed-direction, formatted, elided and selected text must
 		// put something on the canvas and must not crash.

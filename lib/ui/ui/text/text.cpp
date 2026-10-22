@@ -38,12 +38,32 @@ struct LineInfo {
 	int length = 0;
 };
 
+// The direction of a paragraph: its first strong character's (Unicode's
+// rule P2), skipping what lies inside isolates — an isolated name keeps its
+// own direction and must not turn the sentence around it.
 [[nodiscard]] bool DetectRtl(QStringView text) {
+	auto isolates = 0;
 	for (const auto ch : text) {
 		switch (ch.direction()) {
-		case QChar::DirL: return false;
+		case QChar::DirLRI:
+		case QChar::DirRLI:
+		case QChar::DirFSI: ++isolates; break;
+		case QChar::DirPDI:
+			if (isolates > 0) {
+				--isolates;
+			}
+			break;
+		case QChar::DirL:
+			if (!isolates) {
+				return false;
+			}
+			break;
 		case QChar::DirR:
-		case QChar::DirAL: return true;
+		case QChar::DirAL:
+			if (!isolates) {
+				return true;
+			}
+			break;
 		default: break;
 		}
 	}
