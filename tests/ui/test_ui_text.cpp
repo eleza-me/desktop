@@ -210,6 +210,20 @@ private Q_SLOTS:
 		QCOMPARE(empty.countHeight(100), 0);
 	}
 
+	void paragraphDirection() {
+		// The first strong character decides; an isolated name does not.
+		const auto rtl = [](const QString &text) {
+			return String(st::defaultTextStyle, text).countLastLine(1000).rtl;
+		};
+		QVERIFY(!rtl(QStringLiteral("hello")));
+		QVERIFY(rtl(U("سلام hello")));
+		QVERIFY(!rtl(U("⁨سارا⁩ left the group")));
+		QVERIFY(rtl(U("⁨John⁩ گروه را ترک کرد")));
+		// Nested and unbalanced isolates.
+		QVERIFY(!rtl(U("⁦⁧سارا⁩x⁩ ok")));
+		QVERIFY(!rtl(U("⁩ ok")));
+	}
+
 	void hitTest() {
 		const auto text = QStringLiteral("hello link world");
 		auto string = String(st::defaultTextStyle, TextWithEntities{ text, {

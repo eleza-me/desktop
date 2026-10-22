@@ -38,8 +38,23 @@ struct LineInfo {
 	int length = 0;
 };
 
+// The first strong character decides, as the bidi algorithm does it (P2):
+// what is inside an isolate (U+2066…U+2068 up to its U+2069) does not count,
+// so «{name} left the group» with an isolated Persian name stays left to
+// right in English.
 [[nodiscard]] bool DetectRtl(QStringView text) {
+	auto isolates = 0;
 	for (const auto ch : text) {
+		const auto code = ch.unicode();
+		if (code >= 0x2066 && code <= 0x2068) {
+			++isolates;
+			continue;
+		} else if (code == 0x2069) {
+			isolates = std::max(isolates - 1, 0);
+			continue;
+		} else if (isolates > 0) {
+			continue;
+		}
 		switch (ch.direction()) {
 		case QChar::DirL: return false;
 		case QChar::DirR:
