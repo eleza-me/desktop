@@ -52,7 +52,8 @@ set(CPACK_DEBIAN_PACKAGE_SECTION "net")
 set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
 # Libraries come from dpkg-shlibdeps; plugins that are loaded at run time are
 # not seen by it and are listed by hand: the SQLite driver (the local cache),
-# the platform plugins, the WebP decoder (stickers are WebP).
+# the platform plugins, the WebP decoder (stickers and the emoji pack are WebP;
+# the emoji the pack lacks come from a colour emoji font).
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 set(CPACK_DEBIAN_PACKAGE_DEPENDS
 	"libqt6sql6-sqlite, qt6-qpa-plugins, qt6-image-formats-plugins")

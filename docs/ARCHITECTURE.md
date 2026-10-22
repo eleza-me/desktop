@@ -26,9 +26,11 @@ lib/
   install/                plain C++, no Qt: replacing an installed copy's files with a new
                           version (journal, rollback, recovery) and the Windows Updater.exe
   crl/                    (none — Qt event loop only)
-  ui/                     lib "ElezaUi": style runtime, animations, widgets, layers, text, icons, RTL
+  ui/                     lib "ElezaUi": style runtime, animations, widgets, layers, text, icons, RTL,
+                          Telegram's emoji (ui/emoji: the pack's reader, tables, parser, picture cache)
 Eleza/
-  Resources/              fonts, icons (svg), styles/*.style, colors.palette, langs/lang.strings, qrc
+  Resources/              fonts, icons (svg), emoji (Telegram's emoji.pack, embedded uncompressed),
+                          styles/*.style, colors.palette, langs/lang.strings, qrc
   SourceFiles/
     core/                 Application, Launcher, Settings, command line, single instance
     main/                 Main::Account (device + tokens) and Main::Session (signed-in services)
@@ -108,7 +110,8 @@ through `window/window_update.*`, the settings page `settings/settings_update.cp
 ## Threads
 
 Everything runs on the main (GUI) thread except: SQLite writes (one worker thread behind
-`Storage::Database`), image decoding / scaling (`QThreadPool`), the frames of animated stickers
+`Storage::Database`), image decoding / scaling (`QThreadPool`; the emoji pack's pictures too, one
+decoder at a time: `ui/emoji/emoji_pack.cpp`), the frames of animated stickers
 (two threads of `Support::StickerPlayer`), file hashing for uploads, and the
 audio of a call (one "Calls media" thread that owns the microphone, the loudspeaker and every
 call into the media library; `calls/calls_media_livekit.cpp`).
