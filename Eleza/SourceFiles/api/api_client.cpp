@@ -698,6 +698,12 @@ void Client::finished(RequestId id) {
 		return;
 	}
 	setReachable(true);
+	if (status >= 200 && status < 300 && reply->error() != QNetworkReply::NoError) {
+		// The headers arrived, the body did not (reset, timeout mid-transfer):
+		// not an answer, and the request may be tried again.
+		failCall(id, Error::Offline(reply->errorString()));
+		return;
+	}
 	if (status >= 200 && status < 300) {
 		if (body.trimmed().isEmpty()) {
 			finishCall(id, QJsonObject());

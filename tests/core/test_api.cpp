@@ -394,6 +394,10 @@ void TestApi::offlineAndDecoding() {
 			return response;
 		} else if (request.path == "/v1/list") {
 			return HttpServer::Response::Bytes("[1,2,3]", "application/json");
+		} else if (request.path == "/v1/cut" || request.path == "/v1/cut-empty") {
+			auto response = HttpServer::Response::Bytes(R"({"ok":true,"more":"x"})", "application/json");
+			response.cutAfter = (request.path == "/v1/cut") ? 5 : 0;
+			return response;
 		}
 		return HttpServer::Response::Bytes("{not json", "application/json");
 	};
@@ -408,6 +412,16 @@ void TestApi::offlineAndDecoding() {
 	QVERIFY(empty->done);
 	QVERIFY(empty->json.isEmpty());
 	QCOMPARE(list.toArray().size(), 3);
+
+	// A 200 whose body was cut off is no answer: retryable, not a decoding
+	// error and never an empty success.
+	const auto cut = Send(client.request(Api::Get, u"/v1/cut"_s));
+	const auto cutEmpty = Send(client.request(Api::Get, u"/v1/cut-empty"_s));
+	QVERIFY(Test::WaitFor([&] { return cut->finished() && cutEmpty->finished(); }));
+	QVERIFY(cut->failed);
+	QVERIFY(cut->error.offline() && cut->error.retryable);
+	QVERIFY(cutEmpty->failed);
+	QVERIFY(cutEmpty->error.offline());
 
 	// Nothing listens there: no HTTP answer at all.
 	auto closed = QTcpServer();
