@@ -57,7 +57,8 @@ Eleza/
     settings/             settings sections
     boxes/                modal boxes shared by sections (peer list, photo crop, country list, about)
     stories/              stories: the tray on top of the feed, rings around faces, the
-                          full-window viewer, posting, the viewers box, Settings → Privacy →
+                          full-window viewer, posting, «ارسال به…» (sending a story to
+                          people and groups), the viewers box, Settings → Privacy →
                           «استوری» (the data side: data/data_stories.h, data_story_types.h)
     media/                audio/voice player, video player widget, image viewer
     calls/                voice and video calls (ELEZA_ENABLE_CALLS): the call state machine, the
