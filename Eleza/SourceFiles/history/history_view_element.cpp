@@ -34,6 +34,9 @@ constexpr auto kReplyTextMaxWidth = 260;
 		st::historyReactionEmojiFont->f);
 }
 
+// How many lines a service line with names may take.
+constexpr auto kServiceLines = 3;
+
 [[nodiscard]] int PillHeight() {
 	const auto &padding = st::historyServicePadding;
 	return st::historyServiceStyle.lineHeight + padding.top() + padding.bottom();
@@ -382,9 +385,7 @@ void Element::ensureLoaded() {
 		|| (kind == Data::MessageKind::ForwardedPost)
 		|| (kind == Data::MessageKind::StoryReply)
 		|| (kind == Data::MessageKind::StoryShare);
-	if (_data.selfDestruct) {
-		// Its text is the server's «only on the phone»: the card says it.
-	} else if (kind == Data::MessageKind::Unknown && _data.text.trimmed().isEmpty()) {
+	if (kind == Data::MessageKind::Unknown && _data.text.trimmed().isEmpty()) {
 		_text.setText(st::historyTextStyle, tr::lng_history_unsupported(tr::now));
 	} else if ((textKind || captionKind) && !shown.text.isEmpty()) {
 		if (textKind
@@ -736,14 +737,25 @@ void Element::layoutService(int width, int top) {
 	_serviceShown = (natural > limit && limit > 0)
 		? font->elided(_serviceText, limit)
 		: _serviceText;
-	const auto textWidth = std::min(natural, std::max(limit, 1));
+	auto textWidth = std::min(natural, std::max(limit, 1));
+	auto pillHeight = PillHeight();
+	if (!_serviceNames.isEmpty() && natural > textWidth) {
+		// A line with names (a note, self-destructing media) wraps rather
+		// than lose its end: up to three lines, as narrow as they allow.
+		textWidth = std::max(
+			_serviceString.countMaxLineWidth(textWidth, kServiceLines),
+			1);
+		pillHeight = padding.top()
+			+ _serviceString.countHeight(textWidth, kServiceLines)
+			+ padding.bottom();
+	}
 	const auto pillWidth = textWidth + padding.left() + padding.right();
 	_serviceRect = QRect(
 		(width - pillWidth) / 2,
 		top,
 		pillWidth,
-		PillHeight());
-	_height = top + PillHeight() + 1;
+		pillHeight);
+	_height = top + pillHeight + 1;
 }
 
 void Element::layoutBubble(int maxWidth) {
@@ -1372,7 +1384,7 @@ Ui::Text::PaintContext Element::serviceGeometry() const {
 		_serviceRect.width() - padding.left() - padding.right(),
 		1);
 	result.align = style::al_center;
-	result.elisionLines = 1;
+	result.elisionLines = kServiceLines;
 	return result;
 }
 
@@ -1780,8 +1792,12 @@ HitResult Element::hitTest(QPoint point) const {
 		result.zone = Zone::Date;
 		return result;
 	} else if (_service) {
-		result.zone = _serviceRect.contains(point) ? Zone::Date : Zone::Side;
-		if (result.zone == Zone::Date && !_serviceNames.isEmpty()) {
+		result.zone = _serviceRect.contains(point)
+			? (_data.selfDestruct
+				? Zone::Bubble // a message of its own: it has a menu (delete, reply)
+				: Zone::Date)
+			: Zone::Side;
+		if (result.zone != Zone::Side && !_serviceNames.isEmpty()) {
 			const auto state = _serviceString.getState(point, serviceGeometry());
 			if (state.uponSymbol) {
 				for (const auto &name : _serviceNames) {

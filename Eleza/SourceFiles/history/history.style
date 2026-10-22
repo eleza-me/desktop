@@ -167,15 +167,6 @@ historyFileImageIcon: icon {{ "image", textOnBrand, 22px }};
 historyFileVideoIcon: icon {{ "video", textOnBrand, 22px }};
 historyTopBarCallDisabledFg: borderStrong;
 historyCallIcon: icon {{ "call", textOnBrand, 22px }};
-// self-destructing media (SelfDestructMedia in history_view_media.cpp)
-historySdTimerIcon: icon {{ "timer", textOnBrand, 22px }};
-historySdOnceFont: font(19px semibold);
-historySdBadgeFg: textOnBrand;
-historySdRingFg: textOnBrand;
-historySdRingWidth: 2px;
-historySdRingInset: 3px;
-historySdGrain: 3px;
-historySdGrainSpread: 34px;
 historyCallMissedIcon: icon {{ "call-end", staticWhite, 22px }};
 historyCallMissedBg: statusError;
 historyCallMissedFg: statusError;

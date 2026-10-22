@@ -2293,20 +2293,14 @@
 
 // ---- history: self-destructing media ----
 "lng_history_sd_media" = "پیام یکبارمصرف";
-"lng_history_sd_photo" = "عکس یکبارمصرف";
-"lng_history_sd_video" = "ویدیوی یکبارمصرف";
 "lng_history_sd_expired" = "پیام یکبارمصرف منقضی شد";
-"lng_history_sd_photo_expired" = "عکس منقضی شد";
-"lng_history_sd_video_expired" = "ویدیو منقضی شد";
-"lng_history_sd_on_phone" = "فقط در اپ گوشی باز می‌شود";
-"lng_history_sd_unopened" = "باز نشده";
-"lng_history_sd_opened" = "باز شد";
-"lng_history_sd_opened_left" = "باز شد · {time}";
 "lng_history_sd_view_once" = "یک بار دیدن";
 "lng_history_sd_seconds#one" = "{count} ثانیه";
 "lng_history_sd_seconds#other" = "{count} ثانیه";
-"lng_history_sd_open_on_phone" = "این پیام را فقط در اپ الزا روی گوشی می‌شود دید";
-"lng_history_sd_only_recipient" = "فقط گیرنده می‌تواند آن را ببیند، آن هم روی گوشی";
+"lng_history_sd_received" = "{name} برایت پیام یکبارمصرف فرستاد. آن را در گوشی ببین";
+"lng_history_sd_sent" = "پیام یکبارمصرف فرستادی";
+"lng_history_sd_sending" = "در حال فرستادن پیام یکبارمصرف…";
+"lng_history_sd_not_sent" = "پیام یکبارمصرف فرستاده نشد";
 "lng_history_sd_screenshot" = "{name} از پیام یکبارمصرف اسکرین‌شات گرفت";
 "lng_history_sd_screenshot_you" = "از پیام یکبارمصرف اسکرین‌شات گرفتی";
 "lng_history_sd_off" = "خاموش";

@@ -162,7 +162,10 @@ QDate MessageDate(const Data::Message &message) {
 }
 
 bool IsService(const Data::Message &message) {
-	return (message.kind == Data::MessageKind::System) && !message.call;
+	// Self-destructing media is a line of its own here (only the phone
+	// apps open it), as on Telegram Desktop.
+	return ((message.kind == Data::MessageKind::System) && !message.call)
+		|| message.selfDestruct.has_value();
 }
 
 bool CanAttach(const Data::Message &previous, const Data::Message &next) {
@@ -194,7 +197,7 @@ std::vector<RowFlags> ComputeRowFlags(
 			&& firstUnreadSeq > 0
 			&& message.seq >= firstUnreadSeq
 			&& !message.mine
-			&& !IsService(message)) {
+			&& (!IsService(message) || message.selfDestruct)) {
 			// Nothing to divide when everything on screen is unread.
 			flags.showUnread = (i > 0);
 			unreadShown = true;
@@ -303,6 +306,8 @@ bool SameLayout(const Data::Message &a, const Data::Message &b) {
 				&& a.audio->performer == b.audio->performer))
 		&& (a.viaBot.has_value() == b.viaBot.has_value())
 		&& (a.selfDestruct == b.selfDestruct)
+		// Its line says whether it is on its way or failed.
+		&& (!a.selfDestruct || a.status == b.status)
 		&& EntitiesEqual(a.entities, b.entities)
 		&& MediaEqual(a.media, b.media)
 		&& MarkupEqual(a.replyMarkup, b.replyMarkup)
@@ -915,15 +920,6 @@ bool SelfDestructAllowed(const Data::Chat &chat) {
 		&& !chat.peerDeleted
 		&& !chat.peerUserId.isEmpty()
 		&& (chat.info.kind.isEmpty() || chat.info.kind == u"direct");
-}
-
-SelfDestructLine SelfDestructLineFor(const Data::Message &message) {
-	if (!message.selfDestruct || message.selfDestruct->expired()) {
-		return SelfDestructLine::Expired;
-	} else if (message.selfDestruct->opened()) {
-		return SelfDestructLine::Opened;
-	}
-	return message.mine ? SelfDestructLine::NotOpened : SelfDestructLine::OnPhone;
 }
 
 } // namespace History

@@ -20,8 +20,8 @@ namespace Support {
 
 [[nodiscard]] QString ChatTitle(Main::Session *session, const Data::Chat &chat);
 
-// «عکس یکبارمصرف», «… منقضی شد»: self-destructing media (empty for any
-// other message).
+// «پیام یکبارمصرف», «… منقضی شد»: the one-line label of self-destructing
+// media (empty for any other message).
 [[nodiscard]] QString SelfDestructLabel(const Data::Message &message);
 // «۱۰ ثانیه», «۱ دقیقه»: a timer of self-destructing media.
 [[nodiscard]] QString SelfDestructTimerText(int seconds);
@@ -71,8 +71,17 @@ struct NotePerson {
 	const NotePerson &actor,
 	const NotePerson &target);
 
+// The centred line of self-destructing media, as Telegram Desktop has it
+// (only the phone apps open it): «‹sender› sent you a self-destructing
+// message, view it on your phone» (the name opens the profile), «you sent
+// one» (also while it is on its way, or failed), «expired».
+[[nodiscard]] NoteLine SelfDestructLine(
+	const Data::Message &message,
+	const NotePerson &sender);
+
 // The line of a service message with the people it names (the notes of a
-// group); a message without names is MessagePreview(session, message).
+// group, self-destructing media, its screenshot notice); a message without
+// names is MessagePreview(session, message).
 [[nodiscard]] NoteLine ServiceNoteLine(
 	Main::Session *session,
 	const Data::Message &message);

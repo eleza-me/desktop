@@ -33,7 +33,8 @@ struct RowFlags {
 [[nodiscard]] QDate MessageDate(const Data::Message &message);
 [[nodiscard]] QDateTime MessageDateTime(const Data::Message &message);
 
-// A centred pill instead of a bubble.
+// A centred pill instead of a bubble (service messages, and
+// self-destructing media).
 [[nodiscard]] bool IsService(const Data::Message &message);
 
 // `next` continues the group of `previous`.
@@ -202,14 +203,6 @@ enum class FileType {
 // It may be sent here: a direct chat with a person — not a group, Saved
 // Messages, a bot, an anonymous conversation or a deleted account.
 [[nodiscard]] bool SelfDestructAllowed(const Data::Chat &chat);
-// The bubble's second line.
-enum class SelfDestructLine {
-	OnPhone,   // the recipient, not opened: only the phone apps open it
-	NotOpened, // the sender, not opened yet
-	Opened,    // shown on the recipient's phone: its time runs
-	Expired,
-};
-[[nodiscard]] SelfDestructLine SelfDestructLineFor(const Data::Message &message);
 
 // ---- the floating buttons over the list («to the end», «@»)
 

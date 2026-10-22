@@ -2262,21 +2262,15 @@
 "lng_history_abar_reported_not_left" = "Reported, but you did not leave the group.";
 
 // ---- history: self-destructing media ----
-"lng_history_sd_media" = "Self-destructing media";
-"lng_history_sd_photo" = "Self-destructing photo";
-"lng_history_sd_video" = "Self-destructing video";
-"lng_history_sd_expired" = "Self-destructing media expired";
-"lng_history_sd_photo_expired" = "Photo has expired";
-"lng_history_sd_video_expired" = "Video has expired";
-"lng_history_sd_on_phone" = "Opens only in the phone app";
-"lng_history_sd_unopened" = "Not opened";
-"lng_history_sd_opened" = "Opened";
-"lng_history_sd_opened_left" = "Opened · {time}";
+"lng_history_sd_media" = "Self-destructing message";
+"lng_history_sd_expired" = "Self-destructing message expired";
 "lng_history_sd_view_once" = "View once";
 "lng_history_sd_seconds#one" = "{count} second";
 "lng_history_sd_seconds#other" = "{count} seconds";
-"lng_history_sd_open_on_phone" = "This message can only be viewed in the Eleza app on your phone";
-"lng_history_sd_only_recipient" = "Only the recipient can see it, on their phone";
+"lng_history_sd_received" = "{name} sent you a self-destructing message. Please view it on your phone.";
+"lng_history_sd_sent" = "You sent a self-destructing message.";
+"lng_history_sd_sending" = "Sending a self-destructing message…";
+"lng_history_sd_not_sent" = "The self-destructing message was not sent.";
 "lng_history_sd_screenshot" = "{name} took a screenshot of a self-destructing message";
 "lng_history_sd_screenshot_you" = "You took a screenshot of a self-destructing message";
 "lng_history_sd_off" = "Off";

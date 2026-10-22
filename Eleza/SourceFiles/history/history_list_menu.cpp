@@ -41,7 +41,12 @@ void ListWidget::showContextMenu(
 	}
 	const auto element = _rows[target.index].element.get();
 	const auto zone = target.hit.zone;
-	if (element->isService() || zone == Zone::Date || zone == Zone::None) {
+	// Of the centred lines only self-destructing media is a message one
+	// may reply to, pin or delete.
+	const auto service = element->isService();
+	if ((service && (!element->data().selfDestruct || zone == Zone::Side))
+		|| zone == Zone::Date
+		|| zone == Zone::None) {
 		return;
 	}
 	// A copy: the row may change while the menu is open.
@@ -143,8 +148,8 @@ void ListWidget::showContextMenu(
 		return;
 	}
 
-	// ---- reactions
-	if (_canReact) {
+	// ---- reactions (a centred line shows none)
+	if (_canReact && !service) {
 		auto emoji = config ? config->reactionEmojiSet() : QStringList();
 		if (!emoji.isEmpty()) {
 			const auto strip = menu->setTopWidget(Ui::object_ptr<ReactionsStrip>(
@@ -361,9 +366,11 @@ void ListWidget::showContextMenu(
 			}, &st::menuIconReport);
 		}
 	}
-	menu->addAction(tr::lng_select(tr::now), [=, this] {
-		toggleSelected(key);
-	}, &st::menuIconSelect);
+	if (selectable(target.index)) {
+		menu->addAction(tr::lng_select(tr::now), [=, this] {
+			toggleSelected(key);
+		}, &st::menuIconSelect);
+	}
 	auto remove = Ui::MenuItem();
 	remove.text = tr::lng_delete(tr::now);
 	remove.icon = &st::menuIconDelete;

@@ -124,8 +124,8 @@ ListWidget::ListWidget(
 	});
 	connect(&data.users(), &Data::Users::changed, this, [this](const QStringList &ids) {
 		// Names in reply headers and shared posts; in a group also above
-		// the bubbles and in the notes; the screenshot notice of
-		// self-destructing media.
+		// the bubbles and in the notes; the lines of self-destructing
+		// media and its screenshot notice.
 		auto changed = false;
 		for (auto &row : _rows) {
 			const auto &message = row.element->data();
@@ -133,7 +133,8 @@ ListWidget::ListWidget(
 			if ((_group
 					&& (ids.contains(message.sender)
 						|| (system && ids.contains(Data::GroupRules::NoteUser(message.system)))))
-				|| (system && ids.contains(Data::SelfDestructScreenshotTaker(message.system)))) {
+				|| (system && ids.contains(Data::SelfDestructScreenshotTaker(message.system)))
+				|| (message.selfDestruct && ids.contains(message.sender))) {
 				row.element->unloadHeavy();
 				row.element->invalidate();
 				row.exact = false;
@@ -643,7 +644,7 @@ std::optional<Data::Message> ListWidget::lastEditable() const {
 			return message;
 		} else if (message.mine && message.seq > 0) {
 			// Only the last own message is edited this way.
-			if (!IsService(message)) {
+			if (!IsService(message) || message.selfDestruct) {
 				return std::nullopt;
 			}
 		}
