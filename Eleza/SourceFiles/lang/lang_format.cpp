@@ -157,15 +157,6 @@ const char *const kWeekdaysEn[7] = {
 }
 
 // The decimal point follows the digits: «۱٫۲» in Persian.
-[[nodiscard]] QString LocalizedDecimal(const QString &latin) {
-	if (!IsPersian()) {
-		return latin;
-	}
-	auto result = FaDigits(latin);
-	result.replace(QLatin1Char('.'), QChar(0x066B));
-	return result;
-}
-
 } // namespace
 
 QString FaDigits(const QString &text) {
@@ -200,6 +191,15 @@ QString Num(const QString &text) {
 
 QString Num(qint64 value) {
 	return Num(QString::number(value));
+}
+
+QString Decimal(const QString &latin) {
+	if (!IsPersian()) {
+		return latin;
+	}
+	auto result = FaDigits(latin);
+	result.replace(QLatin1Char('.'), QChar(0x066B));
+	return result;
 }
 
 bool IsJalaliLeapYear(int year) {
@@ -384,7 +384,7 @@ QString Bytes(qint64 bytes) {
 	} else if (bytes < kilo * kilo) {
 		return Num(Rounded(bytes, kilo)) + QStringLiteral(" KB");
 	} else if (bytes < kilo * kilo * kilo) {
-		return LocalizedDecimal(OneDecimal(bytes, kilo * kilo))
+		return Decimal(OneDecimal(bytes, kilo * kilo))
 			+ QStringLiteral(" MB");
 	}
 	// Whole and fraction apart: `bytes * 100` overflows for a size near the
@@ -396,7 +396,7 @@ QString Bytes(qint64 bytes) {
 		++whole;
 		fraction -= 100;
 	}
-	return LocalizedDecimal(QString::number(whole)
+	return Decimal(QString::number(whole)
 		+ QLatin1Char('.')
 		+ TwoDigits(int(fraction))) + QStringLiteral(" GB");
 }
@@ -414,7 +414,7 @@ QString CompactCount(qint64 value) {
 		? tr::lng_count_thousand(tr::now)
 		: tr::lng_count_million(tr::now);
 	// «۱٫۲ هزار» with a space, "1.2K" without.
-	return LocalizedDecimal(number)
+	return Decimal(number)
 		+ (IsPersian() ? QStringLiteral(" ") : QString())
 		+ suffix;
 }

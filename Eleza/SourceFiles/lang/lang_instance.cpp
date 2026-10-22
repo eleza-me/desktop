@@ -138,9 +138,9 @@ QString GetPlural(Key key, double count) {
 		? cache.ones[language][index]
 		: cache.values[language][index];
 	const auto number = integral
-		? QString::number(qint64(count))
-		: QString::number(count, 'f', 1);
-	internal::ReplaceTag(result, "count", Num(number));
+		? Num(qint64(count))
+		: Decimal(QString::number(count, 'f', 1));
+	internal::ReplaceTag(result, "count", number);
 	return result;
 }
 

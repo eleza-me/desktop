@@ -17,6 +17,9 @@ namespace Lang {
 // Digits of the current language.
 [[nodiscard]] QString Num(const QString &text);
 [[nodiscard]] QString Num(qint64 value);
+// A number with a fraction: digits and the decimal separator of the current
+// language ("1.5" -> "۱٫۵").
+[[nodiscard]] QString Decimal(const QString &latin);
 
 // ---- the Jalali calendar
 struct JalaliDate {

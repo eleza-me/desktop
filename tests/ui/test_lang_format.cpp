@@ -83,6 +83,9 @@ private Q_SLOTS:
 			tr::lng_intro_code_sent_to(tr::now, lt_phone, QStringLiteral("+98")),
 			U("به +98 فرستاده شد"));
 		QCOMPARE(tr::lng_eli_new_posts(tr::now, lt_count, 12), U("۱۲ پست تازه"));
+		// A fraction has the Persian decimal separator, as in sizes and counts.
+		QCOMPARE(tr::lng_eli_new_posts(tr::now, lt_count, 1.5), U("۱٫۵ پست تازه"));
+		QCOMPARE(Decimal(QStringLiteral("2.5")), U("۲٫۵"));
 		QCOMPARE(GetValueByName(QStringLiteral("lng_cancel")), U("انصراف"));
 		QVERIFY(GetValueByName(QStringLiteral("lng_no_such_key")).isEmpty());
 		QVERIFY(RightToLeft());
@@ -98,6 +101,7 @@ private Q_SLOTS:
 			tr::lng_intro_code_sent_to(tr::now, lt_phone, QStringLiteral("+98")),
 			QStringLiteral("Sent to +98"));
 		QCOMPARE(tr::lng_eli_new_posts(tr::now, lt_count, 1), QStringLiteral("1 new post"));
+		QCOMPARE(tr::lng_eli_new_posts(tr::now, lt_count, 1.5), QStringLiteral("1.5 new posts"));
 		QCOMPARE(tr::lng_eli_new_posts(tr::now, lt_count, 2), QStringLiteral("2 new posts"));
 		SetCurrent(Language::English);
 		QCOMPARE(notified, 1); // no change, no signal
