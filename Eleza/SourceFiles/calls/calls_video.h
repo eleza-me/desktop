@@ -70,6 +70,7 @@ private:
 	struct Private;
 
 	void deliver(const QImage &image);
+	void failLater();
 
 	std::unique_ptr<Private> _private;
 	QTimer *_pattern = nullptr;
