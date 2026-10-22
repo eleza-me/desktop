@@ -163,8 +163,14 @@ void FillMore(
 					if (key == current) {
 						return;
 					}
-					controller->session().data().feed().setReplyPolicy(id, key);
-					controller->showToast(tr::lng_eli_policy_changed(tr::now));
+					controller->session().data().feed().setReplyPolicy(
+						id,
+						key,
+						controller,
+						[=] {
+							controller->showToast(
+								tr::lng_eli_policy_changed(tr::now));
+						});
 				};
 				submenu->addItem(std::move(item));
 			}
@@ -175,10 +181,15 @@ void FillMore(
 		menu->addAction(
 			pinned ? tr::lng_unpin(tr::now) : tr::lng_eli_pin_profile(tr::now),
 			[=] {
-				controller->session().data().feed().setPinned(id, !pinned);
-				controller->showToast(pinned
-					? tr::lng_eli_unpinned_toast(tr::now)
-					: tr::lng_eli_pinned_toast(tr::now));
+				controller->session().data().feed().setPinned(
+					id,
+					!pinned,
+					controller,
+					[=] {
+						controller->showToast(pinned
+							? tr::lng_eli_unpinned_toast(tr::now)
+							: tr::lng_eli_pinned_toast(tr::now));
+					});
 			},
 			&st::menuIconPin);
 		menu->addAction(

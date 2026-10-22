@@ -2456,18 +2456,53 @@ void Widget::showRowMenu(int index, QPoint globalPosition) {
 		if (row.kind == kTrend && !topicId.isEmpty()) {
 			menu->addSeparator();
 			menu->addAction(tr::lng_eli_topic_not_interested(tr::now), [=] {
-				window->session().data().feed().hideTopic(topicId, true);
-				if (!weak || !weak->_browse->trends) {
+				if (!weak) {
 					return;
 				}
-				auto &trends = *weak->_browse->trends;
-				trends.erase(
-					std::remove_if(trends.begin(), trends.end(), [&](
-							const Data::Trend &trend) {
-						return trend.id == topicId;
-					}),
-					trends.end());
-				window->showToast(tr::lng_search_topic_hidden(tr::now));
+				// The row leaves at once and comes back where it was when
+				// the server did not take it.
+				auto removed = std::optional<Data::Trend>();
+				auto at = 0;
+				if (weak->_browse->trends) {
+					auto &trends = *weak->_browse->trends;
+					for (auto i = 0; i != int(trends.size()); ++i) {
+						if (trends[i].id == topicId) {
+							removed = trends[i];
+							at = i;
+							trends.remove(i);
+							break;
+						}
+					}
+				}
+				const auto generation = weak->_browse->generation;
+				window->session().data().feed().hideTopic(
+					topicId,
+					true,
+					weak.data(),
+					[=] { window->showToast(tr::lng_search_topic_hidden(tr::now)); },
+					[=] {
+						if (!weak
+							|| !removed
+							|| weak->_browse->generation != generation
+							|| !weak->_browse->trends) {
+							return;
+						}
+						auto &trends = *weak->_browse->trends;
+						const auto known = std::any_of(
+							trends.cbegin(),
+							trends.cend(),
+							[&](const Data::Trend &trend) {
+								return trend.id == topicId;
+							});
+						if (!known) {
+							trends.insert(
+								std::min(at, int(trends.size())),
+								*removed);
+							if (weak->_query.isEmpty()) {
+								weak->rebuild();
+							}
+						}
+					});
 				if (weak->_query.isEmpty()) {
 					weak->rebuild();
 				}

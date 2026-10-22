@@ -349,11 +349,21 @@ public:
 
 		_header->followButton()->setClickedCallback([this] {
 			if (!_info.slug.isEmpty()) {
-				_info.following = !_info.following;
+				const auto on = !_info.following;
+				_info.following = on;
+				_header->setFollowing(on);
+				// Back as it was when the server did not take it.
 				this->controller()->session().data().feed().followTopic(
 					_info.slug,
-					_info.following);
-				_header->setFollowing(_info.following);
+					on,
+					base::Guard(this),
+					nullptr,
+					[=, this] {
+						if (_info.following == on) {
+							_info.following = !on;
+							_header->setFollowing(!on);
+						}
+					});
 			}
 		});
 		_header->talkButton()->setClickedCallback([this] {
@@ -501,11 +511,22 @@ private:
 				? tr::lng_eli_topic_show_again(tr::now)
 				: tr::lng_eli_topic_not_interested(tr::now),
 			[=, this] {
-				controller()->session().data().feed().hideTopic(_info.id, !hidden);
 				_info.hidden = !hidden;
-				controller()->showToast(hidden
-					? tr::lng_eli_topic_shown_again(tr::now)
-					: tr::lng_eli_topic_hidden_toast(tr::now));
+				const auto window = controller();
+				controller()->session().data().feed().hideTopic(
+					_info.id,
+					!hidden,
+					base::Guard(this),
+					[=] {
+						window->showToast(hidden
+							? tr::lng_eli_topic_shown_again(tr::now)
+							: tr::lng_eli_topic_hidden_toast(tr::now));
+					},
+					[=, this] {
+						if (_info.hidden == !hidden) {
+							_info.hidden = hidden;
+						}
+					});
 			},
 			hidden ? &st::eliMenuIconEye : &st::eliMenuIconEyeOff);
 		menu->popupAnchored(_more);
@@ -673,8 +694,38 @@ protected:
 		const auto id = _trends[index].id;
 		const auto menu = new Ui::PopupMenu(this);
 		menu->addAction(tr::lng_eli_topic_not_interested(tr::now), [=, this] {
-			_controller->session().data().feed().hideTopic(id, true);
-			_controller->showToast(tr::lng_eli_topic_hidden_toast(tr::now));
+			// The row leaves at once and comes back where it was when the
+			// server did not take it.
+			const auto i = std::find_if(
+				_trends.cbegin(),
+				_trends.cend(),
+				[&](const Data::Trend &trend) { return trend.id == id; });
+			if (i == _trends.cend()) {
+				return;
+			}
+			const auto at = int(i - _trends.cbegin());
+			const auto trend = *i;
+			_controller->session().data().feed().hideTopic(
+				id,
+				true,
+				base::Guard(this),
+				[controller = _controller] {
+					controller->showToast(tr::lng_eli_topic_hidden_toast(tr::now));
+				},
+				[=, this] {
+					const auto known = std::any_of(
+						_trends.cbegin(),
+						_trends.cend(),
+						[&](const Data::Trend &other) { return other.id == id; });
+					if (!known) {
+						_trends.insert(
+							std::min(at, int(_trends.size())),
+							trend);
+						_over = -1;
+						resizeToWidth(width());
+						update();
+					}
+				});
 			_trends.erase(
 				std::remove_if(_trends.begin(), _trends.end(), [&](const Data::Trend &trend) {
 					return trend.id == id;
