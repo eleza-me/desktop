@@ -297,6 +297,24 @@ void TestRtInterop::rpc() {
 		QCOMPARE(answers.value(limit), limit);
 	}
 
+	// More calls than the gateway lets wait: the rest are held back here
+	// instead of being refused there.
+	peer.control(Api::Post, u"/control/slow"_s, { { u"ms"_s, 100 } });
+	auto okCount = 0;
+	auto failures = QStringList();
+	for (auto i = 0; i != 150; ++i) {
+		peer.client.call(u"me.get"_s, {}, QString(), base::Guard(), [&](const QJsonValue &) {
+			++okCount;
+		}, [&](const Api::Error &error) {
+			failures.push_back(error.code);
+		});
+	}
+	QVERIFY(Test::WaitFor([&] { return okCount + failures.size() == 150; }, 15000));
+	peer.control(Api::Post, u"/control/slow"_s, { { u"ms"_s, 0 } });
+	QVERIFY2(failures.isEmpty(), qPrintable(failures.join(u',')));
+	QCOMPARE(okCount, 150);
+	const auto waited = peer.state().value("maxOutstanding"_L1).toInt();
+	QVERIFY(waited > 1 && waited <= Rt::Session::kMaxCallsInFlight);
 	QVERIFY(peer.client.isConnected());
 }
 

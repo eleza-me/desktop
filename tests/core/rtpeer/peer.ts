@@ -11,6 +11,8 @@
 //   POST /control/close       { code }  a Close envelope, then the socket closes
 //   POST /control/rotate      a new static key with the next id; the old one is gone
 //   POST /control/pts         { pts }  moves the update log's head (missed updates to replay)
+//   POST /control/slow        { ms }  me.get answers after this long, and like the gateway at
+//                             most 64 requests may wait per connection (rate_limited beyond)
 //
 // ELEZA_RTPEER_GATEWAY=1 makes it the realtime half of a mock server instead of a
 // scripted world of its own: the connection, signals and pushed updates work as above,
@@ -52,6 +54,7 @@ let key = newKey(7);
 let pts = 100;
 let nextSeq = 10;
 let devicePub: Uint8Array | null = null;
+let slowMs = 0;
 const seenClientIds = new Map<string, { seq: number; id: string; at: number }>();
 
 const state = {
@@ -62,6 +65,7 @@ const state = {
   sends: [] as Record<string, unknown>[],
   requests: [] as string[],
   pings: 0,
+  maxOutstanding: 0,
   rejectedKeyIds: [] as number[],
 };
 
@@ -71,6 +75,7 @@ class Connection {
   private nonce: Uint8Array | null = null;
   private authed = false;
   private authPts = 0;
+  private outstanding = 0;
 
   constructor(private ws: WebSocket) {
     ws.on('message', (data: Buffer) => {
@@ -250,8 +255,8 @@ class Connection {
         state.auths.push({ ...decode('Auth', body), reauth: true });
         this.respond(id, 'AuthResult', { expires_at: Date.now() + 3600_000 });
         break;
-      case 'me.get':
-        this.respond(id, 'MeGetResponse', {
+      case 'me.get': {
+        const answer = () => this.respond(id, 'MeGetResponse', {
           id: 'u_me',
           handle: 'me',
           display_name: 'من',
@@ -263,7 +268,22 @@ class Connection {
           posts: 5,
           visibility: 'public',
         });
+        if (!slowMs) {
+          answer();
+          break;
+        }
+        if (this.outstanding >= 64) {
+          this.refuse(id, 429, 'rate_limited', 'too many requests');
+          break;
+        }
+        this.outstanding++;
+        state.maxOutstanding = Math.max(state.maxOutstanding, this.outstanding);
+        setTimeout(() => {
+          this.outstanding--;
+          if (this.open) answer();
+        }, slowMs);
         break;
+      }
       case 'sync.state':
         this.respond(id, 'SyncStateResponse', { pts });
         break;
@@ -433,6 +453,9 @@ const http = createServer(async (request, response) => {
     key = newKey(key.id + 1);
     for (const connection of [...connections]) connection.close(4006, 'key');
     reply(response, 200, { id: key.id });
+  } else if (request.method === 'POST' && url === '/control/slow') {
+    slowMs = Number((await readJson(request)).ms ?? 0);
+    reply(response, 200, {});
   } else if (request.method === 'POST' && url === '/control/pts') {
     pts = Number((await readJson(request)).pts ?? pts);
     reply(response, 200, { pts });
