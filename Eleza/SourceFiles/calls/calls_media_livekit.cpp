@@ -853,7 +853,8 @@ void Engine::setOutput(quint64 session, const QAudioDevice &device) {
 		return;
 	}
 	_outputDevice = device;
-	if (_output && _output->active()) {
+	// Also when it could not be opened at the join: another one may work.
+	if (_output && (_output->active() || _room)) {
 		startOutput();
 	}
 }
