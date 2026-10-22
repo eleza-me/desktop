@@ -15,6 +15,7 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QRegularExpression>
+#include <QtCore/QTimer>
 #include <QtCore/QUrl>
 
 #include <cmath>
@@ -30,6 +31,7 @@ const auto kDeviceIdKey = u"device.id"_s;
 // Sessions stored before the origin was kept were all of the default API.
 const auto kDefaultApiBase = u"https://api.eleza.me"_s;
 const auto kLanguageKey = u"language"_s;
+constexpr auto kLogoutWaitMs = 5000;
 
 // `access_expires_at` arrives as an RFC 3339 string or a number of
 // (milli)seconds; without it assume nine minutes.
@@ -327,7 +329,11 @@ void Account::endSession(SessionEndReason reason) {
 }
 
 void Account::logout(QObject *guard, Fn<void()> done) {
-	const auto finish = [this, guard = guard ? base::Guard(guard) : base::Guard(), done] {
+	const auto finished = std::make_shared<bool>(false);
+	const auto finish = [=, this, guard = guard ? base::Guard(guard) : base::Guard()] {
+		if (std::exchange(*finished, true)) {
+			return;
+		}
 		endSession(SessionEndReason::SignedOut);
 		if (done && guard.alive()) {
 			done();
@@ -337,9 +343,13 @@ void Account::logout(QObject *guard, Fn<void()> done) {
 		finish();
 		return;
 	}
-	// Best effort: the server learns about it now or the token expires.
+	// Best effort: the server learns about it now or the token expires. The
+	// request may first wait for a token refresh, which on a dead network
+	// takes far longer than signing out may: the session ends on time anyway
+	// (and that aborts whatever of it is still in flight).
+	QTimer::singleShot(kLogoutWaitMs, this, finish);
 	_api->request(Api::Post, u"/v1/auth/logout"_s)
-		.timeout(5000)
+		.timeout(kLogoutWaitMs)
 		.noOverloadRetry()
 		.guard(this)
 		.done([=] { finish(); })

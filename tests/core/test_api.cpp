@@ -15,6 +15,7 @@
 #include "storage/storage_secure_blob.h"
 
 #include <QtCore/QDir>
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QTemporaryDir>
 
 using Test::HttpServer;
@@ -106,6 +107,7 @@ private Q_SLOTS:
 	void refreshReissuesNonceOnce();
 	void refreshFailuresKeepOrEndTheSession();
 	void logoutWipes();
+	void logoutDoesNotWaitForARefresh();
 	void storedSessionStaysWithItsOrigin();
 	void onlyWebAddressesAreReached();
 	void oversizedJsonIsRefused();
@@ -1149,6 +1151,47 @@ void TestApi::logoutWipes() {
 	QCOMPARE(server.count("/v1/auth/logout"), 1);
 }
 
+void TestApi::logoutDoesNotWaitForARefresh() {
+	auto server = HttpServer();
+	auto dead = false;
+	auto generation = 1;
+	server.handler = [&](const HttpServer::Request &request) {
+		if (request.path == "/v1/auth/otp/verify") {
+			return HttpServer::Response::Ok(TokensDocument(1, 30)); // about to expire
+		} else if (request.path == "/v1/auth/token/refresh") {
+			if (!dead) {
+				return HttpServer::Response::Ok(TokensDocument(++generation, 30));
+			}
+			auto response = HttpServer::Response();
+			response.hang = true; // a dead network
+			return response;
+		}
+		return HttpServer::Response::Ok();
+	};
+	auto account = Main::Account(accountConfig(server, u"logout-dead"_s));
+	account.start();
+	auto outcome = std::optional<Api::VerifyOutcome>();
+	account.auth().verifyCode(u"ch"_s, u"1"_s, false, this, [&](const Api::VerifyOutcome &value) { outcome = value; }, nullptr);
+	QVERIFY(Test::WaitFor([&] { return outcome.has_value(); }));
+	QVERIFY(account.signedIn());
+	Test::Settle(200);
+	dead = true;
+	const auto logouts = server.count("/v1/auth/logout");
+	auto ended = 0;
+	connect(&account, &Main::Account::sessionEnded, this, [&] { ++ended; });
+	auto timer = QElapsedTimer();
+	timer.start();
+	auto done = 0;
+	account.logout(this, [&] { ++done; });
+	QVERIFY(Test::WaitFor([&] { return done > 0; }, 9000));
+	QVERIFY(timer.elapsed() < 8000);
+	QVERIFY(!account.signedIn());
+	QCOMPARE(server.count("/v1/auth/logout"), logouts); // never got its token
+	Test::Settle(100);
+	QCOMPARE(done, 1);
+	QCOMPARE(ended, 1);
+}
+
 void TestApi::storedSessionStaysWithItsOrigin() {
 	QCOMPARE(Main::Tokens::OriginOf(u"https://API.eleza.me/"_s), u"https://api.eleza.me:443"_s);
 	QCOMPARE(Main::Tokens::OriginOf(u"http://127.0.0.1:8000/x"_s), u"http://127.0.0.1:8000"_s);
@@ -1205,6 +1248,7 @@ void TestApi::storedSessionStaysWithItsOrigin() {
 	// A session stored before the origin was kept belongs to the default API.
 	const auto workdir = _dir.path() + u"/origin-legacy"_s;
 	base::platform::EnsureDirectory(workdir + u"/account"_s, true);
+	QVERIFY(Storage::SecureBlob(workdir + u"/account/device.key"_s).write(Crypto::DeviceKey::Generate().privateKey()));
 	auto legacy = Main::Tokens::FromJson(TokensDocument(1, 600));
 	legacy.refresh = u"refresh-legacy"_s;
 	legacy.userId = u"u_me"_s;
@@ -1213,7 +1257,6 @@ void TestApi::storedSessionStaysWithItsOrigin() {
 	QVERIFY(Storage::SecureBlob(workdir + u"/account/session.bin"_s).write(QJsonDocument(json).toJson()));
 	{
 		auto config = accountConfig(home, u"origin-legacy"_s);
-	QVERIFY(Storage::SecureBlob(workdir + u"/account/device.key"_s).write(Crypto::DeviceKey::Generate().privateKey()));
 		auto account = Main::Account(config);
 		QVERIFY(!account.signedIn());
 	}
