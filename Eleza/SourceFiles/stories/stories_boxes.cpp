@@ -193,7 +193,9 @@ public:
 		return tr::lng_stories_viewers(tr::now);
 	}
 	QString emptyText() const override {
-		return tr::lng_stories_viewers_none(tr::now);
+		return _failed
+			? tr::lng_error_load(tr::now)
+			: tr::lng_stories_viewers_none(tr::now);
 	}
 	void prepare() override {
 		delegate()->setLoading(true);
@@ -237,6 +239,9 @@ private:
 			},
 			[=, this](const Api::Error &) {
 				_loading = false;
+				if (first) {
+					_failed = true; // not «no one has seen it»
+				}
 				delegate()->setLoading(false);
 			});
 	}
@@ -244,6 +249,7 @@ private:
 	QString _storyId;
 	QString _cursor;
 	bool _loading = false;
+	bool _failed = false;
 
 };
 
