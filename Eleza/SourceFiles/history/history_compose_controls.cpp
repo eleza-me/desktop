@@ -422,6 +422,7 @@ void ComposeControls::setFieldText(
 	_settingText = true;
 	_spoilers = NormalizeEntities(text, entities);
 	_mentions.clear();
+	_keptEntities.clear();
 	hideMentions();
 	_text = text;
 	_field->setText(text);
@@ -438,6 +439,7 @@ void ComposeControls::fieldChanged() {
 	if (!_settingText) {
 		_spoilers = AdjustEntities(_spoilers, _text, now, _changeHint);
 		_mentions = AdjustEntities(_mentions, _text, now, _changeHint);
+		_keptEntities = AdjustEntities(_keptEntities, _text, now, _changeHint);
 	}
 	const auto was = _text;
 	_text = now;
@@ -830,6 +832,17 @@ void ComposeControls::editMessage(const Data::Message &message) {
 	_editSaving = false;
 	_previewDismissed = message.linkPreview ? QString() : u"*"_s;
 	setFieldText(message.text, SpoilersOf(message.entities));
+	// The edit replaces every entity: the mentions and the formatting the
+	// message has go along with the text.
+	for (auto entity : NormalizeEntities(message.text, message.entities)) {
+		if (entity.type == u"mention") {
+			entity.url = _text.mid(entity.offset, entity.length);
+			_mentions.push_back(std::move(entity));
+		} else if (entity.type != u"spoiler") {
+			_keptEntities.push_back(std::move(entity));
+		}
+	}
+	applySpoilerMarks();
 	setMode(Mode::Edit);
 	_field->setFocusFast();
 	_field->setCursorToEnd();
@@ -1046,7 +1059,7 @@ void ComposeControls::saveEdit() {
 	const auto config = _session->data().clientConfig();
 	const auto prepared = PrepareForSend(
 		_text,
-		_spoilers,
+		WithKeptEntities(entitiesToSend(), _keptEntities),
 		config ? config->maxEntities() : 0);
 	const auto limit = config
 		? ((_target.kind == Data::MessageKind::Text)
@@ -1064,20 +1077,26 @@ void ComposeControls::saveEdit() {
 	const auto hadPreview = _target.linkPreview
 		? _target.linkPreview->url
 		: QString();
-	const auto sameSpoilers = [&] {
-		const auto was = NormalizeEntities(_target.text, SpoilersOf(_target.entities));
+	const auto sameEntities = [&] {
+		const auto was = NormalizeEntities(_target.text, _target.entities);
 		if (was.size() != prepared.entities.size()) {
 			return false;
 		}
 		for (auto i = 0; i != int(was.size()); ++i) {
-			if (was[i].offset != prepared.entities[i].offset
-				|| was[i].length != prepared.entities[i].length) {
+			const auto &a = was[i];
+			const auto &b = prepared.entities[i];
+			if (a.type != b.type
+				|| a.offset != b.offset
+				|| a.length != b.length
+				|| a.url != b.url
+				|| a.user != b.user
+				|| a.language != b.language) {
 				return false;
 			}
 		}
 		return true;
 	}();
-	if (prepared.text == _target.text && sameSpoilers && previewUrl == hadPreview) {
+	if (prepared.text == _target.text && sameEntities && previewUrl == hadPreview) {
 		cancelMode();
 		return;
 	}

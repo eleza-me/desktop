@@ -64,6 +64,14 @@ struct TextEdit {
 	int from,
 	int till);
 
+// An edit replaces every entity of a message. The composer marks spoilers
+// and mentions itself; the other entities the message came with (bold,
+// links, code...) go along with the text: each of `kept` joins `entities`
+// where it overlaps none of them (the server takes no overlapping ranges).
+[[nodiscard]] QVector<Data::Entity> WithKeptEntities(
+	QVector<Data::Entity> entities,
+	const QVector<Data::Entity> &kept);
+
 // ---- sending
 
 struct PreparedText {

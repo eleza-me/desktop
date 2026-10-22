@@ -312,6 +312,8 @@ private:
 	// Picked members: type "mention", `user` = the person, `url` = the name
 	// as it was written (a range that no longer reads so is dropped).
 	QVector<Data::Entity> _mentions;
+	// The other entities of the message being edited (WithKeptEntities).
+	QVector<Data::Entity> _keptEntities;
 	MentionsDropdown *_mentionsBox = nullptr;
 	QWidget *_panelParent = nullptr;
 	QString _mentionShownFor; // "<at>:<text>" of the query the list answers
