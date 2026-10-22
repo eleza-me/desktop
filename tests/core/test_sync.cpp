@@ -240,6 +240,7 @@ private Q_SLOTS:
 	void differenceItemsWithoutPayload();
 	void removedChatGoes();
 	void differencePlayedItem();
+	void patchesReachTheCache();
 
 };
 
@@ -1258,6 +1259,71 @@ void TestSync::differencePlayedItem() {
 	harness.transport.emitFrame(Signal(Type::Resumed));
 	QCOMPARE(harness.sync().pts().value_or(-1), 102);
 	QVERIFY(messages.find(u"c1"_s, 8)->played);
+}
+
+// A played mark, a reaction or the peer's read mark for a message that is
+// cached reaches its cached copy also when the message is not in memory,
+// or when the timeline in memory is only the cache's (no page from the
+// server yet): the chat opened later shows them. Nothing is added to the
+// cache.
+void TestSync::patchesReachTheCache() {
+	auto dir = QTemporaryDir();
+	QVERIFY(dir.isValid());
+	const auto path = dir.filePath(u"a.db"_s);
+	QVERIFY(CacheC1(path));
+	auto harness = Harness(path);
+	QVERIFY(harness.start());
+	harness.transport.setOnline(true);
+	harness.transport.emitFrame(Hello(100));
+	auto &messages = harness.messages();
+	QVERIFY(!messages.held(u"c1"_s));
+	QVERIFY(CachedMessage(harness, u"c1"_s, 8)->status == MessageStatus::Sent);
+
+	// Not in memory.
+	harness.transport.emitFrame(Update(101, u"played"_s, { { u"chat"_s, u"c1"_s }, { u"seq"_s, 6 } }));
+	harness.transport.emitFrame(Update(102, u"read"_s, {
+		{ u"chat"_s, u"c1"_s },
+		{ u"seq"_s, 8 },
+		{ u"reader"_s, u"u_sara"_s },
+	}));
+	harness.transport.emitFrame(Update(103, u"played"_s, { { u"chat"_s, u"c1"_s }, { u"seq"_s, 50 } }));
+	QVERIFY(CachedMessage(harness, u"c1"_s, 6)->played);
+	QCOMPARE(CachedSeqs(harness, u"c1"_s), Seqs(1, 9));
+
+	// Opened from the cache: as they are now.
+	auto count = -1;
+	messages.loadCached(u"c1"_s, base::Guard(), [&](int loaded) { count = loaded; });
+	QVERIFY(Test::WaitFor([&] { return count >= 0; }));
+	QCOMPARE(count, 9);
+	QVERIFY(!messages.history(u"c1"_s).loaded);
+	QVERIFY(messages.find(u"c1"_s, 6)->played);
+	QVERIFY(messages.find(u"c1"_s, 8)->status == MessageStatus::Read);
+	QVERIFY(messages.find(u"c1"_s, 2)->status == MessageStatus::Read);
+
+	// In memory, but only the cache's copies: those change too.
+	harness.transport.emitFrame(Update(104, u"played"_s, { { u"chat"_s, u"c1"_s }, { u"seq"_s, 7 } }));
+	QVERIFY(messages.find(u"c1"_s, 7)->played);
+	QVERIFY(CachedMessage(harness, u"c1"_s, 7)->played);
+	auto reacted = MessageJson(u"c1"_s, 5, u"u_sara"_s, u"5"_s);
+	reacted.insert(u"reactions"_s, QJsonObject{ { u"🔥"_s, 1 } });
+	harness.on(u"chat.history"_s, [=](const Call &) {
+		return Reply::Ok(QJsonObject{
+			{ u"chat"_s, Test::Fixture("history_c1.json").value("chat"_L1).toObject() },
+			{ u"messages"_s, QJsonArray{ reacted } },
+			{ u"has_more_before"_s, true },
+		});
+	});
+	harness.transport.emitFrame(Update(105, u"reaction"_s, {
+		{ u"chat"_s, u"c1"_s },
+		{ u"seq"_s, 5 },
+		{ u"by"_s, u"u_sara"_s },
+		{ u"emoji"_s, u"🔥"_s },
+	}));
+	QVERIFY(Test::WaitFor([&] { return messages.find(u"c1"_s, 5)->reactions.contains(u"🔥"_s); }));
+	const auto five = CachedMessage(harness, u"c1"_s, 5);
+	QVERIFY(five.has_value());
+	QCOMPARE(five->reactions, (QMap<QString, qint64>{ { u"🔥"_s, 1 } }));
+	QCOMPARE(CachedSeqs(harness, u"c1"_s), Seqs(1, 9));
 }
 
 QTEST_GUILESS_MAIN(TestSync)

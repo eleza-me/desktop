@@ -452,6 +452,25 @@ void Database::replaceMessages(const QVector<MessageRow> &messages) {
 	});
 }
 
+void Database::changeMessage(
+		const QString &chat,
+		qint64 seq,
+		Fn<bool(QJsonObject &data)> change) {
+	if (seq <= 0 || !change) {
+		return;
+	}
+	post([chat, seq, change = std::move(change)](details::DatabaseWorker &worker) {
+		auto rows = worker.rows(
+			u"SELECT data FROM messages WHERE chat = ? AND seq = ?"_s,
+			{ chat, seq });
+		if (!rows.isEmpty() && change(rows.front())) {
+			worker.exec(
+				u"UPDATE messages SET data = ? WHERE chat = ? AND seq = ?"_s,
+				{ Serialize(rows.front()), chat, seq });
+		}
+	});
+}
+
 void Database::dropDetachedMessages(const QString &chat, qint64 firstSeq) {
 	post([chat, firstSeq](details::DatabaseWorker &worker) {
 		if (worker.ready()) {

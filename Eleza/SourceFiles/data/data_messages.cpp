@@ -309,19 +309,63 @@ void Messages::patchMessage(
 		const QString &key,
 		const Fn<void(Message &)> &change) {
 	const auto i = existing(chat);
-	if (!i) {
-		return;
-	}
-	const auto index = i->indexOfKey(key);
+	const auto index = i ? i->indexOfKey(key) : -1;
 	if (index < 0) {
+		// Not in memory (the chat is not open, or the message is older
+		// than the window): the cached copy changes all the same, or the
+		// chat would show it unchanged when it is opened.
+		changeCached(chat, SeqOfKey(key), change);
 		return;
 	}
 	auto &message = i->items[index];
 	change(message);
-	if (message.seq > 0 && i->loaded) {
-		persist(chat, { message });
+	if (message.seq > 0) {
+		storeChanged(*i, { message });
 	}
 	Q_EMIT historyChanged(chat);
+}
+
+void Messages::storeChanged(const History &history, const QVector<Message> &messages) {
+	if (history.loaded) {
+		persist(history.chat, messages);
+	} else {
+		updateCached(history.chat, messages);
+	}
+}
+
+void Messages::changeCached(const QString &chat, qint64 seq, Fn<void(Message &)> change) {
+	const auto db = _session->local();
+	if (!db || seq <= 0) {
+		return;
+	}
+	db->changeMessage(chat, seq, [change = std::move(change)](QJsonObject &data) {
+		auto message = Message::FromStored(data);
+		change(message);
+		data = message.toStored();
+		return true;
+	});
+}
+
+qint64 Messages::peerReadSeq(const QString &chat) const {
+	auto result = qint64(0);
+	if (const auto row = _session->chats().chat(chat)) {
+		result = std::max(row->peerReadSeq, row->info.peerReadSeq);
+	}
+	if (const auto i = _histories.find(chat); i != _histories.end() && i->second.info) {
+		result = std::max(result, i->second.info->peerReadSeq);
+	}
+	return result;
+}
+
+Message Messages::FromCache(const QJsonObject &row, qint64 peerReadSeq) {
+	auto result = Message::FromStored(row);
+	if (result.mine
+		&& result.seq > 0
+		&& result.seq <= peerReadSeq
+		&& result.status == MessageStatus::Sent) {
+		result.status = MessageStatus::Read;
+	}
+	return result;
 }
 
 void Messages::removeMessage(const QString &chat, const QString &key) {
@@ -405,9 +449,7 @@ void Messages::markPeerRead(const QString &chat, qint64 seq) {
 		}
 	}
 	if (!changed.isEmpty()) {
-		if (i->loaded) {
-			persist(chat, changed);
-		}
+		storeChanged(*i, changed);
 		Q_EMIT historyChanged(chat);
 	}
 }
@@ -487,7 +529,7 @@ bool Messages::applyReactions(
 	if (!find(chat, seq)) {
 		return false;
 	}
-	patchMessage(chat, Message::KeyForSeq(seq), [&](Message &message) {
+	patchMessage(chat, Message::KeyForSeq(seq), [reactions](Message &message) {
 		message.reactions = reactions;
 		for (auto i = message.reactions.begin(); i != message.reactions.end();) {
 			i = (i.value() <= 0) ? message.reactions.erase(i) : std::next(i);
@@ -502,7 +544,7 @@ bool Messages::applyReactions(
 }
 
 void Messages::setMyReaction(const QString &chat, qint64 seq, const QString &emoji) {
-	patchMessage(chat, Message::KeyForSeq(seq), [&](Message &message) {
+	patchMessage(chat, Message::KeyForSeq(seq), [emoji](Message &message) {
 		message.myReaction = emoji;
 	});
 }
@@ -530,8 +572,9 @@ void Messages::loadCached(const QString &chat, base::Guard guard, Fn<void(int)> 
 		auto list = QVector<Message>();
 		list.reserve(rows.size());
 		auto outdated = QVector<qint64>();
+		const auto read = peerReadSeq(chat);
 		for (const auto &row : rows) {
-			auto message = Message::FromStored(row);
+			auto message = FromCache(row, read);
 			if (StoredWithoutStory(message)) {
 				// Cached by a build that did not keep the story reference.
 				outdated.push_back(message.seq);
@@ -762,8 +805,9 @@ void Messages::loadOlder(
 	}
 	db->messages(chat, kCachedPageSize, before, this, [=, this](QVector<QJsonObject> rows) {
 		auto list = QVector<Message>();
+		const auto read = peerReadSeq(chat);
 		for (const auto &row : rows) {
-			auto message = Message::FromStored(row);
+			auto message = FromCache(row, read);
 			if (message.visible()) {
 				list.push_back(std::move(message));
 			}
@@ -916,7 +960,11 @@ void Messages::refresh(const QString &chat, qint64 seq) {
 	loadPage(chat, options, [=, this](const Page &page) {
 		for (const auto &message : page.messages) {
 			if (message.seq == seq && find(chat, seq)) {
-				merge(chat, { message }, historyRef(chat).loaded);
+				const auto &history = historyRef(chat);
+				merge(chat, { message }, history.loaded);
+				if (!history.loaded) {
+					updateCached(chat, { message });
+				}
 			}
 		}
 	}, [](const Api::Error &) {
@@ -993,7 +1041,7 @@ void Messages::markRead(const QString &chat, qint64 seq) {
 
 void Messages::react(const QString &chat, qint64 seq, const QString &emoji) {
 	const auto key = Message::KeyForSeq(seq);
-	patchMessage(chat, key, [&](Message &message) {
+	patchMessage(chat, key, [emoji](Message &message) {
 		if (!message.myReaction.isEmpty()) {
 			const auto left = message.reactions.value(message.myReaction) - 1;
 			if (left > 0) {
@@ -1041,7 +1089,7 @@ void Messages::edit(
 		.guard(this)
 		.done([=, this] {
 			// The `edited` update brings the server's copy; show ours meanwhile.
-			patchMessage(chat, Message::KeyForSeq(seq), [&](Message &message) {
+			patchMessage(chat, Message::KeyForSeq(seq), [=](Message &message) {
 				message.text = text;
 				message.entities = entities;
 				message.edited = true;
@@ -1084,7 +1132,7 @@ void Messages::editWithPreview(
 		.guard(this)
 		.done([=, this] {
 			// The `edited` update brings the server's copy; show ours meanwhile.
-			patchMessage(chat, Message::KeyForSeq(seq), [&](Message &message) {
+			patchMessage(chat, Message::KeyForSeq(seq), [=](Message &message) {
 				message.text = text;
 				message.entities = entities;
 				message.edited = true;
