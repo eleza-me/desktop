@@ -330,12 +330,7 @@ void Sync::applyLive(
 			});
 		}
 	} else if (kind == u"played") {
-		const auto seq = Json::Int64(d, "seq"_L1);
-		if (!chat.isEmpty() && seq > 0) {
-			messages.patchMessage(chat, Message::KeyForSeq(seq), [](Message &message) {
-				message.played = true;
-			});
-		}
+		applyPlayed(chat, Json::Int64(d, "seq"_L1));
 	} else if (kind == u"draft") {
 		// A draft typed here that the server has not confirmed yet is newer
 		// than what it tells (the echo of an earlier save, say).
@@ -505,6 +500,16 @@ void Sync::applyRemoved(const QString &chat) {
 	_session->chats().remove(chat);
 }
 
+// A voice or round message was played: by me on another device, or by
+// the peer (one of mine).
+void Sync::applyPlayed(const QString &chat, qint64 seq) {
+	if (!chat.isEmpty() && seq > 0) {
+		_session->messages().patchMessage(chat, Message::KeyForSeq(seq), [](Message &message) {
+			message.played = true;
+		});
+	}
+}
+
 void Sync::applyMessage(Message message, bool live) {
 	if (message.chat.isEmpty()) {
 		return;
@@ -650,6 +655,8 @@ void Sync::applyItem(const QJsonObject &item, bool live) {
 		if (seq > 0) {
 			applyCleared(chat, seq, true);
 		}
+	} else if (kind == u"played") {
+		applyPlayed(chat, seq);
 	} else if (kind == u"member") {
 		if (seq > 0) {
 			// One message deleted for me.

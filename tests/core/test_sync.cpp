@@ -239,6 +239,7 @@ private Q_SLOTS:
 	void changesOutsideTheWindowReachTheCache();
 	void differenceItemsWithoutPayload();
 	void removedChatGoes();
+	void differencePlayedItem();
 
 };
 
@@ -1217,6 +1218,46 @@ void TestSync::removedChatGoes() {
 	QCOMPARE(harness.sync().pts().value_or(-1), 103);
 	QVERIFY(chats.chat(u"c2"_s) == nullptr);
 	QCOMPARE(gone.size(), 2);
+}
+
+// A voice or round message played on another device (or one of mine
+// played by the peer) comes in a difference, and in a replay, as a bare
+// "played" item: its seq says which message it is.
+void TestSync::differencePlayedItem() {
+	auto harness = Harness();
+	QVERIFY(Connect(harness, 100));
+	auto &messages = harness.messages();
+	QVERIFY(!messages.find(u"c1"_s, 6)->played);
+	QVERIFY(!messages.find(u"c1"_s, 8)->played);
+	const auto played = [](qint64 pts, qint64 seq) {
+		return QJsonObject{
+			{ u"pts"_s, QString::number(pts) },
+			{ u"kind"_s, u"played"_s },
+			{ u"chat"_s, u"c1"_s },
+			{ u"seq"_s, QString::number(seq) },
+			{ u"chat_info"_s, Test::Fixture("history_c1.json").value("chat"_L1).toObject() },
+		};
+	};
+	harness.on(u"sync.difference"_s, [&](const Call &call) {
+		return Reply::Ok((call.body.value("pts"_L1).toString() == u"100")
+			? Difference(101, QJsonArray{ played(101, 6) })
+			: Difference(101, QJsonArray()));
+	});
+	harness.sync().catchUp();
+	QVERIFY(Test::WaitFor([&] { return !harness.sync().updating(); }));
+	QCOMPARE(harness.sync().pts().value_or(-1), 101);
+	QVERIFY(messages.find(u"c1"_s, 6)->played);
+
+	harness.transport.emitFrame(Hello(102, true));
+	auto frame = Rt::Frame();
+	frame.type = Type::Replayed;
+	frame.pts = 102;
+	frame.kind = u"played"_s;
+	frame.data = played(102, 8);
+	harness.transport.emitFrame(frame);
+	harness.transport.emitFrame(Signal(Type::Resumed));
+	QCOMPARE(harness.sync().pts().value_or(-1), 102);
+	QVERIFY(messages.find(u"c1"_s, 8)->played);
 }
 
 QTEST_GUILESS_MAIN(TestSync)

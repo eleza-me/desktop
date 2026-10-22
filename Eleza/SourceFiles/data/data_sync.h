@@ -82,6 +82,7 @@ private:
 	void applyMessage(Message message, bool live);
 	void applyCleared(const QString &chat, qint64 clearedTo, bool all);
 	void applyHidden(const QString &chat, qint64 seq);
+	void applyPlayed(const QString &chat, qint64 seq);
 	void applyRemoved(const QString &chat);
 	void rememberInfo(const ChatInfo &info);
 	void reloadInboxSoon();
