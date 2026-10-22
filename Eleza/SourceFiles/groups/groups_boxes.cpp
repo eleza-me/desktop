@@ -744,7 +744,25 @@ void ShowEditBox(
 		box->setTitle(tr::lng_groups_edit(tr::now));
 		// nullopt: the photo is not touched; "": removed; else a new media id.
 		const auto photo = std::make_shared<std::optional<QString>>();
-		const auto uploading = std::make_shared<bool>(false);
+		// The upload of the picked photo: a newer pick or «remove» makes
+		// the older one's answer stale; «save» meanwhile waits for it.
+		struct PhotoUpload {
+			int generation = 0;
+			Data::Upload::Id id = 0;
+			bool uploading = false;
+			bool saveAfter = false;
+		};
+		const auto upload = std::make_shared<PhotoUpload>();
+		const auto save = std::make_shared<Fn<void()>>();
+		const auto saveFailed = std::make_shared<Fn<void()>>();
+		const auto cancelUpload = [=] {
+			++upload->generation;
+			if (upload->id) {
+				session->data().upload().cancel(upload->id);
+				upload->id = 0;
+			}
+			upload->uploading = false;
+		};
 		const auto userpic = box->addRow(
 			Ui::object_ptr<Ui::UserpicWidget>(box, st::groupsInviteUserpic),
 			st::groupsInvitePadding,
@@ -761,10 +779,22 @@ void ShowEditBox(
 			}, [=](const QImage &square) {
 				userpic->setSource(nullptr);
 				userpic->setImage(square);
-				*uploading = true;
+				cancelUpload();
+				upload->uploading = true;
+				const auto generation = upload->generation;
+				const auto failed = [=] {
+					upload->id = 0;
+					upload->uploading = false;
+					if (upload->saveAfter) {
+						upload->saveAfter = false;
+						(*saveFailed)();
+					}
+				};
 				Boxes::SaveCroppedPhoto(square, box, [=](const QString &path) {
-					if (path.isEmpty()) {
-						*uploading = false;
+					if (generation != upload->generation) {
+						return;
+					} else if (path.isEmpty()) {
+						failed();
 						return;
 					}
 					auto request = Data::UploadRequest();
@@ -773,14 +803,25 @@ void ShowEditBox(
 					request.purpose = Data::UploadPurpose::Chat;
 					auto callbacks = Data::UploadCallbacks();
 					callbacks.done = [=](const Data::UploadResult &result) {
-						*uploading = false;
+						if (generation != upload->generation) {
+							return;
+						}
+						upload->id = 0;
+						upload->uploading = false;
 						*photo = result.mediaId;
+						if (upload->saveAfter) {
+							upload->saveAfter = false;
+							(*save)();
+						}
 					};
 					callbacks.fail = [=](const Api::Error &error) {
-						*uploading = false;
+						if (generation != upload->generation) {
+							return;
+						}
+						failed();
 						Support::ShowError(controller, error);
 					};
-					session->data().upload().start(
+					upload->id = session->data().upload().start(
 						request,
 						base::Guard(box),
 						std::move(callbacks));
@@ -806,6 +847,11 @@ void ShowEditBox(
 				st::boxRowPadding,
 				style::al_top);
 			remove->setClickedCallback([=] {
+				cancelUpload();
+				if (upload->saveAfter) {
+					upload->saveAfter = false;
+					(*saveFailed)();
+				}
 				*photo = QString();
 				userpic->setSource(nullptr);
 				userpic->setImage(QImage());
@@ -831,13 +877,19 @@ void ShowEditBox(
 			tr::lng_groups_save(tr::now),
 			nullptr,
 			st::defaultRoundButton);
-		const auto save = [=] {
-			if (*saving || *uploading) {
+		*saveFailed = [=] { submit->setLoading(false); };
+		*save = [=] {
+			if (*saving || upload->saveAfter) {
 				return;
 			}
 			const auto title = Data::GroupRules::CleanTitle(name->text());
 			if (!Data::GroupRules::TitleOk(title, titleMax)) {
+				submit->setLoading(false);
 				name->showError();
+				return;
+			} else if (upload->uploading) {
+				upload->saveAfter = true;
+				submit->setLoading(true);
 				return;
 			}
 			const auto newAbout = about->text().trimmed();
@@ -868,8 +920,10 @@ void ShowEditBox(
 					submit->setLoading(false);
 				}));
 		};
-		submit->setClickedCallback(save);
-		QObject::connect(name, &Ui::InputField::submitted, box, save);
+		submit->setClickedCallback([=] { (*save)(); });
+		QObject::connect(name, &Ui::InputField::submitted, box, [=] {
+			(*save)();
+		});
 		box->addButton(tr::lng_cancel(tr::now), [=] { box->closeBox(); });
 	}));
 }
