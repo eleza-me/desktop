@@ -1357,7 +1357,14 @@ void ShowMemberMenu(
 			danger(tr::lng_groups_remove(tr::now), remove, &st::menuIconDelete);
 		}
 	} else {
-		const auto promote = Rights::CanPromote(me, target, 0, store.maxAdmins());
+		// admin_count counts the owner too, the limit only the admins;
+		// 0: not known, the server answers too_many_admins then.
+		const auto admins = std::max(header->adminCount - 1, 0);
+		const auto promote = Rights::CanPromote(
+			me,
+			target,
+			admins,
+			store.maxAdmins());
 		const auto editAdmin = Rights::CanEditAdmin(me, target);
 		const auto restrict = Rights::CanRestrict(me, target);
 		const auto ban = Rights::CanBan(me, target);
