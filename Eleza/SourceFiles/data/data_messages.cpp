@@ -28,6 +28,13 @@ namespace {
 	return IsGroupId(chat) ? u"group"_s : u"chat"_s;
 }
 
+// The seq that the key of a server message names (Message::KeyForSeq), or 0.
+[[nodiscard]] qint64 SeqOfKey(const QString &key) {
+	auto ok = false;
+	const auto seq = key.mid(key.lastIndexOf(u':') + 1).toLongLong(&ok);
+	return (ok && seq > 0 && Message::KeyForSeq(seq) == key) ? seq : 0;
+}
+
 } // namespace
 
 qint64 History::firstSeq() const {
@@ -302,6 +309,13 @@ void Messages::patchMessage(
 }
 
 void Messages::removeMessage(const QString &chat, const QString &key) {
+	// Out of the cache as well, also when it is not in the window: an old
+	// message deleted while it was not shown must not come back from it.
+	if (const auto seq = SeqOfKey(key)) {
+		if (const auto db = _session->local()) {
+			db->deleteMessage(chat, seq);
+		}
+	}
 	const auto i = existing(chat);
 	if (!i) {
 		return;
@@ -310,14 +324,22 @@ void Messages::removeMessage(const QString &chat, const QString &key) {
 	if (index < 0) {
 		return;
 	}
-	const auto seq = i->items[index].seq;
 	i->items.removeAt(index);
-	if (seq > 0) {
-		if (const auto db = _session->local()) {
-			db->deleteMessage(chat, seq);
+	Q_EMIT historyChanged(chat);
+}
+
+void Messages::updateCached(const QString &chat, const QVector<Message> &messages) {
+	const auto db = _session->local();
+	if (!db) {
+		return;
+	}
+	auto rows = QVector<Storage::Database::MessageRow>();
+	for (const auto &message : messages) {
+		if (message.seq > 0) {
+			rows.push_back({ chat, message.seq, message.toStored() });
 		}
 	}
-	Q_EMIT historyChanged(chat);
+	db->replaceMessages(rows);
 }
 
 void Messages::clear(const QString &chat, std::optional<qint64> beforeSeq) {

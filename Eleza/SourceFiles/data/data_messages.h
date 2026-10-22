@@ -189,6 +189,9 @@ public:
 	void addLocal(const Message &message);
 	void patchMessage(const QString &chat, const QString &key, const Fn<void(Message &)> &change);
 	void removeMessage(const QString &chat, const QString &key);
+	// Brings the cached copies of these messages up to date (an old message
+	// edited outside the window); one that is not cached stays out.
+	void updateCached(const QString &chat, const QVector<Message> &messages);
 	// Drops messages with seq < beforeSeq (all server messages when nullopt).
 	void clear(const QString &chat, std::optional<qint64> beforeSeq = std::nullopt);
 	// The peer read up to `seq`: my messages up to it become Read.

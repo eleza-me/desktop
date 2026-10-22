@@ -83,6 +83,8 @@ public:
 	// everything cached of their chat (in the order given); a row that is
 	// neither is left out, so the cache stays one run without islands.
 	void mergeMessages(const QVector<MessageRow> &messages);
+	// Replaces only the rows that are cached; the others are left out.
+	void replaceMessages(const QVector<MessageRow> &messages);
 	void deleteMessage(const QString &chat, qint64 seq);
 	// Removes messages with seq < beforeSeq, or all of the chat's when nullopt.
 	void clearMessages(const QString &chat, std::optional<qint64> beforeSeq = std::nullopt);

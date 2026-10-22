@@ -497,14 +497,25 @@ void Sync::applyMessage(Message message, bool live) {
 	}
 	message.resolveLocal(info, _session->userId());
 	const auto mine = message.mine;
-	// Only a timeline that reaches the newest message takes it (anything
-	// else would show a hole between its run and this message); my own echo
-	// always replaces its pending copy.
+	// A timeline takes what lies inside its window and, when it reaches the
+	// newest message, what extends it (anything else would show a hole
+	// between its run and this message); my own echo always replaces its
+	// pending copy. The cache follows a timeline that reaches the newest
+	// message; anywhere else only a copy it holds is brought up to date (an
+	// old message edited), so it never gets an island either.
 	const auto echo = !message.clientMessageId.isEmpty()
 		&& history.indexOfKey(Message::KeyForLocal(message.clientMessageId)) >= 0;
-	const auto inWindow = history.find(message.seq) != nullptr;
-	if ((history.loaded && !history.hasMoreAfter) || echo || inWindow) {
-		messages.merge(chatId, { message }, history.loaded && !history.hasMoreAfter);
+	const auto attached = history.loaded && !history.hasMoreAfter;
+	const auto first = history.firstSeq();
+	const auto last = history.lastSeq();
+	const auto inside = (first > 0) && (message.seq >= first) && (message.seq <= last);
+	const auto extends = attached && (first == 0 || message.seq > last);
+	const auto cached = attached && (inside || extends || echo);
+	if (inside || extends || echo) {
+		messages.merge(chatId, { message }, cached);
+	}
+	if (!cached) {
+		messages.updateCached(chatId, { message });
 	}
 	if (const auto current = chats.chat(chatId)) {
 		const auto isNew = message.seq > current->lastSeq;

@@ -169,6 +169,28 @@ namespace {
 	return result;
 }
 
+// The database's copy of one message.
+[[nodiscard]] std::optional<Message> CachedMessage(
+		const Harness &harness,
+		const QString &chat,
+		qint64 seq) {
+	auto result = std::optional<Message>();
+	auto done = false;
+	harness.database->messages(chat, 1, seq + 1, base::Guard(), [&](QVector<QJsonObject> rows) {
+		if (!rows.isEmpty()) {
+			auto message = Message::FromStored(rows.front());
+			if (message.seq == seq) {
+				result = std::move(message);
+			}
+		}
+		done = true;
+	});
+	const auto read = Test::WaitFor([&] { return done; });
+	Q_ASSERT(read);
+	Q_UNUSED(read);
+	return result;
+}
+
 // Opens c1 as the chat screen does: the cache first, then the newest page.
 [[nodiscard]] bool OpenC1(Harness &harness) {
 	auto cached = false;
@@ -214,6 +236,7 @@ private Q_SLOTS:
 	void offlineStartReadsStateAtOnce();
 	void newestPageAttachesToTheCache();
 	void windowReachingTheEndIsCached();
+	void changesOutsideTheWindowReachTheCache();
 
 };
 
@@ -989,6 +1012,64 @@ void TestSync::windowReachingTheEndIsCached() {
 		QCOMPARE(added, 5);
 		QVERIFY(harness.messages().live(u"c1"_s));
 		QCOMPARE(CachedSeqs(harness, u"c1"_s), Seqs(75, 130));
+	}
+}
+
+// An edit or a deletion of a message that is cached but not in the window
+// (the chat is not open, or the message is older than what is shown)
+// changes the cached copy; a new message for a timeline that does not reach
+// the end is not cached, and an old one does not join the window.
+void TestSync::changesOutsideTheWindowReachTheCache() {
+	auto dir = QTemporaryDir();
+	QVERIFY(dir.isValid());
+	const auto path = dir.filePath(u"a.db"_s);
+	QVERIFY(CacheC1(path));
+	const auto edited = [](qint64 seq) {
+		auto result = MessageJson(u"c1"_s, seq, u"u_sara"_s, u"ویرایش شد"_s);
+		result.insert(u"edited"_s, true);
+		return result;
+	};
+	{
+		auto harness = Harness(path);
+		QVERIFY(harness.start());
+		harness.transport.setOnline(true);
+		harness.transport.emitFrame(Hello(100));
+		QVERIFY(!harness.messages().held(u"c1"_s));
+		harness.transport.emitFrame(Update(101, u"edited"_s, edited(7)));
+		auto deleted = MessageJson(u"c1"_s, 8, u"u_sara"_s, QString());
+		deleted.insert(u"deleted"_s, true);
+		harness.transport.emitFrame(Update(102, u"deleted"_s, deleted));
+		harness.transport.emitFrame(Update(103, u"message"_s, MessageJson(u"c1"_s, 10, u"u_sara"_s, u"new"_s)));
+		QCOMPARE(CachedSeqs(harness, u"c1"_s), (QVector<qint64>{ 1, 2, 3, 4, 5, 6, 7, 9 }));
+		const auto seven = CachedMessage(harness, u"c1"_s, 7);
+		QVERIFY(seven.has_value());
+		QCOMPARE(seven->text, u"ویرایش شد"_s);
+		QVERIFY(seven->edited);
+		// Opened later, the cache shows them as they are.
+		auto count = -1;
+		harness.messages().loadCached(u"c1"_s, base::Guard(), [&](int loaded) { count = loaded; });
+		QVERIFY(Test::WaitFor([&] { return count >= 0; }));
+		QCOMPARE(harness.messages().find(u"c1"_s, 7)->text, u"ویرایش شد"_s);
+		QVERIFY(harness.messages().find(u"c1"_s, 8) == nullptr);
+	}
+	{
+		// On screen, the newest page shows 5..9 only.
+		auto harness = Harness(path);
+		harness.on(u"chat.history"_s, [](const Call &) {
+			return Reply::Ok(HistoryPage(5, 9, true, 9));
+		});
+		QVERIFY(harness.start());
+		auto loaded = false;
+		harness.messages().loadLatest(u"c1"_s, base::Guard(), [&] { loaded = true; });
+		QVERIFY(Test::WaitFor([&] { return loaded; }));
+		harness.transport.setOnline(true);
+		harness.transport.emitFrame(Hello(103));
+		harness.transport.emitFrame(Update(104, u"edited"_s, edited(2)));
+		QCOMPARE(HeldSeqs(harness, u"c1"_s), Seqs(5, 9));
+		QCOMPARE(CachedMessage(harness, u"c1"_s, 2)->text, u"ویرایش شد"_s);
+		// A message for me alone hidden on another device, outside the window.
+		harness.transport.emitFrame(Update(105, u"member"_s, { { u"chat"_s, u"c1"_s }, { u"hidden_seq"_s, 3 } }));
+		QVERIFY(!CachedMessage(harness, u"c1"_s, 3).has_value());
 	}
 }
 
