@@ -1520,6 +1520,9 @@ private:
 				});
 			},
 			[=, this](const Api::Error &error) {
+				if (generation != _generation) {
+					return;
+				}
 				_loading = false;
 				if (first) {
 					delegate()->setRows({});
@@ -1725,6 +1728,7 @@ private:
 	void reload() {
 		_cursor = QString();
 		_users.clear();
+		++_generation;
 		_loading = false;
 		delegate()->setLoading(true);
 		load(true);
@@ -1734,6 +1738,7 @@ private:
 			return;
 		}
 		_loading = true;
+		const auto generation = _generation;
 		const auto session = this->session();
 		const auto guard = base::Guard(delegate()->peerListBox());
 		session->data().groups().loadJoinRequests(
@@ -1741,11 +1746,17 @@ private:
 			first ? QString() : _cursor,
 			guard,
 			[=, this](const Data::GroupJoinRequestsPage &page) {
+				if (generation != _generation) {
+					return;
+				}
 				auto ids = QStringList();
 				for (const auto &request : page.requests) {
 					ids.push_back(request.user);
 				}
 				session->data().users().ensure(ids, guard, [=, this] {
+					if (generation != _generation) {
+						return;
+					}
 					_loading = false;
 					_cursor = page.nextCursor;
 					auto rows = QVector<Boxes::PeerListRow>();
@@ -1777,6 +1788,9 @@ private:
 				});
 			},
 			[=, this](const Api::Error &error) {
+				if (generation != _generation) {
+					return;
+				}
 				_loading = false;
 				if (first) {
 					delegate()->setRows({});
@@ -1791,6 +1805,7 @@ private:
 	QString _groupId;
 	QString _cursor;
 	QStringList _users;
+	int _generation = 0;
 	bool _loading = false;
 
 };
