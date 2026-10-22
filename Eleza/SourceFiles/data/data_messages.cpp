@@ -157,8 +157,18 @@ void Messages::forget(const QString &chat) {
 }
 
 void Messages::markAllStale() {
-	for (auto &[chat, history] : _histories) {
-		history.loaded = false;
+	auto chats = QStringList();
+	for (const auto &row : _session->chats().all()) {
+		chats.push_back(row.id);
+	}
+	for (const auto &[chat, history] : _histories) {
+		chats.push_back(chat);
+	}
+	chats.removeDuplicates();
+	for (const auto &chat : std::as_const(chats)) {
+		if (!IsGroupId(chat)) {
+			markStale(chat);
+		}
 	}
 }
 
@@ -851,10 +861,11 @@ void Messages::loadNewer(
 		if (!history.hasMoreAfter) {
 			// The window reached the end again: live updates extend it, and
 			// what they cache must continue the cached run, so the window
-			// becomes that run.
+			// becomes that run — all of it, unless what it held before may
+			// be gone (stale): then what was just read.
 			history.loaded = true;
 			dropDetached(chat, history.firstSeq(), !history.hasMoreBefore);
-			persist(chat, history.items);
+			persist(chat, history.stale ? page.messages : history.items);
 		}
 		if (done && guard.alive()) {
 			done(count);

@@ -207,7 +207,11 @@ public:
 	void setInfo(const ChatInfo &info);
 	void applyPin(const QString &chat, qint64 seq, bool pinned);
 	void forget(const QString &chat);
-	// After a `too_long` difference: every timeline must be re-read.
+	// After a `too_long` difference: nothing tells what changed in the gap
+	// (an edit, a deletion or a reaction moves nothing a header shows), so
+	// every chat is stale as below — its cache goes, its timeline is read
+	// again from the end. Groups keep theirs: they have a sync track of
+	// their own (Data::Groups).
 	void markAllStale();
 	// Something changed in the chat that no update spelled out (a history
 	// cleared for me arrives in a difference as a bare "member" item): its

@@ -241,6 +241,7 @@ private Q_SLOTS:
 	void removedChatGoes();
 	void differencePlayedItem();
 	void patchesReachTheCache();
+	void tooLongDropsTheCaches();
 
 };
 
@@ -1324,6 +1325,105 @@ void TestSync::patchesReachTheCache() {
 	QVERIFY(five.has_value());
 	QCOMPARE(five->reactions, (QMap<QString, qint64>{ { u"🔥"_s, 1 } }));
 	QCOMPARE(CachedSeqs(harness, u"c1"_s), Seqs(1, 9));
+}
+
+// After a `too_long` difference nothing tells what changed in the gap: an
+// edit or a deletion moves nothing a header shows. Every chat's cache goes
+// and its timeline is read again from the end — at once for the chat on
+// screen, when it opens for the others — and a window away from the end
+// does not bring what it held back into the cache when it reaches the end.
+void TestSync::tooLongDropsTheCaches() {
+	auto dir = QTemporaryDir();
+	QVERIFY(dir.isValid());
+	const auto path = dir.filePath(u"a.db"_s);
+	QVERIFY(CacheC1(path));
+	auto harness = Harness(path);
+	auto head = qint64(100);
+	harness.on(u"sync.difference"_s, [&](const Call &call) {
+		return (call.body.value("pts"_L1).toString().toLongLong() < head)
+			? Reply::Ok(QJsonObject{ { u"too_long"_s, true }, { u"pts"_s, QString::number(head) } })
+			: Reply::Ok(Difference(head, QJsonArray()));
+	});
+	harness.on(u"sync.state"_s, [&](const Call &) {
+		return Reply::Ok(QJsonObject{ { u"pts"_s, QString::number(head) } });
+	});
+	QVERIFY(harness.start());
+	harness.transport.setOnline(true);
+	harness.transport.emitFrame(Hello(100));
+	QVERIFY(OpenC1(harness));
+	QCOMPARE(HeldSeqs(harness, u"c1"_s), Seqs(1, 9));
+	auto &messages = harness.messages();
+	const auto tooLong = [&](qint64 to) {
+		head = to;
+		harness.transport.emitFrame(Signal(Type::Resync));
+		return Test::WaitFor([&] {
+			return harness.sync().pts().value_or(-1) == to && !harness.sync().updating();
+		});
+	};
+
+	// In the gap 3 was edited and 4 deleted; the newest page (5..9) is one
+	// run with the cache, which must not keep its copies of them.
+	harness.on(u"chat.history"_s, [](const Call &call) {
+		if (!Param(call, "before")) {
+			return Reply::Ok(HistoryPage(5, 9, true, 9));
+		}
+		auto edited = MessageJson(u"c1"_s, 3, u"u_sara"_s, u"ویرایش شد"_s);
+		edited.insert(u"edited"_s, true);
+		return Reply::Ok(QJsonObject{
+			{ u"chat"_s, Test::Fixture("history_c1.json").value("chat"_L1).toObject() },
+			{ u"messages"_s, QJsonArray{
+				edited,
+				MessageJson(u"c1"_s, 2, u"u_sara"_s, u"2"_s),
+				MessageJson(u"c1"_s, 1, u"u_sara"_s, u"1"_s),
+			} },
+			{ u"has_more_before"_s, false },
+		});
+	});
+	const auto pages = harness.transport.count(u"chat.history"_s);
+	QVERIFY(tooLong(500));
+	QVERIFY(CachedSeqs(harness, u"c1"_s).isEmpty());
+	QVERIFY(messages.history(u"c1"_s).stale);
+	QVERIFY(!messages.live(u"c1"_s));
+	Test::Settle();
+	QCOMPARE(harness.transport.count(u"chat.history"_s), pages); // not on screen
+	QVERIFY(OpenC1(harness));
+	QCOMPARE(HeldSeqs(harness, u"c1"_s), Seqs(5, 9));
+	QCOMPARE(CachedSeqs(harness, u"c1"_s), Seqs(5, 9));
+	auto added = -1;
+	messages.loadOlder(u"c1"_s, base::Guard(), [&](int count) { added = count; });
+	QVERIFY(Test::WaitFor([&] { return added >= 0; }));
+	QCOMPARE(HeldSeqs(harness, u"c1"_s), (QVector<qint64>{ 1, 2, 3, 5, 6, 7, 8, 9 }));
+	QCOMPARE(CachedSeqs(harness, u"c1"_s), (QVector<qint64>{ 1, 2, 3, 5, 6, 7, 8, 9 }));
+	QCOMPARE(messages.find(u"c1"_s, 3)->text, u"ویرایش شد"_s);
+
+	// On screen: read again at once.
+	harness.chats().setVisibleChat(u"c1"_s);
+	QVERIFY(messages.live(u"c1"_s));
+	const auto before = harness.transport.count(u"chat.history"_s);
+	QVERIFY(tooLong(600));
+	QVERIFY(Test::WaitFor([&] { return messages.live(u"c1"_s); }));
+	QCOMPARE(harness.transport.count(u"chat.history"_s), before + 1);
+	QCOMPARE(HeldSeqs(harness, u"c1"_s), Seqs(5, 9));
+	QCOMPARE(CachedSeqs(harness, u"c1"_s), Seqs(5, 9));
+
+	// Away from the end (a window around an old message): when it reaches
+	// the end again, only what was read after the gap is cached.
+	harness.on(u"chat.history"_s, [](const Call &call) {
+		return Reply::Ok(Param(call, "after")
+			? HistoryPage(126, 130, true, 130, false)
+			: HistoryPage(75, 125, true, 130, true));
+	});
+	auto done = false;
+	messages.loadAround(u"c1"_s, 100, base::Guard(), [&] { done = true; });
+	QVERIFY(Test::WaitFor([&] { return done; }));
+	QVERIFY(!messages.live(u"c1"_s));
+	QVERIFY(tooLong(700));
+	QVERIFY(CachedSeqs(harness, u"c1"_s).isEmpty());
+	added = -1;
+	messages.loadNewer(u"c1"_s, base::Guard(), [&](int count) { added = count; });
+	QVERIFY(Test::WaitFor([&] { return added >= 0; }));
+	QVERIFY(messages.live(u"c1"_s));
+	QCOMPARE(CachedSeqs(harness, u"c1"_s), Seqs(126, 130));
 }
 
 QTEST_GUILESS_MAIN(TestSync)
