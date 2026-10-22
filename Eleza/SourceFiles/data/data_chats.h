@@ -132,6 +132,18 @@ public:
 	void acceptRequest(const QString &chat);
 	void declineRequest(const QString &chat);
 
+	// ---- the report / block bar (Data::ActionBar)
+	// The ×: the bar goes here at once and on all my devices once the
+	// server has it. Kept on this device until then (offline, the server's
+	// trouble) and sent again with every connection; meanwhile the headers
+	// that still carry the bar lose it here.
+	void dismissActionBar(const QString &chat);
+	// The bar went away without a ×: after my report or block (the server
+	// lowers it by itself), or on another device.
+	void forgetActionBar(const QString &chat);
+	// Sends the × that wait (a new connection).
+	void flushActionBarDismissals();
+
 	// ---- drafts
 	// Saves (or, with an empty text, clears) the chat's draft: at once in the
 	// row and the database, then on the server.
@@ -217,11 +229,16 @@ private:
 	void pushDraft(const QString &chat, const Draft &draft);
 	void capability(const QString &chat, Fn<void(const QString &)> done);
 	void activityTick();
+	void hideDismissed(Chat &chat) const;
+	void sendActionBarDismissal(const QString &chat);
+	void persistActionBarDismissals();
 
 	Session *_session = nullptr;
 	QHash<QString, Chat> _chats;
 	QHash<QString, qint64> _cleared;
 	QHash<QString, Draft> _localDrafts;
+	QSet<QString> _actionBarDismissals; // the × that the server does not have yet
+	QSet<QString> _actionBarSending;
 	QHash<QString, Presence> _presence;
 	QHash<QString, Activity> _activity;
 	QHash<QString, Capability> _capabilities;

@@ -475,6 +475,9 @@ private:
 	bool applyEntry(const QJsonObject &entry, const QHash<QString, qint64> *known, bool listed);
 	void coldStart(const QString &cursor, int page, bool restarted);
 	void syncForFrame();
+	// Read receipts: `outbox_read_seq` (the higher one wins), 0 = only
+	// bring the ticks in line with what the row holds.
+	void applyReads(const QString &group, qint64 seq);
 	void fetchPeople(const QStringList &ids);
 
 	// ---- rows

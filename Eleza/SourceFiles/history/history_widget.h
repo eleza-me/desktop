@@ -11,6 +11,7 @@
 #pragma once
 
 #include "window/window_registry.h"
+#include "ui/effects/animations.h"
 #include "window/window_section_widget.h"
 
 #include <QtCore/QPointer>
@@ -29,6 +30,7 @@ class ScrollArea;
 
 namespace History {
 
+class ActionBar;
 class BotIntroCard;
 class BottomNotice;
 class ComposeControls;
@@ -125,6 +127,10 @@ private:
 	void refreshBottom();
 	void refreshState();
 	void refreshDownButton();
+	void refreshMentionsButton();
+	void placeFloatingButtons();
+	void pressDown();
+	void pressMentions();
 	void refreshActive();
 	void refreshRelationship();
 	void selectionChanged();
@@ -147,6 +153,7 @@ private:
 
 	TopBar *_topBar = nullptr;
 	SearchBar *_search = nullptr;
+	ActionBar *_actionBar = nullptr;
 	PinnedBar *_pinned = nullptr;
 	ConversationBanner *_banner = nullptr;
 	Ui::ScrollArea *_scroll = nullptr;
@@ -154,6 +161,12 @@ private:
 	ComposeControls *_compose = nullptr;
 	BottomNotice *_notice = nullptr;
 	DownButton *_down = nullptr;
+	DownButton *_mentions = nullptr; // a group: «@»
+	Ui::Animations::Simple _mentionsSlide;
+	bool _downStopped = false; // «to the end» made its first stop
+	QVector<qint64> _mentionQueue;
+	qint64 _mentionShown = 0;
+	bool _mentionsLoading = false;
 	DropArea *_drop = nullptr;
 	StateView *_state = nullptr;
 	BotIntroCard *_botIntro = nullptr;
@@ -167,6 +180,7 @@ private:
 	bool _headerRequested = false;
 	bool _requestBusy = false;
 	bool _leaving = false;
+	bool _leavingByBar = false; // the report / block bar leaves the group
 	bool _group = false;
 	QTimer _groupTimer; // the countdown of slow mode / a restriction
 	QString _groupNotice;

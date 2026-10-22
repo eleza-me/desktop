@@ -197,4 +197,37 @@ enum class FileType {
 // States in which nobody can write to a conversation any more.
 [[nodiscard]] bool ConversationEnded(const QString &state);
 
+// ---- self-destructing media
+
+// It may be sent here: a direct chat with a person — not a group, Saved
+// Messages, a bot, an anonymous conversation or a deleted account.
+[[nodiscard]] bool SelfDestructAllowed(const Data::Chat &chat);
+// The bubble's second line.
+enum class SelfDestructLine {
+	OnPhone,   // the recipient, not opened: only the phone apps open it
+	NotOpened, // the sender, not opened yet
+	Opened,    // shown on the recipient's phone: its time runs
+	Expired,
+};
+[[nodiscard]] SelfDestructLine SelfDestructLineFor(const Data::Message &message);
+
+// ---- the floating buttons over the list («to the end», «@»)
+
+// The first stop of «to the end»: the oldest of the `unread` newest
+// messages of somebody else — the notes of a group too, the count is made
+// of them — when it is below `bottomSeq` (the last message on screen); 0:
+// straight to the end. Never at or below `lastReadSeq`.
+[[nodiscard]] qint64 DownFirstStop(
+	const QVector<Data::Message> &items,
+	int unread,
+	qint64 lastReadSeq,
+	qint64 bottomSeq);
+// The buttons float on the side of my own bubbles (the physical right in
+// both directions): in a group the other side is the column of the
+// senders' pictures. A direct chat keeps them at the end of the line.
+[[nodiscard]] bool FloatingButtonsAtPhysicalRight(bool group, bool rtl);
+// The next unread mention to go to: the first of `seqs` (oldest first)
+// above `lastReadSeq`; 0 when the list holds none any more.
+[[nodiscard]] qint64 NextMention(const QVector<qint64> &seqs, qint64 lastReadSeq);
+
 } // namespace History

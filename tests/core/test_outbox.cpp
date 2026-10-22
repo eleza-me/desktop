@@ -58,6 +58,7 @@ private Q_SLOTS:
 	void bodiesOfEveryKind();
 	void echoBeforeAnswer();
 	void fileIsUploadedFirst();
+	void selfDestructGoesOnItsOwn();
 	void albumIsUploadedThenSent();
 	void processedSignalEndsTheWait();
 	void queueSurvivesRestart();
@@ -586,6 +587,92 @@ void TestOutbox::fileIsUploadedFirst() {
 	QCOMPARE(sends[0].value("client_message_id"_L1).toString(), id);
 	QCOMPARE(sends[1].value("text"_L1).toString(), u"after"_s);
 	QCOMPARE(harness.messages().find(u"c2"_s, 70)->attachment, u"med1"_s);
+}
+
+// Self-destructing media: its own upload (no dedup), `self_destruct` in the
+// send, never a spoiler; the bubble here never holds the picture, the
+// caption or the attachment.
+void TestOutbox::selfDestructGoesOnItsOwn() {
+	auto dir = QTemporaryDir();
+	QVERIFY(dir.isValid());
+	const auto path = dir.filePath(u"photo.jpg"_s);
+	{
+		auto file = QFile(path);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(base::RandomBytes(10));
+	}
+	auto harness = Harness();
+	QVERIFY(harness.start());
+	harness.http.handler = [&](const Test::HttpServer::Request &request) {
+		using Response = Test::HttpServer::Response;
+		if (request.method == "POST" && request.path == "/v1/uploads") {
+			return Response::Ok(QJsonObject{
+				{ u"upload_id"_s, u"up9"_s },
+				{ u"media_id"_s, u"med9"_s },
+				{ u"state"_s, u"pending"_s },
+				{ u"part_size"_s, 10 },
+				{ u"parts"_s, QJsonArray{
+					QJsonObject{ { u"number"_s, 1 }, { u"url"_s, harness.http.base() + u"/put/1"_s } },
+				} },
+			});
+		} else if (request.path == "/v1/media/med9") {
+			return Response::Ok(QJsonObject{ { u"state"_s, u"ready"_s } });
+		}
+		return Response::Ok();
+	};
+	harness.on(u"chat.send"_s, [&](const Call &) {
+		return Reply::Ok(Sent(71));
+	});
+	auto sent = QSignalSpy(&harness.outbox(), &Outbox::sent);
+	auto options = SendFileOptions();
+	options.kind = UploadKind::Image;
+	options.caption = u"secret"_s;
+	options.spoiler = true;
+	options.selfDestruct = SelfDestructInput{ .seconds = 10 };
+	const auto id = harness.outbox().sendFile(u"c2"_s, path, options);
+	QVERIFY(!id.isEmpty());
+	{
+		const auto &history = harness.messages().history(u"c2"_s);
+		const auto index = history.indexOfKey(Message::KeyForLocal(id));
+		QVERIFY(index >= 0);
+		const auto &local = history.items[index];
+		QVERIFY(local.selfDestruct.has_value());
+		QCOMPARE(local.selfDestruct->mode, u"timer"_s);
+		QCOMPARE(local.selfDestruct->seconds, 10);
+		QCOMPARE(local.selfDestruct->state, u"unopened"_s);
+		QVERIFY(local.localPath.isEmpty());
+		QVERIFY(local.text.isEmpty());
+	}
+	QVERIFY(Test::WaitFor([&] { return sent.size() == 1; }, 10000));
+	const auto created = harness.http.to("/v1/uploads");
+	QCOMPARE(created.size(), 1);
+	QVERIFY(!created[0].json().contains("sha256"_L1));
+	const auto sends = harness.bodies(u"chat.send"_s);
+	QCOMPARE(sends.size(), 1);
+	QCOMPARE(sends[0].value("kind"_L1).toString(), u"photo"_s);
+	QCOMPARE(sends[0].value("attachment"_L1).toString(), u"med9"_s);
+	QCOMPARE(sends[0].value("text"_L1).toString(), u"secret"_s);
+	QCOMPARE(
+		sends[0].value("self_destruct"_L1).toObject(),
+		(QJsonObject{ { u"seconds"_s, 10 } }));
+	QVERIFY(!sends[0].contains("media_spoiler"_L1));
+	const auto stored = harness.messages().find(u"c2"_s, 71);
+	QVERIFY(stored && stored->selfDestruct);
+	QVERIFY(stored->attachment.isEmpty());
+	QVERIFY(stored->localPath.isEmpty());
+
+	// View once; and nothing of it for a kind that cannot destruct.
+	options = SendFileOptions();
+	options.kind = UploadKind::File;
+	options.selfDestruct = SelfDestructInput{ .viewOnce = true };
+	harness.outbox().sendFile(u"c2"_s, path, options);
+	QVERIFY(Test::WaitFor([&] { return harness.bodies(u"chat.send"_s).size() == 2; }, 10000));
+	QVERIFY(!harness.bodies(u"chat.send"_s)[1].contains("self_destruct"_L1));
+	QCOMPARE(
+		SelfDestructInput{ .viewOnce = true }.toJson(),
+		(QJsonObject{ { u"view_once"_s, true } }));
+	QVERIFY(!SelfDestructInput{}.valid());
+	QVERIFY(!(SelfDestructInput{ .viewOnce = true, .seconds = 3 }).valid());
 }
 
 // An album: one album id on every item, the caption (and «caption above»)

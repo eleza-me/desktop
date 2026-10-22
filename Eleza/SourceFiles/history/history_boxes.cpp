@@ -26,9 +26,11 @@
 #include "ui/layers/generic_box.h"
 #include "ui/painter.h"
 #include "ui/ui_utility.h"
+#include "ui/widgets/buttons.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/input_fields.h"
 #include "ui/widgets/labels.h"
+#include "ui/widgets/popup_menu.h"
 #include "window/window_routes.h"
 #include "window/window_session_controller.h"
 #include "styles/palette.h"
@@ -361,7 +363,8 @@ public:
 		Main::Session *session,
 		const QStringList &paths,
 		const QString &caption,
-		Fn<void(const FilesToSend &)> send);
+		Fn<void(const FilesToSend &)> send,
+		QVector<int> selfDestructTimers);
 
 	void setInnerFocus() override;
 
@@ -374,6 +377,10 @@ private:
 	void layout();
 	void addMore();
 	void submit();
+	[[nodiscard]] bool selfDestructOffered() const;
+	[[nodiscard]] bool selfDestructOn() const;
+	void showSelfDestructMenu();
+	void setSelfDestruct(std::optional<Data::SelfDestructInput> value);
 
 	Main::Session *_session = nullptr;
 	QStringList _initial;
@@ -386,6 +393,10 @@ private:
 	Ui::Checkbox *_grouped = nullptr;
 	Ui::Checkbox *_captionAbove = nullptr;
 	Ui::InputField *_caption = nullptr;
+	QVector<int> _selfDestructTimers;
+	std::optional<Data::SelfDestructInput> _selfDestruct;
+	Ui::RoundButton *_selfDestructButton = nullptr;
+	Ui::FlatLabel *_selfDestructHint = nullptr;
 
 };
 
@@ -394,12 +405,14 @@ SendFilesBoxContent::SendFilesBoxContent(
 	Main::Session *session,
 	const QStringList &paths,
 	const QString &caption,
-	Fn<void(const FilesToSend &)> send)
+	Fn<void(const FilesToSend &)> send,
+	QVector<int> selfDestructTimers)
 : BoxContent(parent)
 , _session(session)
 , _initial(paths.mid(0, kMaxFilesInBox))
 , _initialCaption(caption)
-, _send(std::move(send)) {
+, _send(std::move(send))
+, _selfDestructTimers(std::move(selfDestructTimers)) {
 }
 
 void SendFilesBoxContent::prepare() {
@@ -418,6 +431,16 @@ void SendFilesBoxContent::prepare() {
 	_captionAbove = Ui::CreateChild<Ui::Checkbox>(
 		this,
 		tr::lng_history_send_caption_above(tr::now));
+	_selfDestructButton = Ui::CreateChild<Ui::RoundButton>(
+		this,
+		QString(),
+		st::historySendFilesTimerButton);
+	_selfDestructButton->setIcon(&st::historySendFilesTimerIcon);
+	_selfDestructButton->setClickedCallback([this] { showSelfDestructMenu(); });
+	_selfDestructHint = Ui::CreateChild<Ui::FlatLabel>(
+		this,
+		QString(),
+		st::historySendFilesTimerHint);
 	_caption = Ui::CreateChild<Ui::InputField>(
 		this,
 		st::historySendFilesCaption,
@@ -484,13 +507,80 @@ void SendFilesBoxContent::refresh() {
 		setTitle(tr::lng_history_send_files_title(tr::now, lt_count, count));
 	}
 	const auto visual = _preview->hasVisual();
-	_asFiles->setVisible(visual);
-	_spoiler->setVisible(visual && !_asFiles->checked());
+	if (!selfDestructOffered()) {
+		_selfDestruct = std::nullopt;
+	}
+	// Self-destructing: never as a file, with a spoiler or the caption above.
+	const auto destructs = selfDestructOn();
+	_asFiles->setVisible(visual && !destructs);
+	_spoiler->setVisible(visual && !_asFiles->checked() && !destructs);
 	_grouped->setVisible(count > 1);
 	_captionAbove->setVisible(visual
+		&& !destructs
 		&& !_asFiles->checked()
 		&& !_caption->text().trimmed().isEmpty());
+	_selfDestructButton->setVisible(selfDestructOffered());
+	_selfDestructButton->setText(!_selfDestruct
+		? tr::lng_history_sd_option_off(tr::now)
+		: _selfDestruct->viewOnce
+		? tr::lng_history_sd_option_once(tr::now)
+		: tr::lng_history_sd_option_timer(
+			tr::now,
+			lt_time,
+			Support::SelfDestructTimerText(_selfDestruct->seconds)));
+	_selfDestructHint->setText(!destructs
+		? QString()
+		: _selfDestruct->viewOnce
+		? tr::lng_history_sd_hint_once(tr::now)
+		: tr::lng_history_sd_hint_timer(
+			tr::now,
+			lt_time,
+			Support::SelfDestructTimerText(_selfDestruct->seconds)));
+	_selfDestructHint->setVisible(destructs);
 	layout();
+}
+
+bool SendFilesBoxContent::selfDestructOffered() const {
+	if (_selfDestructTimers.isEmpty() || _preview->count() != 1 || _asFiles->checked()) {
+		return false;
+	}
+	const auto path = _preview->paths().front();
+	return Support::IsImageFile(path) || Support::IsVideoFile(path);
+}
+
+bool SendFilesBoxContent::selfDestructOn() const {
+	return _selfDestruct.has_value() && selfDestructOffered();
+}
+
+void SendFilesBoxContent::showSelfDestructMenu() {
+	const auto menu = new Ui::PopupMenu(this);
+	const auto add = [&](const QString &text, std::optional<Data::SelfDestructInput> value) {
+		auto item = Ui::MenuItem();
+		item.text = text;
+		item.checked = (value.has_value() == _selfDestruct.has_value())
+			&& (!value
+				|| (value->viewOnce == _selfDestruct->viewOnce
+					&& value->seconds == _selfDestruct->seconds));
+		item.callback = [=] { setSelfDestruct(value); };
+		menu->addItem(std::move(item));
+	};
+	add(tr::lng_history_sd_off(tr::now), std::nullopt);
+	add(tr::lng_history_sd_view_once(tr::now), Data::SelfDestructInput{ .viewOnce = true });
+	for (const auto seconds : std::as_const(_selfDestructTimers)) {
+		add(
+			Support::SelfDestructTimerText(seconds),
+			Data::SelfDestructInput{ .seconds = seconds });
+	}
+	menu->popupAnchored(_selfDestructButton, style::al_left);
+}
+
+void SendFilesBoxContent::setSelfDestruct(std::optional<Data::SelfDestructInput> value) {
+	_selfDestruct = value;
+	if (selfDestructOn()) {
+		_spoiler->setChecked(false, false);
+		_captionAbove->setChecked(false, false);
+	}
+	refresh();
 }
 
 void SendFilesBoxContent::layout() {
@@ -512,6 +602,16 @@ void SendFilesBoxContent::layout() {
 		box->resizeToWidth(width - check.left() - check.right());
 		box->moveToLeft(check.left(), top + check.top(), width);
 		top += check.top() + box->height() + check.bottom();
+	}
+	if (!_selfDestructButton->isHidden()) {
+		_selfDestructButton->resizeToNaturalWidth(inner);
+		_selfDestructButton->moveToLeft(check.left(), top + check.top(), width);
+		top += check.top() + _selfDestructButton->height() + check.bottom();
+	}
+	if (!_selfDestructHint->isHidden()) {
+		_selfDestructHint->resizeToWidth(width - 2 * check.left());
+		_selfDestructHint->moveToLeft(check.left() + check.left(), top, width);
+		top += _selfDestructHint->height() + check.bottom();
 	}
 	top += st::historySendFilesSkip;
 	_caption->resizeToWidth(inner);
@@ -560,6 +660,12 @@ void SendFilesBoxContent::submit() {
 	result.captionAbove = !result.asFiles
 		&& !result.caption.isEmpty()
 		&& _captionAbove->checked();
+	if (selfDestructOn()) {
+		result.selfDestruct = _selfDestruct;
+		result.spoiler = false;
+		result.captionAbove = false;
+		result.asFiles = false;
+	}
 	if (const auto send = std::exchange(_send, nullptr)) {
 		send(result);
 	}
@@ -752,8 +858,14 @@ Ui::object_ptr<Ui::BoxContent> SendFilesBox(
 		Main::Session *session,
 		const QStringList &paths,
 		const QString &caption,
-		Fn<void(const FilesToSend &)> send) {
-	return Ui::Box<SendFilesBoxContent>(session, paths, caption, std::move(send));
+		Fn<void(const FilesToSend &)> send,
+		QVector<int> selfDestructTimers) {
+	return Ui::Box<SendFilesBoxContent>(
+		session,
+		paths,
+		caption,
+		std::move(send),
+		std::move(selfDestructTimers));
 }
 
 std::optional<Data::Location> ParseLocation(const QString &text) {

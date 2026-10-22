@@ -23,6 +23,10 @@
 //   stories stories sent on (story_share): available, without a comment, not mine
 //           to open, expired; a story reply (tests/tools/mock-stories-proxy.mjs answers
 //           opening and sending them)
+//   spam    a stranger wrote first: the report / block bar (action_bar "stranger")
+//   sd      self-destructing media as a desktop session is sent it (a text with
+//           `self_destruct`): unopened, opened with its time running, expired, and
+//           the screenshot notice
 //
 // Behaviour:
 //   * sending "fail" (or any text that starts with it) is refused with 403, so the
@@ -356,6 +360,24 @@ const bytes = (res, type, data) => {
 	res.writeHead(200, { 'Content-Type': type, 'Content-Length': data.length });
 	res.end(data);
 };
+// -- a stranger wrote first: the report / block bar
+direct('spam', 'u_john', { header: { action_bar: 'stranger' } });
+add('spam', 'u_john', 'text', { text: 'Hi! Want to earn $500 a day from home? 💸' }, now - 40 * MIN);
+add('spam', 'u_john', 'text', { text: 'https://example.com/offer' }, now - 39 * MIN);
+unread.spam = 2;
+// -- self-destructing media
+direct('sd', 'u_nika');
+{
+	const t0 = now - 2 * HOUR;
+	add('sd', 'u_nika', 'text', { text: 'یه عکس برات فرستادم، فقط یه بار می‌تونی ببینیش' }, t0);
+	add('sd', 'u_nika', 'text', { text: 'این پیام فقط روی گوشی قابل دیدن است', self_destruct: { mode: 'view_once', state: 'unopened' } }, t0 + MIN);
+	add('sd', 'u_me', 'text', { text: 'این پیام فقط روی گوشی قابل دیدن است', self_destruct: { mode: 'timer', seconds: 30, state: 'unopened' } }, t0 + 5 * MIN);
+	add('sd', 'u_me', 'text', { text: 'این پیام فقط روی گوشی قابل دیدن است', self_destruct: { mode: 'timer', seconds: 60, state: 'opened', opened_at: now - 20_000, destruct_at: now + 15 * MIN } }, t0 + 10 * MIN);
+	add('sd', 'u_nika', 'system', { system: 'self_destruct_screenshot:u_nika:4', text: 'نیکا موسوی از پیام یکبارمصرف اسکرین‌شات گرفت' }, t0 + 11 * MIN);
+	add('sd', 'u_me', 'text', { text: 'این پیام منقضی شد', self_destruct: { mode: 'view_once', state: 'expired', opened_at: t0 + 12 * MIN, destruct_at: t0 + 13 * MIN } }, t0 + 12 * MIN);
+	add('sd', 'u_nika', 'text', { text: 'دیدمش 😄', reply_to_seq: 6 }, t0 + 14 * MIN);
+	chats.sd.last_read_seq = 7; chats.sd.peer_read_seq = 7;
+}
 const header = (id) => chats[id];
 const visible = (m) => !m.deleted;
 function push(kind, chat, extra = {}) {
@@ -641,6 +663,7 @@ function handle(req, res, raw) {
 		return json(res, 204, {});
 	}
 	if (rest === '/pin') { flags[id].pinned = (m === 'POST'); return json(res, 204, {}); }
+	if (rest === '/action-bar/dismiss' && m === 'POST') { delete c.action_bar; return json(res, 204, {}); }
 	if (rest === '/theme') {
 		c.theme = b.theme || '';
 		const who = c.participants.find((x) => x.me)?.ref || 'u_me';

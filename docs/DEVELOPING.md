@@ -868,7 +868,7 @@ list and the ordinary chat screen. So there is no second list and no second chat
 | `data/data_groups.*` | `Data::Groups`: the sync track (catch-up after every Hello, live frames, per-group difference, my own place from the user-level log) and every action. Its header explains the two counters kept per row. `tests/core/test_groups.cpp` drives it on the fake transport |
 | `data/data_chats.*`, `data_messages.*`, `data_outbox.*` | route by `Data::IsGroupId(id)`: a group's row is a `Data::Chat` with `isGroup` and `group`, its history lives in `Data::Messages`, its sends go through the outbox like any other (idempotent by client message id) |
 | `dialogs/` | group rows: the group's photo, «سارا: …» previews, notes with names, the «@» badge of an unread mention, «گروه تازه» in «پیام جدید» |
-| `history/` | the chat screen in a group: the sender's name (one of eight colours by user id) and role tag above the first bubble of a run and the picture next to the last one (`View::Delegate::elementGroup / elementSender`), notes with names, the composer's states (restricted with the time left, slow mode with a countdown), «@» suggestions (`history_mentions.*`), delete for everyone by rights, pins by permission |
+| `history/` | the chat screen in a group: the sender's name (one of eight colours by user id) and role tag above the first bubble of a run and the picture next to the last one (`View::Delegate::elementGroup / elementSender`), notes with names (each name opens that profile: `Support::ServiceNoteLine`), two ticks on my messages up to `outbox_read_seq` (the furthest another member has read; `Data::Groups::applyReads`), the composer's states (restricted with the time left, slow mode with a countdown), «@» suggestions (`history_mentions.*`), the «@» button of unread mentions stacked above «to the end», delete for everyone by rights, pins by permission |
 | `groups/` | everything else: `groups_info.*` (the info screen, route `group/<id>`), `groups_boxes.*` (creating a group, adding members, the box of an invite link, notification level, edit, permissions, admin rights, restrictions, bans, invite links, join requests, delete, report, the menu of a member), `groups_module.cpp` (routes, the chat menu filler, debug routes) |
 
 **Gates.** `Groups::enabled()` (`feature.groups`): off means no group row, no request and no
@@ -902,3 +902,29 @@ restricted|banned>`, `debug/group-admin/<g>/<u>`, `debug/group-restrict/<g>/<u>`
 `debug/group-member-menu/<g>/<u>[/<role>]`, `debug/group-leave/<g>`, `debug/group-clear/<g>`,
 `debug/group-delete/<g>`, `debug/group-report/<g>`; the screens themselves are routes
 (`group/<g>`, `g/<token>`, `chat/<g>`).
+
+## 14. The report / block bar and self-destructing media
+
+**The report / block bar** (Telegram's action bar; the backend's `docs/report-block-bar.md` and
+`docs/groups.md` §9.1): `ChatInfo::actionBar` ("stranger") and `Group::actionBar` /
+`Group::addedBy` ("added_by_stranger"). Which bar shows, the plans of «مسدود کردن» / «گزارش
+هرزنامه» / «ترک گروه» (a report always first, a leave last) and how a failure is read are plain
+functions in `data/data_action_bar.h` (`tests/core/test_action_bar.cpp`); the bar itself is
+`history/history_action_bar.*`. The × is `Data::Chats::dismissActionBar`: the bar goes at once, the
+dismissal is kept in the account's database until the server has it and sent again with every
+connection, and meanwhile headers that still carry the bar lose it here. When nothing of a choice
+went through, the bar comes back.
+
+**Self-destructing photos and videos** (`docs/self-destruct-media.md` of the backend). Only the phone
+apps open them: a desktop session is sent a text («only on the phone») with `self_destruct` — this
+app never gets the picture, the caption or a way to open it. `Data::Message::selfDestruct` holds what
+it is and how far it got; `View::SelfDestructMedia` (`history_view_media.cpp`) draws the card (a
+badge, a countdown ring once the recipient's phone shows it, the dust when it expires on screen),
+`Support::SelfDestructLabel` the one-line label. It is never copied, forwarded, edited, saved,
+searched or shown in the viewer. Sending (`SendFileOptions::selfDestruct`, the timer button of the
+send-files box) needs `chat.self_destruct.enabled` (absent: off) and a direct chat with a person; it
+is uploaded on its own (no dedup) and its local bubble never shows the file. The screenshot notice
+(`self_destruct_screenshot:<taker>:<seq>`) is worded here, the taker's name opening their profile.
+
+Mock data: `chat/spam` (a stranger wrote first) and `chat/sd` in `tests/tools/mock-history.mjs`,
+`chat/j1promo` (a stranger added me) in `tests/tools/mock-groups.mjs`.

@@ -299,6 +299,7 @@ ChatInfo ChatInfo::FromJson(const QJsonObject &json) {
 	result.draft = Optional<Draft>(json, "draft"_L1);
 	result.pins = Int64s(json.value("pins"_L1));
 	result.liveShares = Int(json, "live_shares"_L1);
+	result.actionBar = String(json, "action_bar"_L1);
 	return result;
 }
 
@@ -329,6 +330,7 @@ QJsonObject ChatInfo::toJson() const {
 	}
 	Put(result, "pins"_L1, Array(pins));
 	Put(result, "live_shares"_L1, liveShares);
+	Put(result, "action_bar"_L1, actionBar);
 	return result;
 }
 
@@ -484,6 +486,32 @@ QJsonObject Quote::toJson() const {
 	result.insert("text"_L1, text);
 	result.insert("offset"_L1, offset);
 	return result;
+}
+
+SelfDestruct SelfDestruct::FromJson(const QJsonObject &json) {
+	auto result = SelfDestruct();
+	result.mode = String(json, "mode"_L1);
+	result.seconds = Int(json, "seconds"_L1);
+	result.state = String(json, "state"_L1);
+	result.openedAt = Int64(json, "opened_at"_L1);
+	result.destructAt = Int64(json, "destruct_at"_L1);
+	return result;
+}
+
+QJsonObject SelfDestruct::toJson() const {
+	auto result = QJsonObject();
+	result.insert("mode"_L1, mode);
+	Put(result, "seconds"_L1, seconds);
+	result.insert("state"_L1, state);
+	Put(result, "opened_at"_L1, openedAt);
+	Put(result, "destruct_at"_L1, destructAt);
+	return result;
+}
+
+QJsonObject SelfDestructInput::toJson() const {
+	return viewOnce
+		? QJsonObject{ { u"view_once"_s, true } }
+		: QJsonObject{ { u"seconds"_s, seconds } };
 }
 
 StoryRef StoryRef::FromJson(const QJsonObject &json) {
@@ -797,6 +825,9 @@ Message Message::FromJson(const QJsonObject &json) {
 		// Offsets into the fallback line mean nothing in the comment.
 		result.entities.clear();
 	}
+	if (auto sd = Optional<SelfDestruct>(json, "self_destruct"_L1); sd && !sd->mode.isEmpty()) {
+		result.selfDestruct = std::move(sd);
+	}
 	return result;
 }
 
@@ -858,6 +889,9 @@ QJsonObject Message::toJson() const {
 	if (story) {
 		result.insert("story"_L1, story->toJson());
 	}
+	if (selfDestruct) {
+		result.insert("self_destruct"_L1, selfDestruct->toJson());
+	}
 	return result;
 }
 
@@ -897,6 +931,14 @@ void Message::resolveLocal(const ChatInfo *info, const QString &myUserId) {
 	status = (mine && seq > 0 && seq <= peerRead)
 		? MessageStatus::Read
 		: MessageStatus::Sent;
+}
+
+QString SelfDestructScreenshotTaker(const QString &systemCode) {
+	static const auto kPrefix = u"self_destruct_screenshot:"_s;
+	if (!systemCode.startsWith(kPrefix)) {
+		return QString();
+	}
+	return systemCode.mid(kPrefix.size()).section(u':', 0, 0);
 }
 
 bool MessageLess(const Message &a, const Message &b) {

@@ -2,6 +2,7 @@
 
 #include "api/api_client_config.h"
 #include "base/unixtime.h"
+#include "data/data_action_bar.h"
 #include "data/data_group_rules.h"
 #include "data/data_groups.h"
 #include "data/data_json.h"
@@ -21,6 +22,7 @@ constexpr auto kMaxInboxPages = 20;
 constexpr auto kInboxPageSize = 50;
 constexpr auto kTypingThrottleMs = 3000;
 const auto kClearedKey = u"clearedChats"_s;
+const auto kActionBarDismissalsKey = u"actionBarDismissals"_s;
 
 [[nodiscard]] bool InSection(const Chat &chat, Chats::Section section) {
 	switch (section) {
@@ -350,7 +352,7 @@ void Chats::replaceAll(
 	auto rows = QVector<Storage::Database::Row>();
 	for (auto i = 0; i != kept.size(); ++i) {
 		const auto &chat = kept[i];
-		_chats.insert(chat.id, chat);
+		hideDismissed(*_chats.insert(chat.id, chat));
 		if (keptStored[i]) {
 			rows.push_back({ chat.id, chat.toStored() });
 		}
@@ -359,7 +361,7 @@ void Chats::replaceAll(
 		if (isCleared(chat)) {
 			continue;
 		}
-		_chats.insert(chat.id, chat);
+		hideDismissed(*_chats.insert(chat.id, chat));
 		rows.push_back({ chat.id, chat.toStored() });
 	}
 	if (const auto db = _session->local()) {
@@ -381,7 +383,7 @@ void Chats::upsert(const Chat &chat) {
 	if (isCleared(chat)) {
 		return;
 	}
-	_chats.insert(chat.id, chat);
+	hideDismissed(*_chats.insert(chat.id, chat));
 	store(chat);
 	changed(chat.id, true);
 }
@@ -398,6 +400,7 @@ void Chats::patch(const QString &id, const Fn<void(Chat &)> &change) {
 	const auto wasListed = listed(*i);
 	change(*i);
 	i->id = id;
+	hideDismissed(*i);
 	store(*i);
 	changed(id, pinned != i->pinned
 		|| activity != i->lastActivityAt
@@ -469,6 +472,16 @@ void Chats::loadCached(base::Guard guard, Fn<void(bool)> done) {
 			_cleared.insert(i.key(), Json::Int64(i.value()));
 		}
 	});
+	db->meta(kActionBarDismissalsKey, this, [=, this](QJsonValue value) {
+		for (const auto &id : Json::Strings(value)) {
+			if (!id.isEmpty()) {
+				_actionBarDismissals.insert(id);
+			}
+		}
+		// Each × the server has not heard of yet: at once, and again with
+		// every connection (Data::Sync).
+		flushActionBarDismissals();
+	});
 	db->drafts(this, [=, this](QHash<QString, QJsonObject> drafts) {
 		for (auto i = drafts.cbegin(); i != drafts.cend(); ++i) {
 			_localDrafts.insert(i.key(), Draft::FromJson(i.value()));
@@ -496,7 +509,7 @@ void Chats::loadCached(base::Guard guard, Fn<void(bool)> done) {
 		_chats.clear();
 		for (const auto &chat : list) {
 			if (!isCleared(chat)) {
-				_chats.insert(chat.id, chat);
+				hideDismissed(*_chats.insert(chat.id, chat));
 			}
 		}
 		recount();
@@ -1074,6 +1087,92 @@ void Chats::clearDraft(const QString &chat) {
 
 bool Chats::hasLocalDraft(const QString &chat) const {
 	return _localDrafts.contains(chat);
+}
+
+// ---- the report / block bar
+
+void Chats::hideDismissed(Chat &chat) const {
+	if (_actionBarDismissals.isEmpty() || !_actionBarDismissals.contains(chat.id)) {
+		return;
+	}
+	// The server still sends the bar until the × reaches it.
+	chat.info.actionBar = QString();
+	if (chat.group) {
+		chat.group->actionBar = QString();
+		chat.group->addedBy = QString();
+	}
+}
+
+void Chats::forgetActionBar(const QString &chat) {
+	const auto row = this->chat(chat);
+	if (!row
+		|| (row->info.actionBar.isEmpty()
+			&& (!row->group || row->group->actionBar.isEmpty()))) {
+		return;
+	}
+	patch(chat, [](Chat &c) {
+		c.info.actionBar = QString();
+		if (c.group) {
+			c.group->actionBar = QString();
+			c.group->addedBy = QString();
+		}
+	});
+}
+
+void Chats::dismissActionBar(const QString &chat) {
+	if (chat.isEmpty()) {
+		return;
+	}
+	if (!_actionBarDismissals.contains(chat)) {
+		_actionBarDismissals.insert(chat);
+		persistActionBarDismissals();
+	}
+	forgetActionBar(chat);
+	sendActionBarDismissal(chat);
+}
+
+void Chats::flushActionBarDismissals() {
+	const auto pending = _actionBarDismissals;
+	for (const auto &chat : pending) {
+		sendActionBarDismissal(chat);
+	}
+}
+
+void Chats::sendActionBarDismissal(const QString &chat) {
+	if (_actionBarSending.contains(chat)) {
+		return;
+	}
+	_actionBarSending.insert(chat);
+	const auto group = IsGroupId(chat);
+	const auto finished = [=, this](bool keep) {
+		_actionBarSending.remove(chat);
+		if (!keep && _actionBarDismissals.remove(chat)) {
+			persistActionBarDismissals();
+		}
+	};
+	_session->transport().rpc(group ? u"groups.action_bar.dismiss"_s : u"chat.action_bar.dismiss"_s)
+		.body(QJsonObject{ { group ? u"group"_s : u"chat"_s, chat } })
+		.guard(this)
+		.done([=] {
+			finished(false);
+		})
+		.fail([=](const Api::Error &error) {
+			// No answer or the server's trouble: again with the next
+			// connection. A refusal that would not change (not a member any
+			// more): nothing left to hide.
+			finished(ActionBar::DismissWaits(error));
+		})
+		.send();
+}
+
+void Chats::persistActionBarDismissals() {
+	if (const auto db = _session->local()) {
+		auto list = QJsonArray();
+		for (const auto &chat : std::as_const(_actionBarDismissals)) {
+			list.push_back(chat);
+		}
+		db->setMeta(kActionBarDismissalsKey, list);
+	}
 }
 
 void Chats::flushDrafts() {

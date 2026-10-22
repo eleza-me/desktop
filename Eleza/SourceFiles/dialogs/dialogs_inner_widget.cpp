@@ -422,6 +422,12 @@ void InnerWidget::prepare(Row &row) {
 	const auto activity = session.data().chats().activity(chat.id);
 	auto senderName = QString();
 	auto noteText = QString();
+	if (chat.lastMessage
+		&& chat.lastMessage->kind == Data::MessageKind::System
+		&& !chat.isGroup) {
+		// The screenshot notice of self-destructing media in our own words.
+		noteText = Support::ServiceNoteLine(&session, *chat.lastMessage).text;
+	}
 	if (chat.isGroup && chat.lastMessage) {
 		const auto &last = *chat.lastMessage;
 		if (last.kind == Data::MessageKind::System) {
