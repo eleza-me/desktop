@@ -45,10 +45,14 @@ playerBarClose: IconButton(playerBarButton) {
 	iconOver: icon {{ "close", textPrimary, 18px }};
 }
 
-// ---- the music player
-playerBoxWidth: 400px;
-playerBoxHeight: 560px;
-playerHeaderPadding: margins(20px, 8px, 20px, 8px);
+// ---- the music player (a panel under the bar)
+playerPanelWidth: 400px;
+playerPanelHeight: 560px;
+playerPanelSkip: 4px;
+playerPanelInset: 8px;
+playerPanelRadius: 12px;
+playerPanelBg: bgRaised;
+playerHeaderPadding: margins(20px, 16px, 20px, 8px);
 playerCoverSize: 72px;
 playerCoverRadius: 10px;
 playerCoverBg: brandSoft;
@@ -56,15 +60,15 @@ playerCoverIcon: icon {{ "music", brandText, 32px }};
 playerCoverSkip: 14px;
 playerTitleFont: font(16px semibold);
 playerPerformerFont: font(14px);
-playerSeekTop: 92px;
+playerSeekTop: 102px;
 playerSeekHeight: 4px;
 playerSeekKnob: 12px;
 playerSeekArea: 18px;
 playerTimeFont: font(12px);
-playerTimeTop: 104px;
-playerControlsTop: 124px;
+playerTimeTop: 114px;
+playerControlsTop: 134px;
 playerControlsHeight: 48px;
-playerHeaderHeight: 184px;
+playerHeaderHeight: 194px;
 playerControlSize: 44px;
 playerPlaySize: 52px;
 playerControlSkip: 14px;

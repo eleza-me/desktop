@@ -4,9 +4,11 @@
 //   pause, ⏮ ⏭ through the queue, the title — performer (the sender — voice
 //   message), the voice speed, the playlist, close, a seekable progress line.
 //   A song's title opens the music player, a voice's goes to its message;
-// * the music player (a box): the cover, the time, repeat (off → all → one),
-//   shuffle, reverse order, «نمایش در چت», and the playlist with the song
-//   playing marked, paged in from the chat's media as it is scrolled.
+// * the music player, a panel under the bar at its trailing side (Telegram
+//   Desktop's playlist dropdown; a click outside or Esc hides it): the
+//   cover, the time, repeat (off → all → one), shuffle, reverse order,
+//   «نمایش در چت», and the playlist with the song playing marked, paged in
+//   from the chat's media as it is scrolled.
 //
 //   Media::SetupNowPlaying(controller);   // once per session layout (Media::Register does it)
 //   Media::OpenTrackPlace(controller, Media::Player().current());
@@ -24,6 +26,7 @@ namespace Media {
 // player's failures there.
 void SetupNowPlaying(Window::SessionController *controller);
 
+// Shows (or hides, when it is shown) the music player under the bar.
 void ShowMusicPlayer(Window::SessionController *controller);
 
 // Where a track comes from: its message in its chat (a chat that is open

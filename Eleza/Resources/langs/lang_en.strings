@@ -2350,7 +2350,6 @@
 "lng_media_shared_selected#other" = "{count} selected";
 
 // ---- media: the player ----
-"lng_media_player_title" = "Player";
 "lng_media_player_download_failed" = "Couldn't download the file. Try again.";
 "lng_media_player_play_failed" = "Couldn't play this audio";
 
