@@ -120,7 +120,7 @@ void PeerListBox::prepare() {
 			rowChosen(_list->selectedRow());
 		} else if (_filtered.size() == 1) {
 			rowChosen(0);
-		} else if (_controller->multiSelect() && !_selected.isEmpty()) {
+		} else if (_controller->multiSelect() && canSubmit()) {
 			_controller->submit(selectedIds());
 		}
 	});
@@ -156,7 +156,7 @@ void PeerListBox::prepare() {
 
 	if (_controller->multiSelect()) {
 		_submit = addButton(_controller->submitText(), [this] {
-			if (!_selected.isEmpty()) {
+			if (canSubmit()) {
 				_controller->submit(selectedIds());
 			}
 		}, st::defaultRoundButton);
@@ -360,10 +360,13 @@ void PeerListBox::rowChosen(int index) {
 	setSelected(row.id, !selected);
 }
 
+bool PeerListBox::canSubmit() const {
+	return !_selected.isEmpty() || _controller->submitWithoutSelection();
+}
+
 void PeerListBox::refreshSubmit() {
 	if (_submit) {
-		_submit->setDisabled(_selected.isEmpty()
-			&& !_controller->submitWithoutSelection());
+		_submit->setDisabled(!canSubmit());
 		_submit->setText(_selected.isEmpty()
 			? _controller->submitText()
 			: (_controller->submitText()

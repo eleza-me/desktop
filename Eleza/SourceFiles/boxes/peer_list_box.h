@@ -198,6 +198,7 @@ private:
 
 	void applyFilter();
 	void rowChosen(int index);
+	[[nodiscard]] bool canSubmit() const;
 	void refreshSubmit();
 	void userpicUpdated(const QString &userId);
 	[[nodiscard]] const PeerListRow &shown(int index) const;
