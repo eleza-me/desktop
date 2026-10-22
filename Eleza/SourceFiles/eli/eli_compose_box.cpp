@@ -38,6 +38,7 @@
 
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonArray>
+#include <QtCore/QJsonDocument>
 #include <QtCore/QMimeData>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QThreadPool>
@@ -1151,7 +1152,10 @@ private:
 	ComposeArgs _args;
 	Logic::ComposeLimits _limits;
 	QString _policy = u"everyone"_s;
+	// One key per post: a retry of the same body reuses it (the server
+	// answers with the post it made), a body changed since gets a new one.
 	QString _idempotencyKey;
+	QByteArray _idempotencyBody;
 
 	Ui::VerticalLayout *_content = nullptr;
 	EditorRow *_editor = nullptr;
@@ -2099,6 +2103,12 @@ void ComposeBox::createPost() {
 	body.threadParts = Logic::CleanThreadParts(current.parts);
 	const auto controller = _controller;
 	const auto reply = (_args.kind == Kind::Reply);
+	const auto serialized = QJsonDocument(body.toJson()).toJson(
+		QJsonDocument::Compact);
+	if (!_idempotencyBody.isEmpty() && _idempotencyBody != serialized) {
+		_idempotencyKey = QUuid::createUuid().toString(QUuid::WithoutBraces);
+	}
+	_idempotencyBody = serialized;
 	session().data().feed().createPost(
 		body,
 		_idempotencyKey,
