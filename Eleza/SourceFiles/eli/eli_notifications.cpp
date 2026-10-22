@@ -1206,22 +1206,6 @@ protected:
 	}
 
 private:
-	[[nodiscard]] QString serverTab() const {
-		return (_tab == u"conversation") ? u"all"_s : _tab;
-	}
-
-	[[nodiscard]] QVector<Data::NotificationEntry> filtered(
-			QVector<Data::NotificationEntry> page) const {
-		if (_tab == u"conversation") {
-			page.erase(
-				std::remove_if(page.begin(), page.end(), [](const Data::NotificationEntry &entry) {
-					return entry.kind != u"conversation_joined";
-				}),
-				page.end());
-		}
-		return page;
-	}
-
 	void refreshChips() {
 		const auto active = _tab;
 		auto requests = _requests;
@@ -1235,7 +1219,6 @@ private:
 		_chips->clearChips();
 		_chips->addChip(u"all"_s, tr::lng_all(tr::now));
 		_chips->addChip(u"mentions"_s, tr::lng_eli_mentions(tr::now));
-		_chips->addChip(u"conversation"_s, tr::lng_tab_talk(tr::now));
 		_chips->addChip(
 			u"requests"_s,
 			(requests > 0)
@@ -1264,7 +1247,7 @@ private:
 		refreshTail();
 		const auto generation = _generation;
 		controller()->session().data().notifications().load(
-			serverTab(),
+			_tab,
 			_before,
 			base::Guard(this),
 			[=, this](const QVector<Data::NotificationEntry> &page) {
@@ -1273,20 +1256,25 @@ private:
 				}
 				_loading = false;
 				const auto last = page.isEmpty() ? qint64(0) : page.back().updatedAt;
-				for (const auto &entry : filtered(page)) {
+				auto added = 0;
+				for (const auto &entry : page) {
 					const auto known = std::any_of(
 						_entries.cbegin(),
 						_entries.cend(),
 						[&](const Data::NotificationEntry &other) { return other.id == entry.id; });
 					if (!known) {
 						_entries.push_back(entry);
+						++added;
 					}
 				}
 				_done = page.isEmpty()
 					|| !last
-					|| (last == _before)
+					|| !added
 					|| (page.size() < kPageSize);
-				_before = last;
+				// The server keeps microseconds and lists `updated_at < before`
+				// in milliseconds: the rows of the last row's millisecond that
+				// did not fit come with the next page (known ones are skipped).
+				_before = last + 1;
 				_list->setEntries(_entries);
 				refreshTail();
 			},
@@ -1307,14 +1295,14 @@ private:
 		}
 		const auto generation = _generation;
 		controller()->session().data().notifications().load(
-			serverTab(),
+			_tab,
 			0,
 			base::Guard(this),
 			[=, this](const QVector<Data::NotificationEntry> &page) {
 				if (generation != _generation) {
 					return;
 				}
-				auto merged = filtered(page);
+				auto merged = page;
 				for (const auto &entry : _entries) {
 					const auto fresh = std::any_of(
 						merged.cbegin(),
