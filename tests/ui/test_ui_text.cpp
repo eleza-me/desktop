@@ -210,6 +210,26 @@ private Q_SLOTS:
 		QCOMPARE(empty.countHeight(100), 0);
 	}
 
+	void paragraphDirection() {
+		// Each paragraph goes its own way; one without a letter (emoji,
+		// digits) the way of the text around it, whatever the interface.
+		const auto wasRtl = style::RightToLeft();
+		for (const auto rtl : { false, true }) {
+			style::SetRightToLeft(rtl);
+			const auto last = [](const QString &text) {
+				return String(st::defaultTextStyle, text).countLastLine(500).rtl;
+			};
+			QVERIFY(!last(U("Hello world")));
+			QVERIFY(last(U("سلام دنیا")));
+			QVERIFY(!last(U("Hello\n\U0001F389\U0001F389")));
+			QVERIFY(last(U("سلام\n۱۲۳۴")));
+			QVERIFY(!last(U("سلام\nHello\n2024")));
+			// No letter at all: the interface.
+			QCOMPARE(last(U("12 34")), rtl);
+		}
+		style::SetRightToLeft(wasRtl);
+	}
+
 	void hitTest() {
 		const auto text = QStringLiteral("hello link world");
 		auto string = String(st::defaultTextStyle, TextWithEntities{ text, {
