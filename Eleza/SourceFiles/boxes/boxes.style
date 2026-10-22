@@ -26,6 +26,16 @@ peerListCheckSize: 22px;
 peerListCheckIcon: icon {{ "check", textOnBrand, 16px }};
 peerListCheckBorder: borderStrong;
 peerListCheckBg: brandPrimary;
+peerListActionFont: smallSemiboldFont;
+peerListActionHeight: 30px;
+peerListActionPadding: 14px;
+peerListActionBg: brandPrimary;
+peerListActionBgOver: brandPressed;
+peerListActionFg: textOnBrand;
+peerListActionBorder: borderStrong;
+peerListActionOutlineBgOver: stateHover;
+peerListActionOutlineFg: textPrimary;
+peerListActionBusyOpacity: 0.6;
 
 countryRowHeight: 48px;
 countryPadding: margins(20px, 0px, 20px, 0px);
