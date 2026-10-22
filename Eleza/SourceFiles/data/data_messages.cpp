@@ -28,6 +28,13 @@ namespace {
 	return IsGroupId(chat) ? u"group"_s : u"chat"_s;
 }
 
+// The seq that the key of a server message names (Message::KeyForSeq), or 0.
+[[nodiscard]] qint64 SeqOfKey(const QString &key) {
+	auto ok = false;
+	const auto seq = key.mid(key.lastIndexOf(u':') + 1).toLongLong(&ok);
+	return (ok && seq > 0 && Message::KeyForSeq(seq) == key) ? seq : 0;
+}
+
 } // namespace
 
 qint64 History::firstSeq() const {
@@ -155,6 +162,22 @@ void Messages::markAllStale() {
 	}
 }
 
+void Messages::markStale(const QString &chat) {
+	if (const auto db = _session->local()) {
+		db->clearMessages(chat);
+	}
+	const auto history = existing(chat);
+	if (!history) {
+		return;
+	}
+	const auto shown = live(chat) && (_session->chats().visibleChat() == chat);
+	history->stale = true;
+	history->loaded = false;
+	if (shown) {
+		loadLatest(chat);
+	}
+}
+
 void Messages::setInfo(const ChatInfo &info) {
 	if (!info.valid()) {
 		return;
@@ -180,6 +203,31 @@ void Messages::persist(const QString &chat, const QVector<Message> &messages) {
 		}
 	}
 	db->putMessages(rows);
+}
+
+void Messages::dropDetached(const QString &chat, qint64 firstSeq, bool complete) {
+	if (firstSeq <= 1) {
+		return;
+	}
+	auto &items = historyRef(chat).items;
+	auto newestOlder = qint64(0);
+	for (const auto &message : std::as_const(items)) {
+		if (message.seq > 0 && message.seq < firstSeq) {
+			newestOlder = std::max(newestOlder, message.seq);
+		}
+	}
+	if (newestOlder > 0 && (complete || newestOlder < firstSeq - 1)) {
+		items.erase(std::remove_if(items.begin(), items.end(), [&](const Message &message) {
+			return message.seq > 0 && message.seq < firstSeq;
+		}), items.end());
+	}
+	if (const auto db = _session->local()) {
+		if (complete) {
+			db->clearMessages(chat, firstSeq);
+		} else {
+			db->dropDetachedMessages(chat, firstSeq);
+		}
+	}
 }
 
 void Messages::merge(const QString &chat, QVector<Message> incoming, bool persist) {
@@ -277,6 +325,13 @@ void Messages::patchMessage(
 }
 
 void Messages::removeMessage(const QString &chat, const QString &key) {
+	// Out of the cache as well, also when it is not in the window: an old
+	// message deleted while it was not shown must not come back from it.
+	if (const auto seq = SeqOfKey(key)) {
+		if (const auto db = _session->local()) {
+			db->deleteMessage(chat, seq);
+		}
+	}
 	const auto i = existing(chat);
 	if (!i) {
 		return;
@@ -285,14 +340,22 @@ void Messages::removeMessage(const QString &chat, const QString &key) {
 	if (index < 0) {
 		return;
 	}
-	const auto seq = i->items[index].seq;
 	i->items.removeAt(index);
-	if (seq > 0) {
-		if (const auto db = _session->local()) {
-			db->deleteMessage(chat, seq);
+	Q_EMIT historyChanged(chat);
+}
+
+void Messages::updateCached(const QString &chat, const QVector<Message> &messages) {
+	const auto db = _session->local();
+	if (!db) {
+		return;
+	}
+	auto rows = QVector<Storage::Database::MessageRow>();
+	for (const auto &message : messages) {
+		if (message.seq > 0) {
+			rows.push_back({ chat, message.seq, message.toStored() });
 		}
 	}
-	Q_EMIT historyChanged(chat);
+	db->replaceMessages(rows);
 }
 
 void Messages::clear(const QString &chat, std::optional<qint64> beforeSeq) {
@@ -538,6 +601,9 @@ void Messages::loadPage(
 			const auto me = _session->userId();
 			for (const auto &item : result.value("messages"_L1).toArray()) {
 				auto message = Message::FromJson(item.toObject());
+				if (message.seq > 0 && (!page.firstSeq || message.seq < page.firstSeq)) {
+					page.firstSeq = message.seq;
+				}
 				if (message.chat.isEmpty()) {
 					message.chat = chat;
 				}
@@ -584,14 +650,25 @@ void Messages::loadLatest(
 		Fn<void(const Api::Error &)> fail) {
 	loadPage(chat, PageOptions(), [=, this](const Page &page) {
 		auto &history = historyRef(chat);
-		if (history.hasMoreAfter) {
-			// Coming back from a detached window: start over at the end.
+		if (history.hasMoreAfter || history.stale) {
+			// Coming back from a detached window, or what is held may be
+			// gone: start over at the end.
 			auto &items = history.items;
 			items.erase(std::remove_if(items.begin(), items.end(), [](const Message &message) {
 				return message.seq > 0;
 			}), items.end());
 			history.hasMoreAfter = false;
+			history.stale = false;
 		}
+		// What is held older than the newest page must be one run with it
+		// (an empty page without more before it: the chat has nothing up to
+		// the header's last seq).
+		const auto from = page.firstSeq
+			? page.firstSeq
+			: page.hasMoreBefore
+			? qint64(0)
+			: (page.info.lastSeq + 1);
+		dropDetached(chat, from, !page.hasMoreBefore);
 		setInfo(page.info);
 		history.loaded = true;
 		history.hasMoreBefore = page.hasMoreBefore;
@@ -721,15 +798,19 @@ void Messages::loadNewer(
 		auto &history = historyRef(chat);
 		setInfo(page.info);
 		history.hasMoreAfter = page.hasMoreAfter && !page.messages.isEmpty();
-		if (!history.hasMoreAfter) {
-			// The window reached the end again: live updates extend it.
-			history.loaded = true;
-		}
 		const auto count = int(page.messages.size());
 		if (count) {
 			merge(chat, page.messages, false);
 		} else {
 			Q_EMIT historyChanged(chat);
+		}
+		if (!history.hasMoreAfter) {
+			// The window reached the end again: live updates extend it, and
+			// what they cache must continue the cached run, so the window
+			// becomes that run.
+			history.loaded = true;
+			dropDetached(chat, history.firstSeq(), !history.hasMoreBefore);
+			persist(chat, history.items);
 		}
 		if (done && guard.alive()) {
 			done(count);
@@ -747,7 +828,7 @@ void Messages::loadAround(
 		base::Guard guard,
 		Fn<void()> done,
 		Fn<void(const Api::Error &)> fail) {
-	if (historyRef(chat).find(seq)) {
+	if (const auto &history = historyRef(chat); !history.stale && history.find(seq)) {
 		if (done && guard.alive()) {
 			done();
 		}
@@ -763,13 +844,19 @@ void Messages::loadAround(
 		items.erase(std::remove_if(items.begin(), items.end(), [](const Message &message) {
 			return message.seq > 0;
 		}), items.end());
+		history.stale = false;
 		history.hasMoreBefore = page.hasMoreBefore;
 		history.hasMoreAfter = page.hasMoreAfter;
 		history.loaded = !page.hasMoreAfter;
+		if (history.loaded) {
+			// The window reaches the newest message: as the newest page, it
+			// is what live updates continue in the cache.
+			dropDetached(chat, page.firstSeq, !page.hasMoreBefore);
+		}
 		if (page.messages.isEmpty()) {
 			Q_EMIT historyChanged(chat);
 		} else {
-			merge(chat, page.messages, false);
+			merge(chat, page.messages, history.loaded);
 		}
 		if (done && guard.alive()) {
 			done();

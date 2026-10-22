@@ -51,6 +51,7 @@ private Q_SLOTS:
 	void metaAndValues();
 	void chats();
 	void messagesPaging();
+	void detachedMessagesGo();
 	void users();
 	void outboxKeepsOrder();
 	void drafts();
@@ -218,6 +219,33 @@ void TestStorage::messagesPaging() {
 	QCOMPARE(Read<QVector<QJsonObject>>([&](QObject *guard, Fn<void(QVector<QJsonObject>)> done) {
 		db.messages(u"c2"_s, 10, 0, guard, std::move(done));
 	}).size(), 1);
+}
+
+// The run of cached messages is dropped when it cannot reach messages that
+// begin at a given seq; a run that touches or overlaps them stays.
+void TestStorage::detachedMessagesGo() {
+	auto db = Database(_dir.path() + u"/detached/cache.db"_s);
+	auto rows = QVector<Database::MessageRow>();
+	for (auto seq = 1; seq <= 10; ++seq) {
+		rows.push_back({ u"c1"_s, seq, Text(QString::number(seq)) });
+	}
+	rows.push_back({ u"c2"_s, 3, Text(u"other chat"_s) });
+	db.putMessages(rows);
+	const auto all = [&](const QString &chat) {
+		return Texts(Read<QVector<QJsonObject>>([&](QObject *guard, Fn<void(QVector<QJsonObject>)> done) {
+			db.messages(chat, 100, 0, guard, std::move(done));
+		}));
+	};
+	db.dropDetachedMessages(u"c1"_s, 11); // right after the newest: one run
+	QCOMPARE(all(u"c1"_s).size(), 10);
+	db.dropDetachedMessages(u"c1"_s, 5); // overlapping
+	QCOMPARE(all(u"c1"_s).size(), 10);
+	db.dropDetachedMessages(u"c1"_s, 12); // seq 11 is missing: a hole
+	QVERIFY(all(u"c1"_s).isEmpty());
+	QCOMPARE(all(u"c2"_s), (QStringList{ u"other chat"_s }));
+	// Nothing cached: nothing to do.
+	db.dropDetachedMessages(u"c3"_s, 100);
+	QVERIFY(all(u"c3"_s).isEmpty());
 }
 
 void TestStorage::users() {

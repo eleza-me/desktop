@@ -218,7 +218,11 @@ private:
 		int page,
 		std::shared_ptr<QVector<InboxEntry>> into,
 		Fn<void(bool ok, bool complete)> done);
-	void finishInbox(const QVector<InboxEntry> &entries, const QSet<QString> &partialSections);
+	void finishInbox(
+		const QVector<InboxEntry> &entries,
+		const QSet<QString> &partialSections,
+		const QHash<QString, int> &unreadAtStart);
+	void keepNewer(Chat &row, const Chat &previous, std::optional<int> unreadAtStart);
 	[[nodiscard]] bool shown(const Chat &chat) const;
 	[[nodiscard]] bool isCleared(const Chat &chat);
 	void persistCleared();
@@ -237,6 +241,7 @@ private:
 	QHash<QString, Chat> _chats;
 	QHash<QString, qint64> _cleared;
 	QHash<QString, Draft> _localDrafts;
+	QSet<QString> _draftsSending; // a save (or a clear) is on its way
 	QSet<QString> _actionBarDismissals; // the × that the server does not have yet
 	QSet<QString> _actionBarSending;
 	QHash<QString, Presence> _presence;

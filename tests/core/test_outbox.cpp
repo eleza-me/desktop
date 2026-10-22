@@ -59,6 +59,7 @@ private Q_SLOTS:
 	void echoBeforeAnswer();
 	void fileIsUploadedFirst();
 	void selfDestructGoesOnItsOwn();
+	void dedupClaimProvesTheWholeFile();
 	void albumIsUploadedThenSent();
 	void processedSignalEndsTheWait();
 	void queueSurvivesRestart();
@@ -673,6 +674,89 @@ void TestOutbox::selfDestructGoesOnItsOwn() {
 		(QJsonObject{ { u"view_once"_s, true } }));
 	QVERIFY(!SelfDestructInput{}.valid());
 	QVERIFY(!(SelfDestructInput{ .viewOnce = true, .seconds = 3 }).valid());
+}
+
+// Dedup (docs/client-media-dedup-forward.md): the proof is
+// hex(HMAC-SHA256(key = the hex nonce's bytes, the whole file)), asked once
+// more after a server error; a miss sends the bytes after all.
+void TestOutbox::dedupClaimProvesTheWholeFile() {
+	auto dir = QTemporaryDir();
+	QVERIFY(dir.isValid());
+	const auto path = dir.filePath(u"eleza.txt"_s);
+	{
+		auto file = QFile(path);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write("eleza");
+	}
+	// The test vector of the document.
+	const auto nonce = u"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"_s;
+	const auto sha = u"0a7e8e4e566c46c4df8a36bae9e51ffc5bbfd083f250cc83dca4b45684477c00"_s;
+	const auto proof = u"3ed52b647ecfafae227e6ba9d7832fecfa0f9e6858181f1bd3b96ba378eb3a2a"_s;
+
+	auto harness = Harness();
+	QVERIFY(harness.start());
+	auto uploads = 0;
+	auto claims = QList<QByteArray>();
+	auto known = true;
+	harness.http.handler = [&](const Test::HttpServer::Request &request) {
+		using Response = Test::HttpServer::Response;
+		if (request.method == "POST" && request.path == "/v1/uploads") {
+			const auto n = ++uploads;
+			return Response::Ok(QJsonObject{
+				{ u"upload_id"_s, u"up%1"_s.arg(n) },
+				{ u"media_id"_s, u"med%1"_s.arg(n) },
+				{ u"state"_s, u"uploading"_s },
+				{ u"part_size"_s, 5 },
+				{ u"parts"_s, QJsonArray{
+					QJsonObject{ { u"number"_s, 1 }, { u"url"_s, harness.http.base() + u"/put/%1"_s.arg(n) } },
+				} },
+				{ u"proof"_s, QJsonObject{ { u"nonce"_s, nonce }, { u"alg"_s, u"hmac-sha256"_s } } },
+			});
+		} else if (request.path.endsWith("/claim")) {
+			claims.push_back(request.path);
+			if (!known) {
+				return Response::Problem(409, "upload.dedup_miss");
+			} else if (claims.size() == 1) {
+				return Response::Problem(503, "server.unavailable");
+			}
+			return Response::Ok(QJsonObject{
+				{ u"upload_id"_s, u"up1"_s },
+				{ u"media_id"_s, u"med_shared"_s },
+				{ u"state"_s, u"ready"_s },
+			});
+		} else if (request.path.startsWith("/v1/media/")) {
+			return Response::Ok(QJsonObject{ { u"state"_s, u"ready"_s } });
+		}
+		return Response::Ok();
+	};
+	auto seq = qint64(90);
+	harness.on(u"chat.send"_s, [&](const Call &) {
+		return Reply::Ok(Sent(seq++));
+	});
+	auto sent = QSignalSpy(&harness.outbox(), &Outbox::sent);
+	auto options = SendFileOptions();
+	options.kind = UploadKind::File;
+	harness.outbox().sendFile(u"c2"_s, path, options);
+	QVERIFY(Test::WaitFor([&] { return sent.size() == 1; }, 10000));
+	QCOMPARE(harness.http.to("/v1/uploads").value(0).json().value("sha256"_L1).toString(), sha);
+	QCOMPARE(claims, (QList<QByteArray>{ "/v1/uploads/up1/claim", "/v1/uploads/up1/claim" }));
+	for (const auto &request : harness.http.to("/v1/uploads/up1/claim")) {
+		QCOMPARE(request.json(), (QJsonObject{ { u"proof"_s, proof } }));
+	}
+	// Claimed: nothing was transferred.
+	QCOMPARE(harness.http.count("/put/1"), 0);
+	QCOMPARE(harness.http.count("/v1/uploads/up1/complete"), 0);
+	QCOMPARE(harness.bodies(u"chat.send"_s).back().value("attachment"_L1).toString(), u"med_shared"_s);
+
+	// Unknown content: one claim, then the bytes.
+	known = false;
+	claims.clear();
+	harness.outbox().sendFile(u"c2"_s, path, options);
+	QVERIFY(Test::WaitFor([&] { return sent.size() == 2; }, 10000));
+	QCOMPARE(claims, (QList<QByteArray>{ "/v1/uploads/up2/claim" }));
+	QCOMPARE(harness.http.to("/put/2").value(0).body, QByteArray("eleza"));
+	QCOMPARE(harness.http.count("/v1/uploads/up2/complete"), 1);
+	QCOMPARE(harness.bodies(u"chat.send"_s).back().value("attachment"_L1).toString(), u"med2"_s);
 }
 
 // An album: one album id on every item, the caption (and «caption above»)

@@ -37,6 +37,7 @@ struct History {
 	bool loaded = false;        // the newest page came from the server in this run
 	bool hasMoreBefore = true;
 	bool hasMoreAfter = false;  // the window does not reach the newest message
+	bool stale = false;         // may hold messages that are gone: read again
 	std::optional<ChatInfo> info;
 	QVector<PinnedMessage> pins; // after loadPins()
 	bool pinsLoaded = false;
@@ -189,6 +190,9 @@ public:
 	void addLocal(const Message &message);
 	void patchMessage(const QString &chat, const QString &key, const Fn<void(Message &)> &change);
 	void removeMessage(const QString &chat, const QString &key);
+	// Brings the cached copies of these messages up to date (an old message
+	// edited outside the window); one that is not cached stays out.
+	void updateCached(const QString &chat, const QVector<Message> &messages);
 	// Drops messages with seq < beforeSeq (all server messages when nullopt).
 	void clear(const QString &chat, std::optional<qint64> beforeSeq = std::nullopt);
 	// The peer read up to `seq`: my messages up to it become Read.
@@ -198,6 +202,11 @@ public:
 	void forget(const QString &chat);
 	// After a `too_long` difference: every timeline must be re-read.
 	void markAllStale();
+	// Something changed in the chat that no update spelled out (a history
+	// cleared for me arrives in a difference as a bare "member" item): its
+	// cache goes, and its timeline is read again from the end, at once when
+	// it is on screen, when the chat opens otherwise.
+	void markStale(const QString &chat);
 	// Refetches one message of the window (a reaction changed).
 	void refresh(const QString &chat, qint64 seq);
 
@@ -231,6 +240,9 @@ private:
 		std::optional<Group> group; // the header of a group's page
 		bool hasMoreBefore = true;
 		bool hasMoreAfter = false;
+		// The oldest seq the server returned, messages that are not shown
+		// (deleted ones) included: where the page begins.
+		qint64 firstSeq = 0;
 	};
 
 	[[nodiscard]] History &historyRef(const QString &chat);
@@ -241,6 +253,13 @@ private:
 		Fn<void(const Page &)> done,
 		Fn<void(const Api::Error &)> fail);
 	void persist(const QString &chat, const QVector<Message> &messages);
+	// A window that reaches the newest message begins at `firstSeq`, and
+	// with `complete` nothing older exists. The older messages held in
+	// memory and in the database go unless they are one run with it:
+	// messages written while the chat was not open are never cached, and
+	// the older pages are read from the cache first, so a hole between the
+	// two would never be filled.
+	void dropDetached(const QString &chat, qint64 firstSeq, bool complete);
 	void simple(
 		const QString &method,
 		const QJsonObject &body,
