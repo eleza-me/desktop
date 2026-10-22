@@ -337,7 +337,9 @@ void Sync::applyLive(
 			});
 		}
 	} else if (kind == u"draft") {
-		if (!chat.isEmpty()) {
+		// A draft typed here that the server has not confirmed yet is newer
+		// than what it tells (the echo of an earlier save, say).
+		if (!chat.isEmpty() && !chats.hasLocalDraft(chat)) {
 			const auto draft = Json::Optional<Draft>(d, "draft"_L1);
 			chats.patch(chat, [&](Chat &c) {
 				c.draft = (draft && !draft->empty()) ? draft : std::nullopt;

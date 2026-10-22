@@ -119,6 +119,7 @@ private Q_SLOTS:
 	void inboxReloadRemovesOnlyWhatIsGone();
 	void truncatedInboxKeepsOlderRows();
 	void inboxOnItsWayKeepsWhatIsNewer();
+	void draftSavesGoOneAtATime();
 	void unreadAfterRead();
 	void partialAndRemoteReads();
 	void scrolledUpCountsUnread();
@@ -357,6 +358,56 @@ void TestChats::inboxOnItsWayKeepsWhatIsNewer() {
 	QCOMPARE(row->lastSeq, 11);
 	QCOMPARE(row->lastReadSeq, 11);
 	QCOMPARE(row->unread, 0);
+}
+
+// The saves of a chat's draft go one at a time (one could overtake
+// another), the newest after the one on its way; the server's draft updates
+// do not undo a draft typed here that it has not confirmed yet.
+void TestChats::draftSavesGoOneAtATime() {
+	auto harness = Harness();
+	QVERIFY(harness.start());
+	harness.transport.setOnline(true);
+	harness.transport.emitFrame(Hello(100));
+	harness.on(u"chat.draft.save"_s, [](const Call &) {
+		return Reply::Hold();
+	});
+	auto &chats = harness.chats();
+	const auto typed = [](const QString &text) {
+		auto result = Draft();
+		result.text = text;
+		return result;
+	};
+	const auto saves = [&] {
+		return harness.transport.count(u"chat.draft.save"_s);
+	};
+	const auto answer = [&] {
+		harness.transport.resolve(harness.transport.lastIndexOf(u"chat.draft.save"_s));
+	};
+	chats.saveDraft(u"c2"_s, typed(u"س"_s));
+	chats.saveDraft(u"c2"_s, typed(u"سل"_s));
+	chats.saveDraft(u"c2"_s, typed(u"سلام"_s));
+	QCOMPARE(saves(), 1);
+	QCOMPARE(chats.chat(u"c2"_s)->draft->text, u"سلام"_s);
+	// The first save comes back as an update before its answer.
+	harness.transport.emitFrame(Update(101, u"draft"_s, {
+		{ u"chat"_s, u"c2"_s },
+		{ u"draft"_s, QJsonObject{ { u"text"_s, u"س"_s } } },
+	}));
+	QCOMPARE(chats.chat(u"c2"_s)->draft->text, u"سلام"_s);
+	answer();
+	QCOMPARE(saves(), 2);
+	QCOMPARE(harness.bodies(u"chat.draft.save"_s).back().value("text"_L1).toString(), u"سلام"_s);
+	QVERIFY(chats.hasLocalDraft(u"c2"_s));
+	answer();
+	QVERIFY(!chats.hasLocalDraft(u"c2"_s));
+	Test::Settle();
+	QCOMPARE(saves(), 2);
+	// Nothing waits here any more: a draft from another device applies.
+	harness.transport.emitFrame(Update(102, u"draft"_s, {
+		{ u"chat"_s, u"c2"_s },
+		{ u"draft"_s, QJsonObject{ { u"text"_s, u"از گوشی"_s } } },
+	}));
+	QCOMPARE(chats.chat(u"c2"_s)->draft->text, u"از گوشی"_s);
 }
 
 void TestChats::unreadAfterRead() {

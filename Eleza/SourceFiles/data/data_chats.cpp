@@ -1060,12 +1060,13 @@ void Chats::saveDraft(const QString &chat, const Draft &draft) {
 }
 
 void Chats::pushDraft(const QString &chat, const Draft &draft) {
+	const auto same = [](const Draft &a, const Draft &b) {
+		return (a.text == b.text) && (a.replyToSeq == b.replyToSeq);
+	};
 	const auto confirmed = [=, this] {
 		// Unless a newer draft was typed meanwhile, the server has it now.
 		const auto i = _localDrafts.find(chat);
-		if (i != _localDrafts.end()
-			&& i->text == draft.text
-			&& i->replyToSeq == draft.replyToSeq) {
+		if (i != _localDrafts.end() && same(*i, draft)) {
 			_localDrafts.erase(i);
 			if (const auto db = _session->local()) {
 				db->deleteDraft(chat);
@@ -1083,18 +1084,38 @@ void Chats::pushDraft(const QString &chat, const Draft &draft) {
 		}
 		return;
 	}
+	if (_draftsSending.contains(chat)) {
+		// One save of a chat at a time, or an older one could be applied
+		// after a newer one: the newest goes when this one is answered.
+		return;
+	}
+	_draftsSending.insert(chat);
+	const auto answered = [=, this] {
+		_draftsSending.remove(chat);
+		const auto i = _localDrafts.constFind(chat);
+		if (i != _localDrafts.cend() && !same(*i, draft)) {
+			pushDraft(chat, *i);
+		}
+	};
 	const auto failed = [=, this](const Api::Error &error) {
 		// Best effort: after a transport failure the draft stays local and is
 		// sent again when the connection is back (flushDrafts).
 		if (!error.transient()) {
 			confirmed();
+			answered();
 			if (group && _session->groups().handleError(chat, error)) {
 				return;
 			} else if (group && error.code == u"draft.not_supported") {
 				return;
 			}
 			_session->reportFailure(u"draft.save"_s, chat, error);
+		} else {
+			answered();
 		}
+	};
+	const auto done = [=] {
+		confirmed();
+		answered();
 	};
 	const auto key = group ? u"group"_s : u"chat"_s;
 	if (!draft.empty()) {
@@ -1107,14 +1128,14 @@ void Chats::pushDraft(const QString &chat, const Draft &draft) {
 		_session->transport().rpc(group ? u"groups.draft.save"_s : u"chat.draft.save"_s)
 			.body(body)
 			.guard(this)
-			.done(confirmed)
+			.done(done)
 			.fail(failed)
 			.send();
 	} else {
 		_session->transport().rpc(group ? u"groups.draft.clear"_s : u"chat.draft.clear"_s)
 			.body(QJsonObject{ { key, chat } })
 			.guard(this)
-			.done(confirmed)
+			.done(done)
 			.fail(failed)
 			.send();
 	}
