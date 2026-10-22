@@ -151,7 +151,8 @@ public:
 	DownloadBuilder(Client *client, const QString &target);
 
 	DownloadBuilder &unauthenticated();
-	// Stream to this file (written as <path>.part, renamed when complete).
+	// Stream to this file (written as <path>.<n>.part, one per download,
+	// renamed when complete; a failed write fails it with code "file").
 	DownloadBuilder &toFile(const QString &path);
 	// Abort with code "too_large" beyond this size.
 	DownloadBuilder &maxBytes(qint64 bytes);

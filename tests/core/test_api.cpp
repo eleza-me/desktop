@@ -14,6 +14,7 @@
 #include "storage/storage_key_value.h"
 #include "storage/storage_secure_blob.h"
 
+#include <QtCore/QDir>
 #include <QtCore/QTemporaryDir>
 
 using Test::HttpServer;
@@ -533,6 +534,15 @@ void TestApi::downloadFollowsRedirectWithoutToken() {
 	QVERIFY(result->bytes.isEmpty());
 	QCOMPARE(QFileInfo(path).size(), payload.size());
 	QVERIFY(!QFileInfo::exists(path + u".part"_s));
+	// Two downloads of the same file at once do not write into one .part.
+	auto first = std::optional<Api::DownloadResult>();
+	auto second = std::optional<Api::DownloadResult>();
+	client.download(u"/v1/media"_s).toFile(path).done([&](const Api::DownloadResult &value) { first = value; }).send();
+	client.download(u"/v1/media"_s).toFile(path).done([&](const Api::DownloadResult &value) { second = value; }).send();
+	QVERIFY(Test::WaitFor([&] { return first.has_value() && second.has_value(); }));
+	QCOMPARE(QFileInfo(path).size(), payload.size());
+	QCOMPARE(base::platform::ReadFile(path).value_or(QByteArray()), payload);
+	QCOMPARE(QDir(QFileInfo(path).absolutePath()).entryList(QDir::Files), QStringList{ u"photo.bin"_s });
 
 	// An absolute URL is fetched without the token.
 	result = std::nullopt;

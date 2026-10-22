@@ -127,7 +127,17 @@ struct Client::Download {
 	int redirects = 0;
 	bool retriedAuth = false;
 	bool tooLarge = false;
+	bool writeFailed = false;
 };
+
+namespace {
+
+// Next to the target, and never shared by two downloads of the same file.
+[[nodiscard]] QString PartPath(const QString &filePath, RequestId id) {
+	return filePath + u'.' + QString::number(id) + u".part"_s;
+}
+
+} // namespace
 
 struct Client::Upload {
 	UploadSpec spec;
@@ -841,6 +851,7 @@ void Client::performDownload(RequestId id) {
 	download->errorReceived = 0;
 	download->received = 0;
 	download->tooLarge = false;
+	download->writeFailed = false;
 	if (download->file) {
 		download->file->remove();
 		download->file = nullptr;
@@ -900,14 +911,19 @@ void Client::performDownload(RequestId id) {
 		} else {
 			if (!download->file) {
 				base::platform::EnsureDirectory(QFileInfo(download->spec.filePath).absolutePath());
-				download->file = std::make_unique<QFile>(download->spec.filePath + u".part"_s);
+				download->file = std::make_unique<QFile>(PartPath(download->spec.filePath, id));
 				if (!download->file->open(QIODevice::WriteOnly | QIODevice::Truncate)) {
 					download->file = nullptr;
+					download->writeFailed = true;
 					reply->abort();
 					return;
 				}
 			}
-			download->file->write(chunk);
+			if (download->file->write(chunk) != chunk.size()) {
+				// A full disk: never reported as a finished (truncated) file.
+				download->writeFailed = true;
+				reply->abort();
+			}
 		}
 	});
 	connect(reply, &QNetworkReply::downloadProgress, this, [=, this](qint64 received, qint64 total) {
@@ -942,6 +958,9 @@ void Client::downloadFinished(RequestId id) {
 	const auto status = StatusOf(reply);
 	if (download->tooLarge) {
 		failDownload(id, Error::Local(413, u"too_large"_s, u"the file is larger than allowed"_s));
+		return;
+	} else if (download->writeFailed) {
+		failDownload(id, Error::Local(0, u"file"_s, u"could not write the file"_s));
 		return;
 	}
 	if (status >= 300 && status < 400) {
@@ -1014,7 +1033,7 @@ void Client::downloadFinished(RequestId id) {
 	if (!download->spec.filePath.isEmpty()) {
 		if (!download->file) {
 			// An empty body: still produce the (empty) file.
-			download->file = std::make_unique<QFile>(download->spec.filePath + u".part"_s);
+			download->file = std::make_unique<QFile>(PartPath(download->spec.filePath, id));
 			base::platform::EnsureDirectory(QFileInfo(download->spec.filePath).absolutePath());
 			if (!download->file->open(QIODevice::WriteOnly | QIODevice::Truncate)) {
 				download->file = nullptr;
@@ -1022,7 +1041,12 @@ void Client::downloadFinished(RequestId id) {
 				return;
 			}
 		}
+		const auto flushed = download->file->flush();
 		download->file->close();
+		if (!flushed || download->file->error() != QFileDevice::NoError) {
+			failDownload(id, Error::Local(0, u"file"_s, u"could not write the file"_s));
+			return;
+		}
 		QFile::remove(download->spec.filePath);
 		if (!download->file->rename(download->spec.filePath)) {
 			failDownload(id, Error::Local(0, u"file"_s, u"could not write the file"_s));
