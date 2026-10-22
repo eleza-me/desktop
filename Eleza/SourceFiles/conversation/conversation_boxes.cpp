@@ -508,6 +508,7 @@ private:
 	void checkReady();
 	void showLoading();
 	void showFailed(const QString &text);
+	void showRetry(const Api::Error &error);
 	void showReady();
 	void showMenu(QWidget *anchor);
 	void join();
@@ -568,12 +569,14 @@ void JoinBox::load() {
 }
 
 // The view could not be read: the open list may still know the topic.
+// Only a definite answer hides the topic; a transient error, or a topic
+// beyond the list's first page, shows «try again».
 void JoinBox::loadFromList(const Api::Error &original) {
 	if (original.notFound() || original.code == u"conversation.not_open") {
 		showFailed(tr::lng_conv_may_have_ended_found_its(tr::now));
 		return;
 	}
-	data().conversations().loadOpen(QString(), QString(), this, [this](
+	data().conversations().loadOpen(QString(), QString(), this, [=, this](
 			const Data::OpenConversationsPage &page) {
 		for (const auto &item : page.conversations) {
 			if (item.id != _id) {
@@ -597,9 +600,9 @@ void JoinBox::loadFromList(const Api::Error &original) {
 			loaded(conversation);
 			return;
 		}
-		showFailed(tr::lng_conv_may_have_ended_found_its(tr::now));
+		showRetry(original);
 	}, [this](const Api::Error &error) {
-		showFailed(Support::ErrorText(error, tr::lng_error_load(tr::now)));
+		showRetry(error);
 	});
 }
 
@@ -674,6 +677,30 @@ void JoinBox::showFailed(const QString &text) {
 	clearButtons();
 	addButton(tr::lng_close(tr::now), [this] { closeBox(); });
 	Q_EMIT Events()->topicHidden(_id);
+}
+
+void JoinBox::showRetry(const Api::Error &error) {
+	_failed = true;
+	_listen = nullptr;
+	_identity = nullptr;
+	_seen = nullptr;
+	_content->clear();
+	auto descriptor = Ui::EmptyPlaceholderDescriptor();
+	descriptor.icon = &st::conversationStateIcon;
+	descriptor.title = Support::ErrorText(error, tr::lng_error_load(tr::now));
+	descriptor.buttonText = tr::lng_try_again(tr::now);
+	descriptor.buttonCallback = [this] {
+		// Not from inside the button that showLoading() destroys.
+		QMetaObject::invokeMethod(this, [this] {
+			_failed = false;
+			showLoading();
+			load();
+		}, Qt::QueuedConnection);
+	};
+	_content->add(
+		Ui::object_ptr<Ui::EmptyPlaceholder>(_content, std::move(descriptor)));
+	clearButtons();
+	addButton(tr::lng_close(tr::now), [this] { closeBox(); });
 }
 
 void JoinBox::showReady() {

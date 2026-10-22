@@ -22,10 +22,11 @@
 namespace Dialogs {
 namespace {
 
-[[nodiscard]] int PinnedCount(Data::Chats &chats) {
+// The server keeps one limit for direct chats and another for groups.
+[[nodiscard]] int PinnedCount(Data::Chats &chats, bool groups) {
 	auto result = 0;
 	for (const auto &chat : chats.all()) {
-		if (chat.pinned && CanPin(chat)) {
+		if (chat.pinned && CanPin(chat) && chat.isGroup == groups) {
 			++result;
 		}
 	}
@@ -104,12 +105,13 @@ void FillChatMenu(
 	}
 	if (CanPin(chat)) {
 		const auto pinned = chat.pinned;
+		const auto group = chat.isGroup;
 		menu->addAction(
 			pinned ? tr::lng_unpin(tr::now) : tr::lng_pin(tr::now),
 			[=] {
 				const auto limit
 					= session->account().clientConfig().maxPinnedChats();
-				if (!pinned && limit > 0 && PinnedCount(*chats) >= limit) {
+				if (!pinned && limit > 0 && PinnedCount(*chats, group) >= limit) {
 					controller->showToast(tr::lng_dialogs_pin_limit(
 						tr::now,
 						lt_count,

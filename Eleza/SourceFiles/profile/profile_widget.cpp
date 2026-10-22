@@ -1270,6 +1270,11 @@ void Widget::toggleBlock() {
 					weak->_blocked = true;
 					weak->_profile.blockedByYou = true;
 					weak->_justUnblocked = false;
+					// A block ends my follow: one follower less.
+					weak->_profile.followers = std::max(
+						weak->_profile.followers
+							+ FollowersDelta(weak->_follow, FollowUi::None),
+						qint64(0));
 					weak->_follow = FollowUi::None;
 					weak->_profile.followState = u"none"_s;
 					weak->_profile.followsYou = false;
@@ -1327,6 +1332,10 @@ void Widget::report() {
 		if (weak) {
 			weak->_blocked = true;
 			weak->_profile.blockedByYou = true;
+			weak->_profile.followers = std::max(
+				weak->_profile.followers
+					+ FollowersDelta(weak->_follow, FollowUi::None),
+				qint64(0));
 			weak->_follow = FollowUi::None;
 			weak->apply();
 		}

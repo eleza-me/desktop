@@ -196,6 +196,10 @@ private:
 	std::shared_ptr<Ui::ImageSource> _preview;
 	QMetaObject::Connection _imageConnection;
 	QMetaObject::Connection _previewConnection;
+	// The handle is shared (a cached copy): coming back to the story
+	// must not add a second pair.
+	QMetaObject::Connection _videoReadyConnection;
+	QMetaObject::Connection _videoFailedConnection;
 	Data::MediaHandlePtr _videoFile;
 	Data::MediaHandlePtr _eliFile; // «انتشار در الی» on its way
 	bool _mediaReady = false;
@@ -572,6 +576,8 @@ void Viewer::showUnavailable(const QString &text) {
 void Viewer::clearMedia() {
 	QObject::disconnect(_imageConnection);
 	QObject::disconnect(_previewConnection);
+	QObject::disconnect(_videoReadyConnection);
+	QObject::disconnect(_videoFailedConnection);
 	_image = nullptr;
 	_preview = nullptr;
 	_videoFile = nullptr;
@@ -641,12 +647,12 @@ void Viewer::showStory(int index) {
 			_mediaReady = true;
 		} else {
 			const auto handle = _videoFile.get();
-			connect(handle, &Data::MediaHandle::ready, this, [=, this] {
+			_videoReadyConnection = connect(handle, &Data::MediaHandle::ready, this, [=, this] {
 				if (_videoFile.get() == handle) {
 					start();
 				}
 			});
-			connect(handle, &Data::MediaHandle::failed, this, [=, this] {
+			_videoFailedConnection = connect(handle, &Data::MediaHandle::failed, this, [=, this] {
 				if (_videoFile.get() == handle) {
 					_mediaFailed = true;
 					_mediaReady = true;
@@ -1689,11 +1695,18 @@ void Viewer::sendReply() {
 	}
 	const auto controller = _controller;
 	const auto name = Lang::Isolated(NameOf(_list.user));
+	const auto storyId = story->id;
 	_reply->clear();
 	setFocus();
-	stories().reply(story->id, text, this, [=](const QString &, qint64) {
+	stories().reply(storyId, text, this, [=](const QString &, qint64) {
 		controller->showToast(tr::lng_stories_reply_sent(tr::now));
 	}, [=](const Api::Error &error) {
+		// The text comes back while the same story is up and nothing new
+		// was typed.
+		const auto now = current();
+		if (now && now->id == storyId && _reply->text().isEmpty()) {
+			_reply->setText(text);
+		}
 		if (error.code == u"story.replies_off") {
 			controller->showToast(tr::lng_stories_replies_closed(tr::now));
 		} else if (error.code == u"story.reply_not_allowed") {
