@@ -34,6 +34,7 @@ public:
 	int refreshes = 0;
 	int revoked = 0;
 	int proofs = 0;
+	bool cannotSign = false;
 
 	void accessToken(Fn<void(QString)> done) override {
 		done(token);
@@ -57,7 +58,7 @@ public:
 	}
 	QByteArray proof(const QByteArray &nonce) override {
 		++proofs;
-		return key.sign(u"ws_resume"_s, nonce);
+		return cannotSign ? QByteArray() : key.sign(u"ws_resume"_s, nonce);
 	}
 	QString deviceId() override {
 		return u"device-7"_s;
@@ -675,6 +676,18 @@ void TestRtInterop::expiredTokenProof() {
 	QCOMPARE(other.delegate.proofs, 1);
 	QCOMPARE(other.delegate.refreshes, 1);
 	QCOMPARE(LastOf(state, "auths").value("token"_L1).toString(), u"tok-fresh"_s);
+	other.client.stop();
+
+	// Nothing to sign with: the attempt ends at once (the server would only
+	// wait for the proof) and a refreshed token signs in.
+	auto unsignable = Peer();
+	unsignable.delegate.cannotSign = true;
+	unsignable.delegate.token = u"expired-3"_s;
+	unsignable.delegate.tokenAfterRefresh = u"tok-fresh-3"_s;
+	QVERIFY(unsignable.connect());
+	QCOMPARE(unsignable.delegate.proofs, 1);
+	QCOMPARE(unsignable.delegate.refreshes, 1);
+	QCOMPARE(LastOf(unsignable.state(), "auths").value("token"_L1).toString(), u"tok-fresh-3"_s);
 }
 
 void TestRtInterop::keyRotation() {

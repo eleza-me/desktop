@@ -305,7 +305,11 @@ void Session::onResponse(const QJsonObject &response) {
 			? _proof(BytesOf(*challenge, "nonce"_L1))
 			: QByteArray();
 		if (signature.isEmpty()) {
+			// Nothing to prove it with: the server would only wait for the
+			// proof. End the attempt as an authentication failure (a fresh
+			// token, then a new connection).
 			Q_EMIT authFailed(error);
+			close(kCloseAuth, u"proof unavailable"_s);
 			return;
 		}
 		const auto proof = Proto::Encode("Proof"_L1, QJsonObject{
