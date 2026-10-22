@@ -50,6 +50,9 @@ public:
 		std::string &text,
 		std::size_t limit);
 	virtual void sleep(int milliseconds);
+	// Whether two names that differ only in letter case are the same file
+	// (Windows).
+	[[nodiscard]] virtual bool caseInsensitiveNames();
 };
 
 // Removes a directory with everything in it, without ever following a link.

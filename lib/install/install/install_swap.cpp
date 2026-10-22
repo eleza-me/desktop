@@ -24,6 +24,16 @@ struct Journal {
 	std::vector<JournalEntry> entries;
 };
 
+// ASCII letters folded to lower case: the names in our packages are ASCII.
+[[nodiscard]] std::string FoldCase(std::string name) {
+	for (auto &ch : name) {
+		if (ch >= 'A' && ch <= 'Z') {
+			ch = char(ch - 'A' + 'a');
+		}
+	}
+	return name;
+}
+
 void Write(const Log &log, const std::string &line) {
 	if (log) {
 		log(line);
@@ -365,13 +375,24 @@ Result Apply(const Request &request, FileOps &ops, const Log &log) {
 			return fail("a directory is where a file must go: " + relative);
 		}
 	}
-	// Files of the old version the new one does not have.
+	// Files of the old version the new one does not have. Where names differ
+	// only in case from a new file (a rename like Foo.dll -> foo.dll), they
+	// are the same file on Windows: it is swapped as the new one, and moving
+	// it out again as stale would take the new file away.
+	const auto foldCase = ops.caseInsensitiveNames();
+	auto freshFolded = std::set<std::string>();
+	if (foldCase) {
+		for (const auto &relative : fresh) {
+			freshFolded.insert(FoldCase(relative));
+		}
+	}
 	auto stale = std::vector<std::string>();
 	{
 		auto text = std::string();
 		if (ops.readText(installDir / kFileListName, text, kFileListLimit)) {
 			for (auto &relative : ParseFileList(text)) {
 				if (freshSet.count(relative)
+					|| (foldCase && freshFolded.count(FoldCase(relative)))
 					|| !ParentsAreDirectories(ops, installDir, relative)) {
 					continue;
 				}
