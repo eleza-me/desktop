@@ -2202,3 +2202,15 @@
 "lng_stories_open_of" = "See {name}'s story";
 "lng_stories_pause" = "Pause";
 "lng_stories_play" = "Play";
+
+// ---- eli and search: comments, notifications, suggestions ----
+"lng_eli_notif_reply_comment" = "{who} replied to your comment";
+"lng_eli_new_followers" = "New followers";
+"lng_eli_notif_and_more#one" = "and {count} more";
+"lng_eli_notif_and_more#other" = "and {count} more";
+"lng_search_reason_groups#one" = "{count} group in common";
+"lng_search_reason_groups#other" = "{count} groups in common";
+"lng_search_reason_new" = "Just joined Eleza";
+"lng_search_reason_and_new" = "{reason} · Just joined";
+"lng_search_see_all" = "See all";
+"lng_search_no_suggestions" = "No suggestions right now";

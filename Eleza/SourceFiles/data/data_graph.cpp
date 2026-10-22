@@ -448,6 +448,7 @@ void Graph::savePendingDismissals(const QStringList &list) {
 }
 
 void Graph::dismissSuggestion(const QString &userId) {
+	Q_EMIT suggestionDismissed(userId);
 	_session->api().request(Api::Post, u"/v1/suggestions/people/%1/dismiss"_s.arg(PathSegment(userId)))
 		.body(QJsonObject())
 		.guard(this)

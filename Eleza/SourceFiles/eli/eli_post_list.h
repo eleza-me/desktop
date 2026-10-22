@@ -169,7 +169,10 @@ private:
 	QObject *cardGuard() override;
 
 	void load(bool reset);
-	void applyPage(const ListPage &page, bool reset);
+	void applyPage(
+		const ListPage &page,
+		bool reset,
+		const QString &requested);
 	void appendRow(const Data::FeedItem &item);
 	[[nodiscard]] CardOptions optionsFor(const Data::FeedItem &item) const;
 	void rebuildIndex();
@@ -210,6 +213,7 @@ private:
 	bool _failedMore = false;
 	QString _errorText;
 	int _generation = 0;
+	int _idlePages = 0; // pages in a row that added nothing
 
 	Ui::EmptyPlaceholder *_placeholder = nullptr;
 	bool _placeholderIsError = false;

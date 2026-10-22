@@ -379,11 +379,12 @@ One string per place (`window/window_routes.h`). Never build them by hand: use
 | `u/<handle>` | `Routes::Handle(handle)` | current | profile |
 | `u/<handle>?start=<payload>` | `Routes::HandleStart(handle, payload)` | Chats | profile (a bot's deep link `eleza.me/<bot>?start=…`: resolves the handle, opens the chat with «شروع»; a person's profile otherwise) |
 | `eli` | `Routes::Eli()` | Eli | eli |
-| `eli/post/<postId>` | `Routes::Post(id)` | Eli | eli |
+| `eli/post/<postId>[?root=<id>]` | `Routes::Post(id, rootHint)` | Eli | eli (a comment opens under its post, its thread first and lit up; `root`: the post at the top of its conversation as a notification named it, read at the same time) |
 | `eli/share/<slug>` | `Routes::SharedPost(slug)` | Eli | eli (resolves the share link, then opens the post) |
 | `eli/topic/<slug>` | `Routes::Topic(slug)` | Eli | eli |
 | `eli/notifications` | `Routes::EliNotifications()` | Eli | eli |
 | `search[?q=text]` | `Routes::Search(query)` | Search | search |
+| `search/people` | — | Search | search («دیدن همه» of the people you may know) |
 | `me` | `Routes::Me()` | Me | profile |
 | `settings[/<section>]` | `Routes::Settings(section)` | Settings | settings |
 | `conversation/topics` | `Routes::ConversationTopics()` | Chats | conversation |
@@ -463,7 +464,7 @@ All in `lib/ui/ui/**`; every header starts with an example. The gallery (`--gall
 | Open a link / mention / hashtag | `Support::OpenLink`, `Support::LinkHandler` |
 | Pick / save files, paste, drop | `Support::PickFiles`, `PickImage`, `SaveFileAs`, `SaveImageAs`, `ReadMimeData`, `CanAcceptDrop`, `SaveImageToTemp` (`support/file_dialogs.h`) |
 | The brand mark | `Support::PaintBrandMark(p, rect)` |
-| A searchable list of people / chats | `Boxes::PeerListBox` with your `Boxes::PeerListController`; ready-made `Boxes::ChooseChatsBox(&session, args, done)` |
+| A searchable list of people / chats | `Boxes::PeerListBox` with your `Boxes::PeerListController` (a button per row: `PeerListRow::action` + `rowActionClicked`; a line of text: `note`); ready-made `Boxes::ChooseChatsBox(&session, args, done)` |
 | A round photo crop | `Boxes::PickAndCropPhoto(parent, show, done)`, `Boxes::SaveCroppedPhoto(image, guard, done)` |
 | Country list, about | `Boxes::CountrySelectBox`, `Boxes::AboutBox` |
 | «گزارش» (post / reply / account / conversation / group / a message of a group) | `Boxes::ShowReportBox(controller, args)` |
@@ -597,6 +598,7 @@ void Feed::react(const QString &id, Reaction reaction);  repost(id, bool);  book
 void Feed::replies(const QString &root, const QString &cursor, base::Guard guard, Fn<void(const RepliesPage &)> done, FailCallback fail = nullptr);
 void Feed::topic(slug, guard, done, fail);  topicPosts(slug, tab, before, guard, done, fail);  trending(guard, done, fail);
 void Feed::bookmarks(cursor, guard, done, fail);  userPosts(userId, tab, before, kind, guard, done, fail);
+void Feed::userTimeline(userId, cursor, cursorIsBefore, guard, done, fail);   // posts tab with reposts (PostsPage::repostedBy)
 void Feed::reportViews(const QStringList &ids);  sendReport(targetKind, target, reason, note, …);
 signals: postChanged(id), postPublished(id), postRemoved(id), authorBlocked(userId), newPosts(count, since)
 
@@ -607,7 +609,7 @@ void Graph::follow / unfollow / block / unblock(const QString &userId, base::Gua
 void Graph::followers / following(const QString &userId, const QString &cursor, base::Guard guard, Fn<void(const GraphList &)> done, FailCallback fail = nullptr);
 void Graph::search(const QString &query, const QString &type, int offset, base::Guard guard, Fn<void(const SearchResults &)> done, FailCallback fail = nullptr);
 void Graph::searchPeople(const QString &query, base::Guard guard, Fn<void(const QVector<Profile> &)> done);
-void Graph::suggestions(cursor, limit, guard, done, fail);
+void Graph::suggestions(cursor, limit, guard, done, fail);  dismissSuggestion(userId);   // signal suggestionDismissed(userId)
 void Graph::updateProfile(const ProfilePatch &patch, base::Guard guard, Fn<void(const Profile &)> done, FailCallback fail = nullptr);
 void Graph::loadSettings(bool force, base::Guard guard, Fn<void(const QJsonObject &)> done, FailCallback fail = nullptr);
 QJsonValue Graph::settingValue(const QString &dotted) const;  void Graph::setSetting(const QString &dotted, const QJsonValue &value);

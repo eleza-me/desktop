@@ -79,6 +79,8 @@ Profile Profile::FromJson(const QJsonObject &json) {
 	result.birthday = Optional<Birthday>(json, "birthday"_L1);
 	result.reason = String(json, "reason"_L1);
 	result.mutualCount = Int(json, "mutual_count"_L1);
+	result.groupCount = Int(json, "group_count"_L1);
+	result.joinedRecently = Bool(json, "joined_recently"_L1);
 	return result;
 }
 
@@ -105,6 +107,8 @@ QJsonObject Profile::toJson() const {
 	}
 	Put(result, "reason"_L1, reason);
 	Put(result, "mutual_count"_L1, mutualCount);
+	Put(result, "group_count"_L1, groupCount);
+	Put(result, "joined_recently"_L1, joinedRecently);
 	return result;
 }
 

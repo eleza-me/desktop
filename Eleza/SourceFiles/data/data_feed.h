@@ -127,6 +127,11 @@ public:
 	void bookmarks(const QString &cursor, base::Guard guard, Fn<void(const PostsPage &)> done, FailCallback fail = nullptr);
 	// tab: "" | "replies" | "media" ...; kind filters by post type.
 	void userPosts(const QString &userId, const QString &tab, const QString &before, const QString &kind, base::Guard guard, Fn<void(const PostsPage &)> done, FailCallback fail = nullptr);
+	// The posts tab with the person's reposts among their posts, newest
+	// first (`with_reposts=1`, ADR-0050; PostsPage::repostedBy), paged by
+	// `next_cursor`. A server without it answers the plain tab: its pages go
+	// on by `next_before` (`cursorIsBefore`).
+	void userTimeline(const QString &userId, const QString &cursor, bool cursorIsBefore, base::Guard guard, Fn<void(const PostsPage &)> done, FailCallback fail = nullptr);
 	void sound(const QString &id, base::Guard guard, Fn<void(const PostSound &)> done, FailCallback fail = nullptr);
 	void soundPosts(const QString &id, const QString &before, base::Guard guard, Fn<void(const PostsPage &)> done, FailCallback fail = nullptr);
 	void updateSound(const QString &id, const QJsonObject &changes);

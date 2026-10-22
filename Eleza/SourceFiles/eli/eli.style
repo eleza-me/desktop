@@ -509,7 +509,6 @@ eliNotifButtonPadding: 16px;
 eliNotifButtonSkip: 8px;
 eliNotifButtonFont: font(13px semibold);
 eliNotifButtonsTop: 8px;
-eliNotifDoneFg: textTertiary;
 eliNotifMoreFacesFont: font(12px semibold);
 eliNotifIconLike: icon {{ "like_active", accentHeart, 24px }};
 eliNotifIconReply: icon {{ "reply", brandPrimary, 24px }};
