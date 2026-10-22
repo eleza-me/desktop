@@ -1,5 +1,7 @@
 #include "ui/text/text.h"
 
+#include "ui/emoji/emoji_index.h"
+#include "ui/emoji/emoji_pack.h"
 #include "ui/rtl.h"
 
 #include <QtGui/QGlyphRun>
@@ -18,6 +20,21 @@ namespace {
 constexpr auto kHugeWidth = 1'000'000;
 constexpr auto kSpoilerRadius = 4.;
 const auto kEllipsis = QChar(0x2026);
+// What the layout has in place of an emoji the pack draws: one character as
+// wide as the picture and as many more of no width as the emoji has code
+// units, so that offsets stay those of the text. Their glyphs are never seen
+// (transparent); the picture is painted over the place. A neutral character
+// (bidi ON, like most emoji): a flag at the start of a Persian text does not
+// make it left-to-right.
+const auto kEmojiPlaceholder = QChar(u'*');
+// An emoji against the text: Telegram's 18 px emoji in 14 px text.
+constexpr auto kEmojiScale = 1.3;
+
+struct EmojiItem {
+	int from = 0; // offsets in the text
+	int till = 0;
+	Ui::Emoji::Id id = Ui::Emoji::kNone;
+};
 
 struct Block {
 	int offset = 0;
@@ -121,6 +138,12 @@ void PaintSpoilerDust(QPainter &p, const QRectF &rect, const QColor &color) {
 struct String::Private {
 	const style::TextStyle *st = nullptr;
 	QString text;
+	// The text as it is laid out: the emoji of `emoji` replaced (same length).
+	QString layoutText;
+	std::vector<EmojiItem> emoji;
+	int emojiSize = 0; // the picture's side
+	int emojiAdvance = 0; // the place it takes in a line
+	qreal placeholderAdvance = 0.;
 	Entities entities;
 	std::vector<Link> links;
 	std::vector<int> linkEntity; // link index -> entity index
@@ -135,6 +158,9 @@ struct String::Private {
 	style::align layoutAlign = style::al_left;
 	bool layoutAuto = false;
 	std::vector<LineInfo> lines;
+	// Where each of `emoji` is painted in the full lines (by line), relative to
+	// the text's origin; empty: not shown in them.
+	std::vector<QRectF> emojiRects;
 
 	struct Elided {
 		int width = -1;
@@ -146,8 +172,10 @@ struct String::Private {
 		int kept = 0; // source characters kept before the ellipsis
 		int x = 0;
 		int naturalWidth = 0;
+		std::vector<QRectF> emojiRects; // in the elided line
 	} elided;
 
+	void prepareEmoji();
 	void rebuild();
 	void applyFormats();
 	[[nodiscard]] QList<QTextLayout::FormatRange> formatsFor(
@@ -166,6 +194,21 @@ struct String::Private {
 		style::align align,
 		bool autoDirection) const;
 	void positionLine(QTextLine &line, int x, int top) const;
+	[[nodiscard]] QTextCharFormat emojiFormat(bool first) const;
+	[[nodiscard]] const EmojiItem *emojiAt(int offset) const;
+	[[nodiscard]] QRectF emojiRect(
+		const QTextLine &line,
+		int position,
+		int top) const;
+	void layoutEmoji();
+	[[nodiscard]] bool emojiHidden(const EmojiItem &item) const;
+	void paintEmoji(
+		QPainter &p,
+		QPointF origin,
+		int clipTop,
+		int clipBottom,
+		int fullLines,
+		bool withElided) const;
 	[[nodiscard]] std::vector<QRectF> rangeRects(
 		int from,
 		int till,
@@ -173,15 +216,48 @@ struct String::Private {
 		bool withElided) const;
 };
 
+void String::Private::prepareEmoji() {
+	emoji.clear();
+	layoutText = text;
+	emojiSize = emojiAdvance = 0;
+	if (!st || text.isEmpty() || !Ui::Emoji::Available()) {
+		return;
+	}
+	for (const auto &range : Ui::Emoji::FindAll(text)) {
+		emoji.push_back({ range.from, range.till, range.id });
+	}
+	if (emoji.empty()) {
+		return;
+	}
+	const auto pixels = (st->font->f.pixelSize() > 0)
+		? st->font->f.pixelSize()
+		: st->font->height;
+	emojiSize = std::max(
+		std::min(int(std::lround(pixels * kEmojiScale)), lineHeight),
+		1);
+	emojiAdvance = emojiSize + 2 * std::max(emojiSize / 16, 1);
+	auto font = st->font->f;
+	font.setKerning(false);
+	placeholderAdvance = QFontMetricsF(font).horizontalAdvance(kEmojiPlaceholder);
+	for (const auto &item : emoji) {
+		layoutText[item.from] = kEmojiPlaceholder;
+		for (auto i = item.from + 1; i != item.till; ++i) {
+			layoutText[i] = kEmojiPlaceholder;
+		}
+	}
+}
+
 void String::Private::rebuild() {
 	blocks.clear();
 	lines.clear();
+	emojiRects.clear();
 	layoutWidth = -1;
 	elided = Elided();
 	maxWidth = 0;
 	lineHeight = st
 		? std::max(st->lineHeight, st->font->height)
 		: 0;
+	prepareEmoji();
 	if (!st || text.isEmpty()) {
 		return;
 	}
@@ -195,7 +271,7 @@ void String::Private::rebuild() {
 		auto block = Block();
 		block.offset = from;
 		block.length = till - from;
-		const auto view = QStringView(text).mid(from, till - from);
+		const auto view = QStringView(layoutText).mid(from, till - from);
 		block.rtl = DetectRtl(view);
 		if (block.length > 0) {
 			block.layout = std::make_unique<QTextLayout>(
@@ -232,20 +308,24 @@ QList<QTextLayout::FormatRange> String::Private::formatsFor(
 		int from,
 		int length) const {
 	auto result = QList<QTextLayout::FormatRange>();
-	if (entities.isEmpty() || length <= 0) {
+	if ((entities.isEmpty() && emoji.empty()) || length <= 0) {
 		return result;
 	}
 	const auto till = from + length;
 	auto cuts = std::vector<int>{ from, till };
+	const auto cut = [&](int position) {
+		if (position > from && position < till) {
+			cuts.push_back(position);
+		}
+	};
 	for (const auto &entity : entities) {
-		const auto start = entity.offset;
-		const auto end = entity.offset + entity.length;
-		if (start > from && start < till) {
-			cuts.push_back(start);
-		}
-		if (end > from && end < till) {
-			cuts.push_back(end);
-		}
+		cut(entity.offset);
+		cut(entity.offset + entity.length);
+	}
+	for (const auto &item : emoji) {
+		cut(item.from);
+		cut(item.from + 1);
+		cut(item.till);
 	}
 	std::sort(cuts.begin(), cuts.end());
 	cuts.erase(std::unique(cuts.begin(), cuts.end()), cuts.end());
@@ -300,6 +380,11 @@ QList<QTextLayout::FormatRange> String::Private::formatsFor(
 			format.setFontUnderline(false);
 			format.setFontStrikeOut(false);
 		}
+		if (const auto item = emojiAt(start)) {
+			// The place of a picture: whatever the entities say.
+			format = emojiFormat(start == item->from);
+			changed = true;
+		}
 		if (changed) {
 			auto range = QTextLayout::FormatRange();
 			range.start = start - from;
@@ -339,6 +424,127 @@ int String::Private::lineX(
 		? !startIsRight
 		: startIsRight;
 	return toRight ? (width - natural) : 0;
+}
+
+QTextCharFormat String::Private::emojiFormat(bool first) const {
+	auto font = st->font->f;
+	font.setKerning(false);
+	font.setLetterSpacing(
+		QFont::AbsoluteSpacing,
+		first ? (emojiAdvance - placeholderAdvance) : -placeholderAdvance);
+	auto result = QTextCharFormat();
+	result.setFont(font, QTextCharFormat::FontPropertiesAll);
+	result.setForeground(QBrush(Qt::transparent));
+	result.setFontUnderline(false);
+	result.setFontStrikeOut(false);
+	return result;
+}
+
+const EmojiItem *String::Private::emojiAt(int offset) const {
+	const auto i = std::upper_bound(
+		emoji.begin(),
+		emoji.end(),
+		offset,
+		[](int offset, const EmojiItem &item) { return offset < item.from; });
+	if (i == emoji.begin()) {
+		return nullptr;
+	}
+	const auto &item = *(i - 1);
+	return (offset >= item.from && offset < item.till) ? &item : nullptr;
+}
+
+QRectF String::Private::emojiRect(
+		const QTextLine &line,
+		int position,
+		int top) const {
+	// The placeholder's own edges: the one character of the emoji that has a
+	// width (its run may go either way).
+	auto leading = position;
+	auto trailing = position;
+	const auto a = line.cursorToX(&leading, QTextLine::Leading);
+	const auto b = line.cursorToX(&trailing, QTextLine::Trailing);
+	const auto left = std::min(a, b);
+	const auto width = std::abs(b - a);
+	const auto size = qreal(emojiSize);
+	return QRectF(
+		left + (width - size) / 2.,
+		top + (lineHeight - size) / 2.,
+		size,
+		size);
+}
+
+void String::Private::layoutEmoji() {
+	emojiRects.assign(emoji.size(), QRectF());
+	if (emoji.empty()) {
+		return;
+	}
+	auto next = size_t(0);
+	for (const auto &info : lines) {
+		if (info.index < 0) {
+			continue;
+		}
+		const auto end = info.from + info.length;
+		while (next < emoji.size() && emoji[next].from < info.from) {
+			++next;
+		}
+		const auto &block = blocks[info.block];
+		const auto line = block.layout->lineAt(info.index);
+		for (; next < emoji.size() && emoji[next].from < end; ++next) {
+			emojiRects[next] = emojiRect(
+				line,
+				emoji[next].from - block.offset,
+				info.top);
+		}
+	}
+}
+
+bool String::Private::emojiHidden(const EmojiItem &item) const {
+	if (!hasSpoilers || spoilersRevealed) {
+		return false;
+	}
+	for (const auto &entity : entities) {
+		if (entity.type == EntityType::Spoiler
+			&& entity.offset < item.till
+			&& item.from < entity.offset + entity.length) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void String::Private::paintEmoji(
+		QPainter &p,
+		QPointF origin,
+		int clipTop,
+		int clipBottom,
+		int fullLines,
+		bool withElided) const {
+	if (emoji.empty()) {
+		return;
+	}
+	const auto paint = [&](const EmojiItem &item, const QRectF &rect) {
+		if (rect.isEmpty()
+			|| rect.bottom() <= clipTop
+			|| rect.top() >= clipBottom
+			|| emojiHidden(item)) {
+			return;
+		}
+		Ui::Emoji::Paint(p, item.id, rect.translated(origin));
+	};
+	const auto shownTill = (fullLines > 0 && fullLines <= int(lines.size()))
+		? (lines[fullLines - 1].from + lines[fullLines - 1].length)
+		: 0;
+	for (auto i = size_t(0); i != emoji.size() && i != emojiRects.size(); ++i) {
+		if (emoji[i].from >= shownTill) {
+			break;
+		}
+		paint(emoji[i], emojiRects[i]);
+	}
+	if (withElided && elided.layout) {
+		for (auto i = size_t(0); i != emoji.size() && i != elided.emojiRects.size(); ++i) {
+			paint(emoji[i], elided.emojiRects[i]);
+		}
+	}
 }
 
 void String::Private::positionLine(QTextLine &line, int x, int top) const {
@@ -411,6 +617,7 @@ void String::Private::ensureLayout(
 		block.lineCount = int(lines.size()) - block.firstLine;
 		++blockIndex;
 	}
+	layoutEmoji();
 }
 
 void String::Private::ensureElided(
@@ -429,7 +636,7 @@ void String::Private::ensureElided(
 	const auto &info = lines[line];
 	const auto &block = blocks[info.block];
 	const auto blockEnd = block.offset + block.length;
-	auto rest = text.mid(info.from, blockEnd - info.from);
+	auto rest = layoutText.mid(info.from, blockEnd - info.from);
 	while (!rest.isEmpty() && rest.back().isSpace()) {
 		rest.chop(1);
 	}
@@ -450,6 +657,10 @@ void String::Private::ensureElided(
 			&& rest[kept].isLowSurrogate()
 			&& rest[kept - 1].isHighSurrogate()) {
 			--kept;
+		}
+		if (const auto item = emojiAt(info.from + kept)) {
+			// A whole emoji or none of it.
+			kept = item->from - info.from;
 		}
 		auto kept2 = kept;
 		while (kept2 > 0 && rest[kept2 - 1].isSpace()) {
@@ -486,9 +697,19 @@ void String::Private::ensureElided(
 	elided.naturalWidth = std::min(natural, width);
 	elided.x = lineX(block, elided.naturalWidth, width, horizontal, autoDirection);
 	elided.layout = std::move(layout);
+	elided.emojiRects.assign(emoji.size(), QRectF());
 	if (elided.layout->lineCount() > 0) {
 		auto created = elided.layout->lineAt(0);
 		positionLine(created, elided.x, info.top);
+		for (auto i = size_t(0); i != emoji.size(); ++i) {
+			const auto &item = emoji[i];
+			if (item.from >= info.from && item.till <= info.from + kept) {
+				elided.emojiRects[i] = emojiRect(
+					created,
+					item.from - info.from,
+					info.top);
+			}
+		}
 	}
 }
 
@@ -805,6 +1026,7 @@ void String::draw(QPainter &p, const PaintContext &context) const {
 				selectionsFor(d->elided.from, d->elided.kept));
 		}
 	}
+	d->paintEmoji(p, origin, clipTop, clipBottom, fullLines, useElided);
 
 	if (d->hasSpoilers && !d->spoilersRevealed) {
 		for (const auto &entity : d->entities) {
@@ -972,6 +1194,15 @@ StateResult String::getState(
 			QTextLine::CursorBetweenCharacters);
 	}
 	result.symbol = std::clamp(result.symbol, info.from, symbolLimit);
+	// An emoji is one character: never a place inside it.
+	if (const auto item = d->emojiAt(result.symbol)) {
+		result.symbol = item->from;
+	}
+	if (const auto item = d->emojiAt(result.cursor)) {
+		if (result.cursor > item->from) {
+			result.cursor = item->till;
+		}
+	}
 	result.uponSymbol = (local.x() >= lineLeft)
 		&& (local.x() < lineLeft + lineWidth);
 	if (result.uponSymbol) {
@@ -1025,6 +1256,13 @@ Selection String::adjustSelection(Selection selection, SelectType type) const {
 		if (till > 0 && till < size && text[till].isLowSurrogate()) {
 			++till;
 		}
+	}
+	// An emoji is selected whole or not at all.
+	if (const auto item = _d->emojiAt(from)) {
+		from = item->from;
+	}
+	if (const auto item = _d->emojiAt(till); item && till > item->from) {
+		till = item->till;
 	}
 	return Selection{ from, till };
 }

@@ -1,4 +1,6 @@
-// Ui::Text: entity offsets in UTF-16 units (surrogate pairs), parsing, layout, hit tests.
+// Ui::Text: entity offsets in UTF-16 units (surrogate pairs), parsing, layout, hit tests,
+// emoji drawn as pictures.
+#include "ui/emoji/emoji_pack.h"
 #include "ui/style/style_core.h"
 #include "ui/text/text.h"
 #include "ui/text/text_entity.h"
@@ -185,6 +187,69 @@ private Q_SLOTS:
 			QStringLiteral("/start"),
 			ParseBotCommands));
 		QCOMPARE(shown.text, U("\u2066/start\u2069"));
+	}
+
+	void emojiPictures() {
+		// Emoji of the pack take the place of their picture, whatever the
+		// fonts have; the text keeps them as they are.
+		QVERIFY(Ui::Emoji::Available());
+		const auto &st = st::defaultTextStyle;
+		const auto pixels = st.font->f.pixelSize();
+		const auto lineHeight = std::max(st.lineHeight, st.font->height);
+		const auto size = std::min(int(std::lround(pixels * 1.3)), lineHeight);
+		const auto advance = size + 2 * std::max(size / 16, 1);
+		const auto one = String(st, U("😀"));
+		QCOMPARE(one.maxWidth(), advance);
+		// A family, a flag, a keycap and a toned hand are one place each.
+		const auto four = String(st, U("👨‍👩‍👧‍👦🇮🇷1️⃣👍🏽"));
+		QCOMPARE(four.maxWidth(), 4 * advance);
+		QCOMPARE(four.toString(), U("👨‍👩‍👧‍👦🇮🇷1️⃣👍🏽"));
+		// Asked to be text: the font's.
+		QVERIFY(String(st, U("❤︎")).maxWidth() != advance);
+
+		// Between letters: width, hit tests, selection, copy.
+		const auto text = U("ab😀cd");
+		auto string = String(st, text);
+		const auto letters = String(st, U("abcd")).maxWidth();
+		QVERIFY(std::abs(string.maxWidth() - (letters + advance)) <= 1);
+		const auto geometry = PaintContext{ .availableWidth = 400 };
+		auto symbols = QSet<int>();
+		auto cursors = QSet<int>();
+		for (auto x = 0; x != string.maxWidth(); ++x) {
+			const auto state = string.getState(QPoint(x, 2), geometry);
+			symbols.insert(state.symbol);
+			cursors.insert(state.cursor);
+		}
+		// Never inside the emoji (its units 2…4).
+		QVERIFY(!symbols.contains(3) && !cursors.contains(3));
+		QVERIFY(symbols.contains(2) && cursors.contains(4));
+		QCOMPARE(string.adjustSelection({ 3, 5 }, SelectType::Letters), (Selection{ 2, 5 }));
+		QCOMPARE(string.adjustSelection({ 0, 3 }, SelectType::Letters), (Selection{ 0, 4 }));
+		QCOMPARE(string.toString({ 2, 4 }), U("😀"));
+
+		// A flag first does not turn a Persian text left-to-right.
+		auto persian = String(st, U("🇮🇷 سلام"));
+		const auto last = persian.countLastLine(400);
+		QVERIFY(last.rtl);
+
+		// Painted as the pack's picture once it is decoded (on a pool thread).
+		auto image = QImage(QSize(80, 40), QImage::Format_ARGB32_Premultiplied);
+		const auto colored = [&] {
+			image.fill(Qt::white);
+			auto p = QPainter(&image);
+			p.setPen(Qt::black);
+			one.draw(p, 0, 0, 80);
+			p.end();
+			auto result = 0;
+			for (auto y = 0; y != image.height(); ++y) {
+				for (auto x = 0; x != image.width(); ++x) {
+					const auto c = image.pixel(x, y);
+					result += (qRed(c) > 150 && qGreen(c) > 100 && qBlue(c) < 90) ? 1 : 0;
+				}
+			}
+			return result;
+		};
+		QTRY_VERIFY(colored() > size * size / 4);
 	}
 
 		void layout() {
