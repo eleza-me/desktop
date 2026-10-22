@@ -49,6 +49,34 @@ private Q_SLOTS:
 		QVERIFY(Phone(QString()).isEmpty());
 	}
 
+	void rtlText() {
+		const auto lri = QChar(0x2066);
+		const auto rli = QChar(0x2067);
+		const auto fsi = QChar(0x2068);
+		const auto pdi = QChar(0x2069);
+		const auto fa = U("سلام");
+		QVERIFY(IsRtlText(fa));
+		QVERIFY(!IsRtlText(QStringLiteral("hello ") + fa));
+		// An isolated handle in front does not decide the paragraph (UAX #9 P2).
+		QVERIFY(IsRtlText(Handle(QStringLiteral("sara")) + QChar(' ') + fa));
+		QVERIFY(IsRtlText(fsi + QStringLiteral("Sara") + pdi + fa));
+		QVERIFY(!IsRtlText(rli + fa + pdi + QStringLiteral(" hi")));
+		// Nested isolates close at the matching PDI only.
+		QVERIFY(IsRtlText(lri + QStringLiteral("a") + fsi + QStringLiteral("b") + pdi
+			+ QStringLiteral("c") + pdi + fa));
+		// An unmatched PDI is ignored; an unclosed isolate hides the rest.
+		QVERIFY(!IsRtlText(pdi + QStringLiteral("abc")));
+		SetCurrent(Language::English);
+		QVERIFY(!IsRtlText(lri + fa));
+		QVERIFY(!IsRtlText(QStringLiteral("123")));
+		SetCurrent(Language::Persian);
+		QVERIFY(IsRtlText(lri + QStringLiteral("abc")));
+		QVERIFY(IsRtlText(QStringLiteral("123")));
+		// Strong characters outside the BMP count: U+10900 is Phoenician (R).
+		QVERIFY(IsRtlText(QString::fromUcs4(U"\U00010900 abc")));
+		QVERIFY(!IsRtlText(QString::fromUcs4(U"\U0001D400 ") + fa)); // bold A (L)
+	}
+
 	void strings() {
 		QCOMPARE(tr::lng_app_name(tr::now), U("الزا"));
 		QCOMPARE(

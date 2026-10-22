@@ -1,5 +1,6 @@
 #include "ui/widgets/input_fields.h"
 
+#include "base/text_direction.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/painter.h"
@@ -30,19 +31,11 @@ namespace {
 constexpr auto kCaretBlink = 530;
 
 [[nodiscard]] bool HasStrongDirection(const QString &text, bool *rtl) {
-	for (const auto ch : text) {
-		switch (ch.direction()) {
-		case QChar::DirL:
-			*rtl = false;
-			return true;
-		case QChar::DirR:
-		case QChar::DirAL:
-			*rtl = true;
-			return true;
-		default: break;
-		}
+	const auto strong = base::FirstStrongIsRtl(text);
+	if (strong) {
+		*rtl = *strong;
 	}
-	return false;
+	return strong.has_value();
 }
 
 [[nodiscard]] QString ShortcutText(QKeySequence::StandardKey key) {

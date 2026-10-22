@@ -85,7 +85,8 @@ struct JalaliDate {
 [[nodiscard]] QString E164(
 	const QString &input,
 	const QString &defaultCode = QStringLiteral("98"));
-// Direction by the first strong character (the interface direction if there is none).
+// Direction by the first strong character outside direction isolates (UAX #9 P2;
+// the interface direction if there is none).
 [[nodiscard]] bool IsRtlText(const QString &text);
 
 // ---- direction isolates

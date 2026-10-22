@@ -1,5 +1,6 @@
 #include "lang/lang_format.h"
 
+#include "base/text_direction.h"
 #include "lang/lang_countries.h"
 #include "lang/lang_instance.h"
 #include "lang_auto.h"
@@ -488,15 +489,7 @@ QString E164(const QString &input, const QString &defaultCode) {
 }
 
 bool IsRtlText(const QString &text) {
-	for (const auto ch : text) {
-		switch (ch.direction()) {
-		case QChar::DirL: return false;
-		case QChar::DirR:
-		case QChar::DirAL: return true;
-		default: break;
-		}
-	}
-	return IsPersian();
+	return base::FirstStrongIsRtl(text).value_or(IsPersian());
 }
 
 QString Ltr(const QString &text) {

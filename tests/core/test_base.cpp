@@ -4,6 +4,7 @@
 #include "base/expected.h"
 #include "base/platform_file.h"
 #include "base/random.h"
+#include "base/text_direction.h"
 #include "base/timer.h"
 #include "base/unixtime.h"
 #include "base/weak_guard.h"
@@ -29,6 +30,7 @@ private Q_SLOTS:
 	void fileNamesFromStrangers();
 	void programsAreNotOpened();
 	void privateTemp();
+	void firstStrongDirection();
 
 };
 
@@ -318,6 +320,22 @@ void TestBase::privateTemp() {
 	QVERIFY(QFileInfo(path).isDir());
 	QVERIFY(QDir(path).isEmpty());
 	base::platform::SetPrivateTempRoot(QString());
+}
+
+void TestBase::firstStrongDirection() {
+	using base::FirstStrongIsRtl;
+	QCOMPARE(FirstStrongIsRtl(u"abc"), std::optional<bool>(false));
+	QCOMPARE(FirstStrongIsRtl(u"123 \u0633"), std::optional<bool>(true));
+	QCOMPARE(FirstStrongIsRtl(u"123 ..."), std::optional<bool>());
+	QCOMPARE(FirstStrongIsRtl(u""), std::optional<bool>());
+	// LRI / RLI / FSI ... PDI are skipped, nested ones included.
+	QCOMPARE(FirstStrongIsRtl(u"\u2066abc\u2069 \u0633"), std::optional<bool>(true));
+	QCOMPARE(FirstStrongIsRtl(u"\u2067\u0633\u2069 abc"), std::optional<bool>(false));
+	QCOMPARE(
+		FirstStrongIsRtl(u"\u2068a\u2066b\u2069c\u2069\u0633"),
+		std::optional<bool>(true));
+	QCOMPARE(FirstStrongIsRtl(u"\u2066abc"), std::optional<bool>());
+	QCOMPARE(FirstStrongIsRtl(u"\u2069abc"), std::optional<bool>(false));
 }
 
 QTEST_GUILESS_MAIN(TestBase)

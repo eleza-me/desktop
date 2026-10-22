@@ -1,5 +1,6 @@
 #include "ui/ui_utility.h"
 
+#include "base/text_direction.h"
 #include "ui/rtl.h"
 
 #include <QtCore/QCoreApplication>
@@ -142,15 +143,7 @@ bool AnimationsDisabled() {
 }
 
 bool IsRtlText(const QString &text) {
-	for (const auto ch : text) {
-		switch (ch.direction()) {
-		case QChar::DirL: return false;
-		case QChar::DirR:
-		case QChar::DirAL: return true;
-		default: break;
-		}
-	}
-	return style::RightToLeft();
+	return base::FirstStrongIsRtl(text).value_or(style::RightToLeft());
 }
 
 } // namespace Ui
