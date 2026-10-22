@@ -240,6 +240,11 @@ message Auth {
   // features: what this client implements beyond the base protocol. Unknown
   // names are ignored. "group_signal": changes of groups may be sent as
   // Signal t:"group_change" (GroupSignal) instead of t:"group" (JSON).
+  // "self_destruct": the app shows self-destructing photos and videos
+  // (docs/self-destruct-media.md): it gets them as such in updates, and the
+  // gateway forwards the features with every bridged call (header
+  // X-Eleza-Features); without it an app gets them as an "update the app"
+  // text.
   repeated string features = 7;
 }
 message AuthResult { int64 expires_at = 1; }
