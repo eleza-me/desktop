@@ -1,6 +1,7 @@
 #include "support/chat_text.h"
 
 #include "base/platform_file.h"
+#include "data/data_chats.h"
 #include "data/data_group_rules.h"
 #include "data/data_json.h"
 #include "data/data_session.h"
@@ -94,6 +95,27 @@ constexpr auto kTargetMark = QChar(0xE001);
 	return result;
 }
 
+// Somebody named by their card: the display name, else the @handle (empty
+// while the card is not known; it is asked for). A deleted account is named,
+// without a link.
+[[nodiscard]] NotePerson CardPerson(Main::Session *session, const QString &userId) {
+	auto result = NotePerson();
+	result.userId = userId;
+	if (!session || userId.isEmpty()) {
+		return result;
+	}
+	const auto card = session->data().users().get(userId);
+	result.name = card.deleted
+		? tr::lng_deleted_account(tr::now)
+		: !card.displayName.trimmed().isEmpty()
+		? Data::Json::CleanName(card.displayName.simplified())
+		: !card.handle.isEmpty()
+		? Lang::Handle(card.handle)
+		: QString();
+	result.linkable = !card.deleted;
+	return result;
+}
+
 } // namespace
 
 NoteLine GroupNoteLine(
@@ -157,29 +179,30 @@ NoteLine ServiceNoteLine(Main::Session *session, const Data::Message &message) {
 			message,
 			person(message.sender, message.mine || (!me.isEmpty() && message.sender == me)),
 			person(target, !me.isEmpty() && (target == me)));
+	} else if (message.selfDestruct && !message.deleted) {
+		// Self-destructing media: who sent it, opening their profile.
+		auto sender = CardPerson(session, message.sender);
+		if (sender.name.isEmpty()) {
+			// No card yet: the chat's title names the other side.
+			const auto row = session
+				? session->data().chats().chat(message.chat)
+				: nullptr;
+			sender.name = row
+				? ChatTitle(session, *row)
+				: tr::lng_groups_someone(tr::now);
+		}
+		return SelfDestructLine(message, sender);
 	} else if (const auto taker = Data::SelfDestructScreenshotTaker(message.system);
 		message.kind == Data::MessageKind::System && !taker.isEmpty() && session) {
 		// «‹name› took a screenshot of a self-destructing message»: our own
 		// line, the name opening their profile. A card without a name
 		// leaves the server's line.
-		auto &users = session->data().users();
-		const auto me = users.myId();
+		const auto me = session->data().users().myId();
 		if (!me.isEmpty() && taker == me) {
 			return NoteLine{ tr::lng_history_sd_screenshot_you(tr::now), {} };
 		}
-		const auto card = users.get(taker);
-		const auto name = card.deleted
-			? tr::lng_deleted_account(tr::now)
-			: !card.displayName.trimmed().isEmpty()
-			? Data::Json::CleanName(card.displayName.simplified())
-			: !card.handle.isEmpty()
-			? Lang::Handle(card.handle)
-			: QString();
-		if (!name.isEmpty()) {
-			auto person = NotePerson();
-			person.name = name;
-			person.userId = taker;
-			person.linkable = !card.deleted;
+		const auto person = CardPerson(session, taker);
+		if (!person.name.isEmpty()) {
 			return FillNames(
 				tr::lng_history_sd_screenshot(tr::now, lt_name, QString(kActorMark)),
 				person,
@@ -187,6 +210,25 @@ NoteLine ServiceNoteLine(Main::Session *session, const Data::Message &message) {
 		}
 	}
 	return NoteLine{ MessagePreview(message), {} };
+}
+
+NoteLine SelfDestructLine(const Data::Message &message, const NotePerson &sender) {
+	if (!message.selfDestruct) {
+		return NoteLine();
+	} else if (message.selfDestruct->expired()) {
+		return NoteLine{ tr::lng_history_sd_expired(tr::now), {} };
+	} else if (message.mine) {
+		// My own, also on its way out (its line is all there is of it).
+		return NoteLine{ !message.local()
+			? tr::lng_history_sd_sent(tr::now)
+			: (message.status == Data::MessageStatus::Failed)
+			? tr::lng_history_sd_not_sent(tr::now)
+			: tr::lng_history_sd_sending(tr::now), {} };
+	}
+	return FillNames(
+		tr::lng_history_sd_received(tr::now, lt_name, QString(kActorMark)),
+		sender,
+		NotePerson());
 }
 
 QString MessagePreview(Main::Session *session, const Data::Message &message) {
@@ -222,22 +264,10 @@ QString SelfDestructLabel(const Data::Message &message) {
 	if (!message.selfDestruct) {
 		return QString();
 	}
-	const auto expired = message.selfDestruct->expired();
-	switch (message.kind) {
-	case Data::MessageKind::Photo:
-		return expired
-			? tr::lng_history_sd_photo_expired(tr::now)
-			: tr::lng_history_sd_photo(tr::now);
-	case Data::MessageKind::Video:
-		return expired
-			? tr::lng_history_sd_video_expired(tr::now)
-			: tr::lng_history_sd_video(tr::now);
-	default:
-		// This app is told only that it is one (not which).
-		return expired
-			? tr::lng_history_sd_expired(tr::now)
-			: tr::lng_history_sd_media(tr::now);
-	}
+	// This app is told only that it is one, not whether a photo or a video.
+	return message.selfDestruct->expired()
+		? tr::lng_history_sd_expired(tr::now)
+		: tr::lng_history_sd_media(tr::now);
 }
 
 QString SelfDestructTimerText(int seconds) {

@@ -918,12 +918,14 @@ went through, the bar comes back.
 **Self-destructing photos and videos** (`docs/self-destruct-media.md` of the backend). Only the phone
 apps open them: a desktop session is sent a text («only on the phone») with `self_destruct` — this
 app never gets the picture, the caption or a way to open it. `Data::Message::selfDestruct` holds what
-it is and how far it got; `View::SelfDestructMedia` (`history_view_media.cpp`) draws the card (a
-badge, a countdown ring once the recipient's phone shows it, the dust when it expires on screen),
-`Support::SelfDestructLabel` the one-line label. It is never copied, forwarded, edited, saved,
-searched or shown in the viewer. Sending (`SendFileOptions::selfDestruct`, the timer button of the
+it is and how far it got. As on Telegram Desktop the chat shows it as a centred line
+(`History::IsService`, worded by `Support::SelfDestructLine`): «‹sender› sent you a self-destructing
+message, view it on your phone» (the name opens the profile), «you sent one», «expired»; it has a
+menu (reply, pin, delete) but no reactions. `Support::SelfDestructLabel` is the one-line label of the
+chat list, notifications and reply headers. It is never copied, forwarded, edited, saved, searched
+or shown in the viewer. Sending (`SendFileOptions::selfDestruct`, the timer button of the
 send-files box) needs `chat.self_destruct.enabled` (absent: off) and a direct chat with a person; it
-is uploaded on its own (no dedup) and its local bubble never shows the file. The screenshot notice
+is uploaded on its own (no dedup) and its local line never shows the file. The screenshot notice
 (`self_destruct_screenshot:<taker>:<seq>`) is worded here, the taker's name opening their profile.
 
 Mock data: `chat/spam` (a stranger wrote first) and `chat/sd` in `tests/tools/mock-history.mjs`,

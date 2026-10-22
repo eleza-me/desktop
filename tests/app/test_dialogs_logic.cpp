@@ -348,6 +348,59 @@ private Q_SLOTS:
 		QVERIFY(Support::GroupNoteLine(text, person(U("سارا"), "u_sara"), Support::NotePerson()).text.isEmpty());
 	}
 
+	void selfDestructLines() {
+		auto message = Text("این پیام فقط روی گوشی قابل دیدن است", 9);
+		message.chat = QStringLiteral("c1");
+		message.sender = QStringLiteral("u_nika");
+		auto sd = Data::SelfDestruct();
+		sd.mode = QStringLiteral("timer");
+		sd.seconds = 10;
+		sd.state = QStringLiteral("unopened");
+		message.selfDestruct = sd;
+		auto sender = Support::NotePerson();
+		sender.name = QStringLiteral("Nika");
+		sender.userId = QStringLiteral("u_nika");
+		sender.linkable = true;
+		for (const auto language : { Lang::Language::Persian, Lang::Language::English }) {
+			Lang::SetCurrent(language);
+			// Received: who sent it, a link to their profile; never the
+			// server's text.
+			auto line = Support::SelfDestructLine(message, sender);
+			QCOMPARE(line.names.size(), 1);
+			QCOMPARE(line.text.mid(line.names[0].offset, line.names[0].length), QStringLiteral("Nika"));
+			QCOMPARE(line.names[0].userId, QStringLiteral("u_nika"));
+			QVERIFY(!line.text.contains(message.text));
+			auto opened = message;
+			opened.selfDestruct->state = QStringLiteral("opened");
+			QCOMPARE(Support::SelfDestructLine(opened, sender).text, line.text);
+			// Mine: no name; on its way and failed say so.
+			auto mine = message;
+			mine.mine = true;
+			line = Support::SelfDestructLine(mine, sender);
+			QCOMPARE(line.text, tr::lng_history_sd_sent(tr::now));
+			QVERIFY(line.names.isEmpty());
+			mine.seq = 0;
+			mine.status = Data::MessageStatus::Sending;
+			QCOMPARE(Support::SelfDestructLine(mine, sender).text, tr::lng_history_sd_sending(tr::now));
+			mine.status = Data::MessageStatus::Failed;
+			QCOMPARE(Support::SelfDestructLine(mine, sender).text, tr::lng_history_sd_not_sent(tr::now));
+			// Expired, on either side.
+			auto expired = message;
+			expired.selfDestruct->state = QStringLiteral("expired");
+			QCOMPARE(Support::SelfDestructLine(expired, sender).text, tr::lng_history_sd_expired(tr::now));
+			expired.mine = true;
+			QCOMPARE(Support::SelfDestructLine(expired, sender).text, tr::lng_history_sd_expired(tr::now));
+			// The chat list says its label only.
+			auto chat = Chat("c1", 10);
+			chat.lastMessage = message;
+			const auto preview = Dialogs::PreviewFor(chat);
+			QCOMPARE(preview.text, tr::lng_history_sd_media(tr::now));
+			QVERIFY(!preview.thumbnail);
+		}
+		Lang::SetCurrent(Lang::Language::Persian);
+		QVERIFY(Support::SelfDestructLine(Text("x"), sender).text.isEmpty());
+	}
+
 	void activityWording() {
 		QVERIFY(Dialogs::ActivityText(QString()).isEmpty());
 		QCOMPARE(

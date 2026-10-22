@@ -548,15 +548,21 @@ private Q_SLOTS:
 		sd.mode = u"view_once"_s;
 		sd.state = u"unopened"_s;
 		message.selfDestruct = sd;
-		using Line = History::SelfDestructLine;
-		QCOMPARE(History::SelfDestructLineFor(message), Line::OnPhone);
+		// A centred line of its own, as on Telegram Desktop: it does not
+		// join a run of bubbles, and it is where the unread divider goes.
+		QVERIFY(History::IsService(message));
+		const auto before = Text(4, false, At(3, 10, 0));
+		QVERIFY(!History::CanAttach(before, message));
+		const auto flags = History::ComputeRowFlags({ before, message }, 5);
+		QVERIFY(flags[1].showUnread);
 		message.mine = true;
-		QCOMPARE(History::SelfDestructLineFor(message), Line::NotOpened);
 		message.selfDestruct->state = u"opened"_s;
-		QCOMPARE(History::SelfDestructLineFor(message), Line::Opened);
 		auto expired = message;
 		expired.selfDestruct->state = u"expired"_s;
-		QCOMPARE(History::SelfDestructLineFor(expired), Line::Expired);
+		// Its line follows its state, and whether it is on its way.
+		auto sending = message;
+		sending.status = Data::MessageStatus::Sending;
+		QVERIFY(!History::SameLayout(message, sending));
 		// A change of state is a change of the row.
 		QVERIFY(!History::SameLayout(message, expired));
 		// Its text is the server's: never copied, edited, forwarded or found.

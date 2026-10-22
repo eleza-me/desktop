@@ -368,9 +368,7 @@ void Element::ensureLoaded() {
 		|| (kind == Data::MessageKind::ForwardedPost)
 		|| (kind == Data::MessageKind::StoryReply)
 		|| (kind == Data::MessageKind::StoryShare);
-	if (_data.selfDestruct) {
-		// Its text is the server's «only on the phone»: the card says it.
-	} else if (kind == Data::MessageKind::Unknown && _data.text.trimmed().isEmpty()) {
+	if (kind == Data::MessageKind::Unknown && _data.text.trimmed().isEmpty()) {
 		_text.setText(st::historyTextStyle, tr::lng_history_unsupported(tr::now));
 	} else if ((textKind || captionKind) && !_data.text.isEmpty()) {
 		if (textKind
@@ -1757,8 +1755,12 @@ HitResult Element::hitTest(QPoint point) const {
 		result.zone = Zone::Date;
 		return result;
 	} else if (_service) {
-		result.zone = _serviceRect.contains(point) ? Zone::Date : Zone::Side;
-		if (result.zone == Zone::Date && !_serviceNames.isEmpty()) {
+		result.zone = _serviceRect.contains(point)
+			? (_data.selfDestruct
+				? Zone::Bubble // a message of its own: it has a menu (delete, reply)
+				: Zone::Date)
+			: Zone::Side;
+		if (result.zone != Zone::Side && !_serviceNames.isEmpty()) {
 			const auto state = _serviceString.getState(point, serviceGeometry());
 			if (state.uponSymbol) {
 				for (const auto &name : _serviceNames) {
