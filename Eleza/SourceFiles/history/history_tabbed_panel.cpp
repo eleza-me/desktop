@@ -1568,6 +1568,13 @@ void TabbedPanel::keyPressEvent(QKeyEvent *e) {
 	}
 }
 
+void TabbedPanel::mousePressEvent(QMouseEvent *e) {
+	// A press that nothing inside took (a category tab, the space between
+	// the cells) stays here: below the panel it reached the chat, which
+	// closed the panel.
+	e->accept();
+}
+
 bool TabbedPanel::eventFilter(QObject *object, QEvent *event) {
 	if (_shown && event->type() == QEvent::MouseButtonPress) {
 		const auto widget = qobject_cast<QWidget*>(object);
