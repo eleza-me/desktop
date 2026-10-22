@@ -20,6 +20,8 @@
 #include "data/data_upload.h"
 #include "data/data_users.h"
 
+#include <utility>
+
 namespace Data {
 
 Session::Session(Config config, QObject *parent)
@@ -27,8 +29,7 @@ Session::Session(Config config, QObject *parent)
 , _config(std::move(config)) {
 	Q_ASSERT(_config.transport && _config.api);
 	qRegisterMetaType<Api::Error>();
-	// Children are destroyed in reverse order of creation: the stores that
-	// use others come last.
+	// The stores that use others come last (and go first: ~Session).
 	_users = new Users(this);
 	_chats = new Chats(this);
 	_messages = new Messages(this);
@@ -57,6 +58,26 @@ Session::Session(Config config, QObject *parent)
 
 Session::~Session() {
 	stop();
+	// Qt would delete the children in the order they were created, the
+	// stores the others use first: they go in the reverse order, each while
+	// the stores it uses are still there.
+	delete std::exchange(_notes, nullptr);
+	delete std::exchange(_stories, nullptr);
+	delete std::exchange(_bots, nullptr);
+	delete std::exchange(_calls, nullptr);
+	delete std::exchange(_graph, nullptr);
+	delete std::exchange(_feed, nullptr);
+	delete std::exchange(_stickers, nullptr);
+	delete std::exchange(_sync, nullptr);
+	delete std::exchange(_conversations, nullptr);
+	delete std::exchange(_notifications, nullptr);
+	delete std::exchange(_groups, nullptr);
+	delete std::exchange(_outbox, nullptr);
+	delete std::exchange(_media, nullptr);
+	delete std::exchange(_upload, nullptr);
+	delete std::exchange(_messages, nullptr);
+	delete std::exchange(_chats, nullptr);
+	delete std::exchange(_users, nullptr);
 }
 
 int Session::cardsBatchSize() const {
