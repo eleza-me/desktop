@@ -157,6 +157,34 @@ NoteLine ServiceNoteLine(Main::Session *session, const Data::Message &message) {
 			message,
 			person(message.sender, message.mine || (!me.isEmpty() && message.sender == me)),
 			person(target, !me.isEmpty() && (target == me)));
+	} else if (const auto taker = Data::SelfDestructScreenshotTaker(message.system);
+		message.kind == Data::MessageKind::System && !taker.isEmpty() && session) {
+		// «‹name› took a screenshot of a self-destructing message»: our own
+		// line, the name opening their profile. A card without a name
+		// leaves the server's line.
+		auto &users = session->data().users();
+		const auto me = users.myId();
+		if (!me.isEmpty() && taker == me) {
+			return NoteLine{ tr::lng_history_sd_screenshot_you(tr::now), {} };
+		}
+		const auto card = users.get(taker);
+		const auto name = card.deleted
+			? tr::lng_deleted_account(tr::now)
+			: !card.displayName.trimmed().isEmpty()
+			? Data::Json::CleanName(card.displayName.simplified())
+			: !card.handle.isEmpty()
+			? Lang::Handle(card.handle)
+			: QString();
+		if (!name.isEmpty()) {
+			auto person = NotePerson();
+			person.name = name;
+			person.userId = taker;
+			person.linkable = !card.deleted;
+			return FillNames(
+				tr::lng_history_sd_screenshot(tr::now, lt_name, QString(kActorMark)),
+				person,
+				NotePerson());
+		}
 	}
 	return NoteLine{ MessagePreview(message), {} };
 }
@@ -190,7 +218,38 @@ QString ChatTitle(Main::Session *session, const Data::Chat &chat) {
 	return chat.anonymous ? tr::lng_anonymous(tr::now) : QString();
 }
 
+QString SelfDestructLabel(const Data::Message &message) {
+	if (!message.selfDestruct) {
+		return QString();
+	}
+	const auto expired = message.selfDestruct->expired();
+	switch (message.kind) {
+	case Data::MessageKind::Photo:
+		return expired
+			? tr::lng_history_sd_photo_expired(tr::now)
+			: tr::lng_history_sd_photo(tr::now);
+	case Data::MessageKind::Video:
+		return expired
+			? tr::lng_history_sd_video_expired(tr::now)
+			: tr::lng_history_sd_video(tr::now);
+	default:
+		// This app is told only that it is one (not which).
+		return expired
+			? tr::lng_history_sd_expired(tr::now)
+			: tr::lng_history_sd_media(tr::now);
+	}
+}
+
+QString SelfDestructTimerText(int seconds) {
+	return (seconds >= 60 && seconds % 60 == 0)
+		? tr::lng_history_sd_minutes(tr::now, lt_count, seconds / 60)
+		: tr::lng_history_sd_seconds(tr::now, lt_count, seconds);
+}
+
 QString MessageKindLabel(const Data::Message &message) {
+	if (message.selfDestruct) {
+		return SelfDestructLabel(message);
+	}
 	switch (message.kind) {
 	case Data::MessageKind::Photo: return tr::lng_media_photo(tr::now);
 	case Data::MessageKind::Video: return tr::lng_media_video(tr::now);
@@ -252,6 +311,10 @@ QString MessagePreview(const Data::Message &message) {
 		case Data::ServiceEvent::None: break;
 		}
 		return QString();
+	}
+	if (message.selfDestruct) {
+		// Never the caption (it is not sent here) nor the server's text.
+		return SelfDestructLabel(message);
 	}
 	const auto label = MessageKindLabel(message);
 	// One line: line breaks become spaces. It is shown next to our own words

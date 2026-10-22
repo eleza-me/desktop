@@ -197,6 +197,20 @@ enum class FileType {
 // States in which nobody can write to a conversation any more.
 [[nodiscard]] bool ConversationEnded(const QString &state);
 
+// ---- self-destructing media
+
+// It may be sent here: a direct chat with a person — not a group, Saved
+// Messages, a bot, an anonymous conversation or a deleted account.
+[[nodiscard]] bool SelfDestructAllowed(const Data::Chat &chat);
+// The bubble's second line.
+enum class SelfDestructLine {
+	OnPhone,   // the recipient, not opened: only the phone apps open it
+	NotOpened, // the sender, not opened yet
+	Opened,    // shown on the recipient's phone: its time runs
+	Expired,
+};
+[[nodiscard]] SelfDestructLine SelfDestructLineFor(const Data::Message &message);
+
 // ---- the floating buttons over the list («to the end», «@»)
 
 // The first stop of «to the end»: the oldest of the `unread` newest

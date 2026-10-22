@@ -655,6 +655,15 @@ void ListWidget::revealSpoiler(const QString &key) {
 }
 
 void ListWidget::openMedia(const Data::Message &message) {
+	if (message.selfDestruct) {
+		// Only the recipient's phone opens it (the server refuses this app).
+		if (!message.selfDestruct->expired()) {
+			_controller->showToast(message.mine
+				? tr::lng_history_sd_only_recipient(tr::now)
+				: tr::lng_history_sd_open_on_phone(tr::now));
+		}
+		return;
+	}
 	if (message.call) {
 		// A call record: a click calls back, where a call is possible.
 		const auto chat = _session->data().chats().chat(message.chat);
@@ -723,7 +732,7 @@ void ListWidget::openPhoto(const Data::Message &message) {
 	const auto album = row.element->isAlbum();
 	for (const auto &other : row.element->messages()) {
 		const auto video = album && (other.kind == Data::MessageKind::Video);
-		if (other.kind != Data::MessageKind::Photo && !video) {
+		if ((other.kind != Data::MessageKind::Photo && !video) || other.selfDestruct) {
 			continue;
 		} else if (other.mediaSpoiler
 			&& !_revealed.contains(other.key())

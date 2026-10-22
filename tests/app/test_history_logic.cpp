@@ -520,6 +520,52 @@ private Q_SLOTS:
 		QCOMPARE(History::NextMention({}, 0), qint64(0));
 	}
 
+	void selfDestruct() {
+		auto chat = Data::Chat();
+		chat.id = u"c1"_s;
+		chat.peerUserId = u"u_sara"_s;
+		chat.info.kind = u"direct"_s;
+		QVERIFY(History::SelfDestructAllowed(chat));
+		auto other = chat;
+		other.saved = true;
+		QVERIFY(!History::SelfDestructAllowed(other));
+		other = chat;
+		other.isBot = true;
+		QVERIFY(!History::SelfDestructAllowed(other));
+		other = chat;
+		other.isConversation = true;
+		QVERIFY(!History::SelfDestructAllowed(other));
+		other = chat;
+		other.peerDeleted = true;
+		QVERIFY(!History::SelfDestructAllowed(other));
+		other = chat;
+		other.id = u"j1group"_s;
+		other.isGroup = true;
+		QVERIFY(!History::SelfDestructAllowed(other));
+
+		auto message = Text(5, false, At(3, 10, 0), U("این پیام فقط روی گوشی قابل دیدن است"));
+		auto sd = Data::SelfDestruct();
+		sd.mode = u"view_once"_s;
+		sd.state = u"unopened"_s;
+		message.selfDestruct = sd;
+		using Line = History::SelfDestructLine;
+		QCOMPARE(History::SelfDestructLineFor(message), Line::OnPhone);
+		message.mine = true;
+		QCOMPARE(History::SelfDestructLineFor(message), Line::NotOpened);
+		message.selfDestruct->state = u"opened"_s;
+		QCOMPARE(History::SelfDestructLineFor(message), Line::Opened);
+		auto expired = message;
+		expired.selfDestruct->state = u"expired"_s;
+		QCOMPARE(History::SelfDestructLineFor(expired), Line::Expired);
+		// A change of state is a change of the row.
+		QVERIFY(!History::SameLayout(message, expired));
+		// Its text is the server's: never copied, edited, forwarded or found.
+		QVERIFY(!History::HasCopyableText(message));
+		QVERIFY(!History::CanForward(message));
+		QVERIFY(!History::CanEdit(message, At(3, 10, 0), 0));
+		QVERIFY(History::SearchMessages({ message }, U("گوشی")).empty());
+	}
+
 	void messageText() {
 		auto message = Text(1, false, At(5, 10, 0), U("ببین https://eleza.me و @sara #تهران"));
 		message.entities.push_back(Data::Entity{ u"spoiler"_s, 0, 4, QString(), QString() });

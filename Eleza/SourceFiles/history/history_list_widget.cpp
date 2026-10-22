@@ -123,23 +123,24 @@ ListWidget::ListWidget(
 	});
 	connect(&data.users(), &Data::Users::changed, this, [this](const QStringList &ids) {
 		// Names in reply headers and shared posts; in a group also above
-		// the bubbles and in the notes.
-		if (_group) {
-			auto changed = false;
-			for (auto &row : _rows) {
-				const auto &message = row.element->data();
-				if (ids.contains(message.sender)
-					|| (message.kind == Data::MessageKind::System
-						&& ids.contains(Data::GroupRules::NoteUser(message.system)))) {
-					row.element->unloadHeavy();
-					row.element->invalidate();
-					row.exact = false;
-					changed = true;
-				}
+		// the bubbles and in the notes; the screenshot notice of
+		// self-destructing media.
+		auto changed = false;
+		for (auto &row : _rows) {
+			const auto &message = row.element->data();
+			const auto system = (message.kind == Data::MessageKind::System);
+			if ((_group
+					&& (ids.contains(message.sender)
+						|| (system && ids.contains(Data::GroupRules::NoteUser(message.system)))))
+				|| (system && ids.contains(Data::SelfDestructScreenshotTaker(message.system)))) {
+				row.element->unloadHeavy();
+				row.element->invalidate();
+				row.exact = false;
+				changed = true;
 			}
-			if (changed) {
-				relayoutKeepingAnchor();
-			}
+		}
+		if (changed) {
+			relayoutKeepingAnchor();
 		}
 		invalidateAll();
 	});
@@ -309,6 +310,7 @@ void ListWidget::elementPaintUserpic(
 }
 
 Support::NoteLine ListWidget::elementServiceText(const Data::Message &message) {
+	// The notes of a group, the screenshot notice of a direct chat.
 	return Support::ServiceNoteLine(_session, message);
 }
 

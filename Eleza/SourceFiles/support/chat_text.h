@@ -20,6 +20,11 @@ namespace Support {
 
 [[nodiscard]] QString ChatTitle(Main::Session *session, const Data::Chat &chat);
 
+// «عکس یکبارمصرف», «… منقضی شد»: self-destructing media (empty for any
+// other message).
+[[nodiscard]] QString SelfDestructLabel(const Data::Message &message);
+// «۱۰ ثانیه», «۱ دقیقه»: a timer of self-destructing media.
+[[nodiscard]] QString SelfDestructTimerText(int seconds);
 // The label of a media kind («عکس», «ویدیو», …); empty for plain text.
 [[nodiscard]] QString MessageKindLabel(const Data::Message &message);
 // One line for a message; never empty for a visible message.

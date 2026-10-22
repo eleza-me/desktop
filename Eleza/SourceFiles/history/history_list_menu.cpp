@@ -263,7 +263,8 @@ void ListWidget::showContextMenu(
 	// ---- media and files (of the tile under the pointer in an album)
 	const auto &media = tile ? item : message;
 	const auto hidden = media.mediaSpoiler && !_revealed.contains(media.key());
-	switch ((album && !tile) ? Data::MessageKind::Unknown : media.kind) {
+	// Self-destructing media is never saved or copied (nothing of it is here).
+	switch (((album && !tile) || media.selfDestruct) ? Data::MessageKind::Unknown : media.kind) {
 	case Data::MessageKind::Photo:
 		if (!hidden) {
 			menu->addAction(tr::lng_history_copy_image(tr::now), [=, this] {

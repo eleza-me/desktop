@@ -1219,6 +1219,15 @@ void ComposeControls::attachFiles(const QStringList &paths) {
 	}
 	// What is typed becomes the caption (and comes back if the box is closed).
 	const auto caption = _text.trimmed();
+	// A single photo or video of a direct chat with a person may destruct
+	// once seen.
+	const auto row = _session->data().chats().chat(_chatId);
+	const auto selfDestructTimers = (config
+		&& config->selfDestructEnabled()
+		&& row
+		&& SelfDestructAllowed(*row))
+		? config->selfDestructTimers()
+		: QVector<int>();
 	_controller->show(SendFilesBox(_session, good, caption, base::guard(this, [this](
 			const FilesToSend &files) {
 		_draft->sent();
@@ -1266,6 +1275,12 @@ void ComposeControls::attachFiles(const QStringList &paths) {
 				options.captionAbove = files.captionAbove;
 				captionLeft = false;
 			}
+			if (files.selfDestruct && files.paths.size() == 1) {
+				options.selfDestruct = files.selfDestruct;
+				options.spoiler = false;
+				options.album = QString();
+				options.captionAbove = false;
+			}
 			outbox.sendFile(_chatId, path, options);
 		}
 		if (captionLeft) {
@@ -1278,7 +1293,7 @@ void ComposeControls::attachFiles(const QStringList &paths) {
 		setFieldText(QString(), {});
 		setMode(Mode::None);
 		Q_EMIT sent();
-	})));
+	}), selfDestructTimers));
 }
 
 // ---- link preview

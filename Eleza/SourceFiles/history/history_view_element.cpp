@@ -367,7 +367,9 @@ void Element::ensureLoaded() {
 		|| (kind == Data::MessageKind::Gif)
 		|| (kind == Data::MessageKind::ForwardedPost)
 		|| (kind == Data::MessageKind::StoryReply);
-	if (kind == Data::MessageKind::Unknown && _data.text.trimmed().isEmpty()) {
+	if (_data.selfDestruct) {
+		// Its text is the server's «only on the phone»: the card says it.
+	} else if (kind == Data::MessageKind::Unknown && _data.text.trimmed().isEmpty()) {
 		_text.setText(st::historyTextStyle, tr::lng_history_unsupported(tr::now));
 	} else if ((textKind || captionKind) && !_data.text.isEmpty()) {
 		if (textKind

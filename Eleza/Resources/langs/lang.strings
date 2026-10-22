@@ -2259,3 +2259,30 @@
 "lng_history_abar_left_not_reported" = "از گروه بیرون رفتی، ولی گزارش فرستاده نشد";
 "lng_history_abar_left_not_blocked" = "از گروه بیرون رفتی، ولی {name} مسدود نشد";
 "lng_history_abar_reported_not_left" = "گزارش شد، ولی از گروه بیرون نرفتی";
+
+// ---- history: self-destructing media ----
+"lng_history_sd_media" = "پیام یکبارمصرف";
+"lng_history_sd_photo" = "عکس یکبارمصرف";
+"lng_history_sd_video" = "ویدیوی یکبارمصرف";
+"lng_history_sd_expired" = "پیام یکبارمصرف منقضی شد";
+"lng_history_sd_photo_expired" = "عکس منقضی شد";
+"lng_history_sd_video_expired" = "ویدیو منقضی شد";
+"lng_history_sd_on_phone" = "فقط در اپ گوشی باز می‌شود";
+"lng_history_sd_unopened" = "باز نشده";
+"lng_history_sd_opened" = "باز شد";
+"lng_history_sd_opened_left" = "باز شد · {time}";
+"lng_history_sd_view_once" = "یک بار دیدن";
+"lng_history_sd_seconds#one" = "{count} ثانیه";
+"lng_history_sd_seconds#other" = "{count} ثانیه";
+"lng_history_sd_open_on_phone" = "این پیام را فقط در اپ الزا روی گوشی می‌شود دید";
+"lng_history_sd_only_recipient" = "فقط گیرنده می‌تواند آن را ببیند، آن هم روی گوشی";
+"lng_history_sd_screenshot" = "{name} از پیام یکبارمصرف اسکرین‌شات گرفت";
+"lng_history_sd_screenshot_you" = "از پیام یکبارمصرف اسکرین‌شات گرفتی";
+"lng_history_sd_off" = "خاموش";
+"lng_history_sd_option_off" = "یکبارمصرف: خاموش";
+"lng_history_sd_option_once" = "یکبارمصرف: یک بار دیدن";
+"lng_history_sd_option_timer" = "یکبارمصرف: {time}";
+"lng_history_sd_hint_once" = "گیرنده فقط یک بار می‌تواند ببیند";
+"lng_history_sd_hint_timer" = "گیرنده بعد از باز کردن {time} وقت دارد ببیند";
+"lng_history_sd_minutes#one" = "{count} دقیقه";
+"lng_history_sd_minutes#other" = "{count} دقیقه";
