@@ -57,8 +57,21 @@
   "ChatLiveLocationsResponse": [
     "items"
   ],
+  "ChatMediaPage": [
+    "messages"
+  ],
   "ChatPinsResponse": [
     "pins"
+  ],
+  "ChatSelfDestructConsumedResponse": [
+    "chat",
+    "self_destruct",
+    "seq"
+  ],
+  "ChatSelfDestructShownResponse": [
+    "chat",
+    "self_destruct",
+    "seq"
   ],
   "ChatSendRequest": [
     "client_message_id",
@@ -146,6 +159,7 @@
     "one_hour_left"
   ],
   "DocNotificationsEli": [
+    "hot_posts",
     "likes",
     "new_followers",
     "replies_mentions",
@@ -273,6 +287,10 @@
     "emoji",
     "user"
   ],
+  "GroupReadData": [
+    "group",
+    "outbox_read_seq"
+  ],
   "GroupSelfData": [
     "group"
   ],
@@ -393,6 +411,9 @@
   "GroupsMembersResponse": [
     "members"
   ],
+  "GroupsMembersTagRequest": [
+    "tag"
+  ],
   "GroupsMentionsResponse": [
     "seqs"
   ],
@@ -479,6 +500,15 @@
   "MeSettingsResponse": [
     "settings",
     "version"
+  ],
+  "MediaCounts": [
+    "audio",
+    "file",
+    "gif",
+    "link",
+    "photo_video",
+    "video_note",
+    "voice"
   ],
   "MemberData": [
     "archived",
@@ -583,6 +613,21 @@
     "reader",
     "seq"
   ],
+  "SelfDestructMedia": [
+    "expires_at",
+    "kind",
+    "url"
+  ],
+  "SelfDestructOpened": [
+    "chat",
+    "media",
+    "self_destruct",
+    "seq"
+  ],
+  "SelfDestructView": [
+    "mode",
+    "state"
+  ],
   "StickerView": [
     "height",
     "id",
@@ -596,11 +641,16 @@
   "StoriesCreateResponse": [
     "audience",
     "can_reply",
+    "can_share",
     "created_at",
     "expires_at",
     "id",
     "kind",
     "seen"
+  ],
+  "StoriesGetResponse": [
+    "story",
+    "user"
   ],
   "StoriesHiddenResponse": [
     "users"
@@ -619,14 +669,20 @@
     "ids"
   ],
   "StoriesSettingsResponse": [
+    "allow_sharing",
     "close_friends_count",
     "hidden_count",
     "replies"
   ],
   "StoriesSettingsUpdateResponse": [
+    "allow_sharing",
     "close_friends_count",
     "hidden_count",
     "replies"
+  ],
+  "StoriesShareResponse": [
+    "not_sent",
+    "sent"
   ],
   "StoriesTrayResponse": [
     "items",
@@ -637,6 +693,7 @@
     "user"
   ],
   "StoriesViewersResponse": [
+    "shares",
     "total",
     "viewers"
   ],
@@ -650,6 +707,7 @@
   "StoryOut": [
     "audience",
     "can_reply",
+    "can_share",
     "created_at",
     "expires_at",
     "id",
@@ -666,6 +724,15 @@
     "kind",
     "owner",
     "story_id"
+  ],
+  "StoryShareNotSent": [
+    "reason",
+    "to"
+  ],
+  "StoryShareSent": [
+    "chat",
+    "seq",
+    "to"
   ],
   "StoryUser": [
     "display_name",

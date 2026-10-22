@@ -33,7 +33,7 @@ constexpr Field kAuthResultFields[] = {
 };
 
 constexpr Field kBatchFields[] = {
-	{ 1, "items", K::Message, K::String, K::String, 125, uchar(kRepeated), nullptr },
+	{ 1, "items", K::Message, K::String, K::String, 140, uchar(kRepeated), nullptr },
 };
 
 constexpr Field kBirthdayOutFields[] = {
@@ -66,7 +66,7 @@ constexpr Field kCallsAcceptRequestFields[] = {
 };
 
 constexpr Field kCallsAcceptResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 266, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 288, uchar(0), nullptr },
 };
 
 constexpr Field kCallsActiveResponseFields[] = {
@@ -127,7 +127,7 @@ constexpr Field kCallsRejoinRequestFields[] = {
 };
 
 constexpr Field kCallsRejoinResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 266, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 288, uchar(0), nullptr },
 };
 
 constexpr Field kCallsRingingRequestFields[] = {
@@ -149,6 +149,10 @@ constexpr Field kChallengeFields[] = {
 };
 
 constexpr Field kChatAcceptRequestFields[] = {
+	{ 1, "chat", K::String, K::String, K::String, -1, uchar(kPath), "id" },
+};
+
+constexpr Field kChatActionBarDismissRequestFields[] = {
 	{ 1, "chat", K::String, K::String, K::String, -1, uchar(kPath), "id" },
 };
 
@@ -194,7 +198,7 @@ constexpr Field kChatDraftSaveRequestFields[] = {
 	{ 1, "chat", K::String, K::String, K::String, -1, uchar(kPath), "id" },
 	{ 2, "text", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 3, "reply_to_seq", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
-	{ 4, "entities", K::Message, K::String, K::String, 123, uchar(kRepeated), nullptr },
+	{ 4, "entities", K::Message, K::String, K::String, 138, uchar(kRepeated), nullptr },
 };
 
 constexpr Field kChatDraftSaveResponseFields[] = {
@@ -205,7 +209,7 @@ constexpr Field kChatEditRequestFields[] = {
 	{ 1, "chat", K::String, K::String, K::String, -1, uchar(kPath), "id" },
 	{ 2, "seq", K::Int64, K::String, K::String, -1, uchar(kPath), "seq" },
 	{ 3, "text", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
-	{ 4, "entities", K::Message, K::String, K::String, 123, uchar(kRepeated), nullptr },
+	{ 4, "entities", K::Message, K::String, K::String, 138, uchar(kRepeated), nullptr },
 	{ 5, "link_preview", K::String, K::String, K::String, -1, uchar(0), nullptr },
 };
 
@@ -214,7 +218,7 @@ constexpr Field kChatHeaderRequestFields[] = {
 };
 
 constexpr Field kChatHeaderResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 89, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 104, uchar(0), nullptr },
 };
 
 constexpr Field kChatHistoryRequestFields[] = {
@@ -226,7 +230,7 @@ constexpr Field kChatHistoryRequestFields[] = {
 };
 
 constexpr Field kChatHistoryResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 289, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 312, uchar(0), nullptr },
 };
 
 constexpr Field kChatInboxRequestFields[] = {
@@ -236,14 +240,14 @@ constexpr Field kChatInboxRequestFields[] = {
 };
 
 constexpr Field kChatInboxResponseFields[] = {
-	{ 1, "chats", K::Message, K::String, K::String, 264, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "chats", K::Message, K::String, K::String, 286, uchar(kRepeated | kAlways), nullptr },
 	{ 2, "next_cursor", K::String, K::String, K::String, -1, uchar(0), nullptr },
 };
 
 constexpr Field kChatLiveLocationRequestFields[] = {
 	{ 1, "chat", K::String, K::String, K::String, -1, uchar(kPath), "id" },
 	{ 2, "seq", K::Int64, K::String, K::String, -1, uchar(kPath), "seq" },
-	{ 3, "location", K::Message, K::String, K::String, 273, uchar(0), nullptr },
+	{ 3, "location", K::Message, K::String, K::String, 295, uchar(0), nullptr },
 };
 
 constexpr Field kChatLiveLocationResponseFields[] = {
@@ -260,7 +264,31 @@ constexpr Field kChatLiveLocationsRequestFields[] = {
 };
 
 constexpr Field kChatLiveLocationsResponseFields[] = {
-	{ 1, "items", K::Message, K::String, K::String, 270, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "items", K::Message, K::String, K::String, 292, uchar(kRepeated | kAlways), nullptr },
+};
+
+constexpr Field kChatMediaCountsRequestFields[] = {
+	{ 1, "chat", K::String, K::String, K::String, -1, uchar(kPath), "id" },
+};
+
+constexpr Field kChatMediaCountsResponseFields[] = {
+	{ 1, "body", K::Message, K::String, K::String, 300, uchar(0), nullptr },
+};
+
+constexpr Field kChatMediaPageFields[] = {
+	{ 1, "messages", K::Message, K::String, K::String, 303, uchar(kRepeated | kAlways), nullptr },
+	{ 2, "has_more_before", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
+};
+
+constexpr Field kChatMediaRequestFields[] = {
+	{ 1, "chat", K::String, K::String, K::String, -1, uchar(kPath), "id" },
+	{ 2, "kinds", K::String, K::String, K::String, -1, uchar(kQuery), nullptr },
+	{ 3, "before", K::String, K::String, K::String, -1, uchar(kQuery), nullptr },
+	{ 4, "limit", K::String, K::String, K::String, -1, uchar(kQuery), nullptr },
+};
+
+constexpr Field kChatMediaResponseFields[] = {
+	{ 1, "body", K::Message, K::String, K::String, 65, uchar(0), nullptr },
 };
 
 constexpr Field kChatMemberRequestFields[] = {
@@ -296,7 +324,7 @@ constexpr Field kChatPinsRequestFields[] = {
 };
 
 constexpr Field kChatPinsResponseFields[] = {
-	{ 1, "pins", K::Message, K::String, K::String, 293, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "pins", K::Message, K::String, K::String, 316, uchar(kRepeated | kAlways), nullptr },
 };
 
 constexpr Field kChatPlayedRequestFields[] = {
@@ -315,6 +343,42 @@ constexpr Field kChatReadRequestFields[] = {
 	{ 2, "seq", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
 };
 
+constexpr Field kChatSelfDestructConsumedRequestFields[] = {
+	{ 1, "chat", K::String, K::String, K::String, -1, uchar(kPath), "id" },
+	{ 2, "seq", K::Int64, K::String, K::String, -1, uchar(kPath), "seq" },
+};
+
+constexpr Field kChatSelfDestructConsumedResponseFields[] = {
+	{ 1, "chat", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 2, "seq", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 3, "self_destruct", K::Message, K::String, K::String, 342, uchar(kAlways), nullptr },
+};
+
+constexpr Field kChatSelfDestructOpenRequestFields[] = {
+	{ 1, "chat", K::String, K::String, K::String, -1, uchar(kPath), "id" },
+	{ 2, "seq", K::Int64, K::String, K::String, -1, uchar(kPath), "seq" },
+};
+
+constexpr Field kChatSelfDestructOpenResponseFields[] = {
+	{ 1, "body", K::Message, K::String, K::String, 341, uchar(0), nullptr },
+};
+
+constexpr Field kChatSelfDestructScreenshotRequestFields[] = {
+	{ 1, "chat", K::String, K::String, K::String, -1, uchar(kPath), "id" },
+	{ 2, "seq", K::Int64, K::String, K::String, -1, uchar(kPath), "seq" },
+};
+
+constexpr Field kChatSelfDestructShownRequestFields[] = {
+	{ 1, "chat", K::String, K::String, K::String, -1, uchar(kPath), "id" },
+	{ 2, "seq", K::Int64, K::String, K::String, -1, uchar(kPath), "seq" },
+};
+
+constexpr Field kChatSelfDestructShownResponseFields[] = {
+	{ 1, "chat", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 2, "seq", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 3, "self_destruct", K::Message, K::String, K::String, 342, uchar(kAlways), nullptr },
+};
+
 constexpr Field kChatSendRequestFields[] = {
 	{ 1, "chat", K::String, K::String, K::String, -1, uchar(kPath), "id" },
 	{ 2, "client_message_id", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
@@ -323,19 +387,20 @@ constexpr Field kChatSendRequestFields[] = {
 	{ 5, "reply_to_seq", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
 	{ 6, "attachment", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 7, "forwarded_post", K::String, K::String, K::String, -1, uchar(0), nullptr },
-	{ 8, "location", K::Message, K::String, K::String, 273, uchar(0), nullptr },
+	{ 8, "location", K::Message, K::String, K::String, 295, uchar(0), nullptr },
 	{ 9, "live_period", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
 	{ 10, "audio", K::Message, K::String, K::String, 1, uchar(0), nullptr },
-	{ 11, "forward_from", K::Message, K::String, K::String, 129, uchar(0), nullptr },
-	{ 12, "entities", K::Message, K::String, K::String, 123, uchar(kRepeated), nullptr },
+	{ 11, "forward_from", K::Message, K::String, K::String, 144, uchar(0), nullptr },
+	{ 12, "entities", K::Message, K::String, K::String, 138, uchar(kRepeated), nullptr },
 	{ 13, "media_spoiler", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
 	{ 19, "album", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 20, "caption_above", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
-	{ 14, "quote", K::Message, K::String, K::String, 311, uchar(0), nullptr },
+	{ 14, "quote", K::Message, K::String, K::String, 334, uchar(0), nullptr },
 	{ 15, "link_preview", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 16, "sticker", K::String, K::String, K::String, -1, uchar(0), nullptr },
-	{ 17, "inline_result", K::Message, K::String, K::String, 265, uchar(0), nullptr },
+	{ 17, "inline_result", K::Message, K::String, K::String, 287, uchar(0), nullptr },
 	{ 18, "silent", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
+	{ 21, "self_destruct", K::Message, K::String, K::String, 339, uchar(0), nullptr },
 };
 
 constexpr Field kChatSendResponseFields[] = {
@@ -356,7 +421,7 @@ constexpr Field kChatThreadRequestFields[] = {
 };
 
 constexpr Field kChatThreadResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 89, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 104, uchar(0), nullptr },
 };
 
 constexpr Field kChatUnpinRequestFields[] = {
@@ -374,7 +439,7 @@ constexpr Field kChatViewFields[] = {
 	{ 3, "state", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 4, "last_seq", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 5, "expires_at", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
-	{ 6, "participants", K::Message, K::String, K::String, 290, uchar(kRepeated | kAlways), nullptr },
+	{ 6, "participants", K::Message, K::String, K::String, 313, uchar(kRepeated | kAlways), nullptr },
 	{ 7, "last_read_seq", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 8, "peer_read_seq", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
 	{ 9, "muted", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
@@ -383,13 +448,14 @@ constexpr Field kChatViewFields[] = {
 	{ 12, "request", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 13, "can_send", K::Bool, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 14, "peer_deleted", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
-	{ 15, "conversation", K::Message, K::String, K::String, 109, uchar(0), nullptr },
+	{ 15, "conversation", K::Message, K::String, K::String, 124, uchar(0), nullptr },
 	{ 16, "continued_into", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 17, "theme", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 18, "saved", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
-	{ 19, "draft", K::Message, K::String, K::String, 122, uchar(0), nullptr },
+	{ 19, "draft", K::Message, K::String, K::String, 137, uchar(0), nullptr },
 	{ 20, "pins", K::Int64, K::String, K::String, -1, uchar(kRepeated | kAlways), nullptr },
 	{ 21, "live_shares", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
+	{ 22, "action_bar", K::String, K::String, K::String, -1, uchar(0), nullptr },
 };
 
 constexpr Field kClearedDataFields[] = {
@@ -406,12 +472,12 @@ constexpr Field kClientButtonFields[] = {
 };
 
 constexpr Field kClientButtonRowFields[] = {
-	{ 1, "items", K::Message, K::String, K::String, 91, uchar(kRepeated), nullptr },
+	{ 1, "items", K::Message, K::String, K::String, 106, uchar(kRepeated), nullptr },
 };
 
 constexpr Field kClientMarkupFields[] = {
-	{ 1, "inline_keyboard", K::Message, K::String, K::String, 92, uchar(kRepeated), nullptr },
-	{ 2, "keyboard", K::Message, K::String, K::String, 268, uchar(kRepeated), nullptr },
+	{ 1, "inline_keyboard", K::Message, K::String, K::String, 107, uchar(kRepeated), nullptr },
+	{ 2, "keyboard", K::Message, K::String, K::String, 290, uchar(kRepeated), nullptr },
 	{ 3, "resize", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
 	{ 4, "one_time", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
 	{ 5, "persistent", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
@@ -434,7 +500,7 @@ constexpr Field kConvContinueRequestFields[] = {
 };
 
 constexpr Field kConvContinueResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 109, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 124, uchar(0), nullptr },
 };
 
 constexpr Field kConvCreateRequestFields[] = {
@@ -445,7 +511,7 @@ constexpr Field kConvCreateRequestFields[] = {
 };
 
 constexpr Field kConvCreateResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 109, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 124, uchar(0), nullptr },
 };
 
 constexpr Field kConvEndRequestFields[] = {
@@ -457,7 +523,7 @@ constexpr Field kConvGetRequestFields[] = {
 };
 
 constexpr Field kConvGetResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 109, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 124, uchar(0), nullptr },
 };
 
 constexpr Field kConvJoinRequestFields[] = {
@@ -466,7 +532,7 @@ constexpr Field kConvJoinRequestFields[] = {
 };
 
 constexpr Field kConvJoinResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 109, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 124, uchar(0), nullptr },
 };
 
 constexpr Field kConvOpenRequestFields[] = {
@@ -475,7 +541,7 @@ constexpr Field kConvOpenRequestFields[] = {
 };
 
 constexpr Field kConvOpenResponseFields[] = {
-	{ 1, "conversations", K::Message, K::String, K::String, 288, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "conversations", K::Message, K::String, K::String, 311, uchar(kRepeated | kAlways), nullptr },
 	{ 2, "next_cursor", K::String, K::String, K::String, -1, uchar(0), nullptr },
 };
 
@@ -485,8 +551,8 @@ constexpr Field kConvViewFields[] = {
 	{ 3, "category", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 4, "state", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 5, "expires_at", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
-	{ 6, "speaker", K::Message, K::String, K::String, 290, uchar(kAlways), nullptr },
-	{ 7, "listener", K::Message, K::String, K::String, 290, uchar(0), nullptr },
+	{ 6, "speaker", K::Message, K::String, K::String, 313, uchar(kAlways), nullptr },
+	{ 7, "listener", K::Message, K::String, K::String, 313, uchar(0), nullptr },
 	{ 8, "my_role", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 9, "readonly_until", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
 	{ 10, "can_continue", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
@@ -496,12 +562,12 @@ constexpr Field kConvViewFields[] = {
 };
 
 constexpr Field kDocFields[] = {
-	{ 1, "privacy", K::Message, K::String, K::String, 120, uchar(kAlways), nullptr },
-	{ 2, "discovery", K::Message, K::String, K::String, 112, uchar(kAlways), nullptr },
-	{ 3, "notifications", K::Message, K::String, K::String, 115, uchar(kAlways), nullptr },
-	{ 4, "messages", K::Message, K::String, K::String, 114, uchar(kAlways), nullptr },
-	{ 5, "media", K::Message, K::String, K::String, 113, uchar(kAlways), nullptr },
-	{ 6, "accessibility", K::Message, K::String, K::String, 111, uchar(kAlways), nullptr },
+	{ 1, "privacy", K::Message, K::String, K::String, 135, uchar(kAlways), nullptr },
+	{ 2, "discovery", K::Message, K::String, K::String, 127, uchar(kAlways), nullptr },
+	{ 3, "notifications", K::Message, K::String, K::String, 130, uchar(kAlways), nullptr },
+	{ 4, "messages", K::Message, K::String, K::String, 129, uchar(kAlways), nullptr },
+	{ 5, "media", K::Message, K::String, K::String, 128, uchar(kAlways), nullptr },
+	{ 6, "accessibility", K::Message, K::String, K::String, 126, uchar(kAlways), nullptr },
 };
 
 constexpr Field kDocAccessibilityFields[] = {
@@ -525,11 +591,11 @@ constexpr Field kDocMessagesFields[] = {
 };
 
 constexpr Field kDocNotificationsFields[] = {
-	{ 1, "conversations", K::Message, K::String, K::String, 117, uchar(kAlways), nullptr },
-	{ 2, "eli", K::Message, K::String, K::String, 118, uchar(kAlways), nullptr },
-	{ 3, "general", K::Message, K::String, K::String, 119, uchar(kAlways), nullptr },
-	{ 4, "quiet_hours", K::Message, K::String, K::String, 310, uchar(kAlways), nullptr },
-	{ 5, "contacts", K::Message, K::String, K::String, 116, uchar(kAlways), nullptr },
+	{ 1, "conversations", K::Message, K::String, K::String, 132, uchar(kAlways), nullptr },
+	{ 2, "eli", K::Message, K::String, K::String, 133, uchar(kAlways), nullptr },
+	{ 3, "general", K::Message, K::String, K::String, 134, uchar(kAlways), nullptr },
+	{ 4, "quiet_hours", K::Message, K::String, K::String, 333, uchar(kAlways), nullptr },
+	{ 5, "contacts", K::Message, K::String, K::String, 131, uchar(kAlways), nullptr },
 };
 
 constexpr Field kDocNotificationsContactsFields[] = {
@@ -549,6 +615,7 @@ constexpr Field kDocNotificationsEliFields[] = {
 	{ 3, "reposts_quotes", K::Bool, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 4, "new_followers", K::Bool, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 5, "subscribed_posts", K::Bool, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 6, "hot_posts", K::Bool, K::String, K::String, -1, uchar(kAlways), nullptr },
 };
 
 constexpr Field kDocNotificationsGeneralFields[] = {
@@ -578,13 +645,13 @@ constexpr Field kDocPrivacyFields[] = {
 
 constexpr Field kDraftUpdateFields[] = {
 	{ 1, "chat", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
-	{ 2, "draft", K::Message, K::String, K::String, 122, uchar(0), nullptr },
+	{ 2, "draft", K::Message, K::String, K::String, 137, uchar(0), nullptr },
 };
 
 constexpr Field kDraftViewFields[] = {
 	{ 1, "text", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 2, "reply_to_seq", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
-	{ 3, "entities", K::Message, K::String, K::String, 123, uchar(kRepeated), nullptr },
+	{ 3, "entities", K::Message, K::String, K::String, 138, uchar(kRepeated), nullptr },
 	{ 4, "updated_at", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 };
 
@@ -609,15 +676,15 @@ constexpr Field kEntryFields[] = {
 };
 
 constexpr Field kEnvelopeFields[] = {
-	{ 1, "hello", K::Message, K::String, K::String, 263, uchar(0), nullptr },
-	{ 2, "req", K::Message, K::String, K::String, 314, uchar(0), nullptr },
-	{ 3, "res", K::Message, K::String, K::String, 315, uchar(0), nullptr },
-	{ 4, "update", K::Message, K::String, K::String, 378, uchar(0), nullptr },
-	{ 5, "signal", K::Message, K::String, K::String, 316, uchar(0), nullptr },
+	{ 1, "hello", K::Message, K::String, K::String, 285, uchar(0), nullptr },
+	{ 2, "req", K::Message, K::String, K::String, 337, uchar(0), nullptr },
+	{ 3, "res", K::Message, K::String, K::String, 338, uchar(0), nullptr },
+	{ 4, "update", K::Message, K::String, K::String, 411, uchar(0), nullptr },
+	{ 5, "signal", K::Message, K::String, K::String, 343, uchar(0), nullptr },
 	{ 6, "ack", K::Message, K::String, K::String, 0, uchar(0), nullptr },
-	{ 7, "ping", K::Message, K::String, K::String, 292, uchar(0), nullptr },
-	{ 8, "pong", K::Message, K::String, K::String, 295, uchar(0), nullptr },
-	{ 9, "close", K::Message, K::String, K::String, 94, uchar(0), nullptr },
+	{ 7, "ping", K::Message, K::String, K::String, 315, uchar(0), nullptr },
+	{ 8, "pong", K::Message, K::String, K::String, 318, uchar(0), nullptr },
+	{ 9, "close", K::Message, K::String, K::String, 109, uchar(0), nullptr },
 	{ 10, "batch", K::Message, K::String, K::String, 4, uchar(0), nullptr },
 };
 
@@ -659,6 +726,8 @@ constexpr Field kGroupAdminLogDetailFields[] = {
 	{ 10, "link_name", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 11, "requires_approval", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
 	{ 12, "delete_messages", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
+	{ 14, "tag", K::String, K::String, K::String, -1, uchar(0), nullptr },
+	{ 15, "prev_tag", K::String, K::String, K::String, -1, uchar(0), nullptr },
 };
 
 constexpr Field kGroupAdminLogEntryFields[] = {
@@ -667,7 +736,7 @@ constexpr Field kGroupAdminLogEntryFields[] = {
 	{ 3, "actor", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 4, "action", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 5, "target", K::String, K::String, K::String, -1, uchar(0), nullptr },
-	{ 6, "detail", K::Message, K::String, K::String, 130, uchar(0), nullptr },
+	{ 6, "detail", K::Message, K::String, K::String, 145, uchar(0), nullptr },
 };
 
 constexpr Field kGroupAdminSignalFields[] = {
@@ -683,10 +752,10 @@ constexpr Field kGroupDecideFailureFields[] = {
 };
 
 constexpr Field kGroupEntryFields[] = {
-	{ 1, "group", K::Message, K::String, K::String, 156, uchar(kAlways), nullptr },
-	{ 2, "last_message", K::Message, K::String, K::String, 280, uchar(0), nullptr },
+	{ 1, "group", K::Message, K::String, K::String, 172, uchar(kAlways), nullptr },
+	{ 2, "last_message", K::Message, K::String, K::String, 303, uchar(0), nullptr },
 	{ 3, "last_activity_at", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
-	{ 4, "draft", K::Message, K::String, K::String, 122, uchar(0), nullptr },
+	{ 4, "draft", K::Message, K::String, K::String, 137, uchar(0), nullptr },
 };
 
 constexpr Field kGroupInfoDataFields[] = {
@@ -695,11 +764,12 @@ constexpr Field kGroupInfoDataFields[] = {
 	{ 3, "changed", K::String, K::String, K::String, -1, uchar(kRepeated), nullptr },
 	{ 4, "about", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 5, "owner", K::String, K::String, K::String, -1, uchar(0), nullptr },
-	{ 6, "member", K::Message, K::String, K::String, 142, uchar(0), nullptr },
+	{ 6, "member", K::Message, K::String, K::String, 157, uchar(0), nullptr },
 	{ 7, "default_permissions", K::String, K::String, K::String, -1, uchar(kRepeated), nullptr },
 	{ 8, "history_visible", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
 	{ 9, "slow_mode_s", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
 	{ 10, "hide_members", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
+	{ 11, "suspended", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
 };
 
 constexpr Field kGroupInviteFields[] = {
@@ -741,10 +811,11 @@ constexpr Field kGroupJoinRequestFields[] = {
 constexpr Field kGroupKnownInFields[] = {
 	{ 1, "group", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 2, "pts", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 3, "outbox_read_seq", K::Int64, K::String, K::String, -1, uchar(kOptional), nullptr },
 };
 
 constexpr Field kGroupMediaPageFields[] = {
-	{ 1, "messages", K::Message, K::String, K::String, 280, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "messages", K::Message, K::String, K::String, 303, uchar(kRepeated | kAlways), nullptr },
 	{ 2, "has_more_before", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
 };
 
@@ -753,6 +824,7 @@ constexpr Field kGroupMemberFields[] = {
 	{ 2, "role", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 3, "rights", K::String, K::String, K::String, -1, uchar(kRepeated | kAlways), nullptr },
 	{ 4, "admin_title", K::String, K::String, K::String, -1, uchar(0), nullptr },
+	{ 10, "tag", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 5, "status", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 6, "denied", K::String, K::String, K::String, -1, uchar(kRepeated), nullptr },
 	{ 7, "restricted_until", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
@@ -766,8 +838,8 @@ constexpr Field kGroupNotAddedFields[] = {
 };
 
 constexpr Field kGroupPageFields[] = {
-	{ 1, "group", K::Message, K::String, K::String, 156, uchar(kAlways), nullptr },
-	{ 2, "messages", K::Message, K::String, K::String, 280, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "group", K::Message, K::String, K::String, 172, uchar(kAlways), nullptr },
+	{ 2, "messages", K::Message, K::String, K::String, 303, uchar(kRepeated | kAlways), nullptr },
 	{ 3, "has_more_before", K::Bool, K::String, K::String, -1, uchar(kOptional), nullptr },
 	{ 4, "has_more_after", K::Bool, K::String, K::String, -1, uchar(kOptional), nullptr },
 };
@@ -776,7 +848,7 @@ constexpr Field kGroupPinFields[] = {
 	{ 1, "seq", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 2, "pinned_by", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 3, "pinned_at", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
-	{ 4, "message", K::Message, K::String, K::String, 280, uchar(0), nullptr },
+	{ 4, "message", K::Message, K::String, K::String, 303, uchar(0), nullptr },
 };
 
 constexpr Field kGroupReactionDataFields[] = {
@@ -791,6 +863,11 @@ constexpr Field kGroupReactionEntryFields[] = {
 	{ 3, "at", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 };
 
+constexpr Field kGroupReadDataFields[] = {
+	{ 1, "group", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 2, "outbox_read_seq", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
+};
+
 constexpr Field kGroupSelfDataFields[] = {
 	{ 1, "group", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 2, "status", K::String, K::String, K::String, -1, uchar(0), nullptr },
@@ -798,10 +875,11 @@ constexpr Field kGroupSelfDataFields[] = {
 	{ 4, "by", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 9, "via", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 5, "read_seq", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
-	{ 6, "settings", K::Message, K::String, K::String, 150, uchar(0), nullptr },
+	{ 6, "settings", K::Message, K::String, K::String, 166, uchar(0), nullptr },
 	{ 7, "hidden_seq", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
-	{ 8, "reaction", K::Message, K::String, K::String, 149, uchar(0), nullptr },
-	{ 10, "draft", K::Message, K::String, K::String, 122, uchar(0), nullptr },
+	{ 8, "reaction", K::Message, K::String, K::String, 165, uchar(0), nullptr },
+	{ 10, "draft", K::Message, K::String, K::String, 137, uchar(0), nullptr },
+	{ 11, "action_bar_dismissed", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
 };
 
 constexpr Field kGroupSelfReactionFields[] = {
@@ -832,15 +910,16 @@ constexpr Field kGroupSignalFields[] = {
 	{ 1, "group", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 2, "pts", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 3, "kind", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
-	{ 4, "data", K::Message, K::String, K::String, 154, uchar(0), nullptr },
+	{ 4, "data", K::Message, K::String, K::String, 170, uchar(0), nullptr },
 };
 
 constexpr Field kGroupSignalDataFields[] = {
-	{ 1, "message", K::Message, K::String, K::String, 280, uchar(0), nullptr },
-	{ 2, "reaction", K::Message, K::String, K::String, 146, uchar(0), nullptr },
-	{ 3, "info", K::Message, K::String, K::String, 135, uchar(0), nullptr },
-	{ 4, "deleted_many", K::Message, K::String, K::String, 152, uchar(0), nullptr },
-	{ 5, "unpinned", K::Message, K::String, K::String, 151, uchar(0), nullptr },
+	{ 1, "message", K::Message, K::String, K::String, 303, uchar(0), nullptr },
+	{ 2, "reaction", K::Message, K::String, K::String, 161, uchar(0), nullptr },
+	{ 3, "info", K::Message, K::String, K::String, 150, uchar(0), nullptr },
+	{ 4, "deleted_many", K::Message, K::String, K::String, 168, uchar(0), nullptr },
+	{ 5, "unpinned", K::Message, K::String, K::String, 167, uchar(0), nullptr },
+	{ 6, "read", K::Message, K::String, K::String, 163, uchar(0), nullptr },
 };
 
 constexpr Field kGroupTypingSignalFields[] = {
@@ -860,6 +939,7 @@ constexpr Field kGroupViewFields[] = {
 	{ 6, "state", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 7, "status", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 8, "role", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 40, "my_tag", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 9, "rights", K::String, K::String, K::String, -1, uchar(kRepeated | kAlways), nullptr },
 	{ 10, "permissions", K::String, K::String, K::String, -1, uchar(kRepeated | kAlways), nullptr },
 	{ 11, "default_permissions", K::String, K::String, K::String, -1, uchar(kRepeated | kAlways), nullptr },
@@ -874,6 +954,7 @@ constexpr Field kGroupViewFields[] = {
 	{ 17, "last_seq", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 18, "pts", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 19, "last_read_seq", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 36, "outbox_read_seq", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
 	{ 20, "unread", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 21, "unread_capped", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
 	{ 22, "unread_mentions", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
@@ -886,6 +967,13 @@ constexpr Field kGroupViewFields[] = {
 	{ 29, "cleared_before_seq", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
 	{ 30, "created_at", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 32, "join_requests", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
+	{ 37, "action_bar", K::String, K::String, K::String, -1, uchar(0), nullptr },
+	{ 38, "added_by", K::String, K::String, K::String, -1, uchar(0), nullptr },
+	{ 39, "suspended", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
+};
+
+constexpr Field kGroupsActionBarDismissRequestFields[] = {
+	{ 1, "group", K::String, K::String, K::String, -1, uchar(kPath), "id" },
 };
 
 constexpr Field kGroupsAdminLogRequestFields[] = {
@@ -897,7 +985,7 @@ constexpr Field kGroupsAdminLogRequestFields[] = {
 };
 
 constexpr Field kGroupsAdminLogResponseFields[] = {
-	{ 1, "entries", K::Message, K::String, K::String, 131, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "entries", K::Message, K::String, K::String, 146, uchar(kRepeated | kAlways), nullptr },
 	{ 2, "next_cursor", K::String, K::String, K::String, -1, uchar(0), nullptr },
 };
 
@@ -906,10 +994,11 @@ constexpr Field kGroupsAdminSetRequestFields[] = {
 	{ 2, "user", K::String, K::String, K::String, -1, uchar(kPath), "user" },
 	{ 3, "rights", K::String, K::String, K::String, -1, uchar(kRepeated | kAlways), nullptr },
 	{ 4, "title", K::String, K::String, K::String, -1, uchar(kOptional), nullptr },
+	{ 5, "with_tags", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
 };
 
 constexpr Field kGroupsAdminSetResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 142, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 157, uchar(0), nullptr },
 };
 
 constexpr Field kGroupsAdminUnsetRequestFields[] = {
@@ -918,7 +1007,7 @@ constexpr Field kGroupsAdminUnsetRequestFields[] = {
 };
 
 constexpr Field kGroupsAdminUnsetResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 142, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 157, uchar(0), nullptr },
 };
 
 constexpr Field kGroupsBanRequestFields[] = {
@@ -936,8 +1025,8 @@ constexpr Field kGroupsCreateRequestFields[] = {
 };
 
 constexpr Field kGroupsCreateResponseFields[] = {
-	{ 1, "group", K::Message, K::String, K::String, 156, uchar(kAlways), nullptr },
-	{ 2, "not_added", K::Message, K::String, K::String, 143, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "group", K::Message, K::String, K::String, 172, uchar(kAlways), nullptr },
+	{ 2, "not_added", K::Message, K::String, K::String, 158, uchar(kRepeated | kAlways), nullptr },
 };
 
 constexpr Field kGroupsDeleteGroupRequestFields[] = {
@@ -967,8 +1056,9 @@ constexpr Field kGroupsDifferenceRequestFields[] = {
 
 constexpr Field kGroupsDifferenceResponseFields[] = {
 	{ 1, "pts", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
-	{ 2, "messages", K::Message, K::String, K::String, 280, uchar(kRepeated | kAlways), nullptr },
-	{ 3, "group", K::Message, K::String, K::String, 156, uchar(0), nullptr },
+	{ 2, "messages", K::Message, K::String, K::String, 303, uchar(kRepeated | kAlways), nullptr },
+	{ 3, "group", K::Message, K::String, K::String, 172, uchar(0), nullptr },
+	{ 6, "outbox_read_seq", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
 	{ 4, "more", K::Bool, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 5, "too_long", K::Bool, K::String, K::String, -1, uchar(kAlways), nullptr },
 };
@@ -981,7 +1071,7 @@ constexpr Field kGroupsDraftSaveRequestFields[] = {
 	{ 1, "group", K::String, K::String, K::String, -1, uchar(kPath), "id" },
 	{ 2, "text", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 3, "reply_to_seq", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
-	{ 4, "entities", K::Message, K::String, K::String, 123, uchar(kRepeated), nullptr },
+	{ 4, "entities", K::Message, K::String, K::String, 138, uchar(kRepeated), nullptr },
 };
 
 constexpr Field kGroupsDraftSaveResponseFields[] = {
@@ -992,7 +1082,7 @@ constexpr Field kGroupsEditRequestFields[] = {
 	{ 1, "group", K::String, K::String, K::String, -1, uchar(kPath), "id" },
 	{ 2, "seq", K::Int64, K::String, K::String, -1, uchar(kPath), "seq" },
 	{ 3, "text", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
-	{ 4, "entities", K::Message, K::String, K::String, 123, uchar(kRepeated), nullptr },
+	{ 4, "entities", K::Message, K::String, K::String, 138, uchar(kRepeated), nullptr },
 	{ 5, "link_preview", K::String, K::String, K::String, -1, uchar(0), nullptr },
 };
 
@@ -1001,7 +1091,7 @@ constexpr Field kGroupsGetRequestFields[] = {
 };
 
 constexpr Field kGroupsGetResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 156, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 172, uchar(0), nullptr },
 };
 
 constexpr Field kGroupsHideMembersRequestFields[] = {
@@ -1010,7 +1100,7 @@ constexpr Field kGroupsHideMembersRequestFields[] = {
 };
 
 constexpr Field kGroupsHideMembersResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 156, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 172, uchar(0), nullptr },
 };
 
 constexpr Field kGroupsHistoryRequestFields[] = {
@@ -1022,7 +1112,7 @@ constexpr Field kGroupsHistoryRequestFields[] = {
 };
 
 constexpr Field kGroupsHistoryResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 144, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 159, uchar(0), nullptr },
 };
 
 constexpr Field kGroupsInviteJoinRequestFields[] = {
@@ -1030,7 +1120,7 @@ constexpr Field kGroupsInviteJoinRequestFields[] = {
 };
 
 constexpr Field kGroupsInviteJoinResponseFields[] = {
-	{ 1, "group", K::Message, K::String, K::String, 156, uchar(0), nullptr },
+	{ 1, "group", K::Message, K::String, K::String, 172, uchar(0), nullptr },
 	{ 2, "pending", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
 };
 
@@ -1039,7 +1129,7 @@ constexpr Field kGroupsInvitePreviewRequestFields[] = {
 };
 
 constexpr Field kGroupsInvitePreviewResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 138, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 153, uchar(0), nullptr },
 };
 
 constexpr Field kGroupsInvitesCreateRequestFields[] = {
@@ -1051,7 +1141,7 @@ constexpr Field kGroupsInvitesCreateRequestFields[] = {
 };
 
 constexpr Field kGroupsInvitesCreateResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 136, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 151, uchar(0), nullptr },
 };
 
 constexpr Field kGroupsInvitesGetRequestFields[] = {
@@ -1060,7 +1150,7 @@ constexpr Field kGroupsInvitesGetRequestFields[] = {
 };
 
 constexpr Field kGroupsInvitesGetResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 136, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 151, uchar(0), nullptr },
 };
 
 constexpr Field kGroupsInvitesMembersRequestFields[] = {
@@ -1071,7 +1161,7 @@ constexpr Field kGroupsInvitesMembersRequestFields[] = {
 };
 
 constexpr Field kGroupsInvitesMembersResponseFields[] = {
-	{ 1, "members", K::Message, K::String, K::String, 137, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "members", K::Message, K::String, K::String, 152, uchar(kRepeated | kAlways), nullptr },
 	{ 2, "next_cursor", K::String, K::String, K::String, -1, uchar(0), nullptr },
 };
 
@@ -1081,7 +1171,7 @@ constexpr Field kGroupsInvitesRequestFields[] = {
 };
 
 constexpr Field kGroupsInvitesResponseFields[] = {
-	{ 1, "invites", K::Message, K::String, K::String, 136, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "invites", K::Message, K::String, K::String, 151, uchar(kRepeated | kAlways), nullptr },
 };
 
 constexpr Field kGroupsInvitesRevokeRequestFields[] = {
@@ -1096,7 +1186,7 @@ constexpr Field kGroupsJoinRequestsApproveManyRequestFields[] = {
 
 constexpr Field kGroupsJoinRequestsApproveManyResponseFields[] = {
 	{ 1, "done", K::String, K::String, K::String, -1, uchar(kRepeated | kAlways), nullptr },
-	{ 2, "failed", K::Message, K::String, K::String, 133, uchar(kRepeated | kAlways), nullptr },
+	{ 2, "failed", K::Message, K::String, K::String, 148, uchar(kRepeated | kAlways), nullptr },
 };
 
 constexpr Field kGroupsJoinRequestsApproveRequestFields[] = {
@@ -1111,7 +1201,7 @@ constexpr Field kGroupsJoinRequestsDeclineManyRequestFields[] = {
 
 constexpr Field kGroupsJoinRequestsDeclineManyResponseFields[] = {
 	{ 1, "done", K::String, K::String, K::String, -1, uchar(kRepeated | kAlways), nullptr },
-	{ 2, "failed", K::Message, K::String, K::String, 133, uchar(kRepeated | kAlways), nullptr },
+	{ 2, "failed", K::Message, K::String, K::String, 148, uchar(kRepeated | kAlways), nullptr },
 };
 
 constexpr Field kGroupsJoinRequestsDeclineRequestFields[] = {
@@ -1127,7 +1217,7 @@ constexpr Field kGroupsJoinRequestsRequestFields[] = {
 };
 
 constexpr Field kGroupsJoinRequestsResponseFields[] = {
-	{ 1, "requests", K::Message, K::String, K::String, 139, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "requests", K::Message, K::String, K::String, 154, uchar(kRepeated | kAlways), nullptr },
 	{ 2, "next_cursor", K::String, K::String, K::String, -1, uchar(0), nullptr },
 };
 
@@ -1141,8 +1231,16 @@ constexpr Field kGroupsListRequestFields[] = {
 };
 
 constexpr Field kGroupsListResponseFields[] = {
-	{ 1, "groups", K::Message, K::String, K::String, 134, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "groups", K::Message, K::String, K::String, 149, uchar(kRepeated | kAlways), nullptr },
 	{ 2, "next_cursor", K::String, K::String, K::String, -1, uchar(0), nullptr },
+};
+
+constexpr Field kGroupsMediaCountsRequestFields[] = {
+	{ 1, "group", K::String, K::String, K::String, -1, uchar(kPath), "id" },
+};
+
+constexpr Field kGroupsMediaCountsResponseFields[] = {
+	{ 1, "body", K::Message, K::String, K::String, 300, uchar(0), nullptr },
 };
 
 constexpr Field kGroupsMediaRequestFields[] = {
@@ -1153,7 +1251,7 @@ constexpr Field kGroupsMediaRequestFields[] = {
 };
 
 constexpr Field kGroupsMediaResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 141, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 156, uchar(0), nullptr },
 };
 
 constexpr Field kGroupsMemberRequestFields[] = {
@@ -1173,7 +1271,7 @@ constexpr Field kGroupsMembersAddRequestFields[] = {
 
 constexpr Field kGroupsMembersAddResponseFields[] = {
 	{ 1, "added", K::String, K::String, K::String, -1, uchar(kRepeated | kAlways), nullptr },
-	{ 2, "not_added", K::Message, K::String, K::String, 143, uchar(kRepeated | kAlways), nullptr },
+	{ 2, "not_added", K::Message, K::String, K::String, 158, uchar(kRepeated | kAlways), nullptr },
 };
 
 constexpr Field kGroupsMembersDeleteMessagesRequestFields[] = {
@@ -1194,9 +1292,19 @@ constexpr Field kGroupsMembersRequestFields[] = {
 };
 
 constexpr Field kGroupsMembersResponseFields[] = {
-	{ 1, "members", K::Message, K::String, K::String, 142, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "members", K::Message, K::String, K::String, 157, uchar(kRepeated | kAlways), nullptr },
 	{ 2, "next_cursor", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 3, "members_hidden", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
+};
+
+constexpr Field kGroupsMembersTagRequestFields[] = {
+	{ 1, "group", K::String, K::String, K::String, -1, uchar(kPath), "id" },
+	{ 2, "user", K::String, K::String, K::String, -1, uchar(kPath), "user" },
+	{ 3, "tag", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
+};
+
+constexpr Field kGroupsMembersTagResponseFields[] = {
+	{ 1, "body", K::Message, K::String, K::String, 157, uchar(0), nullptr },
 };
 
 constexpr Field kGroupsMentionsRequestFields[] = {
@@ -1225,17 +1333,18 @@ constexpr Field kGroupsPatchRequestFields[] = {
 };
 
 constexpr Field kGroupsPatchResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 156, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 172, uchar(0), nullptr },
 };
 
 constexpr Field kGroupsPermissionsRequestFields[] = {
 	{ 1, "group", K::String, K::String, K::String, -1, uchar(kPath), "id" },
 	{ 2, "default_permissions", K::String, K::String, K::String, -1, uchar(kRepeated), nullptr },
 	{ 3, "history_visible", K::Bool, K::String, K::String, -1, uchar(kOptional), nullptr },
+	{ 4, "with_tags", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
 };
 
 constexpr Field kGroupsPermissionsResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 156, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 172, uchar(0), nullptr },
 };
 
 constexpr Field kGroupsPinRequestFields[] = {
@@ -1247,7 +1356,7 @@ constexpr Field kGroupsPinsRequestFields[] = {
 };
 
 constexpr Field kGroupsPinsResponseFields[] = {
-	{ 1, "pins", K::Message, K::String, K::String, 145, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "pins", K::Message, K::String, K::String, 160, uchar(kRepeated | kAlways), nullptr },
 };
 
 constexpr Field kGroupsReactRequestFields[] = {
@@ -1265,7 +1374,7 @@ constexpr Field kGroupsReactionsRequestFields[] = {
 };
 
 constexpr Field kGroupsReactionsResponseFields[] = {
-	{ 1, "reactions", K::Message, K::String, K::String, 147, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "reactions", K::Message, K::String, K::String, 162, uchar(kRepeated | kAlways), nullptr },
 	{ 2, "next_cursor", K::String, K::String, K::String, -1, uchar(0), nullptr },
 };
 
@@ -1283,10 +1392,11 @@ constexpr Field kGroupsRestrictRequestFields[] = {
 	{ 2, "user", K::String, K::String, K::String, -1, uchar(kPath), "user" },
 	{ 3, "denied", K::String, K::String, K::String, -1, uchar(kRepeated | kAlways), nullptr },
 	{ 4, "until", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
+	{ 5, "with_tags", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
 };
 
 constexpr Field kGroupsRestrictResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 142, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 157, uchar(0), nullptr },
 };
 
 constexpr Field kGroupsSendRequestFields[] = {
@@ -1297,17 +1407,18 @@ constexpr Field kGroupsSendRequestFields[] = {
 	{ 5, "reply_to_seq", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
 	{ 6, "attachment", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 7, "forwarded_post", K::String, K::String, K::String, -1, uchar(0), nullptr },
-	{ 8, "location", K::Message, K::String, K::String, 273, uchar(0), nullptr },
+	{ 8, "location", K::Message, K::String, K::String, 295, uchar(0), nullptr },
 	{ 9, "audio", K::Message, K::String, K::String, 1, uchar(0), nullptr },
-	{ 10, "forward_from", K::Message, K::String, K::String, 129, uchar(0), nullptr },
-	{ 11, "entities", K::Message, K::String, K::String, 123, uchar(kRepeated), nullptr },
+	{ 10, "forward_from", K::Message, K::String, K::String, 144, uchar(0), nullptr },
+	{ 11, "entities", K::Message, K::String, K::String, 138, uchar(kRepeated), nullptr },
 	{ 12, "media_spoiler", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
 	{ 17, "album", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 18, "caption_above", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
-	{ 13, "quote", K::Message, K::String, K::String, 311, uchar(0), nullptr },
+	{ 13, "quote", K::Message, K::String, K::String, 334, uchar(0), nullptr },
 	{ 14, "link_preview", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 15, "sticker", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 16, "silent", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
+	{ 19, "self_destruct", K::Message, K::String, K::String, 339, uchar(0), nullptr },
 };
 
 constexpr Field kGroupsSendResponseFields[] = {
@@ -1324,17 +1435,18 @@ constexpr Field kGroupsSlowModeRequestFields[] = {
 };
 
 constexpr Field kGroupsSlowModeResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 156, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 172, uchar(0), nullptr },
 };
 
 constexpr Field kGroupsSyncRequestFields[] = {
-	{ 1, "known", K::Message, K::String, K::String, 140, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "known", K::Message, K::String, K::String, 155, uchar(kRepeated | kAlways), nullptr },
 };
 
 constexpr Field kGroupsSyncResponseFields[] = {
-	{ 1, "groups", K::Message, K::String, K::String, 134, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "groups", K::Message, K::String, K::String, 149, uchar(kRepeated | kAlways), nullptr },
 	{ 2, "removed", K::String, K::String, K::String, -1, uchar(kRepeated | kAlways), nullptr },
 	{ 3, "count", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 4, "reads", K::Message, K::String, K::String, 163, uchar(kRepeated), nullptr },
 };
 
 constexpr Field kGroupsTransferRequestFields[] = {
@@ -1343,7 +1455,7 @@ constexpr Field kGroupsTransferRequestFields[] = {
 };
 
 constexpr Field kGroupsTransferResponseFields[] = {
-	{ 1, "body", K::Message, K::String, K::String, 156, uchar(0), nullptr },
+	{ 1, "body", K::Message, K::String, K::String, 172, uchar(0), nullptr },
 };
 
 constexpr Field kGroupsUnbanRequestFields[] = {
@@ -1383,10 +1495,10 @@ constexpr Field kInboxEntryFields[] = {
 	{ 10, "archived", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
 	{ 11, "time_ring_expires_at", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
 	{ 12, "last_activity_at", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
-	{ 13, "last_message", K::Message, K::String, K::String, 280, uchar(0), nullptr },
-	{ 14, "chat_info", K::Message, K::String, K::String, 89, uchar(0), nullptr },
+	{ 13, "last_message", K::Message, K::String, K::String, 303, uchar(0), nullptr },
+	{ 14, "chat_info", K::Message, K::String, K::String, 104, uchar(0), nullptr },
 	{ 15, "peer_deleted", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
-	{ 16, "draft", K::Message, K::String, K::String, 122, uchar(0), nullptr },
+	{ 16, "draft", K::Message, K::String, K::String, 137, uchar(0), nullptr },
 };
 
 constexpr Field kInlineResultInFields[] = {
@@ -1401,7 +1513,7 @@ constexpr Field kJoinFields[] = {
 	{ 3, "sfu_url", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 4, "token", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 5, "token_expires_at", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
-	{ 6, "turn", K::Message, K::String, K::String, 370, uchar(0), nullptr },
+	{ 6, "turn", K::Message, K::String, K::String, 403, uchar(0), nullptr },
 	{ 7, "peer", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 8, "relay_only", K::Bool, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 9, "video", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
@@ -1412,7 +1524,7 @@ constexpr Field kKeyButtonFields[] = {
 };
 
 constexpr Field kKeyButtonRowFields[] = {
-	{ 1, "items", K::Message, K::String, K::String, 267, uchar(kRepeated), nullptr },
+	{ 1, "items", K::Message, K::String, K::String, 289, uchar(kRepeated), nullptr },
 };
 
 constexpr Field kLinkPreviewFields[] = {
@@ -1429,14 +1541,14 @@ constexpr Field kLiveItemFields[] = {
 	{ 1, "seq", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 2, "sender", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 3, "until", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
-	{ 4, "location", K::Message, K::String, K::String, 273, uchar(0), nullptr },
+	{ 4, "location", K::Message, K::String, K::String, 295, uchar(0), nullptr },
 	{ 5, "at", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
 };
 
 constexpr Field kLiveLocationSignalFields[] = {
 	{ 1, "chat", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 2, "seq", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
-	{ 3, "location", K::Message, K::String, K::String, 273, uchar(0), nullptr },
+	{ 3, "location", K::Message, K::String, K::String, 295, uchar(0), nullptr },
 	{ 4, "until", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
 	{ 5, "sender", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 6, "at", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
@@ -1484,7 +1596,18 @@ constexpr Field kMeGetResponseFields[] = {
 
 constexpr Field kMeSettingsResponseFields[] = {
 	{ 1, "version", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
-	{ 2, "settings", K::Message, K::String, K::String, 110, uchar(kAlways), nullptr },
+	{ 2, "settings", K::Message, K::String, K::String, 125, uchar(kAlways), nullptr },
+};
+
+constexpr Field kMediaCountsFields[] = {
+	{ 1, "photo_video", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 2, "file", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 3, "link", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 4, "audio", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 5, "voice", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 6, "gif", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 7, "video_note", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 8, "capped", K::String, K::String, K::String, -1, uchar(kRepeated), nullptr },
 };
 
 constexpr Field kMediaMetaFields[] = {
@@ -1504,6 +1627,7 @@ constexpr Field kMemberDataFields[] = {
 	{ 4, "cleared_before_seq", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 5, "hidden_seq", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 6, "muted_until", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
+	{ 7, "action_bar_dismissed", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
 };
 
 constexpr Field kMessageViewFields[] = {
@@ -1516,7 +1640,7 @@ constexpr Field kMessageViewFields[] = {
 	{ 7, "text", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 8, "reply_to_seq", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
 	{ 9, "attachment", K::String, K::String, K::String, -1, uchar(0), nullptr },
-	{ 10, "media", K::Message, K::String, K::String, 278, uchar(0), nullptr },
+	{ 10, "media", K::Message, K::String, K::String, 301, uchar(0), nullptr },
 	{ 11, "forwarded_post", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 12, "forwarded", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
 	{ 13, "system", K::String, K::String, K::String, -1, uchar(0), nullptr },
@@ -1526,21 +1650,24 @@ constexpr Field kMessageViewFields[] = {
 	{ 17, "under_review", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
 	{ 18, "played", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
 	{ 19, "call", K::Message, K::String, K::String, 6, uchar(0), nullptr },
-	{ 20, "location", K::Message, K::String, K::String, 273, uchar(0), nullptr },
-	{ 21, "live", K::Message, K::String, K::String, 272, uchar(0), nullptr },
+	{ 20, "location", K::Message, K::String, K::String, 295, uchar(0), nullptr },
+	{ 21, "live", K::Message, K::String, K::String, 294, uchar(0), nullptr },
 	{ 22, "audio", K::Message, K::String, K::String, 1, uchar(0), nullptr },
 	{ 23, "reactions", K::Map, K::String, K::Int64, -1, uchar(0), nullptr },
 	{ 24, "my_reaction", K::String, K::String, K::String, -1, uchar(0), nullptr },
-	{ 25, "entities", K::Message, K::String, K::String, 123, uchar(kRepeated), nullptr },
+	{ 25, "entities", K::Message, K::String, K::String, 138, uchar(kRepeated), nullptr },
 	{ 26, "media_spoiler", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
 	{ 32, "album", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 33, "caption_above", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
-	{ 27, "quote", K::Message, K::String, K::String, 311, uchar(0), nullptr },
-	{ 28, "link_preview", K::Message, K::String, K::String, 269, uchar(0), nullptr },
-	{ 29, "sticker", K::Message, K::String, K::String, 319, uchar(0), nullptr },
-	{ 30, "reply_markup", K::Message, K::String, K::String, 93, uchar(0), nullptr },
-	{ 31, "via_bot", K::Message, K::String, K::String, 383, uchar(0), nullptr },
-	{ 34, "story", K::Message, K::String, K::String, 363, uchar(0), nullptr },
+	{ 27, "quote", K::Message, K::String, K::String, 334, uchar(0), nullptr },
+	{ 28, "link_preview", K::Message, K::String, K::String, 291, uchar(0), nullptr },
+	{ 29, "sticker", K::Message, K::String, K::String, 346, uchar(0), nullptr },
+	{ 30, "reply_markup", K::Message, K::String, K::String, 108, uchar(0), nullptr },
+	{ 31, "via_bot", K::Message, K::String, K::String, 416, uchar(0), nullptr },
+	{ 34, "story", K::Message, K::String, K::String, 394, uchar(0), nullptr },
+	{ 35, "self_destruct", K::Message, K::String, K::String, 342, uchar(0), nullptr },
+	{ 36, "sender_tag", K::String, K::String, K::String, -1, uchar(0), nullptr },
+	{ 37, "sender_role", K::String, K::String, K::String, -1, uchar(0), nullptr },
 };
 
 constexpr Field kNotifDataFields[] = {
@@ -1554,7 +1681,7 @@ constexpr Field kNotifListRequestFields[] = {
 };
 
 constexpr Field kNotifListResponseFields[] = {
-	{ 1, "notifications", K::Message, K::String, K::String, 124, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "notifications", K::Message, K::String, K::String, 139, uchar(kRepeated | kAlways), nullptr },
 };
 
 constexpr Field kNotifUnreadResponseFields[] = {
@@ -1574,8 +1701,8 @@ constexpr Field kOpenItemFields[] = {
 };
 
 constexpr Field kPageFields[] = {
-	{ 1, "chat", K::Message, K::String, K::String, 89, uchar(kAlways), nullptr },
-	{ 2, "messages", K::Message, K::String, K::String, 280, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "chat", K::Message, K::String, K::String, 104, uchar(kAlways), nullptr },
+	{ 2, "messages", K::Message, K::String, K::String, 303, uchar(kRepeated | kAlways), nullptr },
 	{ 3, "has_more_before", K::Bool, K::String, K::String, -1, uchar(kOptional), nullptr },
 	{ 4, "has_more_after", K::Bool, K::String, K::String, -1, uchar(kOptional), nullptr },
 };
@@ -1606,7 +1733,7 @@ constexpr Field kPingFields[] = {
 constexpr Field kPinnedMessageFields[] = {
 	{ 1, "scope", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 2, "pinned_at", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
-	{ 3, "message", K::Message, K::String, K::String, 280, uchar(kAlways), nullptr },
+	{ 3, "message", K::Message, K::String, K::String, 303, uchar(kAlways), nullptr },
 };
 
 constexpr Field kPlayedDataFields[] = {
@@ -1630,7 +1757,7 @@ constexpr Field kPresenceRequestFields[] = {
 };
 
 constexpr Field kPresenceResponseFields[] = {
-	{ 1, "presence", K::Message, K::String, K::String, 296, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "presence", K::Message, K::String, K::String, 319, uchar(kRepeated | kAlways), nullptr },
 };
 
 constexpr Field kPresenceSignalFields[] = {
@@ -1645,7 +1772,7 @@ constexpr Field kPresenceSubFields[] = {
 };
 
 constexpr Field kPresenceSubResultFields[] = {
-	{ 1, "presence", K::Message, K::String, K::String, 296, uchar(kRepeated), nullptr },
+	{ 1, "presence", K::Message, K::String, K::String, 319, uchar(kRepeated), nullptr },
 	{ 2, "ttl_s", K::Uint32, K::String, K::String, -1, uchar(0), nullptr },
 };
 
@@ -1734,7 +1861,41 @@ constexpr Field kResponseFields[] = {
 	{ 1, "id", K::Uint32, K::String, K::String, -1, uchar(0), nullptr },
 	{ 2, "ok", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
 	{ 3, "body", K::Bytes, K::String, K::String, -1, uchar(0), nullptr },
-	{ 4, "error", K::Message, K::String, K::String, 126, uchar(0), nullptr },
+	{ 4, "error", K::Message, K::String, K::String, 141, uchar(0), nullptr },
+};
+
+constexpr Field kSelfDestructInputFields[] = {
+	{ 1, "view_once", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
+	{ 2, "seconds", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
+};
+
+constexpr Field kSelfDestructMediaFields[] = {
+	{ 1, "kind", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 2, "url", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 3, "poster_url", K::String, K::String, K::String, -1, uchar(0), nullptr },
+	{ 4, "expires_at", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 5, "w", K::Int32, K::String, K::String, -1, uchar(0), nullptr },
+	{ 6, "h", K::Int32, K::String, K::String, -1, uchar(0), nullptr },
+	{ 7, "duration_ms", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
+	{ 8, "mime", K::String, K::String, K::String, -1, uchar(0), nullptr },
+	{ 9, "size", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
+};
+
+constexpr Field kSelfDestructOpenedFields[] = {
+	{ 1, "chat", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 2, "seq", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 3, "self_destruct", K::Message, K::String, K::String, 342, uchar(kAlways), nullptr },
+	{ 4, "media", K::Message, K::String, K::String, 340, uchar(kAlways), nullptr },
+	{ 5, "text", K::String, K::String, K::String, -1, uchar(0), nullptr },
+	{ 6, "entities", K::Message, K::String, K::String, 138, uchar(kRepeated), nullptr },
+};
+
+constexpr Field kSelfDestructViewFields[] = {
+	{ 1, "mode", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 2, "seconds", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
+	{ 3, "state", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 4, "opened_at", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
+	{ 5, "destruct_at", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
 };
 
 constexpr Field kSignalFields[] = {
@@ -1747,7 +1908,7 @@ constexpr Field kStateDataFields[] = {
 	{ 1, "chat", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 2, "state", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 3, "hidden_from_seq", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
-	{ 4, "conversation", K::Message, K::String, K::String, 109, uchar(0), nullptr },
+	{ 4, "conversation", K::Message, K::String, K::String, 124, uchar(0), nullptr },
 	{ 5, "event", K::String, K::String, K::String, -1, uchar(0), nullptr },
 };
 
@@ -1782,7 +1943,7 @@ constexpr Field kStoriesCloseFriendsRequestFields[] = {
 };
 
 constexpr Field kStoriesCloseFriendsResponseFields[] = {
-	{ 1, "users", K::Message, K::String, K::String, 364, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "users", K::Message, K::String, K::String, 397, uchar(kRepeated | kAlways), nullptr },
 	{ 2, "next_cursor", K::String, K::String, K::String, -1, uchar(kOptional), nullptr },
 };
 
@@ -1796,8 +1957,8 @@ constexpr Field kStoriesCreateRequestFields[] = {
 constexpr Field kStoriesCreateResponseFields[] = {
 	{ 1, "id", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 2, "kind", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
-	{ 3, "media", K::Message, K::String, K::String, 360, uchar(0), nullptr },
-	{ 4, "post", K::Message, K::String, K::String, 362, uchar(0), nullptr },
+	{ 3, "media", K::Message, K::String, K::String, 391, uchar(0), nullptr },
+	{ 4, "post", K::Message, K::String, K::String, 393, uchar(0), nullptr },
 	{ 5, "caption", K::String, K::String, K::String, -1, uchar(kOptional), nullptr },
 	{ 6, "created_at", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 7, "expires_at", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
@@ -1806,10 +1967,21 @@ constexpr Field kStoriesCreateResponseFields[] = {
 	{ 10, "viewer_count", K::Int64, K::String, K::String, -1, uchar(kOptional), nullptr },
 	{ 11, "audience", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 12, "can_reply", K::Bool, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 13, "can_share", K::Bool, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 14, "share_count", K::Int64, K::String, K::String, -1, uchar(kOptional), nullptr },
 };
 
 constexpr Field kStoriesDeleteRequestFields[] = {
 	{ 1, "story", K::String, K::String, K::String, -1, uchar(kPath), "id" },
+};
+
+constexpr Field kStoriesGetRequestFields[] = {
+	{ 1, "story", K::String, K::String, K::String, -1, uchar(kPath), "id" },
+};
+
+constexpr Field kStoriesGetResponseFields[] = {
+	{ 1, "user", K::Message, K::String, K::String, 397, uchar(kAlways), nullptr },
+	{ 2, "story", K::Message, K::String, K::String, 392, uchar(kAlways), nullptr },
 };
 
 constexpr Field kStoriesHiddenRequestFields[] = {
@@ -1817,7 +1989,7 @@ constexpr Field kStoriesHiddenRequestFields[] = {
 };
 
 constexpr Field kStoriesHiddenResponseFields[] = {
-	{ 1, "users", K::Message, K::String, K::String, 364, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "users", K::Message, K::String, K::String, 397, uchar(kRepeated | kAlways), nullptr },
 	{ 2, "next_cursor", K::String, K::String, K::String, -1, uchar(kOptional), nullptr },
 };
 
@@ -1850,18 +2022,33 @@ constexpr Field kStoriesSeenRequestFields[] = {
 
 constexpr Field kStoriesSettingsResponseFields[] = {
 	{ 1, "replies", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 4, "allow_sharing", K::Bool, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 2, "hidden_count", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 3, "close_friends_count", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 };
 
 constexpr Field kStoriesSettingsUpdateRequestFields[] = {
 	{ 1, "replies", K::String, K::String, K::String, -1, uchar(kOptional), nullptr },
+	{ 2, "allow_sharing", K::Bool, K::String, K::String, -1, uchar(kOptional), nullptr },
 };
 
 constexpr Field kStoriesSettingsUpdateResponseFields[] = {
 	{ 1, "replies", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 4, "allow_sharing", K::Bool, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 2, "hidden_count", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 3, "close_friends_count", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
+};
+
+constexpr Field kStoriesShareRequestFields[] = {
+	{ 1, "story", K::String, K::String, K::String, -1, uchar(kPath), "id" },
+	{ 2, "to", K::String, K::String, K::String, -1, uchar(kRepeated), nullptr },
+	{ 3, "groups", K::String, K::String, K::String, -1, uchar(kRepeated), nullptr },
+	{ 4, "text", K::String, K::String, K::String, -1, uchar(0), nullptr },
+};
+
+constexpr Field kStoriesShareResponseFields[] = {
+	{ 1, "sent", K::Message, K::String, K::String, 396, uchar(kRepeated | kAlways), nullptr },
+	{ 2, "not_sent", K::Message, K::String, K::String, 395, uchar(kRepeated | kAlways), nullptr },
 };
 
 constexpr Field kStoriesTrayRequestFields[] = {
@@ -1869,8 +2056,8 @@ constexpr Field kStoriesTrayRequestFields[] = {
 };
 
 constexpr Field kStoriesTrayResponseFields[] = {
-	{ 1, "me", K::Message, K::String, K::String, 374, uchar(kAlways), nullptr },
-	{ 2, "items", K::Message, K::String, K::String, 373, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "me", K::Message, K::String, K::String, 407, uchar(kAlways), nullptr },
+	{ 2, "items", K::Message, K::String, K::String, 406, uchar(kRepeated | kAlways), nullptr },
 	{ 3, "next_cursor", K::String, K::String, K::String, -1, uchar(kOptional), nullptr },
 };
 
@@ -1891,8 +2078,8 @@ constexpr Field kStoriesUserRequestFields[] = {
 };
 
 constexpr Field kStoriesUserResponseFields[] = {
-	{ 1, "user", K::Message, K::String, K::String, 364, uchar(kAlways), nullptr },
-	{ 2, "stories", K::Message, K::String, K::String, 361, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "user", K::Message, K::String, K::String, 397, uchar(kAlways), nullptr },
+	{ 2, "stories", K::Message, K::String, K::String, 392, uchar(kRepeated | kAlways), nullptr },
 };
 
 constexpr Field kStoriesViewersRequestFields[] = {
@@ -1901,9 +2088,10 @@ constexpr Field kStoriesViewersRequestFields[] = {
 };
 
 constexpr Field kStoriesViewersResponseFields[] = {
-	{ 1, "viewers", K::Message, K::String, K::String, 365, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "viewers", K::Message, K::String, K::String, 398, uchar(kRepeated | kAlways), nullptr },
 	{ 2, "next_cursor", K::String, K::String, K::String, -1, uchar(kOptional), nullptr },
 	{ 3, "total", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 4, "shares", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 };
 
 constexpr Field kStoryMediaOutFields[] = {
@@ -1918,8 +2106,8 @@ constexpr Field kStoryMediaOutFields[] = {
 constexpr Field kStoryOutFields[] = {
 	{ 1, "id", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 2, "kind", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
-	{ 3, "media", K::Message, K::String, K::String, 360, uchar(0), nullptr },
-	{ 4, "post", K::Message, K::String, K::String, 362, uchar(0), nullptr },
+	{ 3, "media", K::Message, K::String, K::String, 391, uchar(0), nullptr },
+	{ 4, "post", K::Message, K::String, K::String, 393, uchar(0), nullptr },
 	{ 5, "caption", K::String, K::String, K::String, -1, uchar(kOptional), nullptr },
 	{ 6, "created_at", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 7, "expires_at", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
@@ -1928,11 +2116,13 @@ constexpr Field kStoryOutFields[] = {
 	{ 10, "viewer_count", K::Int64, K::String, K::String, -1, uchar(kOptional), nullptr },
 	{ 11, "audience", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 12, "can_reply", K::Bool, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 13, "can_share", K::Bool, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 14, "share_count", K::Int64, K::String, K::String, -1, uchar(kOptional), nullptr },
 };
 
 constexpr Field kStoryPostOutFields[] = {
 	{ 1, "id", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
-	{ 2, "author", K::Message, K::String, K::String, 364, uchar(0), nullptr },
+	{ 2, "author", K::Message, K::String, K::String, 397, uchar(0), nullptr },
 	{ 3, "text_excerpt", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 4, "thumb_url", K::String, K::String, K::String, -1, uchar(kOptional), nullptr },
 	{ 5, "available", K::Bool, K::String, K::String, -1, uchar(kAlways), nullptr },
@@ -1945,6 +2135,19 @@ constexpr Field kStoryRefViewFields[] = {
 	{ 4, "kind", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 5, "expires_at", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 6, "emoji", K::String, K::String, K::String, -1, uchar(0), nullptr },
+	{ 7, "comment", K::String, K::String, K::String, -1, uchar(0), nullptr },
+	{ 8, "available", K::Bool, K::String, K::String, -1, uchar(kOptional), nullptr },
+};
+
+constexpr Field kStoryShareNotSentFields[] = {
+	{ 1, "to", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 2, "reason", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
+};
+
+constexpr Field kStoryShareSentFields[] = {
+	{ 1, "to", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 2, "chat", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
+	{ 3, "seq", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 };
 
 constexpr Field kStoryUserFields[] = {
@@ -1957,7 +2160,7 @@ constexpr Field kStoryUserFields[] = {
 };
 
 constexpr Field kStoryViewerOutFields[] = {
-	{ 1, "user", K::Message, K::String, K::String, 364, uchar(kAlways), nullptr },
+	{ 1, "user", K::Message, K::String, K::String, 397, uchar(kAlways), nullptr },
 	{ 2, "viewed_at", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 3, "reaction", K::String, K::String, K::String, -1, uchar(kOptional), nullptr },
 };
@@ -1968,7 +2171,7 @@ constexpr Field kSyncDifferenceRequestFields[] = {
 
 constexpr Field kSyncDifferenceResponseFields[] = {
 	{ 1, "pts", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
-	{ 2, "updates", K::Message, K::String, K::String, 376, uchar(kRepeated | kAlways), nullptr },
+	{ 2, "updates", K::Message, K::String, K::String, 409, uchar(kRepeated | kAlways), nullptr },
 	{ 3, "too_long", K::Bool, K::String, K::String, -1, uchar(kAlways), nullptr },
 };
 
@@ -1994,7 +2197,7 @@ constexpr Field kTopicsSubFields[] = {
 };
 
 constexpr Field kTrayItemOutFields[] = {
-	{ 1, "user", K::Message, K::String, K::String, 364, uchar(kAlways), nullptr },
+	{ 1, "user", K::Message, K::String, K::String, 397, uchar(kAlways), nullptr },
 	{ 2, "count", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 3, "unseen", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 4, "latest_at", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
@@ -2003,7 +2206,7 @@ constexpr Field kTrayItemOutFields[] = {
 };
 
 constexpr Field kTrayMeOutFields[] = {
-	{ 1, "user", K::Message, K::String, K::String, 364, uchar(kAlways), nullptr },
+	{ 1, "user", K::Message, K::String, K::String, 397, uchar(kAlways), nullptr },
 	{ 2, "count", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 3, "has_unseen_by_me", K::Bool, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 4, "latest_at", K::Int64, K::String, K::String, -1, uchar(kAlways), nullptr },
@@ -2022,35 +2225,35 @@ constexpr Field kUpdateFields[] = {
 	{ 2, "kind", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 3, "chat", K::String, K::String, K::String, -1, uchar(kAlways), nullptr },
 	{ 4, "seq", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
-	{ 5, "message", K::Message, K::String, K::String, 280, uchar(0), nullptr },
-	{ 6, "chat_info", K::Message, K::String, K::String, 89, uchar(0), nullptr },
+	{ 5, "message", K::Message, K::String, K::String, 303, uchar(0), nullptr },
+	{ 6, "chat_info", K::Message, K::String, K::String, 104, uchar(0), nullptr },
 	{ 7, "removed", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
-	{ 8, "data", K::Message, K::String, K::String, 377, uchar(0), nullptr },
+	{ 8, "data", K::Message, K::String, K::String, 410, uchar(0), nullptr },
 };
 
 constexpr Field kUpdateDataFields[] = {
-	{ 1, "message", K::Message, K::String, K::String, 280, uchar(0), nullptr },
-	{ 2, "read", K::Message, K::String, K::String, 313, uchar(0), nullptr },
-	{ 3, "reaction", K::Message, K::String, K::String, 312, uchar(0), nullptr },
-	{ 4, "played", K::Message, K::String, K::String, 294, uchar(0), nullptr },
-	{ 5, "cleared", K::Message, K::String, K::String, 90, uchar(0), nullptr },
-	{ 6, "member", K::Message, K::String, K::String, 279, uchar(0), nullptr },
-	{ 7, "pin", K::Message, K::String, K::String, 291, uchar(0), nullptr },
-	{ 8, "state", K::Message, K::String, K::String, 317, uchar(0), nullptr },
-	{ 9, "draft", K::Message, K::String, K::String, 121, uchar(0), nullptr },
-	{ 10, "notif", K::Message, K::String, K::String, 281, uchar(0), nullptr },
-	{ 11, "group", K::Message, K::String, K::String, 148, uchar(0), nullptr },
+	{ 1, "message", K::Message, K::String, K::String, 303, uchar(0), nullptr },
+	{ 2, "read", K::Message, K::String, K::String, 336, uchar(0), nullptr },
+	{ 3, "reaction", K::Message, K::String, K::String, 335, uchar(0), nullptr },
+	{ 4, "played", K::Message, K::String, K::String, 317, uchar(0), nullptr },
+	{ 5, "cleared", K::Message, K::String, K::String, 105, uchar(0), nullptr },
+	{ 6, "member", K::Message, K::String, K::String, 302, uchar(0), nullptr },
+	{ 7, "pin", K::Message, K::String, K::String, 314, uchar(0), nullptr },
+	{ 8, "state", K::Message, K::String, K::String, 344, uchar(0), nullptr },
+	{ 9, "draft", K::Message, K::String, K::String, 136, uchar(0), nullptr },
+	{ 10, "notif", K::Message, K::String, K::String, 304, uchar(0), nullptr },
+	{ 11, "group", K::Message, K::String, K::String, 164, uchar(0), nullptr },
 };
 
 constexpr Field kUpdateFrameFields[] = {
 	{ 1, "pts", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
 	{ 2, "kind", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 3, "section", K::String, K::String, K::String, -1, uchar(0), nullptr },
-	{ 4, "data", K::Message, K::String, K::String, 377, uchar(0), nullptr },
+	{ 4, "data", K::Message, K::String, K::String, 410, uchar(0), nullptr },
 	{ 5, "chat", K::String, K::String, K::String, -1, uchar(0), nullptr },
 	{ 6, "seq", K::Int64, K::String, K::String, -1, uchar(0), nullptr },
-	{ 7, "message", K::Message, K::String, K::String, 280, uchar(0), nullptr },
-	{ 8, "chat_info", K::Message, K::String, K::String, 89, uchar(0), nullptr },
+	{ 7, "message", K::Message, K::String, K::String, 303, uchar(0), nullptr },
+	{ 8, "chat_info", K::Message, K::String, K::String, 104, uchar(0), nullptr },
 	{ 9, "removed", K::Bool, K::String, K::String, -1, uchar(0), nullptr },
 };
 
@@ -2059,7 +2262,7 @@ constexpr Field kUsersCardsRequestFields[] = {
 };
 
 constexpr Field kUsersCardsResponseFields[] = {
-	{ 1, "users", K::Message, K::String, K::String, 302, uchar(kRepeated | kAlways), nullptr },
+	{ 1, "users", K::Message, K::String, K::String, 325, uchar(kRepeated | kAlways), nullptr },
 };
 
 constexpr Field kUsersGetRequestFields[] = {
@@ -2131,6 +2334,8 @@ constexpr Message kMessages[] = {
 	{ "Challenge", kChallengeFields, 1, false },
 	{ "ChatAcceptRequest", kChatAcceptRequestFields, 1, false },
 	{ "ChatAcceptResponse", nullptr, 0, false },
+	{ "ChatActionBarDismissRequest", kChatActionBarDismissRequestFields, 1, false },
+	{ "ChatActionBarDismissResponse", nullptr, 0, false },
 	{ "ChatCallbackRequest", kChatCallbackRequestFields, 4, false },
 	{ "ChatCallbackResponse", kChatCallbackResponseFields, 1, false },
 	{ "ChatCapabilityRequest", kChatCapabilityRequestFields, 1, false },
@@ -2159,6 +2364,11 @@ constexpr Message kMessages[] = {
 	{ "ChatLiveLocationStopResponse", nullptr, 0, false },
 	{ "ChatLiveLocationsRequest", kChatLiveLocationsRequestFields, 1, false },
 	{ "ChatLiveLocationsResponse", kChatLiveLocationsResponseFields, 1, true },
+	{ "ChatMediaCountsRequest", kChatMediaCountsRequestFields, 1, false },
+	{ "ChatMediaCountsResponse", kChatMediaCountsResponseFields, 1, false },
+	{ "ChatMediaPage", kChatMediaPageFields, 2, false },
+	{ "ChatMediaRequest", kChatMediaRequestFields, 4, false },
+	{ "ChatMediaResponse", kChatMediaResponseFields, 1, false },
 	{ "ChatMemberRequest", kChatMemberRequestFields, 5, false },
 	{ "ChatMemberResponse", nullptr, 0, false },
 	{ "ChatMessagePinRequest", kChatMessagePinRequestFields, 3, false },
@@ -2177,7 +2387,15 @@ constexpr Message kMessages[] = {
 	{ "ChatReactResponse", nullptr, 0, false },
 	{ "ChatReadRequest", kChatReadRequestFields, 2, false },
 	{ "ChatReadResponse", nullptr, 0, false },
-	{ "ChatSendRequest", kChatSendRequestFields, 20, false },
+	{ "ChatSelfDestructConsumedRequest", kChatSelfDestructConsumedRequestFields, 2, false },
+	{ "ChatSelfDestructConsumedResponse", kChatSelfDestructConsumedResponseFields, 3, false },
+	{ "ChatSelfDestructOpenRequest", kChatSelfDestructOpenRequestFields, 2, false },
+	{ "ChatSelfDestructOpenResponse", kChatSelfDestructOpenResponseFields, 1, false },
+	{ "ChatSelfDestructScreenshotRequest", kChatSelfDestructScreenshotRequestFields, 2, false },
+	{ "ChatSelfDestructScreenshotResponse", nullptr, 0, false },
+	{ "ChatSelfDestructShownRequest", kChatSelfDestructShownRequestFields, 2, false },
+	{ "ChatSelfDestructShownResponse", kChatSelfDestructShownResponseFields, 3, false },
+	{ "ChatSendRequest", kChatSendRequestFields, 21, false },
 	{ "ChatSendResponse", kChatSendResponseFields, 5, false },
 	{ "ChatThemeRequest", kChatThemeRequestFields, 2, false },
 	{ "ChatThemeResponse", nullptr, 0, false },
@@ -2187,7 +2405,7 @@ constexpr Message kMessages[] = {
 	{ "ChatUnpinResponse", nullptr, 0, false },
 	{ "ChatUnreactRequest", kChatUnreactRequestFields, 2, false },
 	{ "ChatUnreactResponse", nullptr, 0, false },
-	{ "ChatView", kChatViewFields, 21, false },
+	{ "ChatView", kChatViewFields, 22, false },
 	{ "ClearedData", kClearedDataFields, 3, false },
 	{ "ClientButton", kClientButtonFields, 4, false },
 	{ "ClientButtonRow", kClientButtonRowFields, 1, true },
@@ -2216,7 +2434,7 @@ constexpr Message kMessages[] = {
 	{ "DocNotifications", kDocNotificationsFields, 5, false },
 	{ "DocNotificationsContacts", kDocNotificationsContactsFields, 1, false },
 	{ "DocNotificationsConversations", kDocNotificationsConversationsFields, 4, false },
-	{ "DocNotificationsEli", kDocNotificationsEliFields, 5, false },
+	{ "DocNotificationsEli", kDocNotificationsEliFields, 6, false },
 	{ "DocNotificationsGeneral", kDocNotificationsGeneralFields, 3, false },
 	{ "DocPrivacy", kDocPrivacyFields, 16, false },
 	{ "DraftUpdate", kDraftUpdateFields, 2, false },
@@ -2228,36 +2446,39 @@ constexpr Message kMessages[] = {
 	{ "FeedNewSignal", kFeedNewSignalFields, 4, false },
 	{ "FeedSub", kFeedSubFields, 1, false },
 	{ "ForwardIn", kForwardInFields, 2, false },
-	{ "GroupAdminLogDetail", kGroupAdminLogDetailFields, 13, false },
+	{ "GroupAdminLogDetail", kGroupAdminLogDetailFields, 15, false },
 	{ "GroupAdminLogEntry", kGroupAdminLogEntryFields, 6, false },
 	{ "GroupAdminSignal", kGroupAdminSignalFields, 4, false },
 	{ "GroupDecideFailure", kGroupDecideFailureFields, 2, false },
 	{ "GroupEntry", kGroupEntryFields, 4, false },
-	{ "GroupInfoData", kGroupInfoDataFields, 10, false },
+	{ "GroupInfoData", kGroupInfoDataFields, 11, false },
 	{ "GroupInvite", kGroupInviteFields, 11, false },
 	{ "GroupInviteMember", kGroupInviteMemberFields, 2, false },
 	{ "GroupInvitePreview", kGroupInvitePreviewFields, 8, false },
 	{ "GroupJoinRequest", kGroupJoinRequestFields, 3, false },
-	{ "GroupKnownIn", kGroupKnownInFields, 2, false },
+	{ "GroupKnownIn", kGroupKnownInFields, 3, false },
 	{ "GroupMediaPage", kGroupMediaPageFields, 2, false },
-	{ "GroupMember", kGroupMemberFields, 9, false },
+	{ "GroupMember", kGroupMemberFields, 10, false },
 	{ "GroupNotAdded", kGroupNotAddedFields, 2, false },
 	{ "GroupPage", kGroupPageFields, 4, false },
 	{ "GroupPin", kGroupPinFields, 4, false },
 	{ "GroupReactionData", kGroupReactionDataFields, 3, false },
 	{ "GroupReactionEntry", kGroupReactionEntryFields, 3, false },
-	{ "GroupSelfData", kGroupSelfDataFields, 10, false },
+	{ "GroupReadData", kGroupReadDataFields, 2, false },
+	{ "GroupSelfData", kGroupSelfDataFields, 11, false },
 	{ "GroupSelfReaction", kGroupSelfReactionFields, 2, false },
 	{ "GroupSelfSettings", kGroupSelfSettingsFields, 6, false },
 	{ "GroupSeqData", kGroupSeqDataFields, 2, false },
 	{ "GroupSeqsData", kGroupSeqsDataFields, 2, false },
 	{ "GroupSignal", kGroupSignalFields, 4, false },
-	{ "GroupSignalData", kGroupSignalDataFields, 5, false },
+	{ "GroupSignalData", kGroupSignalDataFields, 6, false },
 	{ "GroupTypingSignal", kGroupTypingSignalFields, 4, false },
-	{ "GroupView", kGroupViewFields, 35, false },
+	{ "GroupView", kGroupViewFields, 40, false },
+	{ "GroupsActionBarDismissRequest", kGroupsActionBarDismissRequestFields, 1, false },
+	{ "GroupsActionBarDismissResponse", nullptr, 0, false },
 	{ "GroupsAdminLogRequest", kGroupsAdminLogRequestFields, 5, false },
 	{ "GroupsAdminLogResponse", kGroupsAdminLogResponseFields, 2, false },
-	{ "GroupsAdminSetRequest", kGroupsAdminSetRequestFields, 4, false },
+	{ "GroupsAdminSetRequest", kGroupsAdminSetRequestFields, 5, false },
 	{ "GroupsAdminSetResponse", kGroupsAdminSetResponseFields, 1, false },
 	{ "GroupsAdminUnsetRequest", kGroupsAdminUnsetRequestFields, 2, false },
 	{ "GroupsAdminUnsetResponse", kGroupsAdminUnsetResponseFields, 1, false },
@@ -2272,7 +2493,7 @@ constexpr Message kMessages[] = {
 	{ "GroupsDeleteRequest", kGroupsDeleteRequestFields, 3, false },
 	{ "GroupsDeleteResponse", nullptr, 0, false },
 	{ "GroupsDifferenceRequest", kGroupsDifferenceRequestFields, 3, false },
-	{ "GroupsDifferenceResponse", kGroupsDifferenceResponseFields, 5, false },
+	{ "GroupsDifferenceResponse", kGroupsDifferenceResponseFields, 6, false },
 	{ "GroupsDraftClearRequest", kGroupsDraftClearRequestFields, 1, false },
 	{ "GroupsDraftClearResponse", nullptr, 0, false },
 	{ "GroupsDraftSaveRequest", kGroupsDraftSaveRequestFields, 4, false },
@@ -2313,6 +2534,8 @@ constexpr Message kMessages[] = {
 	{ "GroupsLeaveResponse", nullptr, 0, false },
 	{ "GroupsListRequest", kGroupsListRequestFields, 2, false },
 	{ "GroupsListResponse", kGroupsListResponseFields, 2, false },
+	{ "GroupsMediaCountsRequest", kGroupsMediaCountsRequestFields, 1, false },
+	{ "GroupsMediaCountsResponse", kGroupsMediaCountsResponseFields, 1, false },
 	{ "GroupsMediaRequest", kGroupsMediaRequestFields, 4, false },
 	{ "GroupsMediaResponse", kGroupsMediaResponseFields, 1, false },
 	{ "GroupsMemberRequest", kGroupsMemberRequestFields, 7, false },
@@ -2325,6 +2548,8 @@ constexpr Message kMessages[] = {
 	{ "GroupsMembersRemoveResponse", nullptr, 0, false },
 	{ "GroupsMembersRequest", kGroupsMembersRequestFields, 4, false },
 	{ "GroupsMembersResponse", kGroupsMembersResponseFields, 3, false },
+	{ "GroupsMembersTagRequest", kGroupsMembersTagRequestFields, 3, false },
+	{ "GroupsMembersTagResponse", kGroupsMembersTagResponseFields, 1, false },
 	{ "GroupsMentionsRequest", kGroupsMentionsRequestFields, 1, false },
 	{ "GroupsMentionsResponse", kGroupsMentionsResponseFields, 1, false },
 	{ "GroupsMessagePinRequest", kGroupsMessagePinRequestFields, 2, false },
@@ -2333,7 +2558,7 @@ constexpr Message kMessages[] = {
 	{ "GroupsMessageUnpinResponse", nullptr, 0, false },
 	{ "GroupsPatchRequest", kGroupsPatchRequestFields, 4, false },
 	{ "GroupsPatchResponse", kGroupsPatchResponseFields, 1, false },
-	{ "GroupsPermissionsRequest", kGroupsPermissionsRequestFields, 3, false },
+	{ "GroupsPermissionsRequest", kGroupsPermissionsRequestFields, 4, false },
 	{ "GroupsPermissionsResponse", kGroupsPermissionsResponseFields, 1, false },
 	{ "GroupsPinRequest", kGroupsPinRequestFields, 1, false },
 	{ "GroupsPinResponse", nullptr, 0, false },
@@ -2345,14 +2570,14 @@ constexpr Message kMessages[] = {
 	{ "GroupsReactionsResponse", kGroupsReactionsResponseFields, 2, false },
 	{ "GroupsReadRequest", kGroupsReadRequestFields, 2, false },
 	{ "GroupsReadResponse", kGroupsReadResponseFields, 1, false },
-	{ "GroupsRestrictRequest", kGroupsRestrictRequestFields, 4, false },
+	{ "GroupsRestrictRequest", kGroupsRestrictRequestFields, 5, false },
 	{ "GroupsRestrictResponse", kGroupsRestrictResponseFields, 1, false },
-	{ "GroupsSendRequest", kGroupsSendRequestFields, 18, false },
+	{ "GroupsSendRequest", kGroupsSendRequestFields, 19, false },
 	{ "GroupsSendResponse", kGroupsSendResponseFields, 5, false },
 	{ "GroupsSlowModeRequest", kGroupsSlowModeRequestFields, 2, false },
 	{ "GroupsSlowModeResponse", kGroupsSlowModeResponseFields, 1, false },
 	{ "GroupsSyncRequest", kGroupsSyncRequestFields, 1, false },
-	{ "GroupsSyncResponse", kGroupsSyncResponseFields, 3, false },
+	{ "GroupsSyncResponse", kGroupsSyncResponseFields, 4, false },
 	{ "GroupsTransferRequest", kGroupsTransferRequestFields, 2, false },
 	{ "GroupsTransferResponse", kGroupsTransferResponseFields, 1, false },
 	{ "GroupsUnbanRequest", kGroupsUnbanRequestFields, 2, false },
@@ -2376,9 +2601,10 @@ constexpr Message kMessages[] = {
 	{ "MeGetResponse", kMeGetResponseFields, 22, false },
 	{ "MeSettingsRequest", nullptr, 0, false },
 	{ "MeSettingsResponse", kMeSettingsResponseFields, 2, false },
+	{ "MediaCounts", kMediaCountsFields, 8, false },
 	{ "MediaMeta", kMediaMetaFields, 7, false },
-	{ "MemberData", kMemberDataFields, 6, false },
-	{ "MessageView", kMessageViewFields, 34, false },
+	{ "MemberData", kMemberDataFields, 7, false },
+	{ "MessageView", kMessageViewFields, 37, false },
 	{ "NotifData", kNotifDataFields, 2, false },
 	{ "NotifListRequest", kNotifListRequestFields, 2, false },
 	{ "NotifListResponse", kNotifListResponseFields, 1, false },
@@ -2414,6 +2640,10 @@ constexpr Message kMessages[] = {
 	{ "ReadData", kReadDataFields, 3, false },
 	{ "Request", kRequestFields, 5, false },
 	{ "Response", kResponseFields, 4, false },
+	{ "SelfDestructInput", kSelfDestructInputFields, 2, false },
+	{ "SelfDestructMedia", kSelfDestructMediaFields, 9, false },
+	{ "SelfDestructOpened", kSelfDestructOpenedFields, 6, false },
+	{ "SelfDestructView", kSelfDestructViewFields, 5, false },
 	{ "Signal", kSignalFields, 3, false },
 	{ "StateData", kStateDataFields, 5, false },
 	{ "StateSignal", kStateSignalFields, 1, false },
@@ -2427,9 +2657,11 @@ constexpr Message kMessages[] = {
 	{ "StoriesCloseFriendsRequest", kStoriesCloseFriendsRequestFields, 1, false },
 	{ "StoriesCloseFriendsResponse", kStoriesCloseFriendsResponseFields, 2, false },
 	{ "StoriesCreateRequest", kStoriesCreateRequestFields, 4, false },
-	{ "StoriesCreateResponse", kStoriesCreateResponseFields, 12, false },
+	{ "StoriesCreateResponse", kStoriesCreateResponseFields, 14, false },
 	{ "StoriesDeleteRequest", kStoriesDeleteRequestFields, 1, false },
 	{ "StoriesDeleteResponse", nullptr, 0, false },
+	{ "StoriesGetRequest", kStoriesGetRequestFields, 1, false },
+	{ "StoriesGetResponse", kStoriesGetResponseFields, 2, false },
 	{ "StoriesHiddenRequest", kStoriesHiddenRequestFields, 1, false },
 	{ "StoriesHiddenResponse", kStoriesHiddenResponseFields, 2, false },
 	{ "StoriesHideRequest", kStoriesHideRequestFields, 1, false },
@@ -2443,9 +2675,11 @@ constexpr Message kMessages[] = {
 	{ "StoriesSeenRequest", kStoriesSeenRequestFields, 1, false },
 	{ "StoriesSeenResponse", nullptr, 0, false },
 	{ "StoriesSettingsRequest", nullptr, 0, false },
-	{ "StoriesSettingsResponse", kStoriesSettingsResponseFields, 3, false },
-	{ "StoriesSettingsUpdateRequest", kStoriesSettingsUpdateRequestFields, 1, false },
-	{ "StoriesSettingsUpdateResponse", kStoriesSettingsUpdateResponseFields, 3, false },
+	{ "StoriesSettingsResponse", kStoriesSettingsResponseFields, 4, false },
+	{ "StoriesSettingsUpdateRequest", kStoriesSettingsUpdateRequestFields, 2, false },
+	{ "StoriesSettingsUpdateResponse", kStoriesSettingsUpdateResponseFields, 4, false },
+	{ "StoriesShareRequest", kStoriesShareRequestFields, 4, false },
+	{ "StoriesShareResponse", kStoriesShareResponseFields, 2, false },
 	{ "StoriesTrayRequest", kStoriesTrayRequestFields, 1, false },
 	{ "StoriesTrayResponse", kStoriesTrayResponseFields, 3, false },
 	{ "StoriesUnhideRequest", kStoriesUnhideRequestFields, 1, false },
@@ -2457,11 +2691,13 @@ constexpr Message kMessages[] = {
 	{ "StoriesUserRequest", kStoriesUserRequestFields, 1, false },
 	{ "StoriesUserResponse", kStoriesUserResponseFields, 2, false },
 	{ "StoriesViewersRequest", kStoriesViewersRequestFields, 2, false },
-	{ "StoriesViewersResponse", kStoriesViewersResponseFields, 3, false },
+	{ "StoriesViewersResponse", kStoriesViewersResponseFields, 4, false },
 	{ "StoryMediaOut", kStoryMediaOutFields, 6, false },
-	{ "StoryOut", kStoryOutFields, 12, false },
+	{ "StoryOut", kStoryOutFields, 14, false },
 	{ "StoryPostOut", kStoryPostOutFields, 5, false },
-	{ "StoryRefView", kStoryRefViewFields, 6, false },
+	{ "StoryRefView", kStoryRefViewFields, 8, false },
+	{ "StoryShareNotSent", kStoryShareNotSentFields, 2, false },
+	{ "StoryShareSent", kStoryShareSentFields, 3, false },
 	{ "StoryUser", kStoryUserFields, 6, false },
 	{ "StoryViewerOut", kStoryViewerOutFields, 3, false },
 	{ "SyncDifferenceRequest", kSyncDifferenceRequestFields, 1, false },
@@ -2496,126 +2732,138 @@ constexpr Method kMethods[] = {
 	{ "calls.rejoin", "POST", "/v1/calls/{id}/rejoin", 25, 26 },
 	{ "calls.ringing", "POST", "/v1/calls/{id}/ringing", 27, 28 },
 	{ "chat.accept", "POST", "/v1/chats/{id}/accept", 31, 32 },
-	{ "chat.callback", "POST", "/v1/chats/{id}/messages/{seq}/callback", 33, 34 },
-	{ "chat.capability", "POST", "/v1/chats/{id}/capability", 35, 36 },
-	{ "chat.decline", "POST", "/v1/chats/{id}/decline", 37, 38 },
-	{ "chat.delete", "DELETE", "/v1/chats/{id}/messages/{seq}", 41, 42 },
-	{ "chat.delete_for_both", "POST", "/v1/chats/{id}/delete-for-both", 39, 40 },
-	{ "chat.draft.clear", "DELETE", "/v1/chats/{id}/draft", 43, 44 },
-	{ "chat.draft.save", "PUT", "/v1/chats/{id}/draft", 45, 46 },
-	{ "chat.edit", "PATCH", "/v1/chats/{id}/messages/{seq}", 47, 48 },
-	{ "chat.header", "GET", "/v1/chats/{id}", 49, 50 },
-	{ "chat.history", "GET", "/v1/chats/{id}/messages", 51, 52 },
-	{ "chat.inbox", "GET", "/v1/chats", 53, 54 },
-	{ "chat.live_location", "POST", "/v1/chats/{id}/messages/{seq}/live-location", 55, 56 },
-	{ "chat.live_location.stop", "POST", "/v1/chats/{id}/messages/{seq}/live-location/stop", 57, 58 },
-	{ "chat.live_locations", "GET", "/v1/chats/{id}/live-locations", 59, 60 },
-	{ "chat.member", "PATCH", "/v1/chats/{id}/member", 61, 62 },
-	{ "chat.message.pin", "POST", "/v1/chats/{id}/messages/{seq}/pin", 63, 64 },
-	{ "chat.message.unpin", "DELETE", "/v1/chats/{id}/messages/{seq}/pin", 65, 66 },
-	{ "chat.pin", "POST", "/v1/chats/{id}/pin", 67, 68 },
-	{ "chat.pinned_chats", "PUT", "/v1/me/pinned-chats", 69, 70 },
-	{ "chat.pins", "GET", "/v1/chats/{id}/pins", 71, 72 },
-	{ "chat.played", "POST", "/v1/chats/{id}/messages/{seq}/played", 73, 74 },
-	{ "chat.react", "PUT", "/v1/chats/{id}/messages/{seq}/reaction", 75, 76 },
-	{ "chat.read", "POST", "/v1/chats/{id}/read", 77, 78 },
-	{ "chat.send", "POST", "/v1/chats/{id}/messages", 79, 80 },
-	{ "chat.theme", "PUT", "/v1/chats/{id}/theme", 81, 82 },
-	{ "chat.thread", "POST", "/v1/threads", 83, 84 },
-	{ "chat.unpin", "DELETE", "/v1/chats/{id}/pin", 85, 86 },
-	{ "chat.unreact", "DELETE", "/v1/chats/{id}/messages/{seq}/reaction", 87, 88 },
-	{ "conv.block", "POST", "/v1/conversations/{id}/block", 95, 96 },
-	{ "conv.continue", "POST", "/v1/conversations/{id}/continue", 97, 98 },
-	{ "conv.create", "POST", "/v1/conversations", 99, 100 },
-	{ "conv.end", "POST", "/v1/conversations/{id}/end", 101, 102 },
-	{ "conv.get", "GET", "/v1/conversations/{id}", 103, 104 },
-	{ "conv.join", "POST", "/v1/conversations/{id}/join", 105, 106 },
-	{ "conv.open", "GET", "/v1/conversations/open", 107, 108 },
-	{ "groups.admin.set", "PUT", "/v1/groups/{id}/members/{user}/admin", 159, 160 },
-	{ "groups.admin.unset", "DELETE", "/v1/groups/{id}/members/{user}/admin", 161, 162 },
-	{ "groups.admin_log", "GET", "/v1/groups/{id}/admin-log", 157, 158 },
-	{ "groups.ban", "POST", "/v1/groups/{id}/members/{user}/ban", 163, 164 },
-	{ "groups.create", "POST", "/v1/groups", 165, 166 },
-	{ "groups.delete", "DELETE", "/v1/groups/{id}/messages/{seq}", 171, 172 },
-	{ "groups.delete_group", "DELETE", "/v1/groups/{id}", 167, 168 },
-	{ "groups.delete_many", "POST", "/v1/groups/{id}/messages/delete", 169, 170 },
-	{ "groups.difference", "GET", "/v1/groups/{id}/difference", 173, 174 },
-	{ "groups.draft.clear", "DELETE", "/v1/groups/{id}/draft", 175, 176 },
-	{ "groups.draft.save", "PUT", "/v1/groups/{id}/draft", 177, 178 },
-	{ "groups.edit", "PATCH", "/v1/groups/{id}/messages/{seq}", 179, 180 },
-	{ "groups.get", "GET", "/v1/groups/{id}", 181, 182 },
-	{ "groups.hide_members", "PUT", "/v1/groups/{id}/hide-members", 183, 184 },
-	{ "groups.history", "GET", "/v1/groups/{id}/messages", 185, 186 },
-	{ "groups.invite.join", "POST", "/v1/group-invites/{token}/join", 187, 188 },
-	{ "groups.invite.preview", "GET", "/v1/group-invites/{token}", 189, 190 },
-	{ "groups.invites", "GET", "/v1/groups/{id}/invites", 197, 198 },
-	{ "groups.invites.create", "POST", "/v1/groups/{id}/invites", 191, 192 },
-	{ "groups.invites.get", "GET", "/v1/groups/{id}/invites/{link}", 193, 194 },
-	{ "groups.invites.members", "GET", "/v1/groups/{id}/invites/{link}/members", 195, 196 },
-	{ "groups.invites.revoke", "DELETE", "/v1/groups/{id}/invites/{link}", 199, 200 },
-	{ "groups.join_requests", "GET", "/v1/groups/{id}/join-requests", 209, 210 },
-	{ "groups.join_requests.approve", "POST", "/v1/groups/{id}/join-requests/{user}/approve", 203, 204 },
-	{ "groups.join_requests.approve_many", "POST", "/v1/groups/{id}/join-requests/approve", 201, 202 },
-	{ "groups.join_requests.decline", "POST", "/v1/groups/{id}/join-requests/{user}/decline", 207, 208 },
-	{ "groups.join_requests.decline_many", "POST", "/v1/groups/{id}/join-requests/decline", 205, 206 },
-	{ "groups.leave", "POST", "/v1/groups/{id}/leave", 211, 212 },
-	{ "groups.list", "GET", "/v1/groups", 213, 214 },
-	{ "groups.media", "GET", "/v1/groups/{id}/media", 215, 216 },
-	{ "groups.member", "PATCH", "/v1/groups/{id}/member", 217, 218 },
-	{ "groups.members", "GET", "/v1/groups/{id}/members", 225, 226 },
-	{ "groups.members.add", "POST", "/v1/groups/{id}/members", 219, 220 },
-	{ "groups.members.delete_messages", "POST", "/v1/groups/{id}/members/{user}/delete-messages", 221, 222 },
-	{ "groups.members.remove", "DELETE", "/v1/groups/{id}/members/{user}", 223, 224 },
-	{ "groups.mentions", "GET", "/v1/groups/{id}/mentions", 227, 228 },
-	{ "groups.message.pin", "POST", "/v1/groups/{id}/messages/{seq}/pin", 229, 230 },
-	{ "groups.message.unpin", "DELETE", "/v1/groups/{id}/messages/{seq}/pin", 231, 232 },
-	{ "groups.patch", "PATCH", "/v1/groups/{id}", 233, 234 },
-	{ "groups.permissions", "PUT", "/v1/groups/{id}/permissions", 235, 236 },
-	{ "groups.pin", "POST", "/v1/groups/{id}/pin", 237, 238 },
-	{ "groups.pins", "GET", "/v1/groups/{id}/pins", 239, 240 },
-	{ "groups.react", "PUT", "/v1/groups/{id}/messages/{seq}/reaction", 241, 242 },
-	{ "groups.reactions", "GET", "/v1/groups/{id}/messages/{seq}/reactions", 243, 244 },
-	{ "groups.read", "POST", "/v1/groups/{id}/read", 245, 246 },
-	{ "groups.restrict", "PUT", "/v1/groups/{id}/members/{user}/restrictions", 247, 248 },
-	{ "groups.send", "POST", "/v1/groups/{id}/messages", 249, 250 },
-	{ "groups.slow_mode", "PUT", "/v1/groups/{id}/slow-mode", 251, 252 },
-	{ "groups.sync", "POST", "/v1/groups/sync", 253, 254 },
-	{ "groups.transfer", "POST", "/v1/groups/{id}/transfer", 255, 256 },
-	{ "groups.unban", "DELETE", "/v1/groups/{id}/members/{user}/ban", 257, 258 },
-	{ "groups.unpin", "DELETE", "/v1/groups/{id}/pin", 259, 260 },
-	{ "groups.unreact", "DELETE", "/v1/groups/{id}/messages/{seq}/reaction", 261, 262 },
-	{ "me.get", "GET", "/v1/me", 274, 275 },
-	{ "me.settings", "GET", "/v1/me/settings", 276, 277 },
-	{ "notif.list", "GET", "/v1/notifications", 282, 283 },
-	{ "notif.read", "POST", "/v1/notifications/read", 284, 285 },
-	{ "notif.unread", "GET", "/v1/notifications/unread", 286, 287 },
-	{ "presence", "POST", "/v1/presence", 297, 298 },
-	{ "push.register", "PUT", "/v1/push/token", 306, 307 },
-	{ "push.unregister", "DELETE", "/v1/push/token", 308, 309 },
-	{ "stories.close_friend_add", "PUT", "/v1/me/close-friends/{user}", 320, 321 },
-	{ "stories.close_friend_remove", "DELETE", "/v1/me/close-friends/{user}", 322, 323 },
-	{ "stories.close_friends", "GET", "/v1/me/close-friends", 326, 327 },
-	{ "stories.close_friends_bulk", "POST", "/v1/me/close-friends", 324, 325 },
-	{ "stories.create", "POST", "/v1/stories", 328, 329 },
-	{ "stories.delete", "DELETE", "/v1/stories/{id}", 330, 331 },
-	{ "stories.hidden", "GET", "/v1/me/story-hidden", 332, 333 },
-	{ "stories.hide", "PUT", "/v1/me/story-hidden/{user}", 334, 335 },
-	{ "stories.mute", "PUT", "/v1/me/story-mutes/{user}", 336, 337 },
-	{ "stories.react", "PUT", "/v1/stories/{id}/reaction", 338, 339 },
-	{ "stories.reply", "POST", "/v1/stories/{id}/reply", 340, 341 },
-	{ "stories.seen", "POST", "/v1/stories/seen", 342, 343 },
-	{ "stories.settings", "GET", "/v1/me/story-settings", 344, 345 },
-	{ "stories.settings_update", "PATCH", "/v1/me/story-settings", 346, 347 },
-	{ "stories.tray", "GET", "/v1/stories/tray", 348, 349 },
-	{ "stories.unhide", "DELETE", "/v1/me/story-hidden/{user}", 350, 351 },
-	{ "stories.unmute", "DELETE", "/v1/me/story-mutes/{user}", 352, 353 },
-	{ "stories.unreact", "DELETE", "/v1/stories/{id}/reaction", 354, 355 },
-	{ "stories.user", "GET", "/v1/users/{id}/stories", 356, 357 },
-	{ "stories.viewers", "GET", "/v1/stories/{id}/viewers", 358, 359 },
-	{ "sync.difference", "GET", "/v1/sync/difference", 366, 367 },
-	{ "sync.state", "GET", "/v1/sync/state", 368, 369 },
-	{ "users.cards", "GET", "/v1/users", 379, 380 },
-	{ "users.get", "GET", "/v1/users/{id}", 381, 382 },
+	{ "chat.action_bar.dismiss", "POST", "/v1/chats/{id}/action-bar/dismiss", 33, 34 },
+	{ "chat.callback", "POST", "/v1/chats/{id}/messages/{seq}/callback", 35, 36 },
+	{ "chat.capability", "POST", "/v1/chats/{id}/capability", 37, 38 },
+	{ "chat.decline", "POST", "/v1/chats/{id}/decline", 39, 40 },
+	{ "chat.delete", "DELETE", "/v1/chats/{id}/messages/{seq}", 43, 44 },
+	{ "chat.delete_for_both", "POST", "/v1/chats/{id}/delete-for-both", 41, 42 },
+	{ "chat.draft.clear", "DELETE", "/v1/chats/{id}/draft", 45, 46 },
+	{ "chat.draft.save", "PUT", "/v1/chats/{id}/draft", 47, 48 },
+	{ "chat.edit", "PATCH", "/v1/chats/{id}/messages/{seq}", 49, 50 },
+	{ "chat.header", "GET", "/v1/chats/{id}", 51, 52 },
+	{ "chat.history", "GET", "/v1/chats/{id}/messages", 53, 54 },
+	{ "chat.inbox", "GET", "/v1/chats", 55, 56 },
+	{ "chat.live_location", "POST", "/v1/chats/{id}/messages/{seq}/live-location", 57, 58 },
+	{ "chat.live_location.stop", "POST", "/v1/chats/{id}/messages/{seq}/live-location/stop", 59, 60 },
+	{ "chat.live_locations", "GET", "/v1/chats/{id}/live-locations", 61, 62 },
+	{ "chat.media", "GET", "/v1/chats/{id}/media", 66, 67 },
+	{ "chat.media.counts", "GET", "/v1/chats/{id}/media/counts", 63, 64 },
+	{ "chat.member", "PATCH", "/v1/chats/{id}/member", 68, 69 },
+	{ "chat.message.pin", "POST", "/v1/chats/{id}/messages/{seq}/pin", 70, 71 },
+	{ "chat.message.unpin", "DELETE", "/v1/chats/{id}/messages/{seq}/pin", 72, 73 },
+	{ "chat.pin", "POST", "/v1/chats/{id}/pin", 74, 75 },
+	{ "chat.pinned_chats", "PUT", "/v1/me/pinned-chats", 76, 77 },
+	{ "chat.pins", "GET", "/v1/chats/{id}/pins", 78, 79 },
+	{ "chat.played", "POST", "/v1/chats/{id}/messages/{seq}/played", 80, 81 },
+	{ "chat.react", "PUT", "/v1/chats/{id}/messages/{seq}/reaction", 82, 83 },
+	{ "chat.read", "POST", "/v1/chats/{id}/read", 84, 85 },
+	{ "chat.self_destruct.consumed", "POST", "/v1/chats/{id}/messages/{seq}/consumed", 86, 87 },
+	{ "chat.self_destruct.open", "POST", "/v1/chats/{id}/messages/{seq}/open", 88, 89 },
+	{ "chat.self_destruct.screenshot", "POST", "/v1/chats/{id}/messages/{seq}/screenshot", 90, 91 },
+	{ "chat.self_destruct.shown", "POST", "/v1/chats/{id}/messages/{seq}/shown", 92, 93 },
+	{ "chat.send", "POST", "/v1/chats/{id}/messages", 94, 95 },
+	{ "chat.theme", "PUT", "/v1/chats/{id}/theme", 96, 97 },
+	{ "chat.thread", "POST", "/v1/threads", 98, 99 },
+	{ "chat.unpin", "DELETE", "/v1/chats/{id}/pin", 100, 101 },
+	{ "chat.unreact", "DELETE", "/v1/chats/{id}/messages/{seq}/reaction", 102, 103 },
+	{ "conv.block", "POST", "/v1/conversations/{id}/block", 110, 111 },
+	{ "conv.continue", "POST", "/v1/conversations/{id}/continue", 112, 113 },
+	{ "conv.create", "POST", "/v1/conversations", 114, 115 },
+	{ "conv.end", "POST", "/v1/conversations/{id}/end", 116, 117 },
+	{ "conv.get", "GET", "/v1/conversations/{id}", 118, 119 },
+	{ "conv.join", "POST", "/v1/conversations/{id}/join", 120, 121 },
+	{ "conv.open", "GET", "/v1/conversations/open", 122, 123 },
+	{ "groups.action_bar.dismiss", "POST", "/v1/groups/{id}/action-bar/dismiss", 173, 174 },
+	{ "groups.admin.set", "PUT", "/v1/groups/{id}/members/{user}/admin", 177, 178 },
+	{ "groups.admin.unset", "DELETE", "/v1/groups/{id}/members/{user}/admin", 179, 180 },
+	{ "groups.admin_log", "GET", "/v1/groups/{id}/admin-log", 175, 176 },
+	{ "groups.ban", "POST", "/v1/groups/{id}/members/{user}/ban", 181, 182 },
+	{ "groups.create", "POST", "/v1/groups", 183, 184 },
+	{ "groups.delete", "DELETE", "/v1/groups/{id}/messages/{seq}", 189, 190 },
+	{ "groups.delete_group", "DELETE", "/v1/groups/{id}", 185, 186 },
+	{ "groups.delete_many", "POST", "/v1/groups/{id}/messages/delete", 187, 188 },
+	{ "groups.difference", "GET", "/v1/groups/{id}/difference", 191, 192 },
+	{ "groups.draft.clear", "DELETE", "/v1/groups/{id}/draft", 193, 194 },
+	{ "groups.draft.save", "PUT", "/v1/groups/{id}/draft", 195, 196 },
+	{ "groups.edit", "PATCH", "/v1/groups/{id}/messages/{seq}", 197, 198 },
+	{ "groups.get", "GET", "/v1/groups/{id}", 199, 200 },
+	{ "groups.hide_members", "PUT", "/v1/groups/{id}/hide-members", 201, 202 },
+	{ "groups.history", "GET", "/v1/groups/{id}/messages", 203, 204 },
+	{ "groups.invite.join", "POST", "/v1/group-invites/{token}/join", 205, 206 },
+	{ "groups.invite.preview", "GET", "/v1/group-invites/{token}", 207, 208 },
+	{ "groups.invites", "GET", "/v1/groups/{id}/invites", 215, 216 },
+	{ "groups.invites.create", "POST", "/v1/groups/{id}/invites", 209, 210 },
+	{ "groups.invites.get", "GET", "/v1/groups/{id}/invites/{link}", 211, 212 },
+	{ "groups.invites.members", "GET", "/v1/groups/{id}/invites/{link}/members", 213, 214 },
+	{ "groups.invites.revoke", "DELETE", "/v1/groups/{id}/invites/{link}", 217, 218 },
+	{ "groups.join_requests", "GET", "/v1/groups/{id}/join-requests", 227, 228 },
+	{ "groups.join_requests.approve", "POST", "/v1/groups/{id}/join-requests/{user}/approve", 221, 222 },
+	{ "groups.join_requests.approve_many", "POST", "/v1/groups/{id}/join-requests/approve", 219, 220 },
+	{ "groups.join_requests.decline", "POST", "/v1/groups/{id}/join-requests/{user}/decline", 225, 226 },
+	{ "groups.join_requests.decline_many", "POST", "/v1/groups/{id}/join-requests/decline", 223, 224 },
+	{ "groups.leave", "POST", "/v1/groups/{id}/leave", 229, 230 },
+	{ "groups.list", "GET", "/v1/groups", 231, 232 },
+	{ "groups.media", "GET", "/v1/groups/{id}/media", 235, 236 },
+	{ "groups.media.counts", "GET", "/v1/groups/{id}/media/counts", 233, 234 },
+	{ "groups.member", "PATCH", "/v1/groups/{id}/member", 237, 238 },
+	{ "groups.members", "GET", "/v1/groups/{id}/members", 245, 246 },
+	{ "groups.members.add", "POST", "/v1/groups/{id}/members", 239, 240 },
+	{ "groups.members.delete_messages", "POST", "/v1/groups/{id}/members/{user}/delete-messages", 241, 242 },
+	{ "groups.members.remove", "DELETE", "/v1/groups/{id}/members/{user}", 243, 244 },
+	{ "groups.members.tag", "PUT", "/v1/groups/{id}/members/{user}/tag", 247, 248 },
+	{ "groups.mentions", "GET", "/v1/groups/{id}/mentions", 249, 250 },
+	{ "groups.message.pin", "POST", "/v1/groups/{id}/messages/{seq}/pin", 251, 252 },
+	{ "groups.message.unpin", "DELETE", "/v1/groups/{id}/messages/{seq}/pin", 253, 254 },
+	{ "groups.patch", "PATCH", "/v1/groups/{id}", 255, 256 },
+	{ "groups.permissions", "PUT", "/v1/groups/{id}/permissions", 257, 258 },
+	{ "groups.pin", "POST", "/v1/groups/{id}/pin", 259, 260 },
+	{ "groups.pins", "GET", "/v1/groups/{id}/pins", 261, 262 },
+	{ "groups.react", "PUT", "/v1/groups/{id}/messages/{seq}/reaction", 263, 264 },
+	{ "groups.reactions", "GET", "/v1/groups/{id}/messages/{seq}/reactions", 265, 266 },
+	{ "groups.read", "POST", "/v1/groups/{id}/read", 267, 268 },
+	{ "groups.restrict", "PUT", "/v1/groups/{id}/members/{user}/restrictions", 269, 270 },
+	{ "groups.send", "POST", "/v1/groups/{id}/messages", 271, 272 },
+	{ "groups.slow_mode", "PUT", "/v1/groups/{id}/slow-mode", 273, 274 },
+	{ "groups.sync", "POST", "/v1/groups/sync", 275, 276 },
+	{ "groups.transfer", "POST", "/v1/groups/{id}/transfer", 277, 278 },
+	{ "groups.unban", "DELETE", "/v1/groups/{id}/members/{user}/ban", 279, 280 },
+	{ "groups.unpin", "DELETE", "/v1/groups/{id}/pin", 281, 282 },
+	{ "groups.unreact", "DELETE", "/v1/groups/{id}/messages/{seq}/reaction", 283, 284 },
+	{ "me.get", "GET", "/v1/me", 296, 297 },
+	{ "me.settings", "GET", "/v1/me/settings", 298, 299 },
+	{ "notif.list", "GET", "/v1/notifications", 305, 306 },
+	{ "notif.read", "POST", "/v1/notifications/read", 307, 308 },
+	{ "notif.unread", "GET", "/v1/notifications/unread", 309, 310 },
+	{ "presence", "POST", "/v1/presence", 320, 321 },
+	{ "push.register", "PUT", "/v1/push/token", 329, 330 },
+	{ "push.unregister", "DELETE", "/v1/push/token", 331, 332 },
+	{ "stories.close_friend_add", "PUT", "/v1/me/close-friends/{user}", 347, 348 },
+	{ "stories.close_friend_remove", "DELETE", "/v1/me/close-friends/{user}", 349, 350 },
+	{ "stories.close_friends", "GET", "/v1/me/close-friends", 353, 354 },
+	{ "stories.close_friends_bulk", "POST", "/v1/me/close-friends", 351, 352 },
+	{ "stories.create", "POST", "/v1/stories", 355, 356 },
+	{ "stories.delete", "DELETE", "/v1/stories/{id}", 357, 358 },
+	{ "stories.get", "GET", "/v1/stories/{id}", 359, 360 },
+	{ "stories.hidden", "GET", "/v1/me/story-hidden", 361, 362 },
+	{ "stories.hide", "PUT", "/v1/me/story-hidden/{user}", 363, 364 },
+	{ "stories.mute", "PUT", "/v1/me/story-mutes/{user}", 365, 366 },
+	{ "stories.react", "PUT", "/v1/stories/{id}/reaction", 367, 368 },
+	{ "stories.reply", "POST", "/v1/stories/{id}/reply", 369, 370 },
+	{ "stories.seen", "POST", "/v1/stories/seen", 371, 372 },
+	{ "stories.settings", "GET", "/v1/me/story-settings", 373, 374 },
+	{ "stories.settings_update", "PATCH", "/v1/me/story-settings", 375, 376 },
+	{ "stories.share", "POST", "/v1/stories/{id}/share", 377, 378 },
+	{ "stories.tray", "GET", "/v1/stories/tray", 379, 380 },
+	{ "stories.unhide", "DELETE", "/v1/me/story-hidden/{user}", 381, 382 },
+	{ "stories.unmute", "DELETE", "/v1/me/story-mutes/{user}", 383, 384 },
+	{ "stories.unreact", "DELETE", "/v1/stories/{id}/reaction", 385, 386 },
+	{ "stories.user", "GET", "/v1/users/{id}/stories", 387, 388 },
+	{ "stories.viewers", "GET", "/v1/stories/{id}/viewers", 389, 390 },
+	{ "sync.difference", "GET", "/v1/sync/difference", 399, 400 },
+	{ "sync.state", "GET", "/v1/sync/state", 401, 402 },
+	{ "users.cards", "GET", "/v1/users", 412, 413 },
+	{ "users.get", "GET", "/v1/users/{id}", 414, 415 },
 };
 
 } // namespace
