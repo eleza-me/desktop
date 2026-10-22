@@ -5,6 +5,7 @@
 #include "data/data_session.h"
 #include "data/data_stories.h"
 #include "data/data_users.h"
+#include "eli/eli_actions.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
 #include "main/main_session.h"
@@ -12,6 +13,7 @@
 #include "stories/stories_boxes.h"
 #include "stories/stories_share.h"
 #include "support/error_text.h"
+#include "support/file_dialogs.h"
 #include "support/media_image.h"
 #include "ui/effects/animations.h"
 #include "ui/effects/radial_animation.h"
@@ -156,12 +158,14 @@ private:
 	void updatePlayback();
 	void updateControls();
 	void updateGeometries();
+	void placeSeePost();
 	void showMenu();
 	void sendReply();
 	void shareStory();
 	void react(int index);
 	void openProfile();
 	void openPost();
+	void postToEli();
 	void confirmDelete();
 	void showUnavailable(const QString &text);
 
@@ -193,6 +197,7 @@ private:
 	QMetaObject::Connection _imageConnection;
 	QMetaObject::Connection _previewConnection;
 	Data::MediaHandlePtr _videoFile;
+	Data::MediaHandlePtr _eliFile; // «انتشار در الی» on its way
 	bool _mediaReady = false;
 	bool _mediaFailed = false;
 	bool _seenMarked = false;
@@ -960,13 +965,30 @@ void Viewer::updateGeometries() {
 			_share->height()).topLeft());
 	}
 
-	const auto card = postCardRect();
-	if (!card.isEmpty()) {
+	updateControls();
+}
+
+void Viewer::placeSeePost() {
+	const auto story = current();
+	if (!story) {
+		return;
+	} else if (story->kind == Data::StoryKind::Post) {
+		// Under the post's card.
+		const auto card = postCardRect();
 		_seePost->move(
 			card.x() + (card.width() - _seePost->width()) / 2,
 			card.y() + card.height() + 14);
+		return;
 	}
-	updateControls();
+	// A photo / video made from a post: over the caption.
+	const auto &padding = st::storiesCaptionPadding;
+	const auto width = _stage.width() - padding.left() - padding.right();
+	const auto caption = _caption.isEmpty()
+		? 0
+		: (_caption.countHeight(width, st::storiesCaptionLines) + padding.bottom());
+	_seePost->move(
+		_stage.x() + (_stage.width() - _seePost->width()) / 2,
+		bottomRect().y() - caption - 12 - _seePost->height());
 }
 
 void Viewer::updateControls() {
@@ -988,10 +1010,19 @@ void Viewer::updateControls() {
 	}
 	_more->setVisible(story != nullptr);
 	_pause->setVisible(story != nullptr);
-	const auto postShown = story
+	const auto card = story
 		&& story->kind == Data::StoryKind::Post
 		&& story->post
 		&& story->post->available;
+	const auto postShown = card || (story && story->linksPost());
+	if (postShown) {
+		const auto text = card
+			? tr::lng_stories_see_post(tr::now)
+			: tr::lng_stories_view_eli(tr::now);
+		if (_seePost->text() != text) {
+			_seePost->setText(text);
+		}
+	}
 	_seePost->setVisible(postShown);
 	// Physical buttons: back is on the right in RTL.
 	const auto back = style::RightToLeft() ? _nextNav : _previousNav;
@@ -999,10 +1030,7 @@ void Viewer::updateControls() {
 	back->setVisible(story && (_index > 0 || _userIndex > 0));
 	forward->setVisible(story != nullptr);
 	if (postShown) {
-		const auto card = postCardRect();
-		_seePost->move(
-			card.x() + (card.width() - _seePost->width()) / 2,
-			card.y() + card.height() + 14);
+		placeSeePost();
 	}
 }
 
@@ -1503,6 +1531,12 @@ void Viewer::showMenu() {
 		menu->addAction(tr::lng_stories_viewers(tr::now), [=] {
 			ShowViewersBox(controller, storyId);
 		}, &st::storiesMenuIconEye);
+		// A story that shares a post is the post's card: nothing to post.
+		if (story->kind != Data::StoryKind::Post) {
+			menu->addAction(tr::lng_stories_to_eli(tr::now), [this] {
+				postToEli();
+			}, &st::storiesMenuIconEli);
+		}
 		auto remove = Ui::MenuItem();
 		remove.text = tr::lng_stories_delete(tr::now);
 		remove.icon = &st::menuIconDelete;
@@ -1585,6 +1619,68 @@ void Viewer::confirmDelete() {
 	_controller->show(Ui::MakeConfirmBox(std::move(args)));
 }
 
+// The photo / video of one of my stories (what was drawn and written on it
+// is part of it) goes to the new-post composer with its caption as the text,
+// once the viewer is gone.
+void Viewer::postToEli() {
+	const auto story = current();
+	if (!story || !mine() || story->kind == Data::StoryKind::Post) {
+		return;
+	} else if (_eliFile) {
+		_controller->showToast(tr::lng_stories_to_eli_preparing(tr::now));
+		return;
+	}
+	const auto video = (story->kind == Data::StoryKind::Video);
+	const auto caption = story->caption;
+	auto options = Data::Media::Options();
+	options.decode = false;
+	const auto handle = session().data().media().request(
+		Data::MediaRef::Story(story->id),
+		video ? Data::MediaVariant::Mp4 : Data::MediaVariant::Full,
+		options);
+	_eliFile = handle;
+	const auto failed = [=, this] {
+		if (_eliFile == handle) {
+			_eliFile = nullptr;
+			_controller->showToast(tr::lng_stories_to_eli_failed(tr::now));
+		}
+	};
+	const auto ready = [=, this] {
+		if (_eliFile != handle) {
+			return;
+		}
+		Support::SaveFileToTemp(
+			handle->filePath(),
+			handle->filePath().isEmpty() ? handle->bytes() : QByteArray(),
+			video ? u".mp4"_s : u".jpg"_s,
+			this,
+			[=, this](const QString &path) {
+				if (_eliFile != handle) {
+					return;
+				} else if (path.isEmpty()) {
+					failed();
+					return;
+				}
+				_eliFile = nullptr;
+				const auto controller = _controller;
+				auto args = Eli::ComposeArgs();
+				args.prefill = caption;
+				args.files = QStringList{ path };
+				close();
+				Eli::OpenCompose(controller, std::move(args));
+			});
+	};
+	if (handle->isReady()) {
+		ready();
+	} else if (handle->isFailed()) {
+		failed();
+	} else {
+		_controller->showToast(tr::lng_stories_to_eli_preparing(tr::now));
+		connect(handle.get(), &Data::MediaHandle::ready, this, ready);
+		connect(handle.get(), &Data::MediaHandle::failed, this, failed);
+	}
+}
+
 void Viewer::sendReply() {
 	const auto story = current();
 	const auto text = _reply->text().trimmed();
@@ -1661,7 +1757,7 @@ void Viewer::openProfile() {
 
 void Viewer::openPost() {
 	const auto story = current();
-	if (!story || !story->post || !story->post->available) {
+	if (!story || !story->post || !story->post->available || story->post->id.isEmpty()) {
 		return;
 	}
 	const auto postId = story->post->id;

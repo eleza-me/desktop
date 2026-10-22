@@ -1,9 +1,11 @@
 // The full-window story viewer (over the window's body, like the image
 // viewer): segmented progress on top, a photo for its duration or a video to
-// its end, a shared post as a card, the caption, the reply field with the
-// quick reactions (or «پاسخ برای این استوری بسته است»), and for my own
-// stories «N بیننده». It goes on to the next person of the queue after the
-// last story and closes after the last person.
+// its end, a shared post as a card (or «دیدن الی» over a photo / video made
+// from a post), the caption, the reply field with the quick reactions (or
+// «پاسخ برای این استوری بسته است»), the paper plane «ارسال به…» when the
+// story may be sent on, and for my own stories «N بیننده · N ارسال» and
+// «انتشار در الی» in the menu. It goes on to the next person of the queue
+// after the last story and closes after the last person.
 //
 // Mouse: a click on the trailing half goes on, the leading half goes back
 // (RTL-aware); holding the button pauses. Keys: ← → (by the direction),

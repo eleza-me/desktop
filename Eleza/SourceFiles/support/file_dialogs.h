@@ -103,4 +103,16 @@ void SaveImageToTemp(
 	QObject *guard,
 	std::function<void(const QString &path)> done);
 
+// A copy of a downloaded file (`sourcePath`, or `bytes` when it lives in
+// memory) in the temporary directory, named by what its first bytes are
+// (`.jpg`, `.png`, `.webp`, `.mp4`…; `fallbackSuffix` otherwise), so a
+// composer can attach it and the media cache may drop its own copy. On a
+// worker thread; `done` gets the path ("" on failure) while `guard` is alive.
+void SaveFileToTemp(
+	const QString &sourcePath,
+	const QByteArray &bytes,
+	const QString &fallbackSuffix,
+	QObject *guard,
+	std::function<void(const QString &path)> done);
+
 } // namespace Support
