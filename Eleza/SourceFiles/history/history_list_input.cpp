@@ -874,13 +874,28 @@ void ListWidget::startInlineVideo(
 	widget->setSource(path);
 	widget->show();
 	widget->play();
-	connect(widget, &Media::VideoPlayerWidget::failed, this, [=, this] {
-		_videoFailed.insert(key);
-		removeInlineVideo(key);
+	// The row may have been renamed since (a sent message got its seq):
+	// the entry is found by its widget, under the key it has now.
+	const auto stop = [=, this](bool failed) {
+		const auto i = std::find_if(_videos.begin(), _videos.end(), [&](
+				const InlineVideo &video) {
+			return video.widget == widget;
+		});
+		if (i == _videos.end()) {
+			return;
+		}
+		const auto now = i->key;
+		if (failed) {
+			_videoFailed.insert(now);
+		}
+		removeInlineVideo(now);
+	};
+	connect(widget, &Media::VideoPlayerWidget::failed, this, [=] {
+		stop(true);
 	});
 	if (!gif) {
-		connect(widget, &Media::VideoPlayerWidget::finished, this, [=, this] {
-			removeInlineVideo(key);
+		connect(widget, &Media::VideoPlayerWidget::finished, this, [=] {
+			stop(false);
 		});
 	}
 }
