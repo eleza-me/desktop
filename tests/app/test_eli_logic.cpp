@@ -237,18 +237,28 @@ private Q_SLOTS:
 	}
 
 	void repliesTree() {
-		const auto node = [](const char *id, const char *to, bool deleted = false) {
-			return ReplyNode{ QString::fromLatin1(id), QString::fromLatin1(to), deleted };
+		const auto node = [](
+				const char *id,
+				const char *to,
+				qint64 at,
+				bool deleted = false) {
+			return ReplyNode{
+				QString::fromLatin1(id),
+				QString::fromLatin1(to),
+				deleted,
+				at,
+			};
 		};
+		// In the server's order (most relevant first), not by time.
 		const auto all = QVector<ReplyNode>{
-			node("a", "root"),
-			node("b", "root"),
-			node("a1", "a"),
-			node("a2", "a1"), // deeper levels flatten to depth 1
-			node("c", "root", true), // deleted without children: hidden
-			node("d", "root", true), // deleted with a living child: kept
-			node("d1", "d"),
-			node("x", "unknown"), // parent not loaded: under the root
+			node("a", "root", 300),
+			node("b", "root", 500),
+			node("a1", "a", 600),
+			node("a2", "a1", 700), // deeper levels flatten to depth 1
+			node("c", "root", 800, true), // deleted without children: hidden
+			node("d", "root", 100, true), // deleted with a living child: kept
+			node("d1", "d", 900),
+			node("x", "unknown", 400), // parent not loaded: under the root
 		};
 		const auto rows = ArrangeReplies(all, QStringLiteral("root"), false);
 		auto ids = QStringList();
@@ -265,9 +275,13 @@ private Q_SLOTS:
 		QVERIFY(!rows[3].line);
 		QVERIFY(rows[4].line);
 
+		// «جدیدترین» goes by time, not by the reversed relevance order.
 		const auto newest = ArrangeReplies(all, QStringLiteral("root"), true);
-		QCOMPARE(newest.first().id, QStringLiteral("x"));
-		QCOMPARE(newest.last().id, QStringLiteral("a2"));
+		auto newestIds = QStringList();
+		for (const auto &row : newest) {
+			newestIds.push_back(row.id);
+		}
+		QCOMPARE(newestIds.join(' '), QStringLiteral("b x a a1 a2 d d1"));
 		QVERIFY(ArrangeReplies({}, QStringLiteral("root"), false).isEmpty());
 
 		// `first` leads in either order: my new reply, then a pinned thread.
@@ -287,6 +301,14 @@ private Q_SLOTS:
 		};
 		QCOMPARE(ordered(false), QStringLiteral("x d a b"));
 		QCOMPARE(ordered(true), QStringLiteral("x d b a"));
+		// Equal times keep the server's order.
+		auto same = all;
+		for (auto &entry : same) {
+			entry.createdAt = 1;
+		}
+		QCOMPARE(
+			ArrangeReplies(same, QStringLiteral("root"), true),
+			ArrangeReplies(same, QStringLiteral("root"), false));
 		// A nested id in `first` changes nothing: only top-level rows move.
 		const auto nested = ArrangeReplies(
 			all,

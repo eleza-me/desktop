@@ -136,6 +136,7 @@ struct ReplyNode {
 	QString id;
 	QString replyTo; // empty = a reply to the root
 	bool deleted = false;
+	qint64 createdAt = 0; // ms
 };
 
 struct ReplyRow {
@@ -149,7 +150,9 @@ struct ReplyRow {
 
 // One level of nesting: everything under a top-level reply follows it depth
 // first at depth 1. Deleted replies stay only while something hangs under
-// them. `newestFirst` reverses the top-level order. The top-level replies in
+// them. `all` comes in the server's order (most relevant first); `newestFirst`
+// orders the top-level replies by `createdAt`, newest first (equal times keep
+// the server's order). The top-level replies in
 // `first` (my own new ones, the thread of a comment that was opened) come
 // before all others in that order, whichever the sort.
 [[nodiscard]] QVector<ReplyRow> ArrangeReplies(
