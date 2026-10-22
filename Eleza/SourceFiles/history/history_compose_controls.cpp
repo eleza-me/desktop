@@ -652,13 +652,16 @@ void ComposeControls::pickMention(const Data::User &user) {
 }
 
 QVector<Data::Entity> ComposeControls::entitiesToSend() const {
-	auto result = _spoilers;
+	auto others = QVector<Data::Entity>();
+	others.reserve(_mentions.size() + _keptEntities.size());
 	for (auto entity : _mentions) {
 		// The name was only kept to notice edits.
 		entity.url = QString();
-		result.push_back(entity);
+		others.push_back(entity);
 	}
-	return result;
+	// What an edited message came with (nothing outside an edit).
+	others += _keptEntities;
+	return EntitiesForSend(_spoilers, others);
 }
 
 void ComposeControls::toggleSpoiler() {
@@ -1059,7 +1062,7 @@ void ComposeControls::saveEdit() {
 	const auto config = _session->data().clientConfig();
 	const auto prepared = PrepareForSend(
 		_text,
-		WithKeptEntities(entitiesToSend(), _keptEntities),
+		entitiesToSend(),
 		config ? config->maxEntities() : 0);
 	const auto limit = config
 		? ((_target.kind == Data::MessageKind::Text)

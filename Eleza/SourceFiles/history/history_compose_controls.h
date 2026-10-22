@@ -223,6 +223,7 @@ private:
 	void pickMention(const Data::User &user);
 	void checkMentions();
 	void placeMentions();
+	// Spoilers, mentions and an edited message's formatting, as they go out.
 	[[nodiscard]] QVector<Data::Entity> entitiesToSend() const;
 
 	// ---- the bot's reply keyboard
@@ -312,7 +313,7 @@ private:
 	// Picked members: type "mention", `user` = the person, `url` = the name
 	// as it was written (a range that no longer reads so is dropped).
 	QVector<Data::Entity> _mentions;
-	// The other entities of the message being edited (WithKeptEntities).
+	// The other entities of the message being edited (EntitiesForSend).
 	QVector<Data::Entity> _keptEntities;
 	MentionsDropdown *_mentionsBox = nullptr;
 	QWidget *_panelParent = nullptr;

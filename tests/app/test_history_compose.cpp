@@ -4,6 +4,8 @@
 
 #include <QtTest/QtTest>
 
+#include <vector>
+
 namespace {
 
 [[nodiscard]] QString U(const char *utf8) {
@@ -16,6 +18,21 @@ namespace {
 	result.offset = offset;
 	result.length = length;
 	return result;
+}
+
+[[nodiscard]] Data::Entity Mention(int offset, int length, const QString &user) {
+	auto result = Spoiler(offset, length);
+	result.type = u"mention"_s;
+	result.user = user;
+	return result;
+}
+
+[[nodiscard]] QString Types(const QVector<Data::Entity> &entities) {
+	auto parts = QStringList();
+	for (const auto &entity : entities) {
+		parts.push_back(entity.type);
+	}
+	return parts.join(u' ');
 }
 
 [[nodiscard]] QString Ranges(const QVector<Data::Entity> &entities) {
@@ -269,7 +286,7 @@ private Q_SLOTS:
 		const auto kept = History::AdjustEntities({ bold, link }, text, now);
 		auto prepared = History::PrepareForSend(
 			now,
-			History::WithKeptEntities({}, kept));
+			History::EntitiesForSend({}, kept));
 		QCOMPARE(Ranges(prepared.entities), u"10+4 15+4"_s);
 		QCOMPARE(Marked(now, prepared.entities), u"bold|link"_s);
 		QCOMPARE(prepared.entities[1].url, u"https://eleza.me"_s);
@@ -277,15 +294,85 @@ private Q_SLOTS:
 		// overlapping ranges.
 		prepared = History::PrepareForSend(
 			now,
-			History::WithKeptEntities({ Spoiler(12, 1) }, kept));
+			History::EntitiesForSend({ Spoiler(12, 1) }, kept));
 		QCOMPARE(Ranges(prepared.entities), u"12+1 15+4"_s);
 		QCOMPARE(prepared.entities[0].type, u"spoiler"_s);
 		QCOMPARE(prepared.entities[1].type, u"text_link"_s);
 		// Ranges that touch do not overlap.
 		prepared = History::PrepareForSend(
 			now,
-			History::WithKeptEntities({ Spoiler(4, 6) }, kept));
+			History::EntitiesForSend({ Spoiler(4, 6) }, kept));
 		QCOMPARE(Ranges(prepared.entities), u"4+6 10+4 15+4"_s);
+	}
+
+	void spoilerOverMention() {
+		// "hi Sara and Omid": two picked members.
+		const auto text = u"hi Sara and Omid"_s;
+		const auto sara = Mention(3, 4, u"u1"_s);
+		const auto omid = Mention(12, 4, u"u2"_s);
+		const auto send = [&](const QVector<Data::Entity> &spoilers) {
+			return History::PrepareForSend(
+				text,
+				History::EntitiesForSend(spoilers, { sara, omid }));
+		};
+		// A spoiler over a whole name: the name stays hidden, the mention goes.
+		auto prepared = send({ Spoiler(3, 4) });
+		QCOMPARE(Ranges(prepared.entities), u"3+4 12+4"_s);
+		QCOMPARE(Types(prepared.entities), u"spoiler mention"_s);
+		QCOMPARE(prepared.entities[1].user, u"u2"_s);
+		// Over a part of it, or wider than it: the same.
+		prepared = send({ Spoiler(5, 4) });
+		QCOMPARE(Types(prepared.entities), u"spoiler mention"_s);
+		QCOMPARE(Ranges(prepared.entities), u"5+4 12+4"_s);
+		prepared = send({ Spoiler(0, 16) });
+		QCOMPARE(Types(prepared.entities), u"spoiler"_s);
+		// Ranges that only touch stay both.
+		prepared = send({ Spoiler(0, 3), Spoiler(7, 5) });
+		QCOMPARE(Ranges(prepared.entities), u"0+3 3+4 7+5 12+4"_s);
+		QCOMPARE(Types(prepared.entities), u"spoiler mention spoiler mention"_s);
+		// No spoilers: the mentions as they are.
+		prepared = send({});
+		QCOMPARE(Ranges(prepared.entities), u"3+4 12+4"_s);
+
+		// An edit: the mentions first, then the formatting the message had.
+		auto bold = Spoiler(0, 2); // "hi"
+		bold.type = u"bold"_s;
+		auto italic = Spoiler(8, 3); // "and"
+		italic.type = u"italic"_s;
+		auto link = Spoiler(5, 4); // "ra a": over Sara's end
+		link.type = u"text_link"_s;
+		link.url = u"https://eleza.me"_s;
+		const auto edit = [&](const QVector<Data::Entity> &spoilers) {
+			return History::PrepareForSend(
+				text,
+				History::EntitiesForSend(
+					spoilers,
+					{ sara, omid, bold, link, italic }));
+		};
+		prepared = edit({});
+		// The link overlaps a mention taken before it: it goes.
+		QCOMPARE(Types(prepared.entities), u"bold mention italic mention"_s);
+		QCOMPARE(Ranges(prepared.entities), u"0+2 3+4 8+3 12+4"_s);
+		// A spoiler over Omid and part of "and": both go, the spoiler stays.
+		prepared = edit({ Spoiler(10, 4) });
+		QCOMPARE(Types(prepared.entities), u"bold mention spoiler"_s);
+		QCOMPARE(Ranges(prepared.entities), u"0+2 3+4 10+4"_s);
+		// One right after "hi": nothing else changes.
+		prepared = edit({ Spoiler(2, 1) });
+		QCOMPARE(Types(prepared.entities), u"bold spoiler mention italic mention"_s);
+		// Whatever goes out never overlaps (the server's rule).
+		const auto cases = std::vector<QVector<Data::Entity>>{
+			{},
+			{ Spoiler(1, 3) },
+			{ Spoiler(6, 7) },
+		};
+		for (const auto &spoilers : cases) {
+			const auto entities = edit(spoilers).entities;
+			for (auto i = 1; i < int(entities.size()); ++i) {
+				QVERIFY(entities[i].offset
+					>= entities[i - 1].offset + entities[i - 1].length);
+			}
+		}
 	}
 
 	void splitForSend() {

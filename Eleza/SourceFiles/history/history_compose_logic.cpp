@@ -257,25 +257,26 @@ QVector<Data::Entity> ToggleSpoiler(
 	return NormalizeEntities(text, std::move(result));
 }
 
-QVector<Data::Entity> WithKeptEntities(
-		QVector<Data::Entity> entities,
-		const QVector<Data::Entity> &kept) {
-	const auto own = int(entities.size());
-	for (const auto &entity : kept) {
+QVector<Data::Entity> EntitiesForSend(
+		const QVector<Data::Entity> &spoilers,
+		const QVector<Data::Entity> &others) {
+	auto result = spoilers;
+	result.reserve(spoilers.size() + others.size());
+	for (const auto &entity : others) {
 		const auto from = entity.offset;
 		const auto till = entity.offset + entity.length;
 		const auto overlaps = std::any_of(
-			entities.begin(),
-			entities.begin() + own,
-			[&](const Data::Entity &other) {
-				return (other.offset < till)
-					&& (from < other.offset + other.length);
+			result.begin(),
+			result.end(),
+			[&](const Data::Entity &taken) {
+				return (taken.offset < till)
+					&& (from < taken.offset + taken.length);
 			});
 		if (!overlaps && till > from) {
-			entities.push_back(entity);
+			result.push_back(entity);
 		}
 	}
-	return entities;
+	return result;
 }
 
 PreparedText PrepareForSend(
