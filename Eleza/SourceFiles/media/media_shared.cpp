@@ -372,10 +372,22 @@ List::List(QWidget *parent, Controller *controller, const QString &chatId)
 	connect(_downloads, &History::Downloads::failed, this, [this](
 			const QString &chat,
 			qint64 seq) {
-		Q_UNUSED(seq);
-		if (chat == _chatId && isVisible()) {
-			_controller->showToast(tr::lng_chat_file_isnt_available(tr::now));
+		if (chat != _chatId || !isVisible()) {
+			return;
 		}
+		auto state = History::View::DownloadState();
+		for (const auto &tab : _tabs) {
+			for (const auto &message : tab.shown) {
+				if (message.seq == seq) {
+					state = _downloads->state(message);
+				}
+			}
+		}
+		_controller->showToast(state.oversized
+			? tr::lng_chat_file_larger_than_declared(tr::now)
+			: state.gone
+			? tr::lng_chat_file_isnt_available(tr::now)
+			: tr::lng_chat_file_download_failed(tr::now));
 	});
 	const auto player = &Player();
 	connect(player, &AudioPlayer::stateChanged, this, [this] { update(); });

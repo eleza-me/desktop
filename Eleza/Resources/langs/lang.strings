@@ -2265,3 +2265,6 @@
 "lng_media_player_title" = "پخش‌کننده";
 "lng_media_player_download_failed" = "فایل بارگیری نشد. دوباره امتحان کن.";
 "lng_media_player_play_failed" = "این فایل صوتی پخش نشد";
+
+// ---- history: downloads ----
+"lng_chat_file_download_failed" = "فایل بارگیری نشد. دوباره امتحان کن.";

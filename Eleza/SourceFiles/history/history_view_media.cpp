@@ -993,7 +993,9 @@ private:
 			// Stays until the next attempt (a click on the icon).
 			return download.oversized
 				? tr::lng_chat_file_larger_than_declared(tr::now)
-				: tr::lng_chat_file_isnt_available(tr::now);
+				: download.gone
+				? tr::lng_chat_file_isnt_available(tr::now)
+				: tr::lng_chat_file_download_failed(tr::now);
 		}
 		return (size > 0) ? Lang::Bytes(size) : QString();
 	}
