@@ -126,6 +126,7 @@ AudioPlayer::AudioPlayer(QObject *parent)
 		const auto &settings = Core::App().settings();
 		_repeat = RepeatMode(std::clamp(settings.musicRepeat(), 0, 2));
 		_shuffle = settings.musicShuffle();
+		_reverse = settings.musicReversed();
 	}
 }
 
@@ -656,6 +657,9 @@ void AudioPlayer::setReversed(bool reversed) {
 		return;
 	}
 	_reverse = reversed;
+	if (Core::Application::Exists()) {
+		Core::App().settings().setMusicReversed(reversed);
+	}
 	if (_songs) {
 		_order.setReversed(reversed);
 	}

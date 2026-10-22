@@ -28,8 +28,8 @@
 // not be played — only the first is «فایل در دسترس نیست».
 //
 // A second track replaces the first; playing a video with sound pauses the
-// audio. Volume, the voice speed, repeat and shuffle are remembered in
-// Core::Settings.
+// audio. Volume, the voice speed, repeat, shuffle and the order are
+// remembered in Core::Settings.
 #pragma once
 
 #include "data/data_media.h"
@@ -245,7 +245,7 @@ private:
 	PlayOrder _order;
 	RepeatMode _repeat = RepeatMode::Off;
 	bool _shuffle = false;
-	bool _reverse = false; // oldest first (for this run of the app)
+	bool _reverse = false; // oldest first
 	bool _songs = false; // a chat's songs (paged, repeat, shuffle)
 	bool _queueMore = false;
 	bool _queueLoading = false;

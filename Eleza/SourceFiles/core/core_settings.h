@@ -130,7 +130,8 @@ public:
 		return _voicePlaybackSpeed;
 	}
 	void setVoicePlaybackSpeed(double speed);
-	// The music player: repeat (0 off, 1 all, 2 one) and shuffle.
+	// The music player: repeat (0 off, 1 all, 2 one), shuffle and the
+	// order (reversed: a chat's songs oldest first).
 	[[nodiscard]] int musicRepeat() const {
 		return _musicRepeat;
 	}
@@ -139,6 +140,10 @@ public:
 		return _musicShuffle;
 	}
 	void setMusicShuffle(bool shuffle);
+	[[nodiscard]] bool musicReversed() const {
+		return _musicReversed;
+	}
+	void setMusicReversed(bool reversed);
 
 	// The composer: false = Enter sends and Shift+Enter breaks the line,
 	// true = Ctrl+Enter sends and Enter breaks the line.
@@ -211,6 +216,7 @@ private:
 	double _voicePlaybackSpeed = 1.;
 	int _musicRepeat = 0;
 	bool _musicShuffle = false;
+	bool _musicReversed = false;
 	bool _sendByCtrlEnter = false;
 	std::optional<bool> _systemTitleBar;
 	qint64 _mediaCacheLimit = 0;

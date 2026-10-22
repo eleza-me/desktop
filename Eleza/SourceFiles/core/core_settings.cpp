@@ -105,6 +105,7 @@ void Settings::read() {
 	_voicePlaybackSpeed = (speed == 1.5 || speed == 2.) ? speed : 1.;
 	_musicRepeat = std::clamp(root.value(QStringLiteral("music_repeat")).toInt(0), 0, 2);
 	_musicShuffle = root.value(QStringLiteral("music_shuffle")).toBool(false);
+	_musicReversed = root.value(QStringLiteral("music_reversed")).toBool(false);
 	_sendByCtrlEnter = root.value(
 		QStringLiteral("send_by_ctrl_enter")).toBool(false);
 	const auto systemTitleBar = root.value(QStringLiteral("system_title_bar"));
@@ -212,6 +213,7 @@ QJsonObject Settings::serialize() const {
 	root.insert(QStringLiteral("voice_speed"), _voicePlaybackSpeed);
 	root.insert(QStringLiteral("music_repeat"), _musicRepeat);
 	root.insert(QStringLiteral("music_shuffle"), _musicShuffle);
+	root.insert(QStringLiteral("music_reversed"), _musicReversed);
 	root.insert(QStringLiteral("send_by_ctrl_enter"), _sendByCtrlEnter);
 	if (_systemTitleBar) {
 		root.insert(QStringLiteral("system_title_bar"), *_systemTitleBar);
@@ -375,6 +377,13 @@ void Settings::setMusicRepeat(int mode) {
 void Settings::setMusicShuffle(bool shuffle) {
 	if (_musicShuffle != shuffle) {
 		_musicShuffle = shuffle;
+		scheduleWrite();
+	}
+}
+
+void Settings::setMusicReversed(bool reversed) {
+	if (_musicReversed != reversed) {
+		_musicReversed = reversed;
 		scheduleWrite();
 	}
 }
