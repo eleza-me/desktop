@@ -1347,11 +1347,15 @@ private:
 			return;
 		}
 		const auto intro = this->intro();
+		// The crop box lives in the intro's layer and may outlive this step.
+		const auto weak = QPointer<ProfileStep>(this);
 		Boxes::PickAndCropPhoto(this, [intro](
 				Ui::object_ptr<Ui::BoxContent> box) {
 			intro->show(std::move(box));
-		}, [this](const QImage &square) {
-			photoChosen(square);
+		}, [weak](const QImage &square) {
+			if (weak) {
+				weak->photoChosen(square);
+			}
 		}, [intro] {
 			intro->showToast(tr::lng_intro_photo_not_picture(tr::now));
 		});
