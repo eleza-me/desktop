@@ -141,6 +141,7 @@ to answer every "open" dialog at once and `ELEZA_DEBUG_SAVE=/path/out.bin` for "
 | `debug/session-expired` | ends the session as the server would |
 | `debug/stories-sample`, `debug/stories/<user>`, `debug/story/<owner>/<story>`, `debug/story-compose?file=<path>`, `debug/story-share/<post>`, `debug/story-viewers/<story>`, `debug/story-settings` | stories: a made-up tray and stories (no server), the viewer, the boxes, the settings page |
 | `debug/calls/<state>` | a voice call in a given state: the bar, the call view, the incoming window (section 12) |
+| `debug/dialogs/note-new`, `debug/dialogs/note/<user>` | «نوت جدید», a friend's note (from the list the server sent; the mock API has notes for `u_sara`, `u_nika`, `u_reza`) |
 
 Add your own in your module's route handler (`route.startsWith(u"debug/…")`), inside
 `#ifdef ELEZA_DEBUG_TOOLS`.
@@ -633,6 +634,20 @@ closeFriends / setCloseFriend / updateCloseFriends / settings / updateSettings
 signals: trayChanged(), ringsChanged(ids), userStoriesChanged(userId), postingChanged(), posted(story)
 // UI: Stories::OpenUserStories(controller, userId, queue), Stories::OpenStory, Stories::ShowComposeBox,
 // Stories::ShareToStory, Stories::PaintRing (stories/).
+
+// ---- notes (data/data_notes.h; HTTP only: GET /v1/notes, PUT|DELETE /v1/me/note)
+bool Notes::enabled() const;   // client-config `feature.notes` (absent: on), no 404 for the list
+int maxChars() const;   qint64 expirySeconds() const;   // notes.max_chars, notes.expiry
+const NotesFeed &feed() const;  const Note *mine() const;  bool loaded() const;
+void refresh();   // at most once a minute (the chat list shows, the tab comes back); reload(): F5
+void set(text, audience, guard, done(const Note &), fail);  remove(guard, done, fail);
+void reply(userId, noteText, answer, guard, done(const QString &chat), fail);  // the 1:1 chat, NoteReply::Build
+signals: changed(), enabledChanged()
+// No realtime: the list lives on what this app changes; a note leaves the feed at its expiry.
+// The rules (length in code points, one line, the reply message «↩︎ «note»\nanswer» and the old
+// «↩︎ نوتت: «…»» first line) are plain functions: data_note_types.h (tests/core/test_notes.cpp).
+// UI: Dialogs::NotesRow / NotesFaces (dialogs/dialogs_notes.h), the boxes in dialogs_notes_box.h,
+// History::View::NoteReplyView (a note reply drawn above its bubble), Support::MessagePreview.
 
 // ---- notifications (data/data_notifications.h)
 int Notifications::unread() const;   int kind(const QString &name) const;

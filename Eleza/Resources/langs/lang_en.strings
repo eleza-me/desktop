@@ -2201,3 +2201,33 @@
 "lng_stories_open_of" = "See {name}'s story";
 "lng_stories_pause" = "Pause";
 "lng_stories_play" = "Play";
+
+// ---- notes ----
+"lng_notes_title" = "Notes";
+"lng_notes_show" = "Show notes";
+"lng_notes_hide" = "Hide notes";
+"lng_notes_yours" = "Your note";
+"lng_notes_leave" = "Leave a note";
+"lng_notes_new" = "New note";
+"lng_notes_field" = "Share a thought…";
+"lng_notes_share" = "Share";
+"lng_notes_delete" = "Delete note";
+"lng_notes_shared" = "Your note is up";
+"lng_notes_deleted" = "Your note was deleted";
+"lng_notes_audience" = "Who can see it";
+"lng_notes_audience_mutuals" = "Mutual followers";
+"lng_notes_audience_close" = "Close friends";
+"lng_notes_about#one" = "Your note shows above your friends' chats for {count} hour.";
+"lng_notes_about#other" = "Your note shows above your friends' chats for {count} hours.";
+"lng_notes_left#one" = "{count} character left";
+"lng_notes_left#other" = "{count} characters left";
+"lng_notes_over#one" = "{count} character too many";
+"lng_notes_over#other" = "{count} characters too many";
+"lng_notes_message_to" = "Message {name}…";
+"lng_notes_sent" = "Sent";
+"lng_notes_name_time" = "{name} · {time}";
+"lng_notes_menu_message" = "Message {name}";
+"lng_notes_replied" = "Replied to your note";
+"lng_notes_replied_mine" = "You replied to their note";
+"lng_notes_error_invalid" = "A note is one short line.";
+"lng_notes_error_disabled" = "Notes aren't available right now.";
