@@ -2231,3 +2231,6 @@
 "lng_stories_open_of" = "دیدن استوری {name}";
 "lng_stories_pause" = "توقف";
 "lng_stories_play" = "پخش";
+"lng_stories_chat_share_preview" = "📖 استوری";
+"lng_stories_chat_share" = "استوری";
+"lng_stories_chat_share_of" = "استوری {name}";

@@ -27,11 +27,19 @@ void OpenUserStories(
 	const QString &userId,
 	const QStringList &queue = QStringList());
 
-// Opens one story (a story reply in a chat); «این استوری دیگر در دسترس نیست»
-// when it is gone.
+// Opens one story of a known owner; «این استوری دیگر در دسترس نیست» when it
+// is gone.
 void OpenStory(
 	Window::SessionController *controller,
 	const QString &ownerId,
+	const QString &storyId);
+
+// A story a chat message points at (a reply, a reaction, a story sent on):
+// asks the server first (GET /v1/stories/{id}, decided for me, whoever sent
+// it), then the viewer at that story with the owner's others around it; a
+// 404 is a toast and the message's card turns «gone».
+void OpenStoryFromChat(
+	Window::SessionController *controller,
 	const QString &storyId);
 
 } // namespace Stories

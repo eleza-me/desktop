@@ -85,7 +85,8 @@ public:
 		Window::SessionController *controller,
 		QStringList users,
 		int userIndex,
-		QString storyId);
+		QString storyId,
+		std::optional<Data::Story> preloaded = std::nullopt);
 	~Viewer();
 
 	void close();
@@ -140,6 +141,8 @@ private:
 
 	void openUser(int index, bool fromEnd, const QString &storyId = QString());
 	void applyList(const Data::UserStories &list, bool fromEnd, const QString &storyId);
+	// The story read by id (opened from a chat) stays in its owner's list.
+	[[nodiscard]] Data::UserStories withPreloaded(Data::UserStories list) const;
 	void showStory(int index);
 	void clearMedia();
 	void checkMediaReady();
@@ -167,6 +170,7 @@ private:
 	int _openRequest = 0;
 	bool _loadingUser = false;
 	QString _unavailable;
+	std::optional<Data::Story> _preloaded;
 
 	QRect _stage;
 	Chrome *_chrome = nullptr;
@@ -243,11 +247,13 @@ Viewer::Viewer(
 	Window::SessionController *controller,
 	QStringList users,
 	int userIndex,
-	QString storyId)
+	QString storyId,
+	std::optional<Data::Story> preloaded)
 : RpWidget(parent)
 , _controller(controller)
 , _users(std::move(users))
 , _userIndex(std::clamp(userIndex, 0, std::max(int(_users.size()) - 1, 0)))
+, _preloaded(std::move(preloaded))
 , _userpics(&controller->session(), [this](const QString &) {
 	if (_chrome) {
 		_chrome->update();
@@ -434,16 +440,21 @@ void Viewer::openUser(int index, bool fromEnd, const QString &storyId) {
 	_list.user = session().data().users().peek(userId);
 	_list.user.id = userId;
 	if (const auto cached = stories().cached(userId); cached && !cached->stories.isEmpty()) {
-		applyList(*cached, fromEnd, storyId);
+		applyList(withPreloaded(*cached), fromEnd, storyId);
+	} else if (_preloaded && _preloaded->owner == userId) {
+		auto list = _list;
+		list.stories.push_back(*_preloaded);
+		applyList(list, fromEnd, storyId);
 	}
 	_loadingUser = true;
 	_loading.start();
 	updateControls();
 	_chrome->update();
-	stories().loadUser(userId, this, [=, this](const Data::UserStories &list) {
+	stories().loadUser(userId, this, [=, this](const Data::UserStories &loaded) {
 		if (request != _openRequest) {
 			return;
 		}
+		const auto list = withPreloaded(loaded);
 		_loadingUser = false;
 		_loading.stop();
 		const auto shown = current() ? current()->id : QString();
@@ -515,6 +526,23 @@ void Viewer::applyList(
 		}
 	}
 	showStory(index);
+}
+
+Data::UserStories Viewer::withPreloaded(Data::UserStories list) const {
+	if (!_preloaded || list.user.id != _preloaded->owner) {
+		return list;
+	}
+	for (const auto &story : list.stories) {
+		if (story.id == _preloaded->id) {
+			return list;
+		}
+	}
+	const auto at = std::find_if(list.stories.begin(), list.stories.end(), [&](
+			const Data::Story &story) {
+		return story.createdAt > _preloaded->createdAt;
+	});
+	list.stories.insert(at, *_preloaded);
+	return list;
 }
 
 void Viewer::showUnavailable(const QString &text) {
@@ -1585,18 +1613,31 @@ void Viewer::openPost() {
 	controller->openRoute(Window::Routes::Post(postId));
 }
 
+constexpr auto kViewerName = "storiesViewer";
+
+[[nodiscard]] bool ViewerShown(Window::SessionController *controller) {
+	const auto body = controller->window()->bodyWidget();
+	const auto viewer = body->findChild<QWidget*>(
+		QString::fromLatin1(kViewerName),
+		Qt::FindDirectChildrenOnly);
+	return viewer && viewer->isVisible();
+}
+
 Viewer *Show(
 		Window::SessionController *controller,
 		QStringList users,
 		int index,
-		const QString &storyId) {
+		const QString &storyId,
+		std::optional<Data::Story> preloaded = std::nullopt) {
 	const auto window = controller->window();
 	const auto viewer = new Viewer(
 		window->bodyWidget(),
 		controller,
 		std::move(users),
 		index,
-		storyId);
+		storyId,
+		std::move(preloaded));
+	viewer->setObjectName(QString::fromLatin1(kViewerName));
 	window->registerDarkOverlay(viewer);
 	viewer->show();
 	viewer->raise();
@@ -1630,6 +1671,32 @@ void OpenStory(
 		return;
 	}
 	Show(controller, QStringList{ ownerId }, 0, storyId);
+}
+
+void OpenStoryFromChat(
+		Window::SessionController *controller,
+		const QString &storyId) {
+	auto &stories = controller->session().data().stories();
+	if (storyId.isEmpty() || !stories.enabled()) {
+		return;
+	} else if (stories.isGone(storyId)) {
+		controller->showToast(tr::lng_stories_chat_gone(tr::now));
+		return;
+	}
+	stories.get(storyId, controller, [=](
+			const Data::User &owner,
+			const Data::Story &story) {
+		// A second click while the first answer was on its way.
+		if (!ViewerShown(controller)) {
+			Show(controller, QStringList{ owner.id }, 0, story.id, story);
+		}
+	}, [=](const Api::Error &error) {
+		if (error.notFound()) {
+			controller->showToast(tr::lng_stories_chat_gone(tr::now));
+		} else {
+			Support::ShowError(controller, error);
+		}
+	});
 }
 
 } // namespace Stories

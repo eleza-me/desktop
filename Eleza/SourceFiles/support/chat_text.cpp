@@ -161,6 +161,8 @@ QString MessageKindLabel(const Data::Message &message) {
 	case Data::MessageKind::StoryReply: return tr::lng_stories_chat_reply(tr::now);
 	case Data::MessageKind::StoryReaction:
 		return tr::lng_stories_chat_reaction(tr::now);
+	case Data::MessageKind::StoryShare:
+		return tr::lng_stories_chat_share_preview(tr::now);
 	case Data::MessageKind::Text:
 	case Data::MessageKind::System:
 	case Data::MessageKind::Unknown:

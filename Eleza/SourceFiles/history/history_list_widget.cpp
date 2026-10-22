@@ -8,6 +8,7 @@
 #include "data/data_chats.h"
 #include "data/data_feed.h"
 #include "data/data_session.h"
+#include "data/data_stories.h"
 #include "data/data_users.h"
 #include "history/history_album.h"
 #include "history/history_downloads.h"
@@ -147,6 +148,23 @@ ListWidget::ListWidget(
 		auto changed = false;
 		for (auto &row : _rows) {
 			if (row.element->data().forwardedPost == id) {
+				row.element->invalidate();
+				row.exact = false;
+				changed = true;
+			}
+		}
+		if (changed) {
+			relayoutKeepingAnchor();
+			update();
+		}
+	});
+	connect(&data.stories(), &Data::Stories::storyGone, this, [this](
+			const QString &storyId) {
+		// Its card turns into «استوری دیگر در دسترس نیست».
+		auto changed = false;
+		for (auto &row : _rows) {
+			const auto &message = row.element->data();
+			if (message.story && message.story->storyId == storyId) {
 				row.element->invalidate();
 				row.exact = false;
 				changed = true;
@@ -303,9 +321,13 @@ void ListWidget::elementPaintUserpic(
 		Painter &p,
 		const QRect &rect,
 		const QString &userId) {
-	if (_userpics) {
-		_userpics->paint(p, rect, userId);
+	if (!_userpics) {
+		// Outside a group only a story sent on shows a face (its owner's).
+		_userpics = std::make_unique<Support::UserpicPainter>(
+			_session,
+			[this](const QString &) { update(); });
 	}
+	_userpics->paint(p, rect, userId);
 }
 
 QString ListWidget::elementServiceText(const Data::Message &message) {

@@ -490,6 +490,10 @@ StoryRef StoryRef::FromJson(const QJsonObject &json) {
 	result.kind = String(json, "kind"_L1);
 	result.expiresAt = Int64(json, "expires_at"_L1);
 	result.emoji = String(json, "emoji"_L1);
+	result.comment = String(json, "comment"_L1);
+	if (const auto available = json.value("available"_L1); available.isBool()) {
+		result.available = available.toBool();
+	}
 	return result;
 }
 
@@ -501,6 +505,10 @@ QJsonObject StoryRef::toJson() const {
 	Put(result, "kind"_L1, kind);
 	Put(result, "expires_at"_L1, expiresAt);
 	Put(result, "emoji"_L1, emoji);
+	Put(result, "comment"_L1, comment);
+	if (available) {
+		result.insert("available"_L1, *available);
+	}
 	return result;
 }
 
@@ -622,6 +630,8 @@ MessageKind MessageKindFromString(const QString &kind) {
 		return MessageKind::StoryReply;
 	} else if (kind == u"story_reaction") {
 		return MessageKind::StoryReaction;
+	} else if (kind == u"story_share") {
+		return MessageKind::StoryShare;
 	}
 	return MessageKind::Unknown;
 }
@@ -644,6 +654,7 @@ QString MessageKindToString(MessageKind kind) {
 	case MessageKind::Call: return u"call"_s;
 	case MessageKind::StoryReply: return u"story_reply"_s;
 	case MessageKind::StoryReaction: return u"story_reaction"_s;
+	case MessageKind::StoryShare: return u"story_share"_s;
 	case MessageKind::Unknown: return QString();
 	}
 	return QString();
@@ -761,6 +772,26 @@ Message Message::FromJson(const QJsonObject &json) {
 	result.viaBot = Optional<ViaBot>(json, "via_bot"_L1);
 	if (auto story = Optional<StoryRef>(json, "story"_L1); story && !story->storyId.isEmpty()) {
 		result.story = std::move(story);
+	}
+	if (result.kind == MessageKind::StoryShare) {
+		// `text` is the line written for apps that do not know the kind
+		// («📖 استوری @owner», then the comment on its own line); the
+		// bubble shows the sender's comment alone. A copy cached before the
+		// comment was kept has it only in that text.
+		const auto story = json.value("story"_L1).toObject();
+		if (result.story && story.contains("comment"_L1)) {
+			result.text = result.story->comment;
+		} else {
+			const auto lineBreak = result.text.indexOf(QLatin1Char('\n'));
+			result.text = (lineBreak >= 0)
+				? result.text.mid(lineBreak + 1).trimmed()
+				: QString();
+			if (result.story) {
+				result.story->comment = result.text;
+			}
+		}
+		// Offsets into the fallback line mean nothing in the comment.
+		result.entities.clear();
 	}
 	return result;
 }

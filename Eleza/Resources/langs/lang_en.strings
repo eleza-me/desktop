@@ -2201,3 +2201,6 @@
 "lng_stories_open_of" = "See {name}'s story";
 "lng_stories_pause" = "Pause";
 "lng_stories_play" = "Play";
+"lng_stories_chat_share_preview" = "📖 Story";
+"lng_stories_chat_share" = "Story";
+"lng_stories_chat_share_of" = "{name}'s story";

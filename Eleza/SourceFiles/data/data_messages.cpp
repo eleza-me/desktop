@@ -14,12 +14,13 @@
 namespace Data {
 namespace {
 
-// A story reply / reaction that lost its story reference in the cache.
+// A story reply / reaction / share that lost its story reference in the cache.
 [[nodiscard]] bool StoredWithoutStory(const Message &message) {
 	return (message.seq > 0)
 		&& !message.story
 		&& (message.kind == MessageKind::StoryReply
-			|| message.kind == MessageKind::StoryReaction);
+			|| message.kind == MessageKind::StoryReaction
+			|| message.kind == MessageKind::StoryShare);
 }
 
 // The request field that names the chat: a group has routes of its own.

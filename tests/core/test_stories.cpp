@@ -1,7 +1,7 @@
 // Data::Stories on a fake transport: the wire shapes, the tray order and the
 // rings, seen batching, the `story` hint, optimistic reactions and mute,
 // sending a story to people and one story by id; the story reference of
-// story_reply / story_reaction messages.
+// story_reply / story_reaction / story_share messages.
 #include "data/data_json.h"
 #include "data/data_stories.h"
 #include "data/data_story_types.h"
@@ -101,6 +101,8 @@ private Q_SLOTS:
 	void shareCountsMine();
 	void getOneStory();
 	void settingsAllowSharing();
+	void messageStoryShare();
+	void storyGoneRule();
 };
 
 void TestStories::parsesStory() {
@@ -629,6 +631,82 @@ void TestStories::settingsAllowSharing() {
 	QCOMPARE(answer->allowSharing, std::optional<bool>(false));
 	const auto body = harness.bodies(u"stories.settings_update"_s).front();
 	QCOMPARE(body, (QJsonObject{ { u"allow_sharing"_s, false } }));
+}
+
+void TestStories::messageStoryShare() {
+	const auto json = QJsonObject{
+		{ u"chat"_s, u"c1"_s },
+		{ u"seq"_s, 12 },
+		{ u"sender"_s, u"u2"_s },
+		{ u"kind"_s, u"story_share"_s },
+		{ u"text"_s, u"📖 استوری @sara\nببین چه قشنگه"_s },
+		{ u"entities"_s, QJsonArray{ QJsonObject{
+			{ u"type"_s, u"mention"_s },
+			{ u"offset"_s, 10 },
+			{ u"length"_s, 5 },
+		} } },
+		{ u"story"_s, QJsonObject{
+			{ u"story_id"_s, u"st1"_s },
+			{ u"owner"_s, u"u1"_s },
+			{ u"thumb_url"_s, u"/v1/stories/st1/media?variant=thumb"_s },
+			{ u"kind"_s, u"image"_s },
+			{ u"expires_at"_s, 1792165400 },
+			{ u"comment"_s, u"ببین چه قشنگه"_s },
+			{ u"available"_s, true },
+		} },
+	};
+	const auto share = Message::FromJson(json);
+	QCOMPARE(share.kind, MessageKind::StoryShare);
+	QCOMPARE(MessageKindToString(share.kind), u"story_share"_s);
+	// The bubble's text is the comment, never the fallback line.
+	QCOMPARE(share.text, u"ببین چه قشنگه"_s);
+	QVERIFY(share.entities.isEmpty());
+	QCOMPARE(share.story->owner, u"u1"_s);
+	QCOMPARE(share.story->available, std::optional<bool>(true));
+
+	// Kept as it came through the cache.
+	auto stored = share;
+	stored.mine = false;
+	const auto back = Message::FromStored(stored.toStored());
+	QCOMPARE(back.kind, MessageKind::StoryShare);
+	QCOMPARE(back.text, u"ببین چه قشنگه"_s);
+	QCOMPARE(back.story->comment, u"ببین چه قشنگه"_s);
+	QCOMPARE(back.story->available, std::optional<bool>(true));
+
+	// Without a comment: no text at all.
+	auto bare = json;
+	auto story = bare.value("story"_L1).toObject();
+	story.remove(u"comment"_s);
+	story.remove(u"available"_s);
+	bare.insert(u"story"_s, story);
+	bare.insert(u"text"_s, u"📖 استوری @sara"_s);
+	const auto plain = Message::FromJson(bare);
+	QVERIFY(plain.text.isEmpty());
+	QVERIFY(!plain.story->available.has_value());
+	QVERIFY(Message::FromStored(plain.toStored()).text.isEmpty());
+
+	// A copy cached by a build that did not keep the comment: the comment
+	// is the fallback's second line.
+	bare.insert(u"text"_s, u"📖 استوری @sara\n  دیدی؟ "_s);
+	QCOMPARE(Message::FromJson(bare).text, u"دیدی؟"_s);
+}
+
+void TestStories::storyGoneRule() {
+	auto story = StoryRef();
+	story.storyId = u"st1"_s;
+	story.expiresAt = 1000;
+	// A minute's grace for a clock that runs ahead.
+	QVERIFY(!story.gone(1000));
+	QVERIFY(!story.gone(1000 + StoryRef::kExpirySkew - 1));
+	QVERIFY(story.gone(1000 + StoryRef::kExpirySkew));
+	// Expired whatever the message says.
+	story.available = true;
+	QVERIFY(story.gone(5000));
+	QVERIFY(!story.gone(500));
+	story.available = false;
+	QVERIFY(story.gone(500));
+	story.available = std::nullopt;
+	QVERIFY(!story.gone(500));
 }
 
 QTEST_GUILESS_MAIN(TestStories)
