@@ -1033,16 +1033,21 @@ void PostList::activate(int rowIndex, Hit hit, QPoint globalPosition) {
 	case HitType::Media:
 		if (card.tileIsVideo(hit.index)) {
 			OpenPardeh(_controller, id);
-		} else {
-			OpenImageViewer(_controller, post, card.imageIndexOfTile(hit.index));
+		} else if (const auto image = card.imageIndexOfTile(hit.index); image >= 0) {
+			OpenImageViewer(_controller, post, image);
+		} else if (card.options().mode == CardMode::Feed) {
+			// A GIF: the post, as a click on its text.
+			OpenPost(_controller, id);
 		}
 		break;
 	case HitType::QuoteMedia:
 		if (post.quote) {
 			if (card.tileIsVideo(hit.index)) {
 				OpenPardeh(_controller, post.quote->id);
+			} else if (const auto image = card.imageIndexOfTile(hit.index); image >= 0) {
+				OpenImageViewer(_controller, *post.quote, image);
 			} else {
-				OpenImageViewer(_controller, *post.quote, card.imageIndexOfTile(hit.index));
+				OpenPost(_controller, post.quote->id);
 			}
 		}
 		break;

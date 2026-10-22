@@ -41,7 +41,7 @@ struct PostRendition {
 
 struct PostMedia {
 	QString id;           // fetch through Data::Media (MediaRef::PostMedia(post id, id))
-	QString kind;         // image | video | video_note | audio_clip
+	QString kind;         // image | video | video_note | audio_clip | gif (comments)
 	QString alt;
 	int width = 0;
 	int height = 0;
