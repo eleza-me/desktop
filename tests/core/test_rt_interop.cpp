@@ -34,6 +34,7 @@ public:
 	int refreshes = 0;
 	int revoked = 0;
 	int proofs = 0;
+	bool cannotSign = false;
 
 	void accessToken(Fn<void(QString)> done) override {
 		done(token);
@@ -57,7 +58,7 @@ public:
 	}
 	QByteArray proof(const QByteArray &nonce) override {
 		++proofs;
-		return key.sign(u"ws_resume"_s, nonce);
+		return cannotSign ? QByteArray() : key.sign(u"ws_resume"_s, nonce);
 	}
 	QString deviceId() override {
 		return u"device-7"_s;
@@ -296,6 +297,25 @@ void TestRtInterop::rpc() {
 	for (auto limit = 1; limit <= 5; ++limit) {
 		QCOMPARE(answers.value(limit), limit);
 	}
+
+	// More calls than the gateway lets wait: the rest are held back here
+	// instead of being refused there.
+	peer.control(Api::Post, u"/control/slow"_s, { { u"ms"_s, 100 } });
+	auto okCount = 0;
+	auto failures = QStringList();
+	for (auto i = 0; i != 150; ++i) {
+		peer.client.call(u"me.get"_s, {}, QString(), base::Guard(), [&](const QJsonValue &) {
+			++okCount;
+		}, [&](const Api::Error &error) {
+			failures.push_back(error.code);
+		});
+	}
+	QVERIFY(Test::WaitFor([&] { return okCount + failures.size() == 150; }, 15000));
+	peer.control(Api::Post, u"/control/slow"_s, { { u"ms"_s, 0 } });
+	QVERIFY2(failures.isEmpty(), qPrintable(failures.join(u',')));
+	QCOMPARE(okCount, 150);
+	const auto waited = peer.state().value("maxOutstanding"_L1).toInt();
+	QVERIFY(waited > 1 && waited <= Rt::Session::kMaxCallsInFlight);
 	QVERIFY(peer.client.isConnected());
 }
 
@@ -456,6 +476,70 @@ void TestRtInterop::signalsAndSubscriptions() {
 	QCOMPARE(live.value("location"_L1).toObject().value("lat"_L1).toDouble(), 35.7);
 	QCOMPARE(LastSignal(state, u"state"_s).value("body"_L1).toObject().value("background"_L1).toBool(), true);
 
+	// Presence is counted per subscriber: the first of two unsubscribes
+	// keeps it, the second ends it.
+	const auto unsubs = [&] {
+		auto result = 0;
+		for (const auto &signal : peer.state().value("signals"_L1).toArray()) {
+			const auto object = signal.toObject();
+			if (object.value("t"_L1).toString() == u"presence_unsub"_s
+				&& object.value("body"_L1).toObject().value("users"_L1).toArray().contains(u"u_reza"_s)) {
+				++result;
+			}
+		}
+		return result;
+	};
+	peer.client.subscribePresence({ u"u_reza"_s });
+	peer.client.subscribePresence({ u"u_reza"_s });
+	peer.client.unsubscribePresence({ u"u_reza"_s });
+	peer.client.unsubscribePresence({ u"u_reza"_s });
+	peer.client.unsubscribePresence({ u"u_reza"_s }); // one too many: nothing
+	QVERIFY(Test::WaitFor([&] { return unsubs() > 0; }));
+	QTest::qWait(200);
+	QCOMPARE(unsubs(), 1);
+
+	// Cards: never more than the gateway follows, the most recent kept.
+	auto many = QStringList();
+	for (auto i = 0; i != 2 * Rt::Client::kProfileSubMax; ++i) {
+		many.push_back(u"u_card%1"_s.arg(i));
+		if (many.size() == 50) {
+			peer.client.followProfiles(many);
+			many.clear();
+		}
+	}
+	const auto followed = peer.client.followedProfiles();
+	QVERIFY(followed.size() <= Rt::Client::kProfileSubMax);
+	QVERIFY(followed.contains(u"u_card%1"_s.arg(2 * Rt::Client::kProfileSubMax - 1)));
+	QVERIFY(!followed.contains(u"u_card0"_s));
+	QVERIFY(Test::WaitFor([&] {
+		return LastSignal(peer.state(), u"profile_sub"_s).value("body"_L1).toObject().value("users"_L1).toArray().contains(
+			u"u_card%1"_s.arg(2 * Rt::Client::kProfileSubMax - 1));
+	}));
+	// What the gateway holds, as it counts: a request past its cap replaces
+	// everything before it.
+	auto held = QSet<QString>();
+	for (const auto &signal : peer.state().value("signals"_L1).toArray()) {
+		const auto object = signal.toObject();
+		if (object.value("t"_L1).toString() != u"profile_sub"_s) {
+			continue;
+		}
+		const auto users = object.value("body"_L1).toObject().value("users"_L1).toArray();
+		QVERIFY(users.size() <= Rt::Client::kProfileSubMax);
+		auto fresh = 0;
+		for (const auto &user : users) {
+			fresh += held.contains(user.toString()) ? 0 : 1;
+		}
+		if (held.size() + fresh > Rt::Client::kProfileSubMax) {
+			held.clear();
+		}
+		for (const auto &user : users) {
+			held.insert(user.toString());
+		}
+	}
+	for (const auto &user : followed) {
+		QVERIFY2(held.contains(user), qPrintable(user));
+	}
+
 	// Signals the server sends on its own.
 	peer.control(Api::Post, u"/control/signal"_s, {
 		{ u"t"_s, u"feed_new"_s },
@@ -592,6 +676,18 @@ void TestRtInterop::expiredTokenProof() {
 	QCOMPARE(other.delegate.proofs, 1);
 	QCOMPARE(other.delegate.refreshes, 1);
 	QCOMPARE(LastOf(state, "auths").value("token"_L1).toString(), u"tok-fresh"_s);
+	other.client.stop();
+
+	// Nothing to sign with: the attempt ends at once (the server would only
+	// wait for the proof) and a refreshed token signs in.
+	auto unsignable = Peer();
+	unsignable.delegate.cannotSign = true;
+	unsignable.delegate.token = u"expired-3"_s;
+	unsignable.delegate.tokenAfterRefresh = u"tok-fresh-3"_s;
+	QVERIFY(unsignable.connect());
+	QCOMPARE(unsignable.delegate.proofs, 1);
+	QCOMPARE(unsignable.delegate.refreshes, 1);
+	QCOMPARE(LastOf(unsignable.state(), "auths").value("token"_L1).toString(), u"tok-fresh-3"_s);
 }
 
 void TestRtInterop::keyRotation() {

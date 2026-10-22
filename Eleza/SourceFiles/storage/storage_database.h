@@ -138,7 +138,7 @@ private:
 	template <typename Method>
 	void post(Method &&method);
 	template <typename Result>
-	void reply(base::Guard guard, Fn<void(Result)> done, Result result);
+	void reply(base::Guard &guard, Fn<void(Result)> &done, Result result);
 
 	QString _path;
 	QThread _thread;

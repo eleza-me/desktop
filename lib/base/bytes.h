@@ -20,8 +20,14 @@ namespace base::bytes {
 // characters (whitespace) are ignored, as the web client does.
 [[nodiscard]] QByteArray fromBase64(const QString &text);
 
-// Overwrites the array's storage with zeros and clears it.
+// Overwrites the array's storage with zeros and clears it. Storage shared
+// with another QByteArray (an implicit copy) is only released: zeroing it
+// would corrupt the other holder, and detaching would merely zero a fresh
+// copy. Whoever holds it last zeroes it, so secrets are kept in arrays of
+// their own (copy() below) by every holder that wipes.
 void wipe(QByteArray &bytes);
+// A deep copy that shares no storage with `bytes` (for key material).
+[[nodiscard]] QByteArray copy(const QByteArray &bytes);
 
 // Comparison whose duration does not depend on where the arrays differ.
 [[nodiscard]] bool constantTimeEquals(const QByteArray &a, const QByteArray &b);

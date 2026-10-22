@@ -25,7 +25,8 @@ inline constexpr auto kMaxMessage = 65535;
 class CipherState {
 public:
 	CipherState() = default;
-	CipherState(const CipherState &other) = default;
+	// The key is copied deep: every holder wipes storage of its own.
+	CipherState(const CipherState &other);
 	CipherState &operator=(const CipherState &other);
 	// The key is wiped, not just released.
 	~CipherState();
@@ -69,8 +70,8 @@ struct Session {
 class SymmetricState {
 public:
 	SymmetricState();
-	SymmetricState(const SymmetricState &other) = default;
-	SymmetricState &operator=(const SymmetricState &other) = default;
+	SymmetricState(const SymmetricState &other);
+	SymmetricState &operator=(const SymmetricState &other);
 	~SymmetricState();
 
 	void mixKey(const QByteArray &inputKeyMaterial);
