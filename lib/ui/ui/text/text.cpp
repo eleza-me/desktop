@@ -445,7 +445,7 @@ const EmojiItem *String::Private::emojiAt(int offset) const {
 		emoji.begin(),
 		emoji.end(),
 		offset,
-		[](int offset, const EmojiItem &item) { return offset < item.from; });
+		[](int value, const EmojiItem &item) { return value < item.from; });
 	if (i == emoji.begin()) {
 		return nullptr;
 	}
