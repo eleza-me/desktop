@@ -680,12 +680,13 @@ void Header::press(Control control) {
 		const auto track = player.current();
 		const auto controller = _controller;
 		const auto close = _close;
-		// The box goes first: it would cover the chat.
+		// The box goes first: it would cover the chat (and this header
+		// may be gone with it, so nothing of it is touched after).
 		if (close) {
 			close();
 		}
 		OpenTrackPlace(controller, track);
-	} break;
+	} return;
 	case Control::Seek:
 	case Control::None: break;
 	}
