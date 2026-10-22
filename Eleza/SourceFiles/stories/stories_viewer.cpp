@@ -1689,11 +1689,18 @@ void Viewer::sendReply() {
 	}
 	const auto controller = _controller;
 	const auto name = Lang::Isolated(NameOf(_list.user));
+	const auto storyId = story->id;
 	_reply->clear();
 	setFocus();
-	stories().reply(story->id, text, this, [=](const QString &, qint64) {
+	stories().reply(storyId, text, this, [=](const QString &, qint64) {
 		controller->showToast(tr::lng_stories_reply_sent(tr::now));
 	}, [=](const Api::Error &error) {
+		// The text comes back while the same story is up and nothing new
+		// was typed.
+		const auto now = current();
+		if (now && now->id == storyId && _reply->text().isEmpty()) {
+			_reply->setText(text);
+		}
 		if (error.code == u"story.replies_off") {
 			controller->showToast(tr::lng_stories_replies_closed(tr::now));
 		} else if (error.code == u"story.reply_not_allowed") {
