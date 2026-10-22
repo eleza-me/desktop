@@ -97,6 +97,8 @@ protected:
 
 private:
 	void reload();
+	void loadPage();
+	void checkLoadMore();
 	void refreshState();
 	void updateGeometries();
 
@@ -106,6 +108,8 @@ private:
 	PeopleList *_list = nullptr;
 	Ui::SkeletonList *_skeleton = nullptr;
 	Ui::EmptyPlaceholder *_placeholder = nullptr;
+	QString _cursor;
+	int _generation = 0;
 	bool _loading = false;
 	std::optional<Api::Error> _error;
 

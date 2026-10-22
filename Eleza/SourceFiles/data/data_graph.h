@@ -53,6 +53,8 @@ public:
 
 	// ---- follow requests (a private account's incoming requests)
 	void followRequests(base::Guard guard, Fn<void(const QVector<Profile> &)> done, FailCallback fail = nullptr);
+	// The same list a page at a time (`cursor` from the previous page).
+	void incomingFollowRequests(const QString &cursor, base::Guard guard, Fn<void(const GraphList &)> done, FailCallback fail = nullptr);
 	void acceptFollowRequest(const QString &userId, base::Guard guard = base::Guard(), Fn<void(const GraphState &)> done = nullptr, FailCallback fail = nullptr);
 	void declineFollowRequest(const QString &userId, base::Guard guard = base::Guard(), Fn<void(const GraphState &)> done = nullptr, FailCallback fail = nullptr);
 	// The requests I sent that wait for an answer (cancel one with unfollow()).

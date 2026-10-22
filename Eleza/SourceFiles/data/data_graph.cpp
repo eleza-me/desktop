@@ -255,6 +255,10 @@ void Graph::followRequests(base::Guard guard, Fn<void(const QVector<Profile> &)>
 		.send();
 }
 
+void Graph::incomingFollowRequests(const QString &cursor, base::Guard guard, Fn<void(const GraphList &)> done, FailCallback fail) {
+	list(u"/v1/me/follow-requests"_s, cursor, guard, done, fail);
+}
+
 void Graph::acceptFollowRequest(const QString &userId, base::Guard guard, Fn<void(const GraphState &)> done, FailCallback fail) {
 	relation(Api::Post, u"/v1/me/follow-requests/%1/accept"_s.arg(PathSegment(userId)), userId, u"graph.accept_request"_s, guard, done, fail);
 }
