@@ -52,6 +52,10 @@ std::optional<NotificationData> NotificationFor(
 		const Data::Message &message) {
 	if (!session || message.mine || !message.visible()) {
 		return std::nullopt;
+	} else if (!Data::SelfDestructScreenshotTaker(message.system).isEmpty()) {
+		// The screenshot notice of self-destructing media: no push on the
+		// phones either.
+		return std::nullopt;
 	}
 	// Of the call records only a call I missed is news: one I answered or
 	// declined myself is not.

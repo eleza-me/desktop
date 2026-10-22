@@ -3,6 +3,7 @@
 #include "base/platform_file.h"
 #include "data/data_group_rules.h"
 #include "data/data_json.h"
+#include "data/data_note_types.h"
 #include "data/data_session.h"
 #include "data/data_users.h"
 #include "lang/lang_format.h"
@@ -12,15 +13,20 @@
 namespace Support {
 namespace {
 
-// The note of a group: `actor` did it, `target` is who it names (both
-// already worded; empty = me).
-[[nodiscard]] QString GroupNote(
+// Where the names go in a note while it is worded (private use: never in
+// a translation, never typed by a person).
+constexpr auto kActorMark = QChar(0xE000);
+constexpr auto kTargetMark = QChar(0xE001);
+
+// The note of a group with marks for the names: `actorIsMe` / `targetIsMe`
+// choose the wording that speaks to me.
+[[nodiscard]] QString GroupNotePattern(
 		const Data::Message &message,
-		const QString &actor,
-		const QString &target,
 		bool actorIsMe,
 		bool targetIsMe) {
 	using Note = Data::GroupRules::Note;
+	const auto actor = QString(kActorMark);
+	const auto target = QString(kTargetMark);
 	switch (Data::GroupRules::NoteOf(message.system)) {
 	case Note::Created:
 		return actorIsMe
@@ -63,7 +69,41 @@ namespace {
 	return QString();
 }
 
+// Puts the names where the marks are, each isolated (a Latin name in a
+// Persian sentence keeps its neighbours in place), and records where they
+// landed.
+[[nodiscard]] NoteLine FillNames(
+		const QString &pattern,
+		const NotePerson &actor,
+		const NotePerson &target) {
+	auto result = NoteLine();
+	result.text.reserve(pattern.size() + actor.name.size() + target.name.size() + 4);
+	for (const auto ch : pattern) {
+		if (ch != kActorMark && ch != kTargetMark) {
+			result.text.push_back(ch);
+			continue;
+		}
+		const auto &person = (ch == kActorMark) ? actor : target;
+		const auto isolated = Lang::Isolated(person.name);
+		const auto start = isolated.indexOf(person.name);
+		const auto offset = int(result.text.size()) + std::max(int(start), 0);
+		result.text += isolated;
+		if (person.linkable && !person.userId.isEmpty() && !person.name.isEmpty()) {
+			result.names.push_back({ offset, int(person.name.size()), person.userId });
+		}
+	}
+	return result;
+}
+
 } // namespace
+
+NoteLine GroupNoteLine(
+		const Data::Message &message,
+		const NotePerson &actor,
+		const NotePerson &target) {
+	const auto pattern = GroupNotePattern(message, actor.me, target.me);
+	return pattern.isEmpty() ? NoteLine() : FillNames(pattern, actor, target);
+}
 
 QString MemberName(Main::Session *session, const QString &userId) {
 	if (session && !userId.isEmpty()) {
@@ -97,23 +137,61 @@ QString GroupTimeLeft(qint64 untilSeconds, qint64 nowMs) {
 	return QString();
 }
 
-QString MessagePreview(Main::Session *session, const Data::Message &message) {
+NoteLine ServiceNoteLine(Main::Session *session, const Data::Message &message) {
 	if (message.kind == Data::MessageKind::System
 		&& !message.call
 		&& message.serviceEvent() == Data::ServiceEvent::Group) {
 		const auto me = session ? session->data().users().myId() : QString();
+		const auto person = [&](const QString &userId, bool isMe) {
+			auto result = NotePerson();
+			result.userId = userId;
+			result.me = isMe;
+			result.name = MemberName(session, userId);
+			const auto deleted = session
+				&& !userId.isEmpty()
+				&& session->data().users().peek(userId).deleted;
+			result.linkable = !isMe && !userId.isEmpty() && !deleted;
+			return result;
+		};
 		const auto target = Data::GroupRules::NoteUser(message.system);
-		const auto actorIsMe = message.mine
-			|| (!me.isEmpty() && message.sender == me);
-		const auto targetIsMe = !me.isEmpty() && (target == me);
-		return GroupNote(
+		return GroupNoteLine(
 			message,
-			MemberName(session, message.sender),
-			MemberName(session, target),
-			actorIsMe,
-			targetIsMe);
+			person(message.sender, message.mine || (!me.isEmpty() && message.sender == me)),
+			person(target, !me.isEmpty() && (target == me)));
+	} else if (const auto taker = Data::SelfDestructScreenshotTaker(message.system);
+		message.kind == Data::MessageKind::System && !taker.isEmpty() && session) {
+		// «‹name› took a screenshot of a self-destructing message»: our own
+		// line, the name opening their profile. A card without a name
+		// leaves the server's line.
+		auto &users = session->data().users();
+		const auto me = users.myId();
+		if (!me.isEmpty() && taker == me) {
+			return NoteLine{ tr::lng_history_sd_screenshot_you(tr::now), {} };
+		}
+		const auto card = users.get(taker);
+		const auto name = card.deleted
+			? tr::lng_deleted_account(tr::now)
+			: !card.displayName.trimmed().isEmpty()
+			? Data::Json::CleanName(card.displayName.simplified())
+			: !card.handle.isEmpty()
+			? Lang::Handle(card.handle)
+			: QString();
+		if (!name.isEmpty()) {
+			auto person = NotePerson();
+			person.name = name;
+			person.userId = taker;
+			person.linkable = !card.deleted;
+			return FillNames(
+				tr::lng_history_sd_screenshot(tr::now, lt_name, QString(kActorMark)),
+				person,
+				NotePerson());
+		}
 	}
-	return MessagePreview(message);
+	return NoteLine{ MessagePreview(message), {} };
+}
+
+QString MessagePreview(Main::Session *session, const Data::Message &message) {
+	return ServiceNoteLine(session, message).text;
 }
 
 QString ChatTitle(Main::Session *session, const Data::Chat &chat) {
@@ -141,7 +219,38 @@ QString ChatTitle(Main::Session *session, const Data::Chat &chat) {
 	return chat.anonymous ? tr::lng_anonymous(tr::now) : QString();
 }
 
+QString SelfDestructLabel(const Data::Message &message) {
+	if (!message.selfDestruct) {
+		return QString();
+	}
+	const auto expired = message.selfDestruct->expired();
+	switch (message.kind) {
+	case Data::MessageKind::Photo:
+		return expired
+			? tr::lng_history_sd_photo_expired(tr::now)
+			: tr::lng_history_sd_photo(tr::now);
+	case Data::MessageKind::Video:
+		return expired
+			? tr::lng_history_sd_video_expired(tr::now)
+			: tr::lng_history_sd_video(tr::now);
+	default:
+		// This app is told only that it is one (not which).
+		return expired
+			? tr::lng_history_sd_expired(tr::now)
+			: tr::lng_history_sd_media(tr::now);
+	}
+}
+
+QString SelfDestructTimerText(int seconds) {
+	return (seconds >= 60 && seconds % 60 == 0)
+		? tr::lng_history_sd_minutes(tr::now, lt_count, seconds / 60)
+		: tr::lng_history_sd_seconds(tr::now, lt_count, seconds);
+}
+
 QString MessageKindLabel(const Data::Message &message) {
+	if (message.selfDestruct) {
+		return SelfDestructLabel(message);
+	}
 	switch (message.kind) {
 	case Data::MessageKind::Photo: return tr::lng_media_photo(tr::now);
 	case Data::MessageKind::Video: return tr::lng_media_video(tr::now);
@@ -161,6 +270,8 @@ QString MessageKindLabel(const Data::Message &message) {
 	case Data::MessageKind::StoryReply: return tr::lng_stories_chat_reply(tr::now);
 	case Data::MessageKind::StoryReaction:
 		return tr::lng_stories_chat_reaction(tr::now);
+	case Data::MessageKind::StoryShare:
+		return tr::lng_stories_chat_share_preview(tr::now);
 	case Data::MessageKind::Text:
 	case Data::MessageKind::System:
 	case Data::MessageKind::Unknown:
@@ -192,17 +303,21 @@ QString MessagePreview(const Data::Message &message) {
 			return tr::lng_chat_chat_theme_changed(tr::now);
 		case Data::ServiceEvent::Continued:
 			return tr::lng_chat_conversation_continued(tr::now);
-		case Data::ServiceEvent::Group:
+		case Data::ServiceEvent::Group: {
 			// Without a session nobody has a name.
-			return GroupNote(
-				message,
-				tr::lng_groups_someone(tr::now),
-				tr::lng_groups_someone(tr::now),
-				message.mine,
-				false);
+			auto someone = NotePerson();
+			someone.name = tr::lng_groups_someone(tr::now);
+			auto actor = someone;
+			actor.me = message.mine;
+			return GroupNoteLine(message, actor, someone).text;
+		}
 		case Data::ServiceEvent::None: break;
 		}
 		return QString();
+	}
+	if (message.selfDestruct) {
+		// Never the caption (it is not sent here) nor the server's text.
+		return SelfDestructLabel(message);
 	}
 	const auto label = MessageKindLabel(message);
 	// One line: line breaks become spaces. It is shown next to our own words
@@ -211,7 +326,10 @@ QString MessagePreview(const Data::Message &message) {
 	// ("x<RLO>fdp.exe" is not "xexe.pdf").
 	auto text = (message.kind == Data::MessageKind::File && !message.text.trimmed().isEmpty())
 		? base::platform::SafeFileName(message.text)
-		: Data::Json::CleanName(message.text.simplified());
+		: Data::Json::CleanName((label.isEmpty()
+			// A reply to a note shows «↩︎ <answer>», not the quoted note.
+			? Data::NoteReply::Preview(message.text)
+			: message.text).simplified());
 	if (label.isEmpty()) {
 		return text.isEmpty() ? tr::lng_support_notify_new_message(tr::now) : text;
 	} else if (message.kind == Data::MessageKind::Sticker

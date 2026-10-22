@@ -101,3 +101,62 @@ dialogsMenuProfile: icon {{ "me", menuIconFg, 20px }};
 dialogsMenuAccept: icon {{ "check", menuIconFg, 20px }};
 dialogsMenuDecline: icon {{ "close", menuIconFg, 20px }};
 dialogsMenuClock: icon {{ "clock", menuIconFg, 20px }};
+
+// ---- notes (dialogs_notes.h): the row on top of the list, the faces next to
+// the title while it is out of sight, «نوت جدید» and a friend's note
+dialogsNotesPadding: margins(8px, 8px, 8px, 8px);
+dialogsNotesItemWidth: 80px;
+dialogsNotesUserpic: 56px;
+dialogsNotesBubbleFont: font(12px);
+dialogsNotesBubbleHeight: 26px;
+dialogsNotesBubblePadding: 8px;
+dialogsNotesBubbleRadius: 12px;
+dialogsNotesBubbleSkip: 9px;   // between the bubble and the face (its dots)
+dialogsNotesBubbleBg: bgRaised;
+dialogsNotesBubbleBorder: borderSubtle;
+dialogsNotesBubbleFg: textPrimary;
+dialogsNotesBubbleFgEmpty: textTertiary;
+dialogsNotesCloseFriendsFg: statusSuccess;
+dialogsNotesNameTop: 4px;
+dialogsNotesNameFont: font(12px);
+dialogsNotesNameFg: textSecondary;
+dialogsNotesBgOver: stateHover;
+dialogsNotesLineFg: borderSubtle;
+dialogsNotesAddSize: 20px;
+dialogsNotesAddBorder: 2px;
+dialogsNotesAddBg: brandPrimary;
+dialogsNotesAddIcon: icon {{ "plus", textOnBrand, 14px }};
+dialogsNotesArrowSize: 28px;
+dialogsNotesArrowBg: bgRaised;
+dialogsNotesArrowLeft: icon {{ "chevron-left", textSecondary, 18px }};
+dialogsNotesArrowRight: icon {{ "chevron-right", textSecondary, 18px }};
+dialogsNotesFace: 26px;
+dialogsNotesFaceOverlap: 9px;
+dialogsNotesFaceBorder: 2px;
+dialogsNotesFacesHeight: 34px;
+dialogsNotesMenuMessage: icon {{ "message", menuIconFg, 20px }};
+dialogsNotesMenuProfile: icon {{ "me", menuIconFg, 20px }};
+dialogsNotesMenuHide: icon {{ "eye-off", menuIconFg, 20px }};
+dialogsNotesMenuEdit: icon {{ "edit", menuIconFg, 20px }};
+
+// the boxes: the note in a speech bubble over the face
+dialogsNoteStageUserpic: 72px;
+dialogsNoteStageTop: 8px;
+dialogsNoteStageBottom: 12px;
+dialogsNoteStageSkip: 12px;
+dialogsNoteStageMaxWidth: 280px;
+dialogsNoteStageMinWidth: 120px;
+dialogsNoteStagePadding: margins(14px, 9px, 14px, 10px);
+dialogsNoteStageRadius: 18px;
+dialogsNoteStageLines: 3;
+dialogsNoteStageTextStyle: TextStyle(defaultTextStyle) {
+	font: font(15px);
+	lineHeight: 22px;
+}
+dialogsNoteField: InputField(defaultInputField) {
+}
+dialogsNoteCounter: FlatLabel(captionLabel) {
+}
+dialogsNoteCounterOverFg: statusError;
+dialogsNoteBylineFont: font(13px);
+dialogsNoteBylineFg: textSecondary;

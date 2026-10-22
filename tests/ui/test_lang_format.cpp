@@ -49,12 +49,43 @@ private Q_SLOTS:
 		QVERIFY(Phone(QString()).isEmpty());
 	}
 
+	void rtlText() {
+		const auto lri = QChar(0x2066);
+		const auto rli = QChar(0x2067);
+		const auto fsi = QChar(0x2068);
+		const auto pdi = QChar(0x2069);
+		const auto fa = U("سلام");
+		QVERIFY(IsRtlText(fa));
+		QVERIFY(!IsRtlText(QStringLiteral("hello ") + fa));
+		// An isolated handle in front does not decide the paragraph (UAX #9 P2).
+		QVERIFY(IsRtlText(Handle(QStringLiteral("sara")) + QChar(' ') + fa));
+		QVERIFY(IsRtlText(fsi + QStringLiteral("Sara") + pdi + fa));
+		QVERIFY(!IsRtlText(rli + fa + pdi + QStringLiteral(" hi")));
+		// Nested isolates close at the matching PDI only.
+		QVERIFY(IsRtlText(lri + QStringLiteral("a") + fsi + QStringLiteral("b") + pdi
+			+ QStringLiteral("c") + pdi + fa));
+		// An unmatched PDI is ignored; an unclosed isolate hides the rest.
+		QVERIFY(!IsRtlText(pdi + QStringLiteral("abc")));
+		SetCurrent(Language::English);
+		QVERIFY(!IsRtlText(lri + fa));
+		QVERIFY(!IsRtlText(QStringLiteral("123")));
+		SetCurrent(Language::Persian);
+		QVERIFY(IsRtlText(lri + QStringLiteral("abc")));
+		QVERIFY(IsRtlText(QStringLiteral("123")));
+		// Strong characters outside the BMP count: U+10900 is Phoenician (R).
+		QVERIFY(IsRtlText(QString::fromUcs4(U"\U00010900 abc")));
+		QVERIFY(!IsRtlText(QString::fromUcs4(U"\U0001D400 ") + fa)); // bold A (L)
+	}
+
 	void strings() {
 		QCOMPARE(tr::lng_app_name(tr::now), U("الزا"));
 		QCOMPARE(
 			tr::lng_intro_code_sent_to(tr::now, lt_phone, QStringLiteral("+98")),
 			U("به +98 فرستاده شد"));
 		QCOMPARE(tr::lng_eli_new_posts(tr::now, lt_count, 12), U("۱۲ پست تازه"));
+		// A fraction has the Persian decimal separator, as in sizes and counts.
+		QCOMPARE(tr::lng_eli_new_posts(tr::now, lt_count, 1.5), U("۱٫۵ پست تازه"));
+		QCOMPARE(Decimal(QStringLiteral("2.5")), U("۲٫۵"));
 		QCOMPARE(GetValueByName(QStringLiteral("lng_cancel")), U("انصراف"));
 		QVERIFY(GetValueByName(QStringLiteral("lng_no_such_key")).isEmpty());
 		QVERIFY(RightToLeft());
@@ -70,12 +101,36 @@ private Q_SLOTS:
 			tr::lng_intro_code_sent_to(tr::now, lt_phone, QStringLiteral("+98")),
 			QStringLiteral("Sent to +98"));
 		QCOMPARE(tr::lng_eli_new_posts(tr::now, lt_count, 1), QStringLiteral("1 new post"));
+		QCOMPARE(tr::lng_eli_new_posts(tr::now, lt_count, 1.5), QStringLiteral("1.5 new posts"));
 		QCOMPARE(tr::lng_eli_new_posts(tr::now, lt_count, 2), QStringLiteral("2 new posts"));
 		SetCurrent(Language::English);
 		QCOMPARE(notified, 1); // no change, no signal
 		QCOMPARE(FromId(QStringLiteral("fa-IR"), Language::English), Language::Persian);
 		QCOMPARE(FromId(QStringLiteral("xx"), Language::English), Language::English);
 		QCOMPARE(CurrentId(), QStringLiteral("en"));
+	}
+
+	void tagsInOnePass() {
+		// A value that looks like a later tag (somebody's name) stays as it is.
+		QCOMPARE(
+			tr::lng_action_member(
+				tr::now,
+				lt_name,
+				QStringLiteral("{action}"),
+				lt_action,
+				QStringLiteral("joined")),
+			QStringLiteral("{action} joined"));
+		auto text = QStringLiteral("{a}-{b}-{a}-{c}-{b");
+		const auto a = QStringLiteral("{b}");
+		const auto b = QStringLiteral("{a}");
+		Lang::internal::ReplaceTags(text, { { "a", a }, { "b", b } });
+		QCOMPARE(text, QStringLiteral("{b}-{a}-{b}-{c}-{b"));
+		auto plain = QStringLiteral("no tags {here");
+		Lang::internal::ReplaceTag(plain, "here", a);
+		QCOMPARE(plain, QStringLiteral("no tags {here"));
+		auto nested = QStringLiteral("{{a}}");
+		Lang::internal::ReplaceTag(nested, "a", QStringLiteral("x"));
+		QCOMPARE(nested, QStringLiteral("{x}"));
 	}
 
 	void digits() {
@@ -188,6 +243,14 @@ private Q_SLOTS:
 		QCOMPARE(RelativeTime(now.addSecs(-25 * 60), now), U("۲۵ دقیقه"));
 		QCOMPARE(RelativeTime(now.addSecs(-5 * 3600), now), U("۵ ساعت"));
 		QCOMPARE(RelativeTime(now.addSecs(-30 * 3600), now), U("دیروز"));
+		// Yesterday is the calendar day before, not "less than 48 hours".
+		const auto early = QDateTime(QDate(2025, 10, 9), QTime(1, 0));
+		QCOMPARE(RelativeTime(early.addSecs(-23 * 3600), early), U("۲۳ ساعت"));
+		QCOMPARE(RelativeTime(early.addSecs(-25 * 3600), early), U("دیروز"));
+		QCOMPARE(RelativeTime(early.addSecs(-30 * 3600), early), U("۱۵ مهر"));
+		const auto late = QDateTime(QDate(2025, 10, 9), QTime(23, 30));
+		QCOMPARE(RelativeTime(late.addSecs(-47 * 3600), late), U("دیروز"));
+		QCOMPARE(RelativeTime(late.addSecs(-48 * 3600), late), U("۱۵ مهر"));
 
 		SetCurrent(Language::English);
 		QCOMPARE(SolarDate(today, false, today), QStringLiteral("October 9"));

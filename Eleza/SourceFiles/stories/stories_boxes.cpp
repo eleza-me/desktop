@@ -2,10 +2,13 @@
 
 #include "boxes/peer_list_box.h"
 #include "data/data_chats.h"
+#include "data/data_feed.h"
+#include "data/data_media.h"
 #include "data/data_graph.h"
 #include "data/data_session.h"
 #include "data/data_stories.h"
 #include "data/data_users.h"
+#include "eli/eli_actions.h"
 #include "history/history_view_media.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
@@ -13,6 +16,7 @@
 #include "media/media_video_player.h"
 #include "support/error_text.h"
 #include "support/file_dialogs.h"
+#include "support/media_image.h"
 #include "ui/image/image_view.h"
 #include "ui/layers/generic_box.h"
 #include "ui/painter.h"
@@ -30,6 +34,8 @@
 #include <QtCore/QPointer>
 #include <QtCore/QSet>
 #include <QtMultimedia/QMediaPlayer>
+
+#include <optional>
 
 namespace Stories {
 namespace {
@@ -66,6 +72,17 @@ public:
 			_image->setSource(History::View::MakeLocalImageSource(path, 1280));
 			_image->resize(size);
 		}
+		resize(size);
+	}
+	// A picture that is not a local file (a post's video poster).
+	Preview(QWidget *parent, std::shared_ptr<Ui::ImageSource> source)
+	: RpWidget(parent) {
+		const auto size = st::storiesComposePreview;
+		_image = Ui::CreateChild<Ui::ImageView>(this);
+		_image->setRadius(st::storiesComposePreviewRadius);
+		_image->setFit(true);
+		_image->setSource(std::move(source));
+		_image->resize(size);
 		resize(size);
 	}
 
@@ -463,6 +480,14 @@ void ShowComposeBoxForFile(
 			}
 			box->closeBox();
 		};
+		// «الی»: the same file and words as a new post instead.
+		box->addLeftButton(tr::lng_stories_to_eli(tr::now), [=] {
+			auto args = Eli::ComposeArgs();
+			args.prefill = caption->text().trimmed();
+			args.files = QStringList{ path };
+			box->closeBox();
+			Eli::OpenCompose(controller, std::move(args));
+		});
 		box->addButton(tr::lng_cancel(tr::now), [=] { box->closeBox(); });
 		if (video) {
 			publish->setLoading(true);
@@ -495,6 +520,23 @@ void ShowComposeBoxForFile(
 	}));
 }
 
+// The video of a video post, when a story can hold it (Instagram's shared
+// reel): the story plays it and carries the post's card.
+[[nodiscard]] std::optional<Data::PostMedia> StoryVideoOf(
+		Window::SessionController *controller,
+		const QString &postId) {
+	const auto post = controller->session().data().feed().post(postId);
+	if (!post || post->media.isEmpty()) {
+		return std::nullopt;
+	}
+	const auto &media = post->media.front();
+	return (media.kind == u"video"
+		&& media.durationMs > 0
+		&& media.durationMs <= kMaxVideoMs)
+		? std::make_optional(media)
+		: std::nullopt;
+}
+
 void ShareToStory(Window::SessionController *controller, const QString &postId) {
 	auto &stories = controller->session().data().stories();
 	if (!stories.enabled() || postId.isEmpty()) {
@@ -503,8 +545,25 @@ void ShareToStory(Window::SessionController *controller, const QString &postId) 
 	if (!stories.cachedSettings()) {
 		stories.settings(controller, nullptr);
 	}
+	const auto video = StoryVideoOf(controller, postId);
 	controller->show(Ui::Box([=](Ui::GenericBox *box) {
 		box->setTitle(tr::lng_stories_share_post_title(tr::now));
+		if (video) {
+			auto options = Support::ImageOptions();
+			options.blurhash = video->blurhash;
+			options.aspect = QSize(video->width, video->height);
+			box->addRow(
+				Ui::object_ptr<Preview>(box, Support::MakeImageSource(
+					&controller->session(),
+					Data::MediaRef::PostMedia(postId, video->id),
+					Data::MediaVariant::Poster,
+					options)),
+				st::boxRowPadding);
+			box->addRow(Ui::object_ptr<Ui::FlatLabel>(
+				box,
+				tr::lng_stories_share_post_video(tr::now),
+				st::boxLabel));
+		}
 		const auto caption = box->addRow(Ui::object_ptr<Ui::InputField>(
 			box,
 			st::storiesComposeField,
@@ -515,21 +574,21 @@ void ShareToStory(Window::SessionController *controller, const QString &postId) 
 			int(Audience::Everyone));
 		AddAudience(box, audience);
 		const auto busy = std::make_shared<bool>(false);
+		const auto file = std::make_shared<Data::MediaHandlePtr>();
 		const auto weak = QPointer<Ui::GenericBox>(box);
 		const auto share = box->addButton(tr::lng_stories_share(tr::now), nullptr, st::defaultRoundButton);
-		share->setClickedCallback([=] {
-			if (*busy) {
-				return;
+		const auto unlock = [=] {
+			*busy = false;
+			*file = nullptr;
+			if (weak) {
+				share->setLoading(false);
 			}
-			const auto closeFriends = (audience->value() == int(Audience::CloseFriends));
-			if (!CloseFriendsReady(controller, closeFriends)) {
-				return;
-			}
-			*busy = true;
-			share->setLoading(true);
+		};
+		// The post's card on a gradient (post_id only): what every post can be.
+		const auto createCard = [=](const QString &text, bool closeFriends) {
 			auto request = Data::CreateStory();
 			request.postId = postId;
-			request.caption = caption->text().trimmed();
+			request.caption = text;
 			request.closeFriends = closeFriends;
 			controller->session().data().stories().create(request, controller, [=](
 					const Data::Story &) {
@@ -538,16 +597,90 @@ void ShareToStory(Window::SessionController *controller, const QString &postId) 
 					weak->closeBox();
 				}
 			}, [=](const Api::Error &error) {
-				*busy = false;
-				if (weak) {
-					share->setLoading(false);
-				}
+				unlock();
 				if (error.code == u"story.post_unavailable") {
 					controller->showToast(tr::lng_stories_post_cannot_share(tr::now));
 				} else {
 					Support::ShowError(controller, error);
 				}
 			});
+		};
+		// The video goes up as the story (media_id + post_id); without it the
+		// card is posted instead.
+		const auto postVideo = [=](const QString &text, bool closeFriends) {
+			auto options = Data::Media::Options();
+			options.decode = false;
+			const auto handle = controller->session().data().media().request(
+				Data::MediaRef::PostMedia(postId, video->id),
+				Data::MediaVariant::Mp4,
+				options);
+			*file = handle;
+			const auto fallback = [=] {
+				if (*file == handle) {
+					*file = nullptr;
+					createCard(text, closeFriends);
+				}
+			};
+			const auto ready = [=] {
+				if (*file != handle) {
+					return;
+				}
+				Support::SaveFileToTemp(
+					handle->filePath(),
+					handle->filePath().isEmpty() ? handle->bytes() : QByteArray(),
+					u".mp4"_s,
+					box,
+					[=](const QString &path) {
+						if (*file != handle) {
+							return;
+						} else if (path.isEmpty()) {
+							fallback();
+							return;
+						}
+						*file = nullptr;
+						auto request = Data::PostStoryRequest();
+						request.filePath = path;
+						request.video = true;
+						request.caption = text;
+						request.closeFriends = closeFriends;
+						request.postId = postId;
+						if (!controller->session().data().stories().post(request)) {
+							unlock();
+							controller->showToast(tr::lng_stories_busy(tr::now));
+							return;
+						}
+						box->closeBox();
+					});
+			};
+			if (handle->isReady()) {
+				ready();
+			} else if (handle->isFailed()) {
+				fallback();
+			} else {
+				QObject::connect(handle.get(), &Data::MediaHandle::ready, box, ready);
+				QObject::connect(handle.get(), &Data::MediaHandle::failed, box, fallback);
+			}
+		};
+		share->setClickedCallback([=] {
+			if (*busy) {
+				return;
+			}
+			const auto closeFriends = (audience->value() == int(Audience::CloseFriends));
+			if (!CloseFriendsReady(controller, closeFriends)) {
+				return;
+			}
+			const auto text = caption->text().trimmed();
+			if (video && controller->session().data().stories().posting().active) {
+				controller->showToast(tr::lng_stories_busy(tr::now));
+				return;
+			}
+			*busy = true;
+			share->setLoading(true);
+			if (video) {
+				postVideo(text, closeFriends);
+			} else {
+				createCard(text, closeFriends);
+			}
 		});
 		box->addButton(tr::lng_cancel(tr::now), [=] { box->closeBox(); });
 		box->setFocusCallback([=] { caption->setFocusFast(); });

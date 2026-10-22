@@ -8,6 +8,7 @@
 #include "data/data_chats.h"
 #include "data/data_feed.h"
 #include "data/data_session.h"
+#include "data/data_stories.h"
 #include "data/data_users.h"
 #include "history/history_album.h"
 #include "history/history_downloads.h"
@@ -123,23 +124,24 @@ ListWidget::ListWidget(
 	});
 	connect(&data.users(), &Data::Users::changed, this, [this](const QStringList &ids) {
 		// Names in reply headers and shared posts; in a group also above
-		// the bubbles and in the notes.
-		if (_group) {
-			auto changed = false;
-			for (auto &row : _rows) {
-				const auto &message = row.element->data();
-				if (ids.contains(message.sender)
-					|| (message.kind == Data::MessageKind::System
-						&& ids.contains(Data::GroupRules::NoteUser(message.system)))) {
-					row.element->unloadHeavy();
-					row.element->invalidate();
-					row.exact = false;
-					changed = true;
-				}
+		// the bubbles and in the notes; the screenshot notice of
+		// self-destructing media.
+		auto changed = false;
+		for (auto &row : _rows) {
+			const auto &message = row.element->data();
+			const auto system = (message.kind == Data::MessageKind::System);
+			if ((_group
+					&& (ids.contains(message.sender)
+						|| (system && ids.contains(Data::GroupRules::NoteUser(message.system)))))
+				|| (system && ids.contains(Data::SelfDestructScreenshotTaker(message.system)))) {
+				row.element->unloadHeavy();
+				row.element->invalidate();
+				row.exact = false;
+				changed = true;
 			}
-			if (changed) {
-				relayoutKeepingAnchor();
-			}
+		}
+		if (changed) {
+			relayoutKeepingAnchor();
 		}
 		invalidateAll();
 	});
@@ -147,6 +149,23 @@ ListWidget::ListWidget(
 		auto changed = false;
 		for (auto &row : _rows) {
 			if (row.element->data().forwardedPost == id) {
+				row.element->invalidate();
+				row.exact = false;
+				changed = true;
+			}
+		}
+		if (changed) {
+			relayoutKeepingAnchor();
+			update();
+		}
+	});
+	connect(&data.stories(), &Data::Stories::storyGone, this, [this](
+			const QString &storyId) {
+		// Its card turns into «استوری دیگر در دسترس نیست».
+		auto changed = false;
+		for (auto &row : _rows) {
+			const auto &message = row.element->data();
+			if (message.story && message.story->storyId == storyId) {
 				row.element->invalidate();
 				row.exact = false;
 				changed = true;
@@ -303,13 +322,18 @@ void ListWidget::elementPaintUserpic(
 		Painter &p,
 		const QRect &rect,
 		const QString &userId) {
-	if (_userpics) {
-		_userpics->paint(p, rect, userId);
+	if (!_userpics) {
+		// Outside a group only a story sent on shows a face (its owner's).
+		_userpics = std::make_unique<Support::UserpicPainter>(
+			_session,
+			[this](const QString &) { update(); });
 	}
+	_userpics->paint(p, rect, userId);
 }
 
-QString ListWidget::elementServiceText(const Data::Message &message) {
-	return _group ? Support::MessagePreview(_session, message) : QString();
+Support::NoteLine ListWidget::elementServiceText(const Data::Message &message) {
+	// The notes of a group, the screenshot notice of a direct chat.
+	return Support::ServiceNoteLine(_session, message);
 }
 
 // Who is the owner and who an admin (with a title of their own or without):
@@ -578,8 +602,22 @@ bool ListWidget::awayFromBottom() const {
 	} else if (!_debugMode && history().hasMoreAfter) {
 		return true;
 	}
+	// As soon as the reader leaves the end (Telegram): then the list no
+	// longer follows new messages, and the button is the way back.
 	return _scroll
-		&& (_scroll->scrollTopMax() - _scroll->scrollTop() > viewportHeight() / 3);
+		&& (_scroll->scrollTopMax() - _scroll->scrollTop() > kBottomSlack);
+}
+
+qint64 ListWidget::bottomVisibleSeq() const {
+	if (_rows.empty()) {
+		return 0;
+	}
+	for (auto i = rowNear(_visibleBottom - 1); i >= 0; --i) {
+		if (const auto value = _rows[i].element->lastSeq(); value > 0) {
+			return value;
+		}
+	}
+	return 0;
 }
 
 void ListWidget::scrollByPage(bool up) {

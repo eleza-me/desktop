@@ -96,9 +96,9 @@ PeerListBox::~PeerListBox() {
 void PeerListBox::prepare() {
 	setTitle(_controller->title());
 	_search = new Ui::SearchField(this, _controller->searchPlaceholder());
-	auto list = Ui::object_ptr<Ui::ListWidget>(
+	auto list = Ui::object_ptr<Ui::ActionList>(
 		this,
-		static_cast<Ui::ListDelegate*>(this));
+		static_cast<Ui::ActionListDelegate*>(this));
 	_list = setInnerWidget(std::move(list), 0, 0);
 
 	_searchTimer = new QTimer(this);
@@ -120,7 +120,7 @@ void PeerListBox::prepare() {
 			rowChosen(_list->selectedRow());
 		} else if (_filtered.size() == 1) {
 			rowChosen(0);
-		} else if (_controller->multiSelect() && !_selected.isEmpty()) {
+		} else if (_controller->multiSelect() && canSubmit()) {
 			_controller->submit(selectedIds());
 		}
 	});
@@ -129,6 +129,17 @@ void PeerListBox::prepare() {
 	});
 	QObject::connect(_list, &Ui::ListWidget::rowClicked, this, [this](int index) {
 		rowChosen(index);
+	});
+	QObject::connect(_list, &Ui::ActionList::actionClicked, this, [this](
+			int index,
+			int action) {
+		Q_UNUSED(action);
+		if (index >= 0 && index < int(_filtered.size())) {
+			const auto row = shown(index);
+			if (!row.action.isEmpty() && !row.actionBusy) {
+				_controller->rowActionClicked(row);
+			}
+		}
 	});
 	QObject::connect(
 		_list,
@@ -145,6 +156,31 @@ void PeerListBox::prepare() {
 	});
 	_search->field()->rawTextEdit()->installEventFilter(this);
 
+	if (const auto placeholder = _controller->commentPlaceholder();
+			!placeholder.isEmpty()) {
+		_comment = new Ui::InputField(
+			this,
+			st::boxCommentField,
+			Ui::InputField::Mode::MultiLine,
+			placeholder);
+		if (const auto max = _controller->commentMaxLength(); max > 0) {
+			_comment->setMaxLength(max);
+		}
+		_comment->setSubmitSettings(Ui::InputField::SubmitSettings::Enter);
+		QObject::connect(_comment, &Ui::InputField::submitted, this, [this] {
+			if (_controller->multiSelect() && canSubmit()) {
+				_controller->submit(selectedIds());
+			}
+		});
+		QObject::connect(_comment, &Ui::InputField::cancelled, this, [this] {
+			closeBox();
+		});
+		QObject::connect(_comment, &Ui::RpWidget::heightChanged, this, [this] {
+			// The list gives the field the room it grows into.
+			resizeEvent(nullptr);
+		});
+	}
+
 	if (_session) {
 		// Names and pictures that arrive later.
 		QObject::connect(
@@ -156,7 +192,7 @@ void PeerListBox::prepare() {
 
 	if (_controller->multiSelect()) {
 		_submit = addButton(_controller->submitText(), [this] {
-			if (!_selected.isEmpty()) {
+			if (canSubmit()) {
 				_controller->submit(selectedIds());
 			}
 		}, st::defaultRoundButton);
@@ -198,8 +234,21 @@ void PeerListBox::resizeEvent(QResizeEvent *e) {
 	_search->resizeToWidth(width() - padding.left() - padding.right());
 	_search->moveToLeft(padding.left(), padding.top());
 	const auto top = padding.top() + _search->height() + padding.bottom();
-	BoxContent::resizeEvent(e);
-	scrollArea()->setGeometry(0, top, width(), std::max(height() - top, 0));
+	auto bottom = 0;
+	if (_comment) {
+		const auto &margins = st::boxCommentPadding;
+		_comment->resizeToWidth(width() - margins.left() - margins.right());
+		bottom = margins.top() + _comment->height() + margins.bottom();
+		_comment->moveToLeft(margins.left(), height() - bottom + margins.top());
+	}
+	if (e) {
+		BoxContent::resizeEvent(e);
+	}
+	scrollArea()->setGeometry(
+		0,
+		top,
+		width(),
+		std::max(height() - top - bottom, 0));
 }
 
 void PeerListBox::paintEvent(QPaintEvent *e) {
@@ -231,7 +280,29 @@ int PeerListBox::rowHeight(int index, int width) const {
 }
 
 bool PeerListBox::rowClickable(int index) const {
-	return !shown(index).disabled;
+	const auto &row = shown(index);
+	return !row.disabled && !row.note;
+}
+
+QRect PeerListBox::actionRect(const PeerListRow &row, int width) const {
+	if (row.action.isEmpty() || row.note) {
+		return QRect();
+	}
+	const auto buttonWidth = st::peerListActionFont->width(row.action)
+		+ 2 * int(st::peerListActionPadding);
+	const auto height = int(st::peerListActionHeight);
+	return QRect(
+		width - st::peerListPadding.right() - buttonWidth,
+		(int(st::peerListRowHeight) - height) / 2,
+		buttonWidth,
+		height);
+}
+
+int PeerListBox::rowActionAt(int index, QPoint point, int width) const {
+	const auto rect = actionRect(shown(index), width);
+	return (!rect.isEmpty() && style::rtlrect(rect, width).contains(point))
+		? 1
+		: 0;
 }
 
 void PeerListBox::paintRow(
@@ -245,6 +316,17 @@ void PeerListBox::paintRow(
 	const auto height = rect.height();
 	const auto &padding = st::peerListPadding;
 	p.translate(rect.topLeft());
+	if (row.note) {
+		p.setFont(st::peerListStatusFont);
+		p.setPen(st::peerListStatusFg);
+		p.drawTextCentered(
+			QRect(padding.left(), 0, width - padding.left() - padding.right(), height),
+			st::peerListStatusFont->elided(
+				row.title,
+				width - padding.left() - padding.right()));
+		p.translate(-rect.topLeft());
+		return;
+	}
 	if (row.disabled) {
 		p.setOpacity(0.5);
 	}
@@ -285,6 +367,39 @@ void PeerListBox::paintRow(
 			p.drawEllipse(QRectF(circle).adjusted(0.75, 0.75, -0.75, -0.75));
 		}
 		trailing += check + st::peerListUserpicSkip;
+	}
+	if (const auto button = actionRect(row, width); !button.isEmpty()) {
+		const auto over = !row.actionBusy
+			&& (_list->overAction(index) || _list->pressedAction(index));
+		const auto physical = QRectF(style::rtlrect(button, width));
+		if (row.actionBusy) {
+			p.setOpacity(st::peerListActionBusyOpacity);
+		}
+		{
+			auto hq = PainterHighQualityEnabler(p);
+			const auto radius = physical.height() / 2.;
+			if (row.actionFilled) {
+				p.setPen(Qt::NoPen);
+				p.setBrush(over ? st::peerListActionBgOver : st::peerListActionBg);
+				p.drawRoundedRect(physical, radius, radius);
+			} else {
+				p.setPen(QPen(st::peerListActionBorder->c, 1.));
+				p.setBrush(over
+					? QBrush(st::peerListActionOutlineBgOver->c)
+					: QBrush(Qt::NoBrush));
+				p.drawRoundedRect(
+					physical.adjusted(0.5, 0.5, -0.5, -0.5),
+					radius,
+					radius);
+			}
+		}
+		p.setFont(st::peerListActionFont);
+		p.setPen(row.actionFilled
+			? st::peerListActionFg
+			: st::peerListActionOutlineFg);
+		p.drawTextCentered(physical.toRect(), row.action);
+		p.setOpacity(row.disabled ? 0.5 : 1.);
+		trailing += button.width() + st::peerListUserpicSkip;
 	}
 
 	const auto left = padding.left() + size + st::peerListUserpicSkip;
@@ -331,6 +446,7 @@ void PeerListBox::applyFilter() {
 	for (auto i = 0; i != int(_rows.size()); ++i) {
 		const auto &row = _rows[i];
 		if (needle.isEmpty()
+			|| row.note
 			|| row.title.toLower().contains(needle)
 			|| row.subtitle.toLower().contains(needle)) {
 			_filtered.push_back(i);
@@ -355,15 +471,20 @@ void PeerListBox::rowChosen(int index) {
 	const auto limit = _controller->selectionLimit();
 	const auto selected = _selected.contains(row.id);
 	if (!selected && limit > 0 && _selected.size() >= limit) {
+		_controller->selectionLimitReached();
 		return;
 	}
 	setSelected(row.id, !selected);
 }
 
+bool PeerListBox::canSubmit() const {
+	return !_submitLoading
+		&& (!_selected.isEmpty() || _controller->submitWithoutSelection());
+}
+
 void PeerListBox::refreshSubmit() {
 	if (_submit) {
-		_submit->setDisabled(_selected.isEmpty()
-			&& !_controller->submitWithoutSelection());
+		_submit->setDisabled(!canSubmit());
 		_submit->setText(_selected.isEmpty()
 			? _controller->submitText()
 			: (_controller->submitText()
@@ -458,6 +579,21 @@ QStringList PeerListBox::selectedIds() const {
 
 QString PeerListBox::searchQuery() const {
 	return _search ? _search->text().trimmed() : QString();
+}
+
+QString PeerListBox::commentText() const {
+	return _comment ? _comment->text().trimmed() : QString();
+}
+
+void PeerListBox::setSubmitLoading(bool loading) {
+	if (_submitLoading == loading) {
+		return;
+	}
+	_submitLoading = loading;
+	if (_submit) {
+		_submit->setLoading(loading);
+	}
+	refreshSubmit();
 }
 
 Main::Session *PeerListBox::peerListSession() const {

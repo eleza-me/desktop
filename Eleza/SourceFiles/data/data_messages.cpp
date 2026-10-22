@@ -14,12 +14,13 @@
 namespace Data {
 namespace {
 
-// A story reply / reaction that lost its story reference in the cache.
+// A story reply / reaction / share that lost its story reference in the cache.
 [[nodiscard]] bool StoredWithoutStory(const Message &message) {
 	return (message.seq > 0)
 		&& !message.story
 		&& (message.kind == MessageKind::StoryReply
-			|| message.kind == MessageKind::StoryReaction);
+			|| message.kind == MessageKind::StoryReaction
+			|| message.kind == MessageKind::StoryShare);
 }
 
 // The request field that names the chat: a group has routes of its own.
@@ -515,6 +516,10 @@ void Messages::loadPage(
 				if (header.valid()) {
 					page.group = header;
 					page.info = Groups::InfoFor(header);
+					// Read receipts never go back (frames may have crossed the page).
+					if (const auto row = _session->chats().chat(chat)) {
+						page.info.peerReadSeq = std::max(page.info.peerReadSeq, row->peerReadSeq);
+					}
 				}
 			} else {
 				page.info = ChatInfo::FromJson(result.value("chat"_L1).toObject());

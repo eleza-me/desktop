@@ -275,6 +275,39 @@ private Q_SLOTS:
 		QCOMPARE(empty.countHeight(100), 0);
 	}
 
+	void paragraphDirection() {
+		// Each paragraph goes its own way; one without a letter (emoji,
+		// digits) the way of the text around it, whatever the interface.
+		const auto wasRtl = style::RightToLeft();
+		for (const auto rtl : { false, true }) {
+			style::SetRightToLeft(rtl);
+			const auto last = [](const QString &text) {
+				return String(st::defaultTextStyle, text).countLastLine(500).rtl;
+			};
+			QVERIFY(!last(U("Hello world")));
+			QVERIFY(last(U("سلام دنیا")));
+			QVERIFY(!last(U("Hello\n\U0001F389\U0001F389")));
+			QVERIFY(last(U("سلام\n۱۲۳۴")));
+			QVERIFY(!last(U("سلام\nHello\n2024")));
+			// No letter at all: the interface.
+			QCOMPARE(last(U("12 34")), rtl);
+		}
+		style::SetRightToLeft(wasRtl);
+		{
+			// The first strong character decides; an isolated name does not.
+			const auto rtl = [](const QString &text) {
+				return String(st::defaultTextStyle, text).countLastLine(1000).rtl;
+			};
+			QVERIFY(!rtl(QStringLiteral("hello")));
+			QVERIFY(rtl(U("سلام hello")));
+			QVERIFY(!rtl(U("⁨سارا⁩ left the group")));
+			QVERIFY(rtl(U("⁨John⁩ گروه را ترک کرد")));
+			// Nested and unbalanced isolates.
+			QVERIFY(!rtl(U("⁦⁧سارا⁩x⁩ ok")));
+			QVERIFY(!rtl(U("⁩ ok")));
+		}
+	}
+
 	void hitTest() {
 		const auto text = QStringLiteral("hello link world");
 		auto string = String(st::defaultTextStyle, TextWithEntities{ text, {
@@ -354,6 +387,29 @@ private Q_SLOTS:
 		QCOMPARE(
 			emoji.adjustSelection(Selection{ 2, 2 }, SelectType::Letters),
 			(Selection{ 1, 3 }));
+	}
+
+	void isolatesDoNotTurnTheParagraph() {
+		// «<name> · 12 min» in an English interface: the Persian name is
+		// isolated, the line stays left-to-right (and the reverse).
+		const auto isolated = [](const char *name) {
+			return QString(QChar(0x2068)) + U(name) + QChar(0x2069);
+		};
+		for (const auto rtl : { false, true }) {
+			style::SetRightToLeft(rtl);
+			const auto english = String(
+				st::defaultTextStyle,
+				isolated("سارا") + U(" · 12 min"));
+			QVERIFY(!english.countLastLine(400).rtl);
+			const auto persian = String(
+				st::defaultTextStyle,
+				isolated("Sara") + U(" · ۱۲ دقیقه"));
+			QVERIFY(persian.countLastLine(400).rtl);
+			// Nothing strong outside: the interface's direction.
+			const auto only = String(st::defaultTextStyle, isolated("سارا"));
+			QCOMPARE(only.countLastLine(400).rtl, rtl);
+		}
+		style::SetRightToLeft(false);
 	}
 
 	void paints() {

@@ -102,7 +102,7 @@ void Register() {
 			Window::SessionController *controller,
 			const Window::Route &route) {
 		controller->showMainSection(
-			PostFactory(route.id),
+			PostFactory(route.id, route.queryValue(u"root"_s)),
 			{ .tab = Window::Tab::Eli });
 		return true;
 	});

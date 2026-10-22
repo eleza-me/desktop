@@ -1,5 +1,6 @@
 #include "ui/text/text.h"
 
+#include "base/text_direction.h"
 #include "ui/emoji/emoji_index.h"
 #include "ui/emoji/emoji_pack.h"
 #include "ui/rtl.h"
@@ -13,6 +14,7 @@
 #include <algorithm>
 #include <cmath>
 #include <climits>
+#include <optional>
 
 namespace Ui::Text {
 namespace {
@@ -55,16 +57,10 @@ struct LineInfo {
 	int length = 0;
 };
 
-[[nodiscard]] bool DetectRtl(QStringView text) {
-	for (const auto ch : text) {
-		switch (ch.direction()) {
-		case QChar::DirL: return false;
-		case QChar::DirR:
-		case QChar::DirAL: return true;
-		default: break;
-		}
-	}
-	return style::RightToLeft();
+// The direction of the first strong letter outside direction isolates;
+// nullopt without one (digits, emoji, punctuation only).
+[[nodiscard]] std::optional<bool> StrongRtl(QStringView text) {
+	return base::FirstStrongIsRtl(text);
 }
 
 [[nodiscard]] bool IsWordChar(QChar ch) {
@@ -263,6 +259,11 @@ void String::Private::rebuild() {
 	}
 	auto from = 0;
 	const auto size = int(text.size());
+	// A paragraph without a letter (a line of emoji or digits) goes the way
+	// of the text around it: an English caption stays left to right in the
+	// Persian interface. The interface decides only for a text without any.
+	const auto whole = StrongRtl(layoutText);
+	auto previous = std::optional<bool>();
 	while (from <= size) {
 		auto till = int(text.indexOf(QLatin1Char('\n'), from));
 		if (till < 0) {
@@ -271,8 +272,18 @@ void String::Private::rebuild() {
 		auto block = Block();
 		block.offset = from;
 		block.length = till - from;
+		// (The layout's text: an emoji there is neutral, a flag does not
+		// count as a left-to-right letter.)
 		const auto view = QStringView(layoutText).mid(from, till - from);
-		block.rtl = DetectRtl(view);
+		const auto strong = StrongRtl(view);
+		block.rtl = strong
+			? *strong
+			: previous
+			? *previous
+			: whole.value_or(style::RightToLeft());
+		if (strong) {
+			previous = strong;
+		}
 		if (block.length > 0) {
 			block.layout = std::make_unique<QTextLayout>(
 				view.toString(),

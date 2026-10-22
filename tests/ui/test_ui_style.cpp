@@ -219,6 +219,26 @@ private Q_SLOTS:
 		field->setText(QStringLiteral("abcdefgh"));
 		QCOMPARE(field->text(), QStringLiteral("abcde"));
 		QVERIFY(changes >= 1);
+		// What does not fit is cut from the insertion, not from the end.
+		field->setText(QStringLiteral("abc"));
+		const auto edit = field->findChild<QTextEdit*>();
+		QVERIFY(edit != nullptr);
+		auto caret = edit->textCursor();
+		caret.setPosition(1);
+		edit->setTextCursor(caret);
+		field->insertText(QStringLiteral("XYZW"));
+		QCOMPARE(field->text(), QStringLiteral("aXYbc"));
+		// The limit is in code points and a surrogate pair is never split.
+		const auto smile = QString::fromUcs4(U"\U0001F600");
+		field->setText(smile + smile + smile + smile + smile + smile);
+		QCOMPARE(field->text(), smile + smile + smile + smile + smile);
+		field->setText(QStringLiteral("abcd"));
+		field->setCursorToEnd();
+		field->insertText(smile + smile);
+		QCOMPARE(field->text(), QStringLiteral("abcd") + smile);
+		field->setMaxLength(2);
+		QCOMPARE(field->text(), QStringLiteral("ab"));
+		field->setMaxLength(5);
 
 		const auto code = new Ui::CodeInput(&window, 5);
 		auto finished = QString();

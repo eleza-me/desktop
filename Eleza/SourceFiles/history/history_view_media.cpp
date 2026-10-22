@@ -5,15 +5,18 @@
 #include "data/data_calls.h"
 
 #include "base/platform_file.h"
+#include "base/unixtime.h"
 #include "data/data_feed.h"
 #include "data/data_image_decode.h"
 #include "data/data_session.h"
 #include "data/data_social_types.h"
 #include "data/data_stickers.h"
+#include "data/data_stories.h"
 #include "data/data_users.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
 #include "main/main_session.h"
+#include "support/chat_text.h"
 #include "support/media_image.h"
 #include "support/sticker_player.h"
 #include "ui/effects/radial_animation.h"
@@ -30,6 +33,7 @@
 #include <QtCore/QThreadPool>
 #include <QtGui/QPainterPath>
 
+#include <algorithm>
 #include <cmath>
 
 namespace History::View {
@@ -1811,6 +1815,300 @@ private:
 
 };
 
+// ---- self-destructing media: this app is never sent the picture, only
+// what it is and how far it got. A round badge («۱» for view once, a timer
+// for the seconds) with a countdown ring once it is open, the label and the
+// state; when it expires on screen the card crumbles into dust first.
+
+class SelfDestructMedia final : public Media {
+public:
+	SelfDestructMedia(Delegate *delegate, Element *parent)
+	: Media(delegate, parent)
+	, _alive(std::make_shared<bool>(true)) {
+		_last = look();
+		if (_last.sd.opened()) {
+			// Read from history: the server's clock is all there is.
+			_deadline = _last.sd.destructAt;
+		}
+	}
+	~SelfDestructMedia() override {
+		*_alive = false;
+	}
+
+	QSize countSize(int maxWidth, bool hasCaption) override {
+		Q_UNUSED(hasCaption);
+		const auto now = base::unixtime::nowMs();
+		const auto current = look();
+		const auto width = st::historyFileIconSize
+			+ st::historyFileSkip
+			+ std::max({
+				st::historyFileNameFont->width(Title(current)),
+				st::historyFileSizeFont->width(subtitle(current, now)) + 50,
+				120,
+			});
+		return QSize(
+			std::clamp(width, 200, std::max(maxWidth, 200)),
+			st::historyFileIconSize);
+	}
+
+	bool hasMetaCorner() const override {
+		return true;
+	}
+
+	HitResult hitTest(QPoint point, const QRect &rect) const override {
+		auto result = HitResult();
+		result.zone = rect.contains(point) ? Zone::Media : Zone::None;
+		return result;
+	}
+
+	void dataChanged() override {
+		const auto was = _last;
+		const auto now = look();
+		const auto ms = base::unixtime::nowMs();
+		const auto onScreen = (ms - _lastPaint) < 1000;
+		if (now.sd.opened()) {
+			const auto window = now.sd.destructAt - now.sd.openedAt;
+			if (!was.sd.opened() && onScreen && window > 0) {
+				// Shown on the recipient's phone just now: the window counts
+				// from here, whatever this computer's clock says.
+				_deadline = ms + window;
+			} else if (!was.sd.opened() || was.sd.destructAt != now.sd.destructAt) {
+				_deadline = now.sd.destructAt;
+			}
+		}
+		if (now.sd.expired()
+			&& !was.sd.expired()
+			&& onScreen
+			&& !Ui::AnimationsDisabled()) {
+			_dissolveFrom = was;
+			_dissolveStart = ms;
+			_dissolveImage = QImage();
+		}
+		_last = now;
+	}
+
+	void paint(Painter &p, const QRect &rect, const MediaPaint &context) override {
+		const auto now = base::unixtime::nowMs();
+		_lastPaint = now;
+		if (_dissolveFrom) {
+			const auto progress = double(now - _dissolveStart) / kDissolveMs;
+			if (progress < 1.) {
+				paintDissolve(p, rect, context, progress);
+				scheduleTick(16);
+				return;
+			}
+			_dissolveFrom = std::nullopt;
+			_dissolveImage = QImage();
+		}
+		paintLook(p, rect, context, look(), now);
+		if (look().sd.opened() && _deadline > now) {
+			scheduleTick(250);
+		}
+	}
+
+private:
+	struct Look {
+		Data::SelfDestruct sd;
+		Data::MessageKind kind = Data::MessageKind::Text;
+		bool mine = false;
+	};
+
+	static constexpr auto kDissolveMs = 1100.;
+
+	[[nodiscard]] Look look() const {
+		const auto &message = data();
+		auto result = Look();
+		result.sd = message.selfDestruct.value_or(Data::SelfDestruct());
+		result.kind = message.kind;
+		result.mine = message.mine;
+		return result;
+	}
+
+	[[nodiscard]] static QString Title(const Look &look) {
+		auto message = Data::Message();
+		message.kind = look.kind;
+		message.selfDestruct = look.sd;
+		return Support::SelfDestructLabel(message);
+	}
+
+	[[nodiscard]] QString subtitle(const Look &look, qint64 now) const {
+		auto message = Data::Message();
+		message.selfDestruct = look.sd;
+		message.mine = look.mine;
+		switch (SelfDestructLineFor(message)) {
+		case SelfDestructLine::OnPhone:
+			return tr::lng_history_sd_on_phone(tr::now);
+		case SelfDestructLine::NotOpened:
+			return tr::lng_history_sd_unopened(tr::now);
+		case SelfDestructLine::Opened: {
+			const auto left = (_deadline - now + 999) / 1000;
+			return (left > 0)
+				? tr::lng_history_sd_opened_left(
+					tr::now,
+					lt_time,
+					Lang::Duration(int(std::min(left, qint64(86400)))))
+				: tr::lng_history_sd_opened(tr::now);
+		}
+		case SelfDestructLine::Expired:
+			break;
+		}
+		return look.sd.viewOnce()
+			? tr::lng_history_sd_view_once(tr::now)
+			: Support::SelfDestructTimerText(look.sd.seconds);
+	}
+
+	// The part of its window that is left, 0..1 (1 before it opens).
+	[[nodiscard]] double left(const Look &look, qint64 now) const {
+		if (!look.sd.opened()) {
+			return look.sd.expired() ? 0. : 1.;
+		}
+		const auto window = look.sd.destructAt - look.sd.openedAt;
+		if (window <= 0 || _deadline <= 0) {
+			return 1.;
+		}
+		return std::clamp(double(_deadline - now) / window, 0., 1.);
+	}
+
+	void paintLook(
+			QPainter &p,
+			const QRect &rect,
+			const MediaPaint &context,
+			const Look &look,
+			qint64 now) const {
+		const auto &colors = *context.colors;
+		const auto rtl = style::RightToLeft();
+		const auto size = st::historyFileIconSize;
+		const auto badge = QRect(
+			rtl ? (rect.right() + 1 - size) : rect.x(),
+			rect.y(),
+			size,
+			size);
+		const auto accent = context.outgoing ? colors.accentOut : colors.accentIn;
+		const auto meta = context.outgoing ? colors.metaOut : colors.metaIn;
+		const auto expired = look.sd.expired();
+		{
+			auto hq = PainterHighQualityEnabler(p);
+			p.setPen(Qt::NoPen);
+			auto fill = expired ? meta : accent;
+			if (expired) {
+				fill.setAlphaF(fill.alphaF() * 0.5);
+			}
+			p.setBrush(fill);
+			p.drawEllipse(badge);
+			if (look.sd.opened()) {
+				// What is left of its time, shrinking.
+				auto pen = QPen(st::historySdRingFg->c, st::historySdRingWidth);
+				pen.setCapStyle(Qt::RoundCap);
+				p.setPen(pen);
+				p.setBrush(Qt::NoBrush);
+				const auto inset = st::historySdRingInset;
+				const auto ring = QRectF(badge).adjusted(inset, inset, -inset, -inset);
+				const auto span = int(std::round(left(look, now) * 360 * 16));
+				p.drawArc(ring, 90 * 16, span);
+			}
+		}
+		if (look.sd.viewOnce()) {
+			p.setPen(st::historySdBadgeFg);
+			p.setFont(st::historySdOnceFont);
+			p.drawText(badge, Qt::AlignCenter, Lang::Num(1));
+		} else {
+			st::historySdTimerIcon.paintInCenter(p, badge);
+		}
+		const auto textLeft = rtl ? rect.x() : (badge.right() + 1 + st::historyFileSkip);
+		const auto textWidth = rect.width() - size - st::historyFileSkip;
+		p.setPen(context.outgoing ? colors.textOut : colors.textIn);
+		DrawLine(p, st::historyFileNameFont, Title(look), textLeft, rect.y() + 1, textWidth);
+		p.setPen(meta);
+		DrawLine(
+			p,
+			st::historyFileSizeFont,
+			subtitle(look, now),
+			textLeft,
+			rect.y() + 1 + st::historyFileNameFont->height + 2,
+			textWidth);
+	}
+
+	// The card as it was, cut into grains that fly off one after another
+	// (a sweep from the start of the line), while the expired card fades in.
+	void paintDissolve(
+			Painter &p,
+			const QRect &rect,
+			const MediaPaint &context,
+			double progress) {
+		const auto ratio = p.device()->devicePixelRatioF();
+		if (_dissolveImage.isNull()) {
+			_dissolveImage = QImage(
+				rect.size() * ratio,
+				QImage::Format_ARGB32_Premultiplied);
+			_dissolveImage.setDevicePixelRatio(ratio);
+			_dissolveImage.fill(Qt::transparent);
+			auto q = QPainter(&_dissolveImage);
+			q.translate(-rect.topLeft());
+			paintLook(q, rect, context, *_dissolveFrom, _dissolveStart);
+		}
+		const auto appear = std::clamp((progress - 0.55) / 0.45, 0., 1.);
+		if (appear > 0.) {
+			p.setOpacity(appear);
+			paintLook(p, rect, context, look(), base::unixtime::nowMs());
+			p.setOpacity(1.);
+		}
+		const auto grain = int(st::historySdGrain);
+		const auto columns = (rect.width() + grain - 1) / grain;
+		const auto rows = (rect.height() + grain - 1) / grain;
+		const auto rtl = style::RightToLeft();
+		for (auto column = 0; column != columns; ++column) {
+			const auto sweep = double(rtl ? (columns - 1 - column) : column) / std::max(columns, 1);
+			for (auto row = 0; row != rows; ++row) {
+				// A grain of its own: where it goes and when it starts.
+				auto seed = quint32(column * 7919 + row * 104729 + 17);
+				seed ^= seed << 13;
+				seed ^= seed >> 17;
+				seed ^= seed << 5;
+				const auto random = (seed % 1000) / 1000.;
+				const auto delay = sweep * 0.5 + random * 0.1;
+				const auto local = std::clamp((progress - delay) / 0.4, 0., 1.);
+				if (local >= 1.) {
+					continue;
+				}
+				const auto eased = local * local;
+				const auto dx = (random - 0.35) * st::historySdGrainSpread * eased;
+				const auto dy = -(0.5 + random) * st::historySdGrainSpread * eased;
+				const auto source = QRectF(column * grain, row * grain, grain, grain);
+				p.setOpacity(1. - local);
+				p.drawImage(
+					source.translated(QPointF(rect.topLeft()) + QPointF(dx, dy)),
+					_dissolveImage,
+					QRectF(source.topLeft() * ratio, source.size() * ratio));
+			}
+		}
+		p.setOpacity(1.);
+	}
+
+	void scheduleTick(int ms) {
+		if (_tickScheduled) {
+			return;
+		}
+		_tickScheduled = true;
+		const auto alive = _alive;
+		Ui::CallDelayed(ms, delegate()->elementGuard(), [=] {
+			if (*alive) {
+				_tickScheduled = false;
+				repaint();
+			}
+		});
+	}
+
+	std::shared_ptr<bool> _alive;
+	Look _last;
+	qint64 _deadline = 0;  // this computer's ms at which its time is up
+	qint64 _lastPaint = 0;
+	bool _tickScheduled = false;
+	std::optional<Look> _dissolveFrom;
+	qint64 _dissolveStart = 0;
+	QImage _dissolveImage;
+
+};
+
 } // namespace
 
 HitResult Media::hitTest(QPoint point, const QRect &rect) const {
@@ -1835,7 +2133,7 @@ void Media::watch(const std::shared_ptr<Ui::ImageSource> &source) {
 		[=] { delegate->elementRepaint(parent); });
 }
 
-// ---- a reply / a reaction to a story
+// ---- a reply / a reaction to a story, a story sent on
 
 class StoryMedia final : public Media {
 public:
@@ -1845,14 +2143,11 @@ public:
 
 	QSize countSize(int maxWidth, bool hasCaption) override {
 		Q_UNUSED(hasCaption);
-		const auto width = std::min(int(st::historyStoryWidth), maxWidth);
-		const auto &padding = st::historyPostPadding;
-		const auto &story = data().story;
+		_share = (data().kind == Data::MessageKind::StoryShare);
 		_reaction = (data().kind == Data::MessageKind::StoryReaction);
+		const auto &story = data().story;
 		_emoji = (story && _reaction) ? story->emoji : QString();
-		_gone = !story
-			|| story->expired(QDateTime::currentSecsSinceEpoch())
-			|| (_source && _source->failed());
+		_gone = computeGone();
 		if (!_gone && !_source) {
 			_source = Support::MakeImageSource(
 				delegate()->elementSession(),
@@ -1860,6 +2155,25 @@ public:
 				Data::MediaVariant::Thumb);
 			watch(_source);
 		}
+		const auto &padding = st::historyPostPadding;
+		if (_share) {
+			// A gone story keeps its line whole: the card grows for it.
+			const auto natural = _gone
+				? (st::historyPostTextStyle.font->width(tr::lng_stories_chat_gone(tr::now))
+					+ padding.left()
+					+ padding.right())
+				: 0;
+			const auto width = std::min(
+				std::max(int(st::historyStoryShareWidth), natural),
+				maxWidth);
+			const auto inner = width - padding.left() - padding.right();
+			const auto header = st::historyStoryShareUserpic + st::historyStoryShareSkip;
+			const auto body = _gone
+				? (st::historyPostTextStyle.font->height + 2)
+				: thumbHeight(inner);
+			return QSize(width, padding.top() + header + body + padding.bottom());
+		}
+		const auto width = std::min(int(st::historyStoryWidth), maxWidth);
 		const auto thumb = _gone ? QSize() : st::historyStoryThumb;
 		const auto line = st::historyPostLabelFont->height + 3;
 		const auto emoji = _emoji.isEmpty() ? 0 : st::historyStoryEmojiFont->height;
@@ -1876,9 +2190,7 @@ public:
 	}
 
 	void dataChanged() override {
-		if (_source && _source->failed()) {
-			_gone = true;
-		}
+		checkThumbFailed();
 	}
 
 	void paint(Painter &p, const QRect &rect, const MediaPaint &context) override {
@@ -1886,10 +2198,7 @@ public:
 		const auto rtl = style::RightToLeft();
 		const auto accent = context.outgoing ? colors.accentOut : colors.accentIn;
 		const auto &padding = st::historyPostPadding;
-		if (!_gone && _source && _source->failed()) {
-			// 404: deleted or no longer mine to see.
-			_gone = true;
-		}
+		checkThumbFailed();
 		{
 			auto hq = PainterHighQualityEnabler(p);
 			auto path = QPainterPath();
@@ -1899,16 +2208,22 @@ public:
 				bg.setAlphaF(std::min(bg.alphaF() * 1.6f, 1.f));
 			}
 			p.fillPath(path, bg);
-			p.save();
-			p.setClipPath(path);
-			p.fillRect(
-				QRect(
-					rtl ? (rect.right() + 1 - st::historyReplyBar) : rect.x(),
-					rect.y(),
-					st::historyReplyBar,
-					rect.height()),
-				accent);
-			p.restore();
+			if (!_share) {
+				p.save();
+				p.setClipPath(path);
+				p.fillRect(
+					QRect(
+						rtl ? (rect.right() + 1 - st::historyReplyBar) : rect.x(),
+						rect.y(),
+						st::historyReplyBar,
+						rect.height()),
+					accent);
+				p.restore();
+			}
+		}
+		if (_share) {
+			paintShare(p, rect, context, accent);
+			return;
 		}
 		const auto innerLeft = rect.x()
 			+ (rtl ? padding.right() : (padding.left() + st::historyReplyBar));
@@ -1953,6 +2268,57 @@ public:
 			rect.y() + padding.top(),
 			thumb.width(),
 			thumb.height());
+		paintThumb(p, box);
+	}
+
+	HitResult hitTest(QPoint point, const QRect &rect) const override {
+		auto result = HitResult();
+		if (rect.contains(point)) {
+			result.zone = _gone ? Zone::Bubble : Zone::Story;
+		}
+		return result;
+	}
+
+private:
+	[[nodiscard]] bool computeGone() const {
+		const auto &story = data().story;
+		if (!story || (_source && _source->failed())) {
+			return true;
+		}
+		const auto session = delegate()->elementSession();
+		return story->gone(QDateTime::currentSecsSinceEpoch())
+			|| (session && session->data().stories().isGone(story->storyId));
+	}
+
+	// The thumbnail answered 404: deleted, expired or not mine to see. The
+	// chat relayouts every message of that story (Data::Stories::storyGone).
+	void checkThumbFailed() {
+		if (_gone || !_source || !_source->failed()) {
+			return;
+		}
+		_gone = true;
+		const auto session = delegate()->elementSession();
+		const auto &story = data().story;
+		if (session && story) {
+			const auto id = story->storyId;
+			const auto guard = QPointer<QObject>(delegate()->elementGuard());
+			// Never from inside a paint: the signal changes the layout.
+			Ui::PostponeCall(guard, [=] {
+				if (guard) {
+					session->data().stories().markGone(id);
+				}
+			});
+		}
+		parent()->invalidate();
+		delegate()->elementRelayout(parent());
+	}
+
+	[[nodiscard]] static int thumbHeight(int width) {
+		// A story is 9:16; the card keeps a sane height.
+		return std::min(int(std::lround(width * 16. / 9.)), int(st::historyStoryShareThumbMax));
+	}
+
+	void paintThumb(Painter &p, const QRect &box) {
 		const auto ratio = delegate()->elementRatio();
 		auto image = _source ? _source->request(box.size() * ratio) : QImage();
 		const auto radius = st::historyPostThumbRadius;
@@ -1967,25 +2333,100 @@ public:
 		}
 	}
 
-	HitResult hitTest(QPoint point, const QRect &rect) const override {
-		auto result = HitResult();
-		if (rect.contains(point)) {
-			result.zone = _gone ? Zone::Bubble : Zone::Story;
+	// The owner's face and «استوری ‹name›» over the story's thumbnail; the
+	// sender's comment is the bubble's text under the card.
+	void paintShare(
+			Painter &p,
+			const QRect &rect,
+			const MediaPaint &context,
+			const QColor &accent) {
+		const auto &colors = *context.colors;
+		const auto &padding = st::historyPostPadding;
+		const auto inner = rect.marginsRemoved(padding);
+		const auto owner = data().story ? data().story->owner : QString();
+		const auto pic = int(st::historyStoryShareUserpic);
+		const auto userpic = style::rtlrect(
+			inner.x() - rect.x(),
+			inner.y(),
+			pic,
+			pic,
+			rect.width()).translated(rect.x(), 0);
+		if (!owner.isEmpty()) {
+			delegate()->elementPaintUserpic(p, userpic, owner);
 		}
-		return result;
+		const auto textLeft = inner.x() + (style::RightToLeft() ? 0 : (pic + 8));
+		const auto textWidth = inner.width() - pic - 8;
+		p.setPen(accent);
+		DrawLine(
+			p,
+			st::historyPostLabelFont,
+			ownerTitle(owner),
+			textLeft,
+			inner.y() + (pic - st::historyPostLabelFont->height) / 2,
+			textWidth);
+		const auto top = inner.y() + pic + st::historyStoryShareSkip;
+		if (_gone) {
+			p.setPen(context.outgoing ? colors.metaOut : colors.metaIn);
+			DrawLine(
+				p,
+				st::historyPostTextStyle.font,
+				tr::lng_stories_chat_gone(tr::now),
+				inner.x(),
+				top,
+				inner.width());
+			return;
+		}
+		const auto box = QRect(inner.x(), top, inner.width(), thumbHeight(inner.width()));
+		paintThumb(p, box);
+		if (data().story && data().story->kind == u"video") {
+			const auto size = int(st::historyStoryShareVideoSize);
+			const auto center = QRect(
+				box.x() + (box.width() - size) / 2,
+				box.y() + (box.height() - size) / 2,
+				size,
+				size);
+			auto hq = PainterHighQualityEnabler(p);
+			p.setPen(Qt::NoPen);
+			p.setBrush(st::historyMetaOverBg);
+			p.drawEllipse(center);
+			st::historyStoryShareVideoIcon.paintInCenter(p, center);
+		}
 	}
 
-private:
+	[[nodiscard]] QString ownerTitle(const QString &owner) const {
+		const auto session = delegate()->elementSession();
+		if (!session || owner.isEmpty()) {
+			return tr::lng_stories_chat_share(tr::now);
+		}
+		// Fetched once when unknown; the chat repaints when it arrives.
+		const auto user = session->data().users().get(owner);
+		const auto name = user.deleted
+			? tr::lng_deleted_account(tr::now)
+			: !user.displayName.isEmpty()
+			? user.displayName
+			: !user.handle.isEmpty()
+			? Lang::Handle(user.handle)
+			: QString();
+		return name.isEmpty()
+			? tr::lng_stories_chat_share(tr::now)
+			: tr::lng_stories_chat_share_of(tr::now, lt_name, Lang::Isolated(name));
+	}
+
 	std::shared_ptr<Ui::ImageSource> _source;
 	PreparedImage _prepared;
 	QString _emoji;
 	bool _reaction = false;
+	bool _share = false;
 	bool _gone = false;
 
 };
 
 std::unique_ptr<Media> CreateMedia(Delegate *delegate, Element *parent) {
 	const auto &message = parent->data();
+	if (message.selfDestruct && !message.deleted) {
+		// Whatever its kind says: the card, never the picture.
+		return std::make_unique<SelfDestructMedia>(delegate, parent);
+	}
 	switch (message.kind) {
 	case Data::MessageKind::Photo:
 	case Data::MessageKind::Video:
@@ -2009,6 +2450,7 @@ std::unique_ptr<Media> CreateMedia(Delegate *delegate, Element *parent) {
 		return std::make_unique<CallMedia>(delegate, parent);
 	case Data::MessageKind::StoryReply:
 	case Data::MessageKind::StoryReaction:
+	case Data::MessageKind::StoryShare:
 		return std::make_unique<StoryMedia>(delegate, parent);
 	case Data::MessageKind::System:
 		if (message.call) {

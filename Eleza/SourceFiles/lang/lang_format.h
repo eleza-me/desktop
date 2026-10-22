@@ -17,6 +17,9 @@ namespace Lang {
 // Digits of the current language.
 [[nodiscard]] QString Num(const QString &text);
 [[nodiscard]] QString Num(qint64 value);
+// A number with a fraction: digits and the decimal separator of the current
+// language ("1.5" -> "۱٫۵").
+[[nodiscard]] QString Decimal(const QString &latin);
 
 // ---- the Jalali calendar
 struct JalaliDate {
@@ -85,7 +88,8 @@ struct JalaliDate {
 [[nodiscard]] QString E164(
 	const QString &input,
 	const QString &defaultCode = QStringLiteral("98"));
-// Direction by the first strong character (the interface direction if there is none).
+// Direction by the first strong character outside direction isolates (UAX #9 P2;
+// the interface direction if there is none).
 [[nodiscard]] bool IsRtlText(const QString &text);
 
 // ---- direction isolates

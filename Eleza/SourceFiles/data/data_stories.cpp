@@ -26,11 +26,13 @@ constexpr auto kCreateRetryMs = 1000;
 } // namespace
 
 QJsonObject CreateStory::toJson() const {
+	// Both: a photo / video made from the post, carrying its card.
 	auto result = QJsonObject();
+	if (!mediaId.isEmpty() || postId.isEmpty()) {
+		result.insert(u"media_id"_s, mediaId);
+	}
 	if (!postId.isEmpty()) {
 		result.insert(u"post_id"_s, postId);
-	} else {
-		result.insert(u"media_id"_s, mediaId);
 	}
 	Json::Put(result, "caption"_L1, caption.trimmed());
 	result.insert(
@@ -575,6 +577,138 @@ void Stories::reply(
 		.send();
 }
 
+// ---- sending a story to people
+
+int Stories::shareCap() const {
+	const auto config = _session->clientConfig();
+	return StoryShareCap(config
+		? config->integer(u"stories.share_max_recipients"_s, kStoryShareMaxRecipients)
+		: kStoryShareMaxRecipients);
+}
+
+void Stories::share(
+		const QString &storyId,
+		const QStringList &recipients,
+		const QString &text,
+		base::Guard guard,
+		Fn<void(const StoryShareResult &)> done,
+		FailCallback fail) {
+	_session->transport().rpc(u"stories.share"_s)
+		.body(StoryShareBody(storyId, recipients, text))
+		.guard(this)
+		.done([=, this](const QJsonObject &json) {
+			const auto result = StoryShareResult::FromJson(json);
+			if (!result.sent.isEmpty()) {
+				patchStory(storyId, [&](Story &story) {
+					if (story.shareCount >= 0) {
+						story.shareCount += result.sent.size();
+					}
+				});
+			}
+			if (done && guard.alive()) {
+				done(result);
+			}
+		})
+		.fail([=, this](const Api::Error &error) {
+			if (error.code == u"story.not_found") {
+				markGone(storyId);
+			} else if (error.code == u"story.share_not_allowed") {
+				patchStory(storyId, [](Story &story) {
+					story.canShare = false;
+				});
+			}
+			if (fail && guard.alive()) {
+				fail(error);
+			}
+		})
+		.send();
+}
+
+// ---- one story by id
+
+void Stories::get(
+		const QString &storyId,
+		base::Guard guard,
+		Fn<void(const User &owner, const Story &story)> done,
+		FailCallback fail) {
+	_session->transport().rpc(u"stories.get"_s)
+		.body({ { u"story"_s, storyId } })
+		.guard(this)
+		.done([=, this](const QJsonObject &json) {
+			auto owner = json.value("user"_L1).isObject()
+				? User::FromJson(json.value("user"_L1).toObject())
+				: User();
+			auto story = Story::FromJson(json.value("story"_L1).toObject());
+			if (!story.valid() || owner.id.isEmpty()) {
+				if (fail && guard.alive()) {
+					fail(Api::Error::Local(404, u"story.not_found"_s, QString()));
+				}
+				return;
+			}
+			story.owner = owner.id;
+			if (!owner.displayName.isEmpty()) {
+				_session->users().seed(owner);
+			}
+			// The owner's loaded stories get the fresh copy; a list that was
+			// never read stays unread (one story is not all of them).
+			if (const auto i = _users.find(owner.id); i != _users.end()) {
+				auto list = i->second.data;
+				auto found = false;
+				for (auto &existing : list.stories) {
+					if (existing.id == story.id) {
+						existing = story;
+						found = true;
+					}
+				}
+				if (!found) {
+					list.stories.push_back(story);
+					std::stable_sort(list.stories.begin(), list.stories.end(), [](
+							const Story &a,
+							const Story &b) {
+						return a.createdAt < b.createdAt;
+					});
+				}
+				applyUserStories(list);
+			}
+			if (done && guard.alive()) {
+				done(owner, story);
+			}
+		})
+		.fail([=, this](const Api::Error &error) {
+			if (error.notFound()) {
+				markGone(storyId);
+				removeStory(storyId);
+			}
+			if (fail && guard.alive()) {
+				fail(error);
+			}
+		})
+		.send();
+}
+
+void Stories::markGone(const QString &storyId) {
+	if (!storyId.isEmpty() && !_gone.contains(storyId)) {
+		_gone.insert(storyId);
+		Q_EMIT storyGone(storyId);
+	}
+}
+
+void Stories::removeStory(const QString &storyId) {
+	for (auto &[userId, entry] : _users) {
+		const auto &stories = entry.data.stories;
+		const auto i = std::find_if(stories.begin(), stories.end(), [&](
+				const Story &story) {
+			return story.id == storyId;
+		});
+		if (i != stories.end()) {
+			auto list = entry.data;
+			list.stories.erase(list.stories.begin() + (i - stories.begin()));
+			applyUserStories(list);
+			return;
+		}
+	}
+}
+
 // ---- my stories
 
 void Stories::viewers(
@@ -598,6 +732,9 @@ void Stories::viewers(
 			if (cursor.isEmpty()) {
 				patchStory(storyId, [&](Story &story) {
 					story.viewerCount = page.total;
+					if (page.shares >= 0) {
+						story.shareCount = page.shares;
+					}
 				});
 			}
 			if (done && guard.alive()) {
@@ -764,6 +901,7 @@ void Stories::startPosting() {
 		Q_EMIT postingChanged();
 		auto request = CreateStory();
 		request.mediaId = mediaId;
+		request.postId = _postingRequest.postId;
 		request.caption = _postingRequest.caption;
 		request.closeFriends = _postingRequest.closeFriends;
 		createAttempt(request.toJson(), _postingKey, 0, this, [=, this](
@@ -987,8 +1125,25 @@ void Stories::updateSettings(
 		base::Guard guard,
 		Fn<void(const StorySettings &)> done,
 		FailCallback fail) {
+	settingsUpdate({ { u"replies"_s, replies } }, guard, done, fail);
+}
+
+void Stories::setAllowSharing(
+		bool allow,
+		base::Guard guard,
+		Fn<void(const StorySettings &)> done,
+		FailCallback fail) {
+	// The field has explicit presence on the socket: a false is sent too.
+	settingsUpdate({ { u"allow_sharing"_s, allow } }, guard, done, fail);
+}
+
+void Stories::settingsUpdate(
+		const QJsonObject &body,
+		base::Guard guard,
+		Fn<void(const StorySettings &)> done,
+		FailCallback fail) {
 	_session->transport().rpc(u"stories.settings_update"_s)
-		.body({ { u"replies"_s, replies } })
+		.body(body)
 		.guard(this)
 		.done([=, this](const QJsonObject &result) {
 			_settings = StorySettings::FromJson(result);

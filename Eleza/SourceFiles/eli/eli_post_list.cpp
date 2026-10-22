@@ -33,6 +33,7 @@ constexpr auto kSkeletonRows = 4;
 constexpr auto kTooltipDelay = 700;
 constexpr auto kHighlightDuration = 1800;
 constexpr auto kMinuteMs = 60 * 1000;
+constexpr auto kMaxIdlePages = 5;
 
 [[nodiscard]] bool SameLetter(const QKeyEvent *e, int key, QStringView persian) {
 	if (e->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)) {
@@ -56,6 +57,11 @@ ListPage ListPage::From(const Data::PostsPage &page) {
 	for (const auto &id : page.posts) {
 		auto item = Data::FeedItem();
 		item.postId = id;
+		if (const auto actor = page.repostedBy.value(id); !actor.isEmpty()) {
+			// «↻ name reposted», as in the following feed.
+			item.reason = u"repost"_s;
+			item.actor = actor;
+		}
 		result.items.push_back(item);
 	}
 	result.next = page.nextBefore.isEmpty() ? page.nextCursor : page.nextBefore;
@@ -228,7 +234,7 @@ void PostList::load(bool reset) {
 		}
 		_loading = false;
 		_reloading = false;
-		applyPage(page, reset);
+		applyPage(page, reset, cursor);
 		Q_EMIT loadingChanged();
 	}, [=, this](const Api::Error &error) {
 		if (generation != _generation) {
@@ -270,7 +276,10 @@ void PostList::appendRow(const Data::FeedItem &item) {
 	_rows.push_back(std::move(row));
 }
 
-void PostList::applyPage(const ListPage &page, bool reset) {
+void PostList::applyPage(
+		const ListPage &page,
+		bool reset,
+		const QString &requested) {
 	const auto first = reset;
 	if (reset) {
 		_rows.clear();
@@ -296,8 +305,13 @@ void PostList::applyPage(const ListPage &page, bool reset) {
 	}
 	_freshness.noteFresh(fresh, Ui::Now());
 	_next = page.next;
+	// A page can come back short, even empty, while the server has more
+	// (posts it does not show me): go on, unless it names the same page
+	// again or nothing turned up for a while.
+	_idlePages = added ? 0 : ((reset ? 0 : _idlePages) + 1);
 	_done = _next.isEmpty()
-		|| page.items.isEmpty()
+		|| (page.items.isEmpty() && _next == requested)
+		|| (_idlePages > kMaxIdlePages)
 		|| (_descriptor.cap > 0 && int(_rows.size()) >= _descriptor.cap);
 	_loadedOnce = true;
 	_failedFirst = false;

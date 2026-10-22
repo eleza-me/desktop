@@ -218,6 +218,18 @@ PostsPage Feed::parsePosts(const QJsonObject &json) {
 			_session->users().request(found->author);
 		}
 	}
+	for (const auto &value : json.value("posts"_L1).toArray()) {
+		const auto object = value.toObject();
+		if (Json::String(object, "reason"_L1) != u"repost") {
+			continue;
+		}
+		const auto id = Json::String(object, "id"_L1);
+		const auto actor = Json::String(object, "actor"_L1);
+		if (!id.isEmpty() && !actor.isEmpty()) {
+			page.repostedBy.insert(id, actor);
+			_session->users().request(actor);
+		}
+	}
 	page.nextBefore = Json::String(json, "next_before"_L1);
 	page.nextCursor = Json::String(json, "next_cursor"_L1);
 	return page;
@@ -925,6 +937,28 @@ void Feed::userPosts(
 		.send();
 }
 
+void Feed::userTimeline(
+		const QString &userId,
+		const QString &cursor,
+		bool cursorIsBefore,
+		base::Guard guard,
+		Fn<void(const PostsPage &)> done,
+		FailCallback fail) {
+	_session->api().request(Api::Get, u"/v1/users/%1/posts"_s.arg(PathSegment(userId)))
+		.query(u"tab"_s, u"posts"_s)
+		.query(u"with_reposts"_s, u"1"_s)
+		.query(cursorIsBefore ? u"before"_s : u"cursor"_s, cursor)
+		.guard(this)
+		.done([=, this](const QJsonObject &result) {
+			const auto page = parsePosts(result);
+			if (done && guard.alive()) {
+				done(page);
+			}
+		})
+		.fail(Guarded(guard, fail))
+		.send();
+}
+
 void Feed::sound(
 		const QString &id,
 		base::Guard guard,
@@ -978,8 +1012,10 @@ void Feed::reportReasons(
 			reasons.reply = Json::Strings(result.value("reply"_L1));
 			reasons.account = Json::Strings(result.value("account"_L1));
 			reasons.conversation = Json::Strings(result.value("conversation"_L1));
+			reasons.message = Json::Strings(result.value("message"_L1));
 			reasons.group = Json::Strings(result.value("group"_L1));
 			reasons.groupMessage = Json::Strings(result.value("group_message"_L1));
+			reasons.story = Json::Strings(result.value("story"_L1));
 			if (done) {
 				done(reasons);
 			}

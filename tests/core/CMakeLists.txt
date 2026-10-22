@@ -62,10 +62,12 @@ eleza_core_test(test_groups test_fakes.h test_harness.h)
 eleza_core_test(test_outbox test_fakes.h test_harness.h)
 eleza_core_test(test_sync test_fakes.h test_harness.h)
 eleza_core_test(test_chats test_fakes.h test_harness.h)
+eleza_core_test(test_action_bar test_fakes.h test_harness.h)
 eleza_core_test(test_media test_fakes.h test_harness.h)
 eleza_core_test(test_bots test_fakes.h test_harness.h)
 eleza_core_test(test_sticker_decode)
 eleza_core_test(test_stories test_fakes.h test_harness.h)
+eleza_core_test(test_notes test_fakes.h test_harness.h)
 # In-app updates (only with the whole project: the library is not a part of
 # the standalone core build).
 if (TARGET ElezaUpdater)

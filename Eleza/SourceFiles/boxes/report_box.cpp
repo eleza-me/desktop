@@ -40,6 +40,8 @@ constexpr auto kNoteMaxChars = 500;
 		return tr::lng_groups_reason_threat(tr::now);
 	} else if (slug == u"scam") {
 		return tr::lng_groups_reason_scam(tr::now);
+	} else if (slug == u"underage") {
+		return tr::lng_eli_reason_underage(tr::now);
 	} else if (slug == u"other") {
 		return tr::lng_eli_reason_other(tr::now);
 	}
@@ -49,32 +51,45 @@ constexpr auto kNoteMaxChars = 500;
 	return readable;
 }
 
-// The reasons every server knows, for when the list could not be read.
-[[nodiscard]] QStringList DefaultReasons() {
-	return {
-		u"spam"_s,
-		u"harassment"_s,
-		u"hate"_s,
-		u"violence"_s,
-		u"sexual"_s,
-		u"self_harm"_s,
-		u"misinformation"_s,
-		u"impersonation"_s,
-		u"other"_s,
-	};
-}
-
-// What a server with groups offers for a group and for a message of one.
-[[nodiscard]] QStringList DefaultGroupReasons(bool message) {
-	return message
-		? QStringList{
+// The server's default reasons for a kind (safety.report_reasons), for when
+// the list could not be read: the server takes only a reason of the kind's list.
+[[nodiscard]] QStringList DefaultReasons(const QString &kind) {
+	if (kind == u"reply") {
+		return {
+			u"spam"_s, u"harassment"_s, u"hate"_s, u"violence"_s,
+			u"sexual"_s, u"other"_s,
+		};
+	} else if (kind == u"message") {
+		return {
+			u"spam"_s, u"harassment"_s, u"threat"_s, u"sexual"_s,
+			u"scam"_s, u"other"_s,
+		};
+	} else if (kind == u"conversation") {
+		return {
+			u"harassment"_s, u"threat"_s, u"sexual"_s, u"hate"_s,
+			u"spam"_s, u"underage"_s, u"other"_s,
+		};
+	} else if (kind == u"account") {
+		return {
+			u"impersonation"_s, u"spam"_s, u"harassment"_s,
+			u"underage"_s, u"other"_s,
+		};
+	} else if (kind == u"group_message") {
+		return {
 			u"spam"_s, u"harassment"_s, u"threat"_s, u"hate"_s,
 			u"violence"_s, u"sexual"_s, u"scam"_s, u"other"_s,
-		}
-		: QStringList{
+		};
+	} else if (kind == u"group") {
+		return {
 			u"spam"_s, u"harassment"_s, u"hate"_s, u"violence"_s,
 			u"sexual"_s, u"scam"_s, u"impersonation"_s, u"other"_s,
 		};
+	}
+	// A post, and a story (the same reasons).
+	return {
+		u"spam"_s, u"harassment"_s, u"hate"_s, u"violence"_s,
+		u"sexual"_s, u"misinformation"_s, u"self_harm"_s, u"other"_s,
+	};
 }
 
 [[nodiscard]] QString Question(const QString &kind) {
@@ -198,10 +213,7 @@ void Show(
 } // namespace
 
 void ShowReportBox(Window::SessionController *controller, ReportArgs args) {
-	const auto group = (args.kind == u"group") || (args.kind == u"group_message");
-	const auto fallback = group
-		? DefaultGroupReasons(args.kind == u"group_message")
-		: DefaultReasons();
+	const auto fallback = DefaultReasons(args.kind);
 	controller->session().data().feed().reportReasons(
 		base::Guard(controller),
 		[=](const Data::ReportReasons &all) {
@@ -215,6 +227,10 @@ void ShowReportBox(Window::SessionController *controller, ReportArgs args) {
 				? all.account
 				: (args.kind == u"conversation")
 				? all.conversation
+				: (args.kind == u"message")
+				? all.message
+				: (args.kind == u"story")
+				? all.story
 				: all.post;
 			Show(controller, args, list.isEmpty() ? fallback : list);
 		},

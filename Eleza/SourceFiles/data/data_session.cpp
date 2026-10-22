@@ -10,6 +10,7 @@
 #include "data/data_groups.h"
 #include "data/data_media.h"
 #include "data/data_messages.h"
+#include "data/data_notes.h"
 #include "data/data_notifications.h"
 #include "data/data_outbox.h"
 #include "data/data_stickers.h"
@@ -44,6 +45,7 @@ Session::Session(Config config, QObject *parent)
 	_calls = new Calls(this);
 	_bots = new Bots(this);
 	_stories = new Stories(this);
+	_notes = new Notes(this);
 
 	// A card that arrives or changes renames the rows that show it.
 	connect(_users, &Users::changed, _chats, [this](const QStringList &ids) {

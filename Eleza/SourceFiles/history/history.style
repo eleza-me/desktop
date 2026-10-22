@@ -166,6 +166,15 @@ historyFileImageIcon: icon {{ "image", textOnBrand, 22px }};
 historyFileVideoIcon: icon {{ "video", textOnBrand, 22px }};
 historyTopBarCallDisabledFg: borderStrong;
 historyCallIcon: icon {{ "call", textOnBrand, 22px }};
+// self-destructing media (SelfDestructMedia in history_view_media.cpp)
+historySdTimerIcon: icon {{ "timer", textOnBrand, 22px }};
+historySdOnceFont: font(19px semibold);
+historySdBadgeFg: textOnBrand;
+historySdRingFg: textOnBrand;
+historySdRingWidth: 2px;
+historySdRingInset: 3px;
+historySdGrain: 3px;
+historySdGrainSpread: 34px;
 historyCallMissedIcon: icon {{ "call-end", staticWhite, 22px }};
 historyCallMissedBg: statusError;
 historyCallMissedFg: statusError;
@@ -199,6 +208,12 @@ historyPostThumbRadius: 8px;
 historyStoryWidth: 240px;
 historyStoryThumb: size(44px, 78px);
 historyStoryEmojiFont: font(26px);
+historyStoryShareWidth: 180px;
+historyStoryShareUserpic: 24px;
+historyStoryShareSkip: 8px;
+historyStoryShareThumbMax: 260px;
+historyStoryShareVideoSize: 36px;
+historyStoryShareVideoIcon: icon {{ "play", staticWhite, 18px }};
 
 // link preview card
 historyPreviewPadding: margins(10px, 6px, 8px, 7px);
@@ -256,6 +271,8 @@ historyDownBg: bgRaised;
 historyDownIcon: icon {{ "chevron-down", textSecondary, 26px }};
 historyDownIconOver: icon {{ "chevron-down", textPrimary, 26px }};
 historyDownBadgeShift: 9px;
+historyDownStackSkip: 14px;
+historyMentionsButtonFont: font(20px medium);
 
 // empty / loading states
 historyEmptyFont: font(13px medium);
@@ -337,6 +354,22 @@ historyBarClose: IconButton(smallCloseButton) {
 	height: 36px;
 }
 historyPinnedUnpin: IconButton(historyBarClose) {
+}
+
+// the report / block bar (history_action_bar.cpp)
+historyActionBarGroupHeight: 74px;
+historyActionBarLineTop: 10px;
+historyActionBarLineFont: font(13px);
+historyActionBarLineFg: textSecondary;
+historyActionBarButtonsBottom: 6px;
+historyActionBarClosePosition: point(6px, 5px);
+historyActionBarButton: RoundButton(defaultFlatButton) {
+	height: 36px;
+	font: font(14px semibold);
+}
+historyActionBarDanger: RoundButton(historyActionBarButton) {
+	textFg: statusError;
+	textFgOver: statusError;
 }
 
 historyRequestHeight: 62px;
@@ -569,6 +602,15 @@ historySendFilesCaption: InputField(defaultInputField) {
 	placeholderFont: font(14px);
 }
 historySendFilesCheckPadding: margins(12px, 2px, 12px, 0px);
+historySendFilesTimerButton: RoundButton(defaultFlatButton) {
+	height: 34px;
+	padding: 10px;
+}
+historySendFilesTimerIcon: icon {{ "timer", brandText, 18px }};
+historySendFilesTimerHint: FlatLabel(defaultFlatLabel) {
+	textFg: textSecondary;
+	style: smallTextStyle;
+}
 
 historyLocationField: InputField(defaultInputField) {
 }
@@ -659,3 +701,19 @@ historyBotIntroTextStyle: TextStyle(defaultTextStyle) {
 	linkFg: staticWhite;
 	linkUnderline: true;
 }
+
+// A reply to a note (history_view_note_reply.h): the caption and the note
+// above the answer's bubble.
+historyNoteReplyCaptionFont: font(12px);
+historyNoteReplyCaptionPadding: margins(9px, 2px, 9px, 3px);
+historyNoteReplyCaptionSkip: 4px;
+historyNoteReplyTextStyle: TextStyle(defaultTextStyle) {
+	font: font(13px);
+	lineHeight: 19px;
+}
+historyNoteReplyPadding: margins(11px, 6px, 11px, 7px);
+historyNoteReplyRadius: 14px;
+historyNoteReplyMaxWidth: 260px;
+historyNoteReplyLines: 3;
+historyNoteReplyOpacity: 0.8;
+historyNoteReplySkip: 3px;

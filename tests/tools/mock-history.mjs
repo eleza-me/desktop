@@ -20,6 +20,13 @@
 //   ro      a finished conversation that can be continued in direct messages
 //   gone    a chat with a deleted account
 //   big     400 messages (pagination, jumps)
+//   stories stories sent on (story_share): available, without a comment, not mine
+//           to open, expired; a story reply (tests/tools/mock-stories-proxy.mjs answers
+//           opening and sending them)
+//   spam    a stranger wrote first: the report / block bar (action_bar "stranger")
+//   sd      self-destructing media as a desktop session is sent it (a text with
+//           `self_destruct`): unopened, opened with its time running, expired, and
+//           the screenshot notice
 //
 // Behaviour:
 //   * sending "fail" (or any text that starts with it) is refused with 403, so the
@@ -231,6 +238,25 @@ add('ro', 'p_me', 'text', { text: 'به نظرم عمداً باز گذاشته 
 add('ro', 'p_x', 'text', { text: 'دقیقاً! مرسی که شنیدی 🙏' }, now - 2 * DAY + 5 * MIN);
 add('ro', 'p_x', 'system', { system: 'conversation.ended' }, now - DAY);
 chats.ro.last_read_seq = 4;
+// -- stories sent on (story_share): a card with a comment, one without, one the
+// server says I may not open, one that ran out; the web mock serves the thumbnails
+direct('stories', 'u_sara');
+{
+	const S = 'u_sara', M = 'u_me';
+	const exp = Math.floor(now / 1000) + 20 * 3600;
+	const share = (story, owner, kind, comment, extra = {}) => ({
+		text: '📖 استوری @' + owner.replace('u_', '') + (comment ? '\n' + comment : ''),
+		story: { story_id: story, owner, thumb_url: `/v1/stories/${story}/media?variant=thumb`, kind, expires_at: exp, ...(comment ? { comment } : {}), ...extra },
+	});
+	add('stories', S, 'text', { text: 'اینو ببین!' }, now - 3 * HOUR);
+	add('stories', S, 'story_share', share('stR2', 'u_reza', 'video', 'ببین چه قشنگه 😍', { available: true }), now - 3 * HOUR + MIN);
+	add('stories', M, 'story_share', share('stS1', 'u_sara', 'image', ''), now - 2 * HOUR);
+	add('stories', S, 'story_share', { text: '📖 استوری @nika', story: { story_id: 'stN1', owner: 'u_nika', kind: 'image', expires_at: exp, available: false } }, now - HOUR);
+	add('stories', S, 'story_share', share('stOld', 'u_ali', 'image', 'دیروزی', { expires_at: Math.floor(now / 1000) - 2 * 3600 }), now - 30 * MIN);
+	add('stories', S, 'story_reply', { text: 'چه عکس خوبی', story: { story_id: 'stA1', owner: 'u_ali', thumb_url: '/v1/stories/stA1/media?variant=thumb', kind: 'image', expires_at: exp } }, now - 20 * MIN);
+	chats.stories.last_read_seq = 6;
+	chats.stories.peer_read_seq = 3;
+}
 // -- a message request
 direct('req', 'u_nika', { header: { request: 'incoming', can_send: false }, flags: { section: 'request' } });
 add('req', 'u_nika', 'text', { text: 'سلام! پست‌هات دربارهٔ الزا رو دیدم، می‌شه چند تا سؤال بپرسم؟' }, now - 2 * HOUR);
@@ -334,6 +360,24 @@ const bytes = (res, type, data) => {
 	res.writeHead(200, { 'Content-Type': type, 'Content-Length': data.length });
 	res.end(data);
 };
+// -- a stranger wrote first: the report / block bar
+direct('spam', 'u_john', { header: { action_bar: 'stranger' } });
+add('spam', 'u_john', 'text', { text: 'Hi! Want to earn $500 a day from home? 💸' }, now - 40 * MIN);
+add('spam', 'u_john', 'text', { text: 'https://example.com/offer' }, now - 39 * MIN);
+unread.spam = 2;
+// -- self-destructing media
+direct('sd', 'u_nika');
+{
+	const t0 = now - 2 * HOUR;
+	add('sd', 'u_nika', 'text', { text: 'یه عکس برات فرستادم، فقط یه بار می‌تونی ببینیش' }, t0);
+	add('sd', 'u_nika', 'text', { text: 'این پیام فقط روی گوشی قابل دیدن است', self_destruct: { mode: 'view_once', state: 'unopened' } }, t0 + MIN);
+	add('sd', 'u_me', 'text', { text: 'این پیام فقط روی گوشی قابل دیدن است', self_destruct: { mode: 'timer', seconds: 30, state: 'unopened' } }, t0 + 5 * MIN);
+	add('sd', 'u_me', 'text', { text: 'این پیام فقط روی گوشی قابل دیدن است', self_destruct: { mode: 'timer', seconds: 60, state: 'opened', opened_at: now - 20_000, destruct_at: now + 15 * MIN } }, t0 + 10 * MIN);
+	add('sd', 'u_nika', 'system', { system: 'self_destruct_screenshot:u_nika:4', text: 'نیکا موسوی از پیام یکبارمصرف اسکرین‌شات گرفت' }, t0 + 11 * MIN);
+	add('sd', 'u_me', 'text', { text: 'این پیام منقضی شد', self_destruct: { mode: 'view_once', state: 'expired', opened_at: t0 + 12 * MIN, destruct_at: t0 + 13 * MIN } }, t0 + 12 * MIN);
+	add('sd', 'u_nika', 'text', { text: 'دیدمش 😄', reply_to_seq: 6 }, t0 + 14 * MIN);
+	chats.sd.last_read_seq = 7; chats.sd.peer_read_seq = 7;
+}
 const header = (id) => chats[id];
 const visible = (m) => !m.deleted;
 function push(kind, chat, extra = {}) {
@@ -619,6 +663,7 @@ function handle(req, res, raw) {
 		return json(res, 204, {});
 	}
 	if (rest === '/pin') { flags[id].pinned = (m === 'POST'); return json(res, 204, {}); }
+	if (rest === '/action-bar/dismiss' && m === 'POST') { delete c.action_bar; return json(res, 204, {}); }
 	if (rest === '/theme') {
 		c.theme = b.theme || '';
 		const who = c.participants.find((x) => x.me)?.ref || 'u_me';

@@ -53,6 +53,7 @@ struct UploadRequest {
 	QString fileName;   // defaults to the file's name
 	QString mime;       // defaults to the detected type
 	QString resumeId;   // an upload id from an interrupted run
+	bool dedup = true;  // false: never claim a file the server already has
 };
 
 struct UploadResult {

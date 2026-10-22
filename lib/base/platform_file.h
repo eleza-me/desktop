@@ -26,7 +26,8 @@ bool EnsureDirectory(const QString &path, bool ownerOnly = false);
 // system temporary directory).
 [[nodiscard]] bool EnsurePrivateDirectory(const QString &path);
 
-// Removes a directory with everything in it.
+// Removes a directory with everything in it. A link (or a junction) is removed
+// itself, what it points to is left alone.
 bool RemoveRecursively(const QString &path);
 
 // A directory for short-lived files that nobody else on the machine can list

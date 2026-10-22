@@ -69,6 +69,9 @@ void TakePersonal(Group &to, const Group &from) {
 	to.clearedBeforeSeq = std::max(to.clearedBeforeSeq, from.clearedBeforeSeq);
 	to.joinRequests = from.joinRequests;
 	to.lastReadSeq = std::max(to.lastReadSeq, from.lastReadSeq);
+	to.outboxReadSeq = std::max(to.outboxReadSeq, from.outboxReadSeq);
+	to.actionBar = from.actionBar;
+	to.addedBy = from.addedBy;
 }
 
 // What a header says about the group as of its pts (not the counters).
@@ -84,12 +87,16 @@ void TakeProfile(Group &to, const Group &from) {
 	to.createdAt = from.createdAt;
 }
 
-// The fields of a row that repeat its header.
+// The fields of a row that repeat its header. The read receipts never go
+// back: a header read before a `read` frame (frames crossed) keeps the
+// higher value the row holds.
 void SyncRowWithHeader(Chat &row) {
 	if (!row.group) {
 		return;
 	}
-	const auto &group = *row.group;
+	auto &group = *row.group;
+	row.peerReadSeq = std::max(row.peerReadSeq, group.outboxReadSeq);
+	group.outboxReadSeq = row.peerReadSeq;
 	row.isGroup = true;
 	row.section = u"message"_s;
 	row.title = group.title;
@@ -259,6 +266,7 @@ ChatInfo Groups::InfoFor(const Group &group) {
 	result.state = group.state;
 	result.lastSeq = group.lastSeq;
 	result.lastReadSeq = group.lastReadSeq;
+	result.peerReadSeq = group.outboxReadSeq;
 	result.muted = group.muted;
 	result.mutedUntil = group.mutedUntil;
 	result.archived = group.archived;
@@ -311,6 +319,18 @@ void Groups::handleFrame(const QJsonObject &frame) {
 	}
 	const auto group = Json::String(frame, "group"_L1);
 	if (!IsGroupId(group)) {
+		return;
+	}
+	if (Json::String(frame, "kind"_L1) == u"read") {
+		// Read receipts are not a change of the group (pts 0): never
+		// through the pts rule, never queued behind a difference.
+		auto data = frame.value("data"_L1).toObject();
+		if (!data.contains("outbox_read_seq"_L1) && data.value("read"_L1).isObject()) {
+			data = data.value("read"_L1).toObject();
+		}
+		if (held(group)) {
+			applyReads(group, Json::Int64(data, "outbox_read_seq"_L1));
+		}
 		return;
 	}
 	if (const auto i = _states.find(group); i != _states.end() && i->busy) {
@@ -593,6 +613,17 @@ void Groups::applyMessageFrame(const QString &group, const QJsonObject &data, bo
 		}
 	});
 
+	// Writing reads the group: everything of mine up to a message of
+	// somebody else is read. A note is no read (its sender did something,
+	// they did not write), and while I am not known every message would
+	// look like somebody else's.
+	if (!mine
+		&& !service
+		&& !message.deleted
+		&& !_session->userId().isEmpty()
+		&& message.sender != _session->userId()) {
+		applyReads(group, message.seq);
+	}
 	if (service && isNew) {
 		if (GroupRules::HeaderChanged(message.system)) {
 			// A new title / photo: the header says which.
@@ -796,6 +827,7 @@ void Groups::applyDifference(
 		if (header) {
 			applyHeader(*header);
 		}
+		applyReads(group, Json::Int64(result, "outbox_read_seq"_L1));
 		differenceDone(group, true);
 		if (shown) {
 			messages.loadLatest(group);
@@ -929,8 +961,12 @@ void Groups::applyDifference(
 		}
 	});
 	if (header) {
-		_session->messages().setInfo(InfoFor(*header));
+		if (const auto current = chats.chat(group)) {
+			_session->messages().setInfo(current->info);
+		}
 	}
+	// In every answer, also when nothing changed.
+	applyReads(group, Json::Int64(result, "outbox_read_seq"_L1));
 	fetchPeople(people);
 	if (Json::Bool(result, "more"_L1)) {
 		differenceStep(group, page + 1);
@@ -1014,9 +1050,12 @@ void Groups::runSync() {
 			continue;
 		}
 		known.insert(chat.id, chat.groupPts);
+		// The read receipts held (0 included): the answer's `reads` has
+		// the groups where they moved.
 		list.push_back(QJsonObject{
 			{ u"group"_s, chat.id },
 			{ u"pts"_s, double(chat.groupPts) },
+			{ u"outbox_read_seq"_s, double(chat.peerReadSeq) },
 		});
 	}
 	if (known.isEmpty()) {
@@ -1095,6 +1134,14 @@ void Groups::applySync(const QHash<QString, qint64> &known, const QJsonObject &r
 			startDifference(id);
 		}
 	}
+	// Read receipts that moved in groups whose header did not change.
+	for (const auto &item : result.value("reads"_L1).toArray()) {
+		const auto read = item.toObject();
+		const auto id = Json::String(read, "group"_L1);
+		if (IsGroupId(id) && held(id)) {
+			applyReads(id, Json::Int64(read, "outbox_read_seq"_L1));
+		}
+	}
 	fetchPeople(people);
 }
 
@@ -1168,6 +1215,7 @@ bool Groups::applyEntry(
 	}
 	chats.upsert(row);
 	_session->messages().setInfo(row.info);
+	applyReads(header.id, 0);
 	return row.groupCachePts >= 0 && row.groupCachePts < row.groupPts;
 }
 
@@ -1326,6 +1374,10 @@ void Groups::applyUser(const QJsonObject &d) {
 			messages.clear(group, cleared + 1);
 		}
 	}
+	if (Json::Bool(d, "action_bar_dismissed"_L1)) {
+		// The report / block bar went on another device (×, a report).
+		chats.forgetActionBar(group);
+	}
 	if (const auto hidden = Json::Int64(d, "hidden_seq"_L1); hidden > 0) {
 		messages.dropMessages(group, { hidden }, true);
 	}
@@ -1404,6 +1456,7 @@ void Groups::applyHeader(const Group &header) {
 	if (const auto row = chats.chat(header.id)) {
 		_session->messages().setInfo(row->info);
 	}
+	applyReads(header.id, 0);
 	if (gap) {
 		catchUp(header.id);
 	}
@@ -1439,7 +1492,10 @@ void Groups::historyPage(const Group &header, bool newest) {
 				c.unreadMentions = 0;
 			}
 		});
-		_session->messages().setInfo(InfoFor(header));
+		if (const auto row = chats.chat(header.id)) {
+			_session->messages().setInfo(row->info);
+		}
+		applyReads(header.id, 0);
 	} else {
 		applyHeader(header);
 	}
@@ -1475,6 +1531,33 @@ void Groups::applyAdminSignal(
 		}
 	});
 	Q_EMIT joinRequestsChanged(group, user);
+}
+
+// Read receipts (groups.md §8.1): the furthest some other member has read
+// — the higher of `seq` and what the row holds (0: only what it holds) —
+// on the row, its header and the ticks of my cached messages.
+void Groups::applyReads(const QString &group, qint64 seq) {
+	auto &chats = _session->chats();
+	const auto row = chats.chat(group);
+	if (!row || !row->isGroup) {
+		return;
+	}
+	const auto held = std::max(
+		row->peerReadSeq,
+		row->group ? row->group->outboxReadSeq : qint64(0));
+	const auto value = std::max(held, seq);
+	if (value <= 0) {
+		return;
+	}
+	if (row->group && row->group->outboxReadSeq < value) {
+		chats.patch(group, [&](Chat &c) {
+			if (c.group) {
+				c.group->outboxReadSeq = value;
+			}
+		});
+	}
+	// The row's own copy, its preview's tick and the bubbles.
+	_session->messages().markPeerRead(group, value);
 }
 
 void Groups::refreshHeader(const QString &group) {

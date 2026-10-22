@@ -12,6 +12,7 @@
 #include "support/error_text.h"
 #include "support/media_image.h"
 #include "ui/painter.h"
+#include "ui/ui_utility.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/top_bar.h"
 #include "window/window_routes.h"
@@ -384,7 +385,36 @@ private:
 			});
 		replies->setValueText(RepliesLabel(current));
 		Settings::AddFootnote(content(), tr::lng_stories_replies_footer(tr::now));
+
+		// A server that cannot send stories on does not say allow_sharing.
+		if (_settings.allowSharing) {
+			Settings::AddDivider(content());
+			Settings::AddSubsectionTitle(content(), tr::lng_stories_sharing_title(tr::now));
+			Settings::AddToggle(
+				content(),
+				tr::lng_stories_allow_sharing(tr::now),
+				*_settings.allowSharing,
+				[=, this](bool allow) { saveSharing(allow); },
+				&st::storiesSettingsIconShare);
+			Settings::AddFootnote(content(), tr::lng_stories_allow_sharing_footer(tr::now));
+		}
 		showContent();
+	}
+
+	void saveSharing(bool allow) {
+		// The switch shows the new state already: no rebuild from inside
+		// its own signal, only back when the server refuses.
+		const auto controller = this->controller();
+		const auto was = _settings.allowSharing;
+		_settings.allowSharing = allow;
+		controller->session().data().stories().setAllowSharing(allow, this, [this](
+				const Data::StorySettings &settings) {
+			_settings = settings;
+		}, [=, this](const Api::Error &error) {
+			_settings.allowSharing = was;
+			Ui::PostponeCall(this, [this] { build(); });
+			Support::ShowError(controller, error);
+		});
 	}
 
 	void save(const QString &replies) {

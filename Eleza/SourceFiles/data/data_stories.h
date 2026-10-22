@@ -1,5 +1,6 @@
 // Stories (backend docs/stories.md): the tray of the people I follow, the
-// stories of one person, seen marks, reactions, replies, my viewers, mute /
+// stories of one person, one story by id (sent in a chat), seen marks,
+// reactions, replies, sending a story to people, my viewers, mute /
 // hide-from / close friends / story settings, and posting a story from a file.
 // Reads and actions go over the realtime connection (`stories.*` methods,
 // HTTP when it is down); the media comes through Data::Media
@@ -45,6 +46,9 @@ struct PostStoryRequest {
 	bool video = false;
 	QString caption;
 	bool closeFriends = false;
+	// An Eli post the photo / video was made from: the story carries the
+	// post's card too («دیدن الی»).
+	QString postId;
 };
 
 // My story on its way (upload, processing, create).
@@ -121,6 +125,25 @@ public:
 	void unreact(const QString &storyId, base::Guard guard = base::Guard(), Fn<void()> done = nullptr, FailCallback fail = nullptr);
 	void reply(const QString &storyId, const QString &text, base::Guard guard, Fn<void(const QString &chat, qint64 seq)> done, FailCallback fail = nullptr);
 
+	// ---- sending a story to people («ارسال به…»)
+	// `recipients`: user ids (mine is Saved Messages) and group ids, at most
+	// shareCap() together. One of my own stories counts the messages it
+	// became (shareCount).
+	void share(const QString &storyId, const QStringList &recipients, const QString &text, base::Guard guard, Fn<void(const StoryShareResult &)> done, FailCallback fail = nullptr);
+	// client-config `stories.share_max_recipients`.
+	[[nodiscard]] int shareCap() const;
+
+	// ---- one story by id (a story sent in a chat), decided for me
+	// `story.not_found` (404) when it expired, was deleted or is not shown to
+	// me; the story is then remembered as gone (storyGone).
+	void get(const QString &storyId, base::Guard guard, Fn<void(const User &owner, const Story &story)> done, FailCallback fail = nullptr);
+	// Stories found gone in this session: a 404 of the story or of its
+	// thumbnail. Chat messages that point at one draw it so.
+	void markGone(const QString &storyId);
+	[[nodiscard]] bool isGone(const QString &storyId) const {
+		return _gone.contains(storyId);
+	}
+
 	// ---- my stories
 	void viewers(const QString &storyId, const QString &cursor, base::Guard guard, Fn<void(const StoryViewersPage &)> done, FailCallback fail = nullptr);
 	void deleteStory(const QString &storyId, base::Guard guard = base::Guard(), Fn<void()> done = nullptr, FailCallback fail = nullptr);
@@ -148,6 +171,7 @@ public:
 	void settings(base::Guard guard, Fn<void(const StorySettings &)> done, FailCallback fail = nullptr);
 	// replies: everyone | following | off.
 	void updateSettings(const QString &replies, base::Guard guard, Fn<void(const StorySettings &)> done, FailCallback fail = nullptr);
+	void setAllowSharing(bool allow, base::Guard guard, Fn<void(const StorySettings &)> done, FailCallback fail = nullptr);
 	[[nodiscard]] const std::optional<StorySettings> &cachedSettings() const {
 		return _settings;
 	}
@@ -165,6 +189,7 @@ Q_SIGNALS:
 	void userStoriesChanged(const QString &userId);
 	void postingChanged();
 	void posted(const Data::Story &story);
+	void storyGone(const QString &storyId);
 
 private:
 	struct UserEntry {
@@ -183,6 +208,8 @@ private:
 	void addMine(const Story &story);
 	void simple(const QString &method, const QJsonObject &body, const QString &action, const QString &subject, base::Guard guard, Fn<void()> done, FailCallback fail);
 	void usersPage(const QString &method, const QString &cursor, base::Guard guard, Fn<void(const StoryUsersPage &)> done, FailCallback fail);
+	void settingsUpdate(const QJsonObject &body, base::Guard guard, Fn<void(const StorySettings &)> done, FailCallback fail);
+	void removeStory(const QString &storyId);
 
 	Session *_session = nullptr;
 	bool _wasEnabled = true;
@@ -212,6 +239,7 @@ private:
 	int _postingGeneration = 0;
 
 	std::optional<StorySettings> _settings;
+	QSet<QString> _gone;
 
 };
 

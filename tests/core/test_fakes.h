@@ -259,6 +259,7 @@ public:
 		// >= 0: announce the whole body, send only this many bytes of it
 		// and drop the connection (a download that is cut off).
 		int cutAfter = -1;
+		int delayMs = 0;   // > 0: answered that much later (a slow request)
 
 		static Response Ok(const QJsonObject &json = QJsonObject()) {
 			auto response = Response();
@@ -367,6 +368,13 @@ private:
 					socket->write(bytes + response.body.left(response.cutAfter));
 					socket->disconnectFromHost();
 					return;
+				}
+				if (response.delayMs > 0) {
+					const auto all = bytes + response.body;
+					QTimer::singleShot(response.delayMs, socket, [=] {
+						socket->write(all);
+					});
+					continue;
 				}
 				socket->write(bytes + response.body);
 			}

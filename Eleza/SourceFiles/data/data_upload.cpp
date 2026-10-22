@@ -351,7 +351,7 @@ void Upload::create(Id id) {
 			})
 			.send());
 	};
-	if (current->size > kHashLimit) {
+	if (current->size > kHashLimit || !current->request.dedup) {
 		post();
 		return;
 	}

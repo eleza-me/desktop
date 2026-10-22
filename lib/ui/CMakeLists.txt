@@ -1,4 +1,5 @@
-# ElezaUi — the custom-painted widget library. Depends on Qt (and miniz for the emoji pack).
+# ElezaUi — the custom-painted widget library. Depends only on Qt and ElezaBase (QtCore
+# only), and on miniz for the emoji pack.
 file(GLOB_RECURSE eleza_ui_sources CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/ui/*.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ui/*.h")
@@ -13,7 +14,7 @@ add_library(ElezaUi STATIC ${eleza_ui_sources})
 add_library(Eleza::Ui ALIAS ElezaUi)
 
 target_include_directories(ElezaUi PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
-target_link_libraries(ElezaUi PUBLIC Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Svg)
+target_link_libraries(ElezaUi PUBLIC ElezaBase Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Svg)
 # The DEFLATE streams of the emoji pack (ui/emoji/emoji_pack_reader.cpp).
 target_link_libraries(ElezaUi PRIVATE ElezaMiniz)
 eleza_target_defaults(ElezaUi)

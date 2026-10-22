@@ -41,6 +41,7 @@ Eleza/
     data/                 typed models + stores: chats, messages, users, sync (pts), outbox, media,
                           upload, feed, graph, conversations, notifications, stickers (and
                           the decoders of animated ones: data_sticker_decode.h), calls, stories,
+                          notes (data_notes.h; the text rules: data_note_types.h),
                           groups (their own sync track: data_groups.h; the decisions as plain
                           functions: data_group_rules.h)
     lang/                 lang runtime (fa / en), number + date formatting (Persian digits, Jalali)
@@ -48,7 +49,7 @@ Eleza/
                           the checker (check -> download -> verify -> unpack), install glue
     window/               MainWindow, SessionController (navigation), layout (nav rail | side | main)
     intro/                phone -> code -> password / recovery -> profile
-    dialogs/              chat list
+    dialogs/              chat list, the notes over it (dialogs_notes.h, dialogs_notes_box.h)
     history/              chat screen: list view, bubbles, composer, menus
     conversation/         anonymous talker/listener layer: topics, new/join sheets, radar
     groups/               groups beyond their chat: the info screen (members, settings), creating
@@ -59,7 +60,8 @@ Eleza/
     settings/             settings sections
     boxes/                modal boxes shared by sections (peer list, photo crop, country list, about)
     stories/              stories: the tray on top of the feed, rings around faces, the
-                          full-window viewer, posting, the viewers box, Settings → Privacy →
+                          full-window viewer, posting, «ارسال به…» (sending a story to
+                          people and groups), the viewers box, Settings → Privacy →
                           «استوری» (the data side: data/data_stories.h, data_story_types.h)
     media/                audio/voice player, video player widget, image viewer
     calls/                voice and video calls (ELEZA_ENABLE_CALLS): the call state machine, the

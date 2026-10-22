@@ -112,7 +112,11 @@ struct ReportTarget {
 void OpenReport(Window::SessionController *controller, ReportTarget target);
 
 // ---- pages (main column sections)
-[[nodiscard]] Window::SectionFactory PostFactory(const QString &postId);
+// `rootHint`: the post at the top of the conversation of a comment, as a
+// notification named it (read together with the comment).
+[[nodiscard]] Window::SectionFactory PostFactory(
+	const QString &postId,
+	const QString &rootHint = QString());
 [[nodiscard]] Window::SectionFactory ThreadFactory(const QString &postId);
 [[nodiscard]] Window::SectionFactory NotificationsFactory();
 [[nodiscard]] Window::SectionFactory FollowRequestsFactory();

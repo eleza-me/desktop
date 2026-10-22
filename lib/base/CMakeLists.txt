@@ -13,6 +13,8 @@ add_library(ElezaBase STATIC
 	platform_file.h
 	random.cpp
 	random.h
+	text_direction.cpp
+	text_direction.h
 	timer.cpp
 	timer.h
 	unixtime.cpp

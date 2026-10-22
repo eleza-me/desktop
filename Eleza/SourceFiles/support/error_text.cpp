@@ -89,6 +89,10 @@ QString ErrorPhrase(const QString &code) {
 		|| code == u"bot.switched_off"
 		|| code == u"bot.suspended") {
 		return tr::lng_bot_disabled(tr::now);
+	} else if (code == u"note.invalid") {
+		return tr::lng_notes_error_invalid(tr::now);
+	} else if (code == u"note.disabled") {
+		return tr::lng_notes_error_disabled(tr::now);
 	} else if (code == u"bot.button_not_found"
 		|| code == u"bot.callback_query_expired") {
 		return tr::lng_bot_button_expired(tr::now);

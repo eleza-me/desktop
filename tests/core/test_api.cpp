@@ -246,6 +246,8 @@ void TestApi::problemJson() {
 void TestApi::logLinesCarryNoIds() {
 	using Api::RouteTemplate;
 	QCOMPARE(RouteTemplate(u"/v1/me"_s), u"/v1/me"_s);
+	QCOMPARE(RouteTemplate(u"/v1/me/note"_s), u"/v1/me/note"_s);
+	QCOMPARE(RouteTemplate(u"/v1/notes"_s), u"/v1/notes"_s);
 	QCOMPARE(RouteTemplate(u"/v1/auth/otp/verify"_s), u"/v1/auth/otp/verify"_s);
 	QCOMPARE(RouteTemplate(u"/v1/chats/c1/messages?before=40&limit=50"_s), u"/v1/chats/:id/messages"_s);
 	QCOMPARE(
