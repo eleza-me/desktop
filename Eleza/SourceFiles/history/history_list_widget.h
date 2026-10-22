@@ -257,7 +257,6 @@ private:
 	void ensureExactNearViewport();
 	void positionInitially();
 	void showAtSeq(qint64 seq, const std::optional<Data::Quote> &quote, bool animated);
-	void invalidateAll();
 
 	// ---- input (history_list_input.cpp)
 	[[nodiscard]] MouseTarget targetAt(QPoint position) const;

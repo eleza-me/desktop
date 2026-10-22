@@ -303,6 +303,13 @@ void Element::unloadHeavy() {
 	_loaded = false;
 }
 
+void Element::reloadTexts() {
+	auto media = std::move(_media);
+	unloadHeavy();
+	_media = std::move(media);
+	_dirty = true;
+}
+
 void Element::createMedia() {
 	if (!_media) {
 		_media = isAlbum()

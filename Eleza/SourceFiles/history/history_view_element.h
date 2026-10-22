@@ -257,8 +257,11 @@ public:
 
 	// Drops what can be rebuilt (text layouts, images).
 	void unloadHeavy();
+	// Builds the texts and names again; the attachment keeps its picture.
+	void reloadTexts();
 	[[nodiscard]] bool heavyLoaded() const {
-		return _loaded;
+		// The attachment may stay while the texts are built again.
+		return _loaded || _media;
 	}
 
 	// ---- geometry for the list

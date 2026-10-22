@@ -125,7 +125,27 @@ ListWidget::ListWidget(
 	connect(&data.users(), &Data::Users::changed, this, [this](const QStringList &ids) {
 		// Names in reply headers and shared posts; in a group also above
 		// the bubbles and in the notes; the screenshot notice of
-		// self-destructing media.
+		// self-destructing media. Only the rows that show one of these
+		// people change, and their pictures stay.
+		const auto myId = _session->data().users().myId();
+		const auto chat = _session->data().chats().chat(_chatId);
+		const auto peer = chat ? chat->peerUserId : QString();
+		const auto replyNamed = [&](const Data::Message &message) {
+			// Whose name the header shows (senderName()); a target that is
+			// not known yet shows none.
+			const auto seq = message.replyToSeq;
+			auto target = (seq > 0) ? this->message(seq) : nullptr;
+			if (seq > 0 && !target) {
+				const auto cached = _replyTargets.constFind(seq);
+				target = (cached != _replyTargets.cend()) ? &*cached : nullptr;
+			}
+			return target
+				&& ids.contains(target->mine
+					? myId
+					: _group
+					? target->sender
+					: peer);
+		};
 		auto changed = false;
 		for (auto &row : _rows) {
 			const auto &message = row.element->data();
@@ -133,17 +153,26 @@ ListWidget::ListWidget(
 			if ((_group
 					&& (ids.contains(message.sender)
 						|| (system && ids.contains(Data::GroupRules::NoteUser(message.system)))))
-				|| (system && ids.contains(Data::SelfDestructScreenshotTaker(message.system)))) {
-				row.element->unloadHeavy();
-				row.element->invalidate();
+				|| (system && ids.contains(Data::SelfDestructScreenshotTaker(message.system)))
+				|| replyNamed(message)) {
+				row.element->reloadTexts();
 				row.exact = false;
 				changed = true;
+			} else if (!message.forwardedPost.isEmpty()) {
+				// The card lays its author's name out again.
+				const auto post = _session->data().feed().post(message.forwardedPost);
+				if (post && ids.contains(post->author)) {
+					row.element->invalidate();
+					row.exact = false;
+					changed = true;
+				}
 			}
 		}
 		if (changed) {
 			relayoutKeepingAnchor();
 		}
-		invalidateAll();
+		// Story cards paint their owner's name as it is now.
+		update();
 	});
 	connect(&data.feed(), &Data::Feed::postChanged, this, [this](const QString &id) {
 		auto changed = false;
@@ -919,22 +948,6 @@ void ListWidget::updateRow(int index) {
 	if (index >= 0 && index < int(_rows.size())) {
 		update(rowRect(index));
 	}
-}
-
-void ListWidget::invalidateAll() {
-	if (_rows.empty()) {
-		return;
-	}
-	for (auto &row : _rows) {
-		if (row.element->data().replyToSeq > 0
-			|| !row.element->data().forwardedPost.isEmpty()) {
-			row.element->unloadHeavy();
-			row.element->invalidate();
-			row.exact = false;
-		}
-	}
-	relayoutKeepingAnchor();
-	update();
 }
 
 // ---- layout
