@@ -6,6 +6,7 @@
 #include "eli/eli_post_list.h"
 #include "lang_auto.h"
 #include "main/main_session.h"
+#include "ui/ui_utility.h"
 #include "window/window_session_controller.h"
 #include "styles/style_eli.h"
 
@@ -144,17 +145,29 @@ PostsEmbed::PostsEmbed(
 		Q_EMIT emptyChanged(empty);
 	});
 	if (source == u"user" && user == controller->session().userId()) {
-		// My own profile: a repost I take back leaves at once.
+		// My own profile: a repost I take back leaves at once; «واگرد» on
+		// the toast (ToggleRepost) reposts it and the row comes back.
 		const auto feed = &controller->session().data().feed();
 		connect(feed, &Data::Feed::postChanged, this, [=, this](const QString &id) {
 			const auto card = _list->card(id);
 			const auto post = feed->post(id);
-			if (card
-				&& post
+			if (!post) {
+				return;
+			} else if (card
 				&& !post->my.reposted
 				&& card->options().reason == u"repost"
 				&& card->options().actor == user) {
+				_takenBack.remember(id, int(_list->ids().indexOf(id)), Ui::Now());
 				_list->remove(id);
+			} else if (!card && post->my.reposted) {
+				const auto index = _takenBack.take(id, Ui::Now());
+				if (index >= 0) {
+					auto item = Data::FeedItem();
+					item.postId = id;
+					item.reason = u"repost"_s;
+					item.actor = user;
+					_list->insert(index, item);
+				}
 			}
 		});
 	}

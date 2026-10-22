@@ -23,6 +23,7 @@
 #include "styles/style_stories.h"
 
 #include <QtCore/QDateTime>
+#include <QtCore/QPointer>
 #include <QtGui/QClipboard>
 #include <QtGui/QGuiApplication>
 
@@ -360,9 +361,26 @@ void ToggleRepost(Window::SessionController *controller, const QString &postId) 
 			return;
 		}
 		controller->session().data().feed().repost(postId, on);
-		controller->showToast(on
-			? tr::lng_eli_reposted(tr::now)
-			: tr::lng_eli_repost_removed(tr::now));
+		if (on) {
+			controller->showToast(tr::lng_eli_reposted(tr::now));
+			return;
+		}
+		// As Telegram's undo toasts: «واگرد» reposts it again (and on my
+		// profile its row comes back, eli_posts_embed.cpp).
+		const auto guard = QPointer<Window::SessionController>(controller);
+		auto toast = Ui::Toast::Config();
+		toast.text = tr::lng_eli_repost_removed(tr::now);
+		toast.action = tr::lng_toast_undo(tr::now);
+		toast.actionClicked = [=] {
+			if (!guard) {
+				return;
+			}
+			auto &feed = guard->session().data().feed();
+			if (const auto post = feed.post(postId); post && !post->my.reposted) {
+				feed.repost(postId, true);
+			}
+		};
+		controller->showToast(std::move(toast));
 	}
 }
 

@@ -356,6 +356,23 @@ void PostList::prepend(const QString &postId) {
 	Q_EMIT emptyChanged(false);
 }
 
+void PostList::insert(int index, const Data::FeedItem &item) {
+	if (_index.contains(item.postId)
+		|| !_controller->session().data().feed().post(item.postId)) {
+		return;
+	}
+	auto row = Row();
+	row.id = item.postId;
+	row.card = std::make_unique<PostCard>(this, item.postId, optionsFor(item));
+	index = std::clamp(index, 0, int(_rows.size()));
+	_rows.insert(_rows.begin() + index, std::move(row));
+	_freshness.noteFresh({ item.postId }, Ui::Now());
+	rebuildIndex();
+	refreshPlaceholder();
+	relayout();
+	Q_EMIT emptyChanged(false);
+}
+
 void PostList::remove(const QString &postId) {
 	const auto index = indexOf(postId);
 	if (index < 0) {
