@@ -5,12 +5,15 @@
 #include "data/data_session.h"
 #include "data/data_stories.h"
 #include "data/data_users.h"
+#include "eli/eli_actions.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
 #include "main/main_session.h"
 #include "media/media_video_player.h"
 #include "stories/stories_boxes.h"
+#include "stories/stories_share.h"
 #include "support/error_text.h"
+#include "support/file_dialogs.h"
 #include "support/media_image.h"
 #include "ui/effects/animations.h"
 #include "ui/effects/radial_animation.h"
@@ -85,7 +88,8 @@ public:
 		Window::SessionController *controller,
 		QStringList users,
 		int userIndex,
-		QString storyId);
+		QString storyId,
+		std::optional<Data::Story> preloaded = std::nullopt);
 	~Viewer();
 
 	void close();
@@ -136,10 +140,13 @@ private:
 	[[nodiscard]] QString viewersText() const;
 	[[nodiscard]] QRect postCardRect() const;
 	[[nodiscard]] bool replyShown() const;
+	[[nodiscard]] bool shareShown() const;
 	[[nodiscard]] Hit hitAt(QPoint point) const;
 
 	void openUser(int index, bool fromEnd, const QString &storyId = QString());
 	void applyList(const Data::UserStories &list, bool fromEnd, const QString &storyId);
+	// The story read by id (opened from a chat) stays in its owner's list.
+	[[nodiscard]] Data::UserStories withPreloaded(Data::UserStories list) const;
 	void showStory(int index);
 	void clearMedia();
 	void checkMediaReady();
@@ -151,11 +158,14 @@ private:
 	void updatePlayback();
 	void updateControls();
 	void updateGeometries();
+	void placeSeePost();
 	void showMenu();
 	void sendReply();
+	void shareStory();
 	void react(int index);
 	void openProfile();
 	void openPost();
+	void postToEli();
 	void confirmDelete();
 	void showUnavailable(const QString &text);
 
@@ -167,6 +177,7 @@ private:
 	int _openRequest = 0;
 	bool _loadingUser = false;
 	QString _unavailable;
+	std::optional<Data::Story> _preloaded;
 
 	QRect _stage;
 	Chrome *_chrome = nullptr;
@@ -178,6 +189,7 @@ private:
 	Ui::IconButton *_nextNav = nullptr;
 	Ui::InputField *_reply = nullptr;
 	Ui::IconButton *_send = nullptr;
+	Ui::IconButton *_share = nullptr;
 	Ui::RoundButton *_seePost = nullptr;
 
 	std::shared_ptr<Ui::ImageSource> _image;
@@ -185,6 +197,7 @@ private:
 	QMetaObject::Connection _imageConnection;
 	QMetaObject::Connection _previewConnection;
 	Data::MediaHandlePtr _videoFile;
+	Data::MediaHandlePtr _eliFile; // «انتشار در الی» on its way
 	bool _mediaReady = false;
 	bool _mediaFailed = false;
 	bool _seenMarked = false;
@@ -243,11 +256,13 @@ Viewer::Viewer(
 	Window::SessionController *controller,
 	QStringList users,
 	int userIndex,
-	QString storyId)
+	QString storyId,
+	std::optional<Data::Story> preloaded)
 : RpWidget(parent)
 , _controller(controller)
 , _users(std::move(users))
 , _userIndex(std::clamp(userIndex, 0, std::max(int(_users.size()) - 1, 0)))
+, _preloaded(std::move(preloaded))
 , _userpics(&controller->session(), [this](const QString &) {
 	if (_chrome) {
 		_chrome->update();
@@ -322,6 +337,9 @@ Viewer::Viewer(
 		_chrome->update();
 	});
 	connect(_reply, &Ui::InputField::changed, this, [this] { updateControls(); });
+	_share = Ui::CreateChild<Ui::IconButton>(_chrome, st::storiesShare);
+	_share->setClickedCallback([this] { shareStory(); });
+	_share->hide();
 
 	_seePost = Ui::CreateChild<Ui::RoundButton>(
 		_chrome,
@@ -434,16 +452,21 @@ void Viewer::openUser(int index, bool fromEnd, const QString &storyId) {
 	_list.user = session().data().users().peek(userId);
 	_list.user.id = userId;
 	if (const auto cached = stories().cached(userId); cached && !cached->stories.isEmpty()) {
-		applyList(*cached, fromEnd, storyId);
+		applyList(withPreloaded(*cached), fromEnd, storyId);
+	} else if (_preloaded && _preloaded->owner == userId) {
+		auto list = _list;
+		list.stories.push_back(*_preloaded);
+		applyList(list, fromEnd, storyId);
 	}
 	_loadingUser = true;
 	_loading.start();
 	updateControls();
 	_chrome->update();
-	stories().loadUser(userId, this, [=, this](const Data::UserStories &list) {
+	stories().loadUser(userId, this, [=, this](const Data::UserStories &loaded) {
 		if (request != _openRequest) {
 			return;
 		}
+		const auto list = withPreloaded(loaded);
 		_loadingUser = false;
 		_loading.stop();
 		const auto shown = current() ? current()->id : QString();
@@ -515,6 +538,23 @@ void Viewer::applyList(
 		}
 	}
 	showStory(index);
+}
+
+Data::UserStories Viewer::withPreloaded(Data::UserStories list) const {
+	if (!_preloaded || list.user.id != _preloaded->owner) {
+		return list;
+	}
+	for (const auto &story : list.stories) {
+		if (story.id == _preloaded->id) {
+			return list;
+		}
+	}
+	const auto at = std::find_if(list.stories.begin(), list.stories.end(), [&](
+			const Data::Story &story) {
+		return story.createdAt > _preloaded->createdAt;
+	});
+	list.stories.insert(at, *_preloaded);
+	return list;
 }
 
 void Viewer::showUnavailable(const QString &text) {
@@ -767,6 +807,11 @@ bool Viewer::replyShown() const {
 	return story && !mine() && story->canReply;
 }
 
+bool Viewer::shareShown() const {
+	const auto story = current();
+	return story && story->canShare;
+}
+
 QRect Viewer::bottomRect() const {
 	const auto &padding = st::storiesReplyPadding;
 	auto height = padding.top() + padding.bottom();
@@ -794,9 +839,18 @@ QRect Viewer::reactionRect(int index) const {
 QString Viewer::viewersText() const {
 	const auto story = current();
 	const auto count = (story && story->viewerCount > 0) ? story->viewerCount : 0;
-	return count
+	const auto viewers = count
 		? tr::lng_stories_viewers_count(tr::now, lt_count, double(count))
 		: tr::lng_stories_viewers_none(tr::now);
+	const auto shares = story ? story->shareCount : 0;
+	return (shares > 0)
+		? tr::lng_stories_viewers_and_shares(
+			tr::now,
+			lt_viewers,
+			viewers,
+			lt_shares,
+			tr::lng_stories_shares_count(tr::now, lt_count, double(shares)))
+		: viewers;
 }
 
 QRect Viewer::viewersRect() const {
@@ -882,7 +936,9 @@ void Viewer::updateGeometries() {
 	const auto bottom = bottomRect();
 	const auto fieldHeight = st::storiesReplyField.heightMin;
 	const auto fieldTop = bottom.y() + bottom.height() - padding.bottom() - fieldHeight;
-	const auto sendWidth = _send->width();
+	// The send button and the paper plane share the trailing slot: one
+	// sends what is written, the other sends the story on.
+	const auto sendWidth = std::max(_send->width(), _share->width());
 	const auto fieldWidth = std::max(_stage.width() - padding.left() - padding.right() - sendWidth - 4, 40);
 	_reply->resizeToWidth(fieldWidth);
 	const auto fieldRect = inStage(padding.left(), fieldTop, fieldWidth, fieldHeight);
@@ -890,24 +946,58 @@ void Viewer::updateGeometries() {
 	const auto sendRect = inStage(
 		padding.left() + fieldWidth + 4,
 		fieldTop + (fieldHeight - _send->height()) / 2,
-		sendWidth,
+		_send->width(),
 		_send->height());
 	_send->move(sendRect.topLeft());
+	if (replyShown()) {
+		_share->move(inStage(
+			padding.left() + fieldWidth + 4,
+			fieldTop + (fieldHeight - _share->height()) / 2,
+			_share->width(),
+			_share->height()).topLeft());
+	} else {
+		// Mine (next to «بیننده‌ها») or replies closed: the trailing end.
+		const auto content = bottom.marginsRemoved(padding);
+		_share->move(inStage(
+			_stage.width() - padding.right() - _share->width(),
+			content.y() + (content.height() - _share->height()) / 2,
+			_share->width(),
+			_share->height()).topLeft());
+	}
 
-	const auto card = postCardRect();
-	if (!card.isEmpty()) {
+	updateControls();
+}
+
+void Viewer::placeSeePost() {
+	const auto story = current();
+	if (!story) {
+		return;
+	} else if (story->kind == Data::StoryKind::Post) {
+		// Under the post's card.
+		const auto card = postCardRect();
 		_seePost->move(
 			card.x() + (card.width() - _seePost->width()) / 2,
 			card.y() + card.height() + 14);
+		return;
 	}
-	updateControls();
+	// A photo / video made from a post: over the caption.
+	const auto &padding = st::storiesCaptionPadding;
+	const auto width = _stage.width() - padding.left() - padding.right();
+	const auto caption = _caption.isEmpty()
+		? 0
+		: (_caption.countHeight(width, st::storiesCaptionLines) + padding.bottom());
+	_seePost->move(
+		_stage.x() + (_stage.width() - _seePost->width()) / 2,
+		bottomRect().y() - caption - 12 - _seePost->height());
 }
 
 void Viewer::updateControls() {
 	const auto story = current();
 	const auto reply = replyShown();
+	const auto typed = reply && !_reply->text().trimmed().isEmpty();
 	_reply->setVisible(reply);
-	_send->setVisible(reply && !_reply->text().trimmed().isEmpty());
+	_send->setVisible(typed);
+	_share->setVisible(shareShown() && !typed);
 	if (reply) {
 		_reply->setPlaceholder(tr::lng_stories_reply_hint(
 			tr::now,
@@ -920,10 +1010,19 @@ void Viewer::updateControls() {
 	}
 	_more->setVisible(story != nullptr);
 	_pause->setVisible(story != nullptr);
-	const auto postShown = story
+	const auto card = story
 		&& story->kind == Data::StoryKind::Post
 		&& story->post
 		&& story->post->available;
+	const auto postShown = card || (story && story->linksPost());
+	if (postShown) {
+		const auto text = card
+			? tr::lng_stories_see_post(tr::now)
+			: tr::lng_stories_view_eli(tr::now);
+		if (_seePost->text() != text) {
+			_seePost->setText(text);
+		}
+	}
 	_seePost->setVisible(postShown);
 	// Physical buttons: back is on the right in RTL.
 	const auto back = style::RightToLeft() ? _nextNav : _previousNav;
@@ -931,10 +1030,7 @@ void Viewer::updateControls() {
 	back->setVisible(story && (_index > 0 || _userIndex > 0));
 	forward->setVisible(story != nullptr);
 	if (postShown) {
-		const auto card = postCardRect();
-		_seePost->move(
-			card.x() + (card.width() - _seePost->width()) / 2,
-			card.y() + card.height() + 14);
+		placeSeePost();
 	}
 }
 
@@ -1255,12 +1351,17 @@ void Viewer::paintChrome(Painter &p) {
 			p.drawText(rect, Qt::AlignCenter, reactions[i]);
 		}
 	} else {
+		// Clear of the paper plane on both sides, so it stays centered.
+		const auto skip = shareShown() ? (_share->width() + 4) : 0;
 		p.setFont(st::storiesReplyClosedFont);
 		p.setPen(st::storiesOverFgDim);
 		p.drawText(
-			bottom.marginsRemoved(st::storiesReplyPadding),
+			bottom.marginsRemoved(st::storiesReplyPadding).marginsRemoved(
+				QMargins(skip, 0, skip, 0)),
 			Qt::AlignCenter,
-			tr::lng_stories_replies_closed(tr::now));
+			st::storiesReplyClosedFont->elided(
+				tr::lng_stories_replies_closed(tr::now),
+				std::max(bottom.width() - 2 * skip - 24, 0)));
 	}
 }
 
@@ -1430,6 +1531,12 @@ void Viewer::showMenu() {
 		menu->addAction(tr::lng_stories_viewers(tr::now), [=] {
 			ShowViewersBox(controller, storyId);
 		}, &st::storiesMenuIconEye);
+		// A story that shares a post is the post's card: nothing to post.
+		if (story->kind != Data::StoryKind::Post) {
+			menu->addAction(tr::lng_stories_to_eli(tr::now), [this] {
+				postToEli();
+			}, &st::storiesMenuIconEli);
+		}
 		auto remove = Ui::MenuItem();
 		remove.text = tr::lng_stories_delete(tr::now);
 		remove.icon = &st::menuIconDelete;
@@ -1512,6 +1619,68 @@ void Viewer::confirmDelete() {
 	_controller->show(Ui::MakeConfirmBox(std::move(args)));
 }
 
+// The photo / video of one of my stories (what was drawn and written on it
+// is part of it) goes to the new-post composer with its caption as the text,
+// once the viewer is gone.
+void Viewer::postToEli() {
+	const auto story = current();
+	if (!story || !mine() || story->kind == Data::StoryKind::Post) {
+		return;
+	} else if (_eliFile) {
+		_controller->showToast(tr::lng_stories_to_eli_preparing(tr::now));
+		return;
+	}
+	const auto video = (story->kind == Data::StoryKind::Video);
+	const auto caption = story->caption;
+	auto options = Data::Media::Options();
+	options.decode = false;
+	const auto handle = session().data().media().request(
+		Data::MediaRef::Story(story->id),
+		video ? Data::MediaVariant::Mp4 : Data::MediaVariant::Full,
+		options);
+	_eliFile = handle;
+	const auto failed = [=, this] {
+		if (_eliFile == handle) {
+			_eliFile = nullptr;
+			_controller->showToast(tr::lng_stories_to_eli_failed(tr::now));
+		}
+	};
+	const auto ready = [=, this] {
+		if (_eliFile != handle) {
+			return;
+		}
+		Support::SaveFileToTemp(
+			handle->filePath(),
+			handle->filePath().isEmpty() ? handle->bytes() : QByteArray(),
+			video ? u".mp4"_s : u".jpg"_s,
+			this,
+			[=, this](const QString &path) {
+				if (_eliFile != handle) {
+					return;
+				} else if (path.isEmpty()) {
+					failed();
+					return;
+				}
+				_eliFile = nullptr;
+				const auto controller = _controller;
+				auto args = Eli::ComposeArgs();
+				args.prefill = caption;
+				args.files = QStringList{ path };
+				close();
+				Eli::OpenCompose(controller, std::move(args));
+			});
+	};
+	if (handle->isReady()) {
+		ready();
+	} else if (handle->isFailed()) {
+		failed();
+	} else {
+		_controller->showToast(tr::lng_stories_to_eli_preparing(tr::now));
+		connect(handle.get(), &Data::MediaHandle::ready, this, ready);
+		connect(handle.get(), &Data::MediaHandle::failed, this, failed);
+	}
+}
+
 void Viewer::sendReply() {
 	const auto story = current();
 	const auto text = _reply->text().trimmed();
@@ -1535,6 +1704,18 @@ void Viewer::sendReply() {
 			Support::ShowError(controller, error);
 		}
 	});
+}
+
+void Viewer::shareStory() {
+	const auto story = current();
+	if (!story || !story->canShare) {
+		return;
+	}
+	if (_reply->hasFocus()) {
+		setFocus();
+	}
+	// The story holds still while the sheet is up (a layer is shown).
+	ShowShareBox(_controller, story->id);
 }
 
 void Viewer::react(int index) {
@@ -1576,7 +1757,7 @@ void Viewer::openProfile() {
 
 void Viewer::openPost() {
 	const auto story = current();
-	if (!story || !story->post || !story->post->available) {
+	if (!story || !story->post || !story->post->available || story->post->id.isEmpty()) {
 		return;
 	}
 	const auto postId = story->post->id;
@@ -1585,18 +1766,31 @@ void Viewer::openPost() {
 	controller->openRoute(Window::Routes::Post(postId));
 }
 
+constexpr auto kViewerName = "storiesViewer";
+
+[[nodiscard]] bool ViewerShown(Window::SessionController *controller) {
+	const auto body = controller->window()->bodyWidget();
+	const auto viewer = body->findChild<QWidget*>(
+		QString::fromLatin1(kViewerName),
+		Qt::FindDirectChildrenOnly);
+	return viewer && viewer->isVisible();
+}
+
 Viewer *Show(
 		Window::SessionController *controller,
 		QStringList users,
 		int index,
-		const QString &storyId) {
+		const QString &storyId,
+		std::optional<Data::Story> preloaded = std::nullopt) {
 	const auto window = controller->window();
 	const auto viewer = new Viewer(
 		window->bodyWidget(),
 		controller,
 		std::move(users),
 		index,
-		storyId);
+		storyId,
+		std::move(preloaded));
+	viewer->setObjectName(QString::fromLatin1(kViewerName));
 	window->registerDarkOverlay(viewer);
 	viewer->show();
 	viewer->raise();
@@ -1630,6 +1824,32 @@ void OpenStory(
 		return;
 	}
 	Show(controller, QStringList{ ownerId }, 0, storyId);
+}
+
+void OpenStoryFromChat(
+		Window::SessionController *controller,
+		const QString &storyId) {
+	auto &stories = controller->session().data().stories();
+	if (storyId.isEmpty() || !stories.enabled()) {
+		return;
+	} else if (stories.isGone(storyId)) {
+		controller->showToast(tr::lng_stories_chat_gone(tr::now));
+		return;
+	}
+	stories.get(storyId, controller, [=](
+			const Data::User &owner,
+			const Data::Story &story) {
+		// A second click while the first answer was on its way.
+		if (!ViewerShown(controller)) {
+			Show(controller, QStringList{ owner.id }, 0, story.id, story);
+		}
+	}, [=](const Api::Error &error) {
+		if (error.notFound()) {
+			controller->showToast(tr::lng_stories_chat_gone(tr::now));
+		} else {
+			Support::ShowError(controller, error);
+		}
+	});
 }
 
 } // namespace Stories

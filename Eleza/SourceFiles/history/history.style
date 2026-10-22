@@ -197,6 +197,12 @@ historyPostThumbRadius: 8px;
 historyStoryWidth: 240px;
 historyStoryThumb: size(44px, 78px);
 historyStoryEmojiFont: font(26px);
+historyStoryShareWidth: 180px;
+historyStoryShareUserpic: 24px;
+historyStoryShareSkip: 8px;
+historyStoryShareThumbMax: 260px;
+historyStoryShareVideoSize: 36px;
+historyStoryShareVideoIcon: icon {{ "play", staticWhite, 18px }};
 
 // link preview card
 historyPreviewPadding: margins(10px, 6px, 8px, 7px);

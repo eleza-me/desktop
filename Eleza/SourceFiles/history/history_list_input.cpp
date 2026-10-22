@@ -411,7 +411,7 @@ void ListWidget::activate(const MouseTarget &target, Qt::MouseButton button) {
 		break;
 	case Zone::Story:
 		if (message.story) {
-			Stories::OpenStory(_controller, message.story->owner, message.story->storyId);
+			Stories::OpenStoryFromChat(_controller, message.story->storyId);
 		}
 		break;
 	case Zone::Preview:

@@ -9,6 +9,7 @@
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QMimeData>
+#include <QtCore/QMimeDatabase>
 #include <QtCore/QPointer>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QThreadPool>
@@ -372,6 +373,61 @@ void SaveImageToTemp(
 			QUuid::createUuid().toString(QUuid::WithoutBraces)
 				+ QStringLiteral(".png"));
 		return image.save(path, "PNG") ? path : QString();
+	}, [=](const QString &path) {
+		if (done) {
+			done(path);
+		}
+	});
+}
+
+void SaveFileToTemp(
+		const QString &sourcePath,
+		const QByteArray &bytes,
+		const QString &fallbackSuffix,
+		QObject *guard,
+		std::function<void(const QString &path)> done) {
+	if (sourcePath.isEmpty() && bytes.isEmpty()) {
+		if (done) {
+			done(QString());
+		}
+		return;
+	}
+	const auto directory = QDir(base::platform::PrivateTempDirectory()).filePath(
+		QStringLiteral("eleza-share"));
+	InBackground(guard, [=] {
+		auto head = bytes.left(512);
+		if (head.isEmpty()) {
+			auto file = QFile(sourcePath);
+			if (!file.open(QIODevice::ReadOnly)) {
+				return QString();
+			}
+			head = file.read(512);
+		}
+		const auto mime = QMimeDatabase().mimeTypeForData(head);
+		const auto known = mime.name().startsWith(u"image/")
+			|| mime.name().startsWith(u"video/");
+		auto suffix = known ? mime.preferredSuffix() : QString();
+		if (suffix.isEmpty()) {
+			suffix = fallbackSuffix;
+		}
+		if (suffix.startsWith(QLatin1Char('.'))) {
+			suffix = suffix.mid(1);
+		}
+		QDir().mkpath(directory);
+		const auto path = QDir(directory).filePath(
+			QUuid::createUuid().toString(QUuid::WithoutBraces)
+				+ QLatin1Char('.')
+				+ suffix);
+		if (!bytes.isEmpty()) {
+			auto file = QFile(path);
+			if (!file.open(QIODevice::WriteOnly)
+				|| file.write(bytes) != bytes.size()) {
+				file.remove();
+				return QString();
+			}
+			return path;
+		}
+		return QFile::copy(sourcePath, path) ? path : QString();
 	}, [=](const QString &path) {
 		if (done) {
 			done(path);

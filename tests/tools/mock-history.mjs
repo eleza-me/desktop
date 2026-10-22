@@ -20,6 +20,9 @@
 //   ro      a finished conversation that can be continued in direct messages
 //   gone    a chat with a deleted account
 //   big     400 messages (pagination, jumps)
+//   stories stories sent on (story_share): available, without a comment, not mine
+//           to open, expired; a story reply (tests/tools/mock-stories-proxy.mjs answers
+//           opening and sending them)
 //
 // Behaviour:
 //   * sending "fail" (or any text that starts with it) is refused with 403, so the
@@ -231,6 +234,25 @@ add('ro', 'p_me', 'text', { text: 'به نظرم عمداً باز گذاشته 
 add('ro', 'p_x', 'text', { text: 'دقیقاً! مرسی که شنیدی 🙏' }, now - 2 * DAY + 5 * MIN);
 add('ro', 'p_x', 'system', { system: 'conversation.ended' }, now - DAY);
 chats.ro.last_read_seq = 4;
+// -- stories sent on (story_share): a card with a comment, one without, one the
+// server says I may not open, one that ran out; the web mock serves the thumbnails
+direct('stories', 'u_sara');
+{
+	const S = 'u_sara', M = 'u_me';
+	const exp = Math.floor(now / 1000) + 20 * 3600;
+	const share = (story, owner, kind, comment, extra = {}) => ({
+		text: '📖 استوری @' + owner.replace('u_', '') + (comment ? '\n' + comment : ''),
+		story: { story_id: story, owner, thumb_url: `/v1/stories/${story}/media?variant=thumb`, kind, expires_at: exp, ...(comment ? { comment } : {}), ...extra },
+	});
+	add('stories', S, 'text', { text: 'اینو ببین!' }, now - 3 * HOUR);
+	add('stories', S, 'story_share', share('stR2', 'u_reza', 'video', 'ببین چه قشنگه 😍', { available: true }), now - 3 * HOUR + MIN);
+	add('stories', M, 'story_share', share('stS1', 'u_sara', 'image', ''), now - 2 * HOUR);
+	add('stories', S, 'story_share', { text: '📖 استوری @nika', story: { story_id: 'stN1', owner: 'u_nika', kind: 'image', expires_at: exp, available: false } }, now - HOUR);
+	add('stories', S, 'story_share', share('stOld', 'u_ali', 'image', 'دیروزی', { expires_at: Math.floor(now / 1000) - 2 * 3600 }), now - 30 * MIN);
+	add('stories', S, 'story_reply', { text: 'چه عکس خوبی', story: { story_id: 'stA1', owner: 'u_ali', thumb_url: '/v1/stories/stA1/media?variant=thumb', kind: 'image', expires_at: exp } }, now - 20 * MIN);
+	chats.stories.last_read_seq = 6;
+	chats.stories.peer_read_seq = 3;
+}
 // -- a message request
 direct('req', 'u_nika', { header: { request: 'incoming', can_send: false }, flags: { section: 'request' } });
 add('req', 'u_nika', 'text', { text: 'سلام! پست‌هات دربارهٔ الزا رو دیدم، می‌شه چند تا سؤال بپرسم؟' }, now - 2 * HOUR);

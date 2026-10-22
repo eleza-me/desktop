@@ -58,9 +58,19 @@ struct Story {
 	qint64 viewerCount = -1; // my own stories only; -1 when absent
 	bool closeFriends = false; // audience "close_friends"
 	bool canReply = false;
+	bool canShare = false;   // I may send it to people («ارسال به…»)
+	qint64 shareCount = -1;  // my own stories only; -1 when absent
 
 	[[nodiscard]] bool valid() const {
 		return !id.isEmpty();
+	}
+	// A photo / video made from an Eli post (both media_id and post_id):
+	// «دیدن الی» opens the post.
+	[[nodiscard]] bool linksPost() const {
+		return (kind != StoryKind::Post)
+			&& post
+			&& post->available
+			&& !post->id.isEmpty();
 	}
 	[[nodiscard]] bool expired(qint64 now) const {
 		return expiresAt > 0 && now >= expiresAt;
@@ -118,6 +128,7 @@ struct StoryViewersPage {
 	QVector<StoryViewer> viewers;
 	QString nextCursor;
 	qint64 total = 0;
+	qint64 shares = -1; // how many messages sending it became; -1 when absent
 
 	[[nodiscard]] static StoryViewersPage FromJson(const QJsonObject &json);
 };
@@ -134,9 +145,62 @@ struct StorySettings {
 	QString replies = QStringLiteral("everyone"); // everyone | following | off
 	int hiddenCount = 0;
 	int closeFriendsCount = 0;
+	// People who see my stories may send them on; absent from a server
+	// that cannot share stories (then the switch is not offered).
+	std::optional<bool> allowSharing;
 
 	[[nodiscard]] static StorySettings FromJson(const QJsonObject &json);
 };
+
+// ---- sending a story to people («ارسال به…», docs/stories.md §7)
+
+// Why somebody did not get it. An unknown reason of a newer server reads as
+// Failed («try again» is the safe thing to say).
+enum class StoryShareReason {
+	Privacy,     // no longer given by the server, kept for older answers
+	NotAllowed,  // their message setting, a block, a read-only membership
+	Limit,       // a message limit, slow mode: later
+	Unavailable, // a gone account or group, not a member
+	Failed,      // a passing failure
+};
+[[nodiscard]] StoryShareReason StoryShareReasonFromString(const QString &reason);
+
+struct StoryShareSent {
+	QString to;    // the person or the group
+	QString chat;  // the 1:1 chat, or the group
+	qint64 seq = 0;
+};
+
+struct StoryShareNotSent {
+	QString to;
+	StoryShareReason reason = StoryShareReason::Failed;
+};
+
+// {sent: [{to, chat, seq}], not_sent: [{to, reason}]}.
+struct StoryShareResult {
+	QVector<StoryShareSent> sent;
+	QVector<StoryShareNotSent> notSent;
+
+	// The reasons that came, each once, in the answer's order.
+	[[nodiscard]] QVector<StoryShareReason> reasons() const;
+	// The ids left out for `reason`, in the answer's order.
+	[[nodiscard]] QStringList notSentFor(StoryShareReason reason) const;
+
+	[[nodiscard]] static StoryShareResult FromJson(const QJsonObject &json);
+};
+
+// `stories.share_max_recipients`: people and groups of one share together.
+inline constexpr auto kStoryShareMaxRecipients = 15;
+// The configured cap, or the default when the config says nothing sensible.
+[[nodiscard]] int StoryShareCap(qint64 configured);
+
+// The body of `stories.share` (POST /v1/stories/{id}/share): the picked ids
+// split into people (`to`) and groups (`groups`, ids `j…`), duplicates once,
+// in the order they were picked; the message trimmed and left out when empty.
+[[nodiscard]] QJsonObject StoryShareBody(
+	const QString &storyId,
+	const QStringList &recipients,
+	const QString &text);
 
 // What the circle around a face shows.
 enum class StoryRing {
@@ -161,8 +225,10 @@ struct StoryRingState {
 [[nodiscard]] StoryRingState RingStateOf(const StoryTrayItem &item);
 [[nodiscard]] StoryRingState RingStateOf(const StoryTrayMe &me);
 
-// The tray order of the server: accounts with unseen stories first, then the
-// fully seen ones, muted accounts last; each group by the newest story.
+// The groups of the tray: accounts with unseen stories first, then the fully
+// seen ones, muted accounts last. The server orders each group (the people
+// whose stories I watch most first) and that order is kept: this only moves
+// an account whose group changed here (seen, muted).
 void SortTray(QVector<StoryTrayItem> &items);
 
 // Where the viewer starts in a person's stories: the first one I have not
