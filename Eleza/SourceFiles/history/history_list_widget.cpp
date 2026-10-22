@@ -633,9 +633,12 @@ std::optional<Data::Message> ListWidget::lastEditable() const {
 	const auto window = config ? config->editWindow() : qint64(0);
 	const auto now = QDateTime::currentMSecsSinceEpoch();
 	for (auto i = int(_rows.size()) - 1; i >= 0; --i) {
-		const auto &message = _rows[i].element->data();
-		if (message.mine && CanEdit(message, now, window)) {
-			return message;
+		const auto element = _rows[i].element.get();
+		const auto &message = element->data();
+		// An album's caption lives on one of its items.
+		const auto &captioned = element->captionMessage();
+		if (message.mine && CanEdit(captioned, now, window)) {
+			return captioned;
 		} else if (message.mine && message.seq > 0) {
 			// Only the last own message is edited this way.
 			if (!IsService(message)) {
