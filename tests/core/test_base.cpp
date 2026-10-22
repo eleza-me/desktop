@@ -182,6 +182,21 @@ void TestBase::atomicFiles() {
 #endif // !Q_OS_WIN
 	QVERIFY(base::platform::RemoveRecursively(dir.path() + u"/nested"_s));
 	QVERIFY(!QFileInfo::exists(path));
+#ifndef Q_OS_WIN
+	// A link to a directory: the link goes, the directory and its files stay.
+	const auto target = dir.path() + u"/target"_s;
+	const auto inside = target + u"/keep.bin"_s;
+	QVERIFY(base::platform::WriteFileAtomic(inside, QByteArray("keep"), true));
+	const auto link = dir.path() + u"/link"_s;
+	QVERIFY(QFile::link(target, link));
+	QVERIFY(base::platform::RemoveRecursively(link));
+	QVERIFY(!QFileInfo(link).isSymLink());
+	QCOMPARE(base::platform::ReadFile(inside).value(), QByteArray("keep"));
+	// A dangling link is removed too.
+	QVERIFY(QFile::link(dir.path() + u"/nowhere"_s, link));
+	QVERIFY(base::platform::RemoveRecursively(link));
+	QVERIFY(!QFileInfo(link).isSymLink());
+#endif // !Q_OS_WIN
 	QVERIFY(!base::platform::SystemDescription().isEmpty());
 	QVERIFY(base::platform::DeviceName().size() <= 64);
 }
