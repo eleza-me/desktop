@@ -64,6 +64,7 @@ Group Group::FromJson(const QJsonObject &json) {
 	result.adminCount = Int(json, "admin_count"_L1);
 	result.hideMembers = Bool(json, "hide_members"_L1);
 	result.membersHidden = Bool(json, "members_hidden"_L1);
+	result.outboxReadSeq = Int64(json, "outbox_read_seq"_L1);
 	return result;
 }
 
@@ -104,6 +105,7 @@ QJsonObject Group::toJson() const {
 	Put(result, "admin_count"_L1, adminCount);
 	Put(result, "hide_members"_L1, hideMembers);
 	Put(result, "members_hidden"_L1, membersHidden);
+	Put(result, "outbox_read_seq"_L1, outboxReadSeq);
 	return result;
 }
 

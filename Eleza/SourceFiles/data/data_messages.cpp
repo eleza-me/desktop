@@ -515,6 +515,10 @@ void Messages::loadPage(
 				if (header.valid()) {
 					page.group = header;
 					page.info = Groups::InfoFor(header);
+					// Read receipts never go back (frames may have crossed the page).
+					if (const auto row = _session->chats().chat(chat)) {
+						page.info.peerReadSeq = std::max(page.info.peerReadSeq, row->peerReadSeq);
+					}
 				}
 			} else {
 				page.info = ChatInfo::FromJson(result.value("chat"_L1).toObject());
