@@ -3,6 +3,14 @@
 // results by scope (people, topics, posts, open conversations). Clicking a row
 // opens it through its route: in the main column on a wide window, over the
 // list in the single column mode.
+//
+// People you may know: five rows, the rest of the fetched pages waiting
+// behind them (SuggestionQueue). A followed person leaves after a moment, a
+// dismissed one at once, and the next takes the place. The section is read
+// again when it is shown or the app comes back, at most every ten minutes
+// (RefreshThrottle) — never on a timer. «دیدن همه» opens the same widget in
+// Mode::AllPeople as a main section (route search/people): every suggestion,
+// paged, followed in place.
 #pragma once
 
 #include "conversation/conversation_card.h"
@@ -26,6 +34,7 @@ class InfiniteRadialAnimation;
 class ScrollArea;
 class SearchField;
 class SkeletonList;
+class TopBar;
 class VerticalLayout;
 } // namespace Ui
 
@@ -43,7 +52,15 @@ class Widget final
 	: public Window::SectionWidget
 	, private Ui::ActionListDelegate {
 public:
-	Widget(QWidget *parent, Window::SessionController *controller);
+	enum class Mode {
+		Browse, // the side column of the tab
+		AllPeople, // «پیشنهاد برای تو»: every suggestion (route search/people)
+	};
+
+	Widget(
+		QWidget *parent,
+		Window::SessionController *controller,
+		Mode mode = Mode::Browse);
 	~Widget();
 
 	// The route `search?q=…`.
@@ -65,6 +82,7 @@ private:
 	struct Row;
 	struct Browse;
 	struct Results;
+	struct AllPeople;
 	struct Poster;
 
 	// Ui::ActionListDelegate
@@ -85,7 +103,13 @@ private:
 	void setScope(const QString &scope);
 	void loadBrowse();
 	void browsePartDone();
-	void fillSuggestions();
+	void maybeRefresh();
+	void refreshSuggestions();
+	void refillSuggestions();
+	void leaveSuggestions(const QString &userId);
+	void hidePerson(const QString &userId);
+	void loadAllPeople(bool reset);
+	void buildAll();
 	void runSearch();
 	void searchPartDone(int generation);
 	void loadMoreResults();
@@ -137,6 +161,8 @@ private:
 	void requestPoster(const QString &postId);
 	void requestTopicInfo(const QStringList &slugs);
 
+	Mode _mode = Mode::Browse;
+	Ui::TopBar *_bar = nullptr;
 	Ui::SearchField *_field = nullptr;
 	Ui::ChipsRow *_scopes = nullptr;
 	Ui::ScrollArea *_scroll = nullptr;
@@ -158,6 +184,8 @@ private:
 	std::vector<std::unique_ptr<Row>> _rows;
 	std::unique_ptr<Browse> _browse;
 	std::unique_ptr<Results> _results;
+	std::unique_ptr<AllPeople> _all;
+	QSet<QString> _leaving;
 	QHash<QString, Poster> _posters;
 	QHash<QString, Data::TopicInfo> _topicInfo;
 	QSet<QString> _topicInfoRequested;

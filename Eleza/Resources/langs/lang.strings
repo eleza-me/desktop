@@ -2237,3 +2237,9 @@
 "lng_eli_new_followers" = "دنبال‌کنندگان تازه";
 "lng_eli_notif_and_more#one" = "و {count} نفر دیگر";
 "lng_eli_notif_and_more#other" = "و {count} نفر دیگر";
+"lng_search_reason_groups#one" = "{count} گروه مشترک";
+"lng_search_reason_groups#other" = "{count} گروه مشترک";
+"lng_search_reason_new" = "تازه به الزا پیوسته";
+"lng_search_reason_and_new" = "{reason} · تازه پیوسته";
+"lng_search_see_all" = "دیدن همه";
+"lng_search_no_suggestions" = "فعلاً پیشنهادی نداریم";

@@ -65,8 +65,10 @@ struct Profile : User {
 	QVector<User> mutuals;
 	int mutualsTotal = 0;
 	std::optional<Birthday> birthday;
-	QString reason;       // suggestions: mutual | popular | follows_you | province
+	QString reason;       // suggestions: mutual | contact | follows_you | groups | interest | province | new | popular | active
 	int mutualCount = 0;  // suggestions
+	int groupCount = 0;   // suggestions: small groups shared with me (`groups`)
+	bool joinedRecently = false; // suggestions: signed up lately
 
 	[[nodiscard]] const User &card() const {
 		return *this;
