@@ -54,6 +54,10 @@ eleza_add_test(test_title_hit_test app/test_title_hit_test.cpp)
 target_sources(test_title_hit_test PRIVATE
 	"${_eleza_app_src}/window/window_title_hit_test.cpp")
 target_include_directories(test_title_hit_test PRIVATE "${_eleza_app_src}")
+# The media screens: month headings and the grid of the shared media page.
+eleza_add_test(test_media_logic app/test_media_logic.cpp LIBS ElezaLang)
+target_sources(test_media_logic PRIVATE "${_eleza_app_src}/media/media_shared_logic.cpp")
+target_include_directories(test_media_logic PRIVATE "${_eleza_app_src}")
 eleza_add_test(test_eli_logic app/test_eli_logic.cpp)
 target_sources(test_eli_logic PRIVATE "${_eleza_app_src}/eli/eli_logic.cpp")
 target_include_directories(test_eli_logic PRIVATE "${_eleza_app_src}")

@@ -114,6 +114,14 @@ private Q_SLOTS:
 		QCOMPARE(reactions.queryValue("show"), QStringLiteral("reactions"));
 		QCOMPARE(reactions.seq(), qint64(42));
 		QCOMPARE(ParseRoute(Routes::GroupMedia("j1team")).queryValue("show"), QStringLiteral("media"));
+		// A direct chat's shared media: a chat route with its own key.
+		QCOMPARE(Routes::ChatMedia("c1"), QStringLiteral("chat/c1?show=media"));
+		const auto media = ParseRoute(Routes::ChatMedia("c1"));
+		QCOMPARE(media.type, RouteType::Chat);
+		QCOMPARE(media.id, QStringLiteral("c1"));
+		QCOMPARE(media.queryValue("show"), QStringLiteral("media"));
+		QCOMPARE(media.seq(), qint64(0));
+		QVERIFY(!media.botStart().has_value());
 		const auto token = QStringLiteral("j1team.AAAAAAAAAAAAAAAAAAAAAA");
 		QCOMPARE(RouteFromWebPath("/g/" + token)->type, RouteType::GroupInvite);
 		QCOMPARE(RouteFromWebPath("/g/" + token)->id, token);

@@ -20,6 +20,9 @@
 //   ro      a finished conversation that can be continued in direct messages
 //   gone    a chat with a deleted account
 //   big     400 messages (pagination, jumps)
+//   gallery shared media over several months: 90 photos / videos, 35 songs, files,
+//           links, voices, round videos, gifs (GET …/media and …/media/counts; with
+//           MEDIA=off both answer 404 as a server from before them)
 //
 // Behaviour:
 //   * sending "fail" (or any text that starts with it) is refused with 403, so the
@@ -250,6 +253,34 @@ for (let i = 0; i < 400; i++) {
 chats.big.last_read_seq = 400; chats.big.peer_read_seq = 400;
 pins.big = [{ seq: 40, pinned_at: now - DAY, scope: 'both' }];
 chats.big.pins = [40];
+
+// -- shared media over several months (the media pages, the counts)
+direct('gallery', 'u_sara');
+{
+	const blur = ['LKO2?U%2Tw=w]~RBVZRi};RPxuwH', 'LEHV6nWB2yk8pyo0adR*.7kCMdnj', 'LGF5]+Yk^6#M@-5c,1J5@[or[Q6.'];
+	const start = now - 150 * DAY;
+	for (let i = 0; i < 200; i++) {
+		const at = start + i * 18 * HOUR;
+		const who = (i % 3) ? 'u_sara' : 'u_me';
+		const n = i % 10;
+		if (n < 4 || n === 9) {
+			const video = (n === 3);
+			add('gallery', who, video ? 'video' : 'photo', { attachment: 'g' + i, media: { w: (i % 2) ? 1200 : 800, h: (i % 2) ? 800 : 1200, blurhash: blur[i % 3], ...(video ? { duration_ms: 4000 + i * 900 } : {}), size: 300000 } }, at);
+		} else if (n === 4 || n === 7) {
+			add('gallery', who, 'audio', { attachment: 'ga' + i, text: `track-${i}.mp3`, audio: { title: 'آهنگ شمارهٔ ' + i, performer: (i % 4) ? 'همایون شجریان' : 'Hayedeh' }, media: { duration_ms: 180000 + i * 1000, size: 4_200_000, mime: 'audio/mpeg' } }, at);
+		} else if (n === 5) {
+			add('gallery', who, (i % 20 === 5) ? 'video_note' : 'voice', { attachment: 'gv' + i, media: { duration_ms: 9000 + i * 100, waveform: wave(i), size: 30000, mime: 'audio/ogg', w: 384, h: 384, blurhash: blur[0] } }, at);
+		} else if (n === 6) {
+			add('gallery', who, (i % 20 === 6) ? 'file' : 'gif', (i % 20 === 6)
+				? { attachment: 'gf' + i, text: ['report-' + i + '.pdf', 'sheet-' + i + '.xlsx', 'notes-' + i + '.docx'][i % 3], media: { size: 120000 * (i + 1), mime: 'application/pdf' } }
+				: { attachment: 'gg' + i, media: { w: 480, h: 360, duration_ms: 3000, blurhash: blur[1], size: 420000, mime: 'video/mp4' } }, at);
+		} else {
+			add('gallery', who, 'text', { text: (Math.floor(i / 10) % 2) ? 'این را ببین https://example.com/article/' + i : 'یک پیام ساده ' + i }, at);
+		}
+	}
+	chats.gallery.last_read_seq = chats.gallery.last_seq;
+	chats.gallery.peer_read_seq = chats.gallery.last_seq;
+}
 
 // -- the rich chat: every kind
 direct('rich', 'u_reza');
@@ -593,6 +624,23 @@ function handle(req, res, raw) {
 		const body = { chat: c, messages: after ? page : page.slice().reverse(), has_more_before: all.some((x) => x.seq < first), has_more_after: all.some((x) => x.seq > last) };
 		// A little latency so loading states are visible.
 		return setTimeout(() => json(res, 200, body), before ? 250 : 60);
+	}
+	if ((rest === '/media' || rest === '/media/counts') && m === 'GET') {
+		if (process.env.MEDIA === 'off') return json(res, 404, { code: 'not_found', title: 'پیدا نشد' });
+		const linkOf = (x) => !!(x.link_preview?.url || /https?:\/\//i.test(x.text || '') || (x.entities || []).some((e) => e.type === 'text_link'));
+		const matches = (x, kind) => (kind === 'link') ? linkOf(x) : (x.kind === kind);
+		const all = list.filter(visible);
+		if (rest === '/media/counts') {
+			const count = (kind) => all.filter((x) => matches(x, kind)).length;
+			return json(res, 200, { photo_video: count('photo') + count('video'), file: count('file'), link: count('link'), audio: count('audio'), voice: count('voice'), gif: count('gif'), video_note: count('video_note') });
+		}
+		const kinds = (url.searchParams.get('kinds') || '').split(',').filter(Boolean);
+		if (!kinds.length) return json(res, 400, { code: 'chat.media_kinds_invalid', title: 'kinds' });
+		const before = Number(url.searchParams.get('before') || 0);
+		const limit = Math.max(1, Math.min(50, Number(url.searchParams.get('limit') || 50)));
+		const found = all.filter((x) => kinds.some((k) => matches(x, k)) && (!before || x.seq < before)).reverse();
+		const page = found.slice(0, limit);
+		return setTimeout(() => json(res, 200, { messages: page, has_more_before: found.length > limit }), 200);
 	}
 	if (rest === '/messages' && m === 'POST') {
 		if (/^fail/.test(b.text || '')) return json(res, 403, { code: 'chat.cannot_send', title: 'ارسال این پیام ممکن نیست' });

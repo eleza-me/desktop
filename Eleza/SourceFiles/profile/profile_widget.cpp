@@ -686,6 +686,21 @@ QString Widget::callableUserId() const {
 	return QString();
 }
 
+QString Widget::directChatId() const {
+	if (!_loaded || isMe() || _profile.id.isEmpty()) {
+		return QString();
+	}
+	for (const auto &chat : controller()->session().data().chats().all()) {
+		if (chat.peerUserId == _profile.id
+			&& !chat.isConversation
+			&& !chat.isGroup
+			&& !chat.saved) {
+			return chat.id;
+		}
+	}
+	return QString();
+}
+
 ViewerState Widget::viewerState() const {
 	auto result = ViewerState();
 	result.loaded = _loaded;
@@ -1078,6 +1093,13 @@ void Widget::showMenu() {
 				[=, this] { Window::StartCall(controller(), callee, true); },
 				&st::profileMenuVideoCallIcon);
 		}
+	}
+	// «رسانه، فایل و پیوند» of our direct chat, when there is one.
+	if (const auto chatId = directChatId(); !chatId.isEmpty()) {
+		add(
+			tr::lng_media_shared_open(tr::now),
+			[=, this] { controller()->openRoute(Window::Routes::ChatMedia(chatId)); },
+			&st::profileMenuMediaIcon);
 	}
 	for (const auto entry : model.menu) {
 		switch (entry) {
