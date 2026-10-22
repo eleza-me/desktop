@@ -330,12 +330,7 @@ void Sync::applyLive(
 			});
 		}
 	} else if (kind == u"played") {
-		const auto seq = Json::Int64(d, "seq"_L1);
-		if (!chat.isEmpty() && seq > 0) {
-			messages.patchMessage(chat, Message::KeyForSeq(seq), [](Message &message) {
-				message.played = true;
-			});
-		}
+		applyPlayed(chat, Json::Int64(d, "seq"_L1));
 	} else if (kind == u"draft") {
 		// A draft typed here that the server has not confirmed yet is newer
 		// than what it tells (the echo of an earlier save, say).
@@ -493,6 +488,28 @@ void Sync::applyHidden(const QString &chat, qint64 seq) {
 	}
 }
 
+// The chat is no longer mine to see (a request I declined, a conversation
+// that ended behind masks or was purged): every item of it in a difference
+// says so, with neither a header nor a message. It goes as when it is
+// deleted here — the row, the timeline and the cache — and what waits in
+// the outbox for it would fail for good.
+void Sync::applyRemoved(const QString &chat) {
+	_session->outbox().discardChat(chat);
+	// The cache as well when there is no row.
+	_session->messages().clear(chat);
+	_session->chats().remove(chat);
+}
+
+// A voice or round message was played: by me on another device, or by
+// the peer (one of mine).
+void Sync::applyPlayed(const QString &chat, qint64 seq) {
+	if (!chat.isEmpty() && seq > 0) {
+		_session->messages().patchMessage(chat, Message::KeyForSeq(seq), [](Message &message) {
+			message.played = true;
+		});
+	}
+}
+
 void Sync::applyMessage(Message message, bool live) {
 	if (message.chat.isEmpty()) {
 		return;
@@ -577,6 +594,13 @@ void Sync::applyMessage(Message message, bool live) {
 }
 
 void Sync::applyItem(const QJsonObject &item, bool live) {
+	if (Json::Bool(item, "removed"_L1)) {
+		// Whatever the kind: the chat itself is gone for me.
+		if (const auto chat = Json::String(item, "chat"_L1); !chat.isEmpty()) {
+			applyRemoved(chat);
+		}
+		return;
+	}
 	if (const auto info = item.value("chat_info"_L1).toObject();
 		!Json::String(info, "chat"_L1).isEmpty()) {
 		rememberInfo(ChatInfo::FromJson(info));
@@ -588,12 +612,8 @@ void Sync::applyItem(const QJsonObject &item, bool live) {
 		const auto view = !Json::String(wrapped, "chat"_L1).isEmpty()
 			? wrapped
 			: item.value("message"_L1).toObject();
-		const auto chat = Json::String(item, "chat"_L1);
-		const auto seq = Json::Int64(item, "seq"_L1);
 		if (!Json::String(view, "chat"_L1).isEmpty()) {
 			applyMessage(Message::FromJson(view), live && kind == u"message");
-		} else if (Json::Bool(item, "removed"_L1) && !chat.isEmpty() && seq > 0) {
-			_session->messages().removeMessage(chat, Message::KeyForSeq(seq));
 		}
 		return;
 	}
@@ -628,13 +648,15 @@ void Sync::applyItem(const QJsonObject &item, bool live) {
 	// the chat, the seq and the header (applied above) are all there is.
 	const auto chat = Json::String(item, "chat"_L1);
 	const auto seq = Json::Int64(item, "seq"_L1);
-	if (chat.isEmpty() || Json::Bool(item, "removed"_L1)) {
+	if (chat.isEmpty()) {
 		return;
 	} else if (kind == u"cleared") {
 		// The history cleared for both: the seq is the chat's last one then.
 		if (seq > 0) {
 			applyCleared(chat, seq, true);
 		}
+	} else if (kind == u"played") {
+		applyPlayed(chat, seq);
 	} else if (kind == u"member") {
 		if (seq > 0) {
 			// One message deleted for me.
