@@ -1533,6 +1533,14 @@ void Viewer::showMenu() {
 			}
 		});
 	});
+	// The paper plane's action, offered when the plane is.
+	const auto addShare = [&] {
+		if (shareShown()) {
+			menu->addAction(tr::lng_stories_share_to(tr::now), [this] {
+				shareStory();
+			}, &st::menuIconForward);
+		}
+	};
 	if (mine()) {
 		menu->addAction(tr::lng_stories_viewers(tr::now), [=] {
 			ShowViewersBox(controller, storyId);
@@ -1543,6 +1551,7 @@ void Viewer::showMenu() {
 				postToEli();
 			}, &st::storiesMenuIconEli);
 		}
+		addShare();
 		auto remove = Ui::MenuItem();
 		remove.text = tr::lng_stories_delete(tr::now);
 		remove.icon = &st::menuIconDelete;
@@ -1569,6 +1578,7 @@ void Viewer::showMenu() {
 					: tr::lng_stories_muted(tr::now, lt_name, name));
 			},
 			muted ? &st::storiesMenuIconEye : &st::storiesMenuIconHide);
+		addShare();
 		auto report = Ui::MenuItem();
 		report.text = tr::lng_stories_report(tr::now);
 		report.icon = &st::menuIconReport;
