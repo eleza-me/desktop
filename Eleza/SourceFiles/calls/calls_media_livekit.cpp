@@ -1830,12 +1830,12 @@ void ShutdownMedia(int timeoutMs) {
 	}, Qt::QueuedConnection);
 	if (done->tryAcquire(1, timeoutMs)) {
 		thread->quit();
-		if (thread->wait(500)) {
-			delete engine;
-			delete thread;
-		}
+		thread->wait(500);
 	}
-	// Otherwise the thread is left as it is: the process is exiting.
+	// The engine and its thread are not deleted: an event of the library
+	// already on its way and a LiveKitMedia that outlives this both still
+	// post to the engine (where nothing runs any more). Otherwise the
+	// thread is left as it is: the process is exiting.
 }
 
 } // namespace Calls
