@@ -2201,3 +2201,6 @@
 "lng_stories_open_of" = "See {name}'s story";
 "lng_stories_pause" = "Pause";
 "lng_stories_play" = "Play";
+
+// ---- history: the floating buttons ----
+"lng_history_jump_mention" = "Go to the next mention";

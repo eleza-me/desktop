@@ -84,8 +84,12 @@ public:
 	[[nodiscard]] bool atBottom() const {
 		return _atBottom;
 	}
-	// The viewport does not show the end of the chat.
+	// The viewport does not show the end of the chat: the reader scrolled
+	// up (a message that comes in is no longer followed), or the window of
+	// loaded messages is further up.
 	[[nodiscard]] bool awayFromBottom() const;
+	// The newest message at the bottom edge of the viewport (0: none).
+	[[nodiscard]] qint64 bottomVisibleSeq() const;
 	void scrollByPage(bool up);
 
 	// ---- state

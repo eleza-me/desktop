@@ -830,4 +830,42 @@ bool ConversationEnded(const QString &state) {
 		|| state == u"purged";
 }
 
+qint64 DownFirstStop(
+		const QVector<Data::Message> &items,
+		int unread,
+		qint64 lastReadSeq,
+		qint64 bottomSeq) {
+	if (unread <= 0) {
+		return 0;
+	}
+	auto counted = 0;
+	auto stop = qint64(0);
+	for (auto i = int(items.size()) - 1; i >= 0; --i) {
+		const auto &message = items[i];
+		if (message.seq <= 0 || message.mine || !message.visible()) {
+			continue;
+		} else if (message.seq <= lastReadSeq) {
+			break;
+		}
+		stop = message.seq;
+		if (++counted == unread) {
+			break;
+		}
+	}
+	return (stop > bottomSeq) ? stop : 0;
+}
+
+bool FloatingButtonsAtPhysicalRight(bool group, bool rtl) {
+	return group || !rtl;
+}
+
+qint64 NextMention(const QVector<qint64> &seqs, qint64 lastReadSeq) {
+	for (const auto seq : seqs) {
+		if (seq > lastReadSeq) {
+			return seq;
+		}
+	}
+	return 0;
+}
+
 } // namespace History

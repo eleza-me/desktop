@@ -2231,3 +2231,6 @@
 "lng_stories_open_of" = "دیدن استوری {name}";
 "lng_stories_pause" = "توقف";
 "lng_stories_play" = "پخش";
+
+// ---- history: the floating buttons ----
+"lng_history_jump_mention" = "رفتن به جایی که از تو نام برده‌اند";

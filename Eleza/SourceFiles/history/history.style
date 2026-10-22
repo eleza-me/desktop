@@ -253,6 +253,8 @@ historyDownBg: bgRaised;
 historyDownIcon: icon {{ "chevron-down", textSecondary, 26px }};
 historyDownIconOver: icon {{ "chevron-down", textPrimary, 26px }};
 historyDownBadgeShift: 9px;
+historyDownStackSkip: 14px;
+historyMentionsButtonFont: font(20px medium);
 
 // empty / loading states
 historyEmptyFont: font(13px medium);

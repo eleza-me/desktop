@@ -470,6 +470,56 @@ private Q_SLOTS:
 		QVERIFY(!History::CurrentReplyKeyboard({ inlineOnly }).has_value());
 	}
 
+	void floatingButtons() {
+		const auto at = At(3, 10, 0);
+		// A group: two messages of mine, then three that came in, one of
+		// them a note.
+		auto items = QVector<Data::Message>();
+		for (auto seq = 1; seq <= 4; ++seq) {
+			items.push_back(Text(seq, false, at));
+		}
+		items.push_back(Text(5, true, at));
+		items.push_back(Text(6, false, at));
+		auto note = Text(7, false, at, QString());
+		note.chat = u"j1group"_s;
+		note.kind = Data::MessageKind::System;
+		note.system = u"member_left"_s;
+		items.push_back(note);
+		items.push_back(Text(8, true, at));
+		items.push_back(Text(9, false, at));
+		for (auto &item : items) {
+			item.chat = u"j1group"_s;
+		}
+		// Three unread (6, the note, 9): the first stop is 6, below the screen.
+		QCOMPARE(History::DownFirstStop(items, 3, 5, 4), qint64(6));
+		// Two unread: 9 and the note (skipping the note would land on 6,
+		// which was read).
+		QCOMPARE(History::DownFirstStop(items, 2, 5, 4), qint64(7));
+		// Already on screen: straight to the end.
+		QCOMPARE(History::DownFirstStop(items, 3, 5, 6), qint64(0));
+		// Nothing unread, or all of it read already.
+		QCOMPARE(History::DownFirstStop(items, 0, 5, 4), qint64(0));
+		QCOMPARE(History::DownFirstStop(items, 3, 9, 4), qint64(0));
+		// Never at or below my read mark, whatever the count says.
+		QCOMPARE(History::DownFirstStop(items, 10, 6, 1), qint64(7));
+		// A deleted message is no row.
+		items[5].deleted = true;
+		QCOMPARE(History::DownFirstStop(items, 3, 5, 4), qint64(7));
+
+		// The side: mine are on the physical right in both directions.
+		QVERIFY(History::FloatingButtonsAtPhysicalRight(true, true));
+		QVERIFY(History::FloatingButtonsAtPhysicalRight(true, false));
+		QVERIFY(History::FloatingButtonsAtPhysicalRight(false, false));
+		QVERIFY(!History::FloatingButtonsAtPhysicalRight(false, true));
+
+		const auto seqs = QVector<qint64>{ 3, 9, 14 };
+		QCOMPARE(History::NextMention(seqs, 0), qint64(3));
+		QCOMPARE(History::NextMention(seqs, 3), qint64(9));
+		QCOMPARE(History::NextMention(seqs, 10), qint64(14));
+		QCOMPARE(History::NextMention(seqs, 14), qint64(0));
+		QCOMPARE(History::NextMention({}, 0), qint64(0));
+	}
+
 	void messageText() {
 		auto message = Text(1, false, At(5, 10, 0), U("ببین https://eleza.me و @sara #تهران"));
 		message.entities.push_back(Data::Entity{ u"spoiler"_s, 0, 4, QString(), QString() });

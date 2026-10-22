@@ -11,6 +11,7 @@
 #pragma once
 
 #include "window/window_registry.h"
+#include "ui/effects/animations.h"
 #include "window/window_section_widget.h"
 
 #include <QtCore/QPointer>
@@ -125,6 +126,10 @@ private:
 	void refreshBottom();
 	void refreshState();
 	void refreshDownButton();
+	void refreshMentionsButton();
+	void placeFloatingButtons();
+	void pressDown();
+	void pressMentions();
 	void refreshActive();
 	void refreshRelationship();
 	void selectionChanged();
@@ -154,6 +159,12 @@ private:
 	ComposeControls *_compose = nullptr;
 	BottomNotice *_notice = nullptr;
 	DownButton *_down = nullptr;
+	DownButton *_mentions = nullptr; // a group: «@»
+	Ui::Animations::Simple _mentionsSlide;
+	bool _downStopped = false; // «to the end» made its first stop
+	QVector<qint64> _mentionQueue;
+	qint64 _mentionShown = 0;
+	bool _mentionsLoading = false;
 	DropArea *_drop = nullptr;
 	StateView *_state = nullptr;
 	BotIntroCard *_botIntro = nullptr;

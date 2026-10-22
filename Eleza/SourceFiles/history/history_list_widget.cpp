@@ -578,8 +578,22 @@ bool ListWidget::awayFromBottom() const {
 	} else if (!_debugMode && history().hasMoreAfter) {
 		return true;
 	}
+	// As soon as the reader leaves the end (Telegram): then the list no
+	// longer follows new messages, and the button is the way back.
 	return _scroll
-		&& (_scroll->scrollTopMax() - _scroll->scrollTop() > viewportHeight() / 3);
+		&& (_scroll->scrollTopMax() - _scroll->scrollTop() > kBottomSlack);
+}
+
+qint64 ListWidget::bottomVisibleSeq() const {
+	if (_rows.empty()) {
+		return 0;
+	}
+	for (auto i = rowNear(_visibleBottom - 1); i >= 0; --i) {
+		if (const auto value = _rows[i].element->lastSeq(); value > 0) {
+			return value;
+		}
+	}
+	return 0;
 }
 
 void ListWidget::scrollByPage(bool up) {
