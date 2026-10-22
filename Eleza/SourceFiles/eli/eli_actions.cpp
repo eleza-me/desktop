@@ -54,7 +54,6 @@ constexpr auto kDefaultEditWindow = qint64(48) * 3600;
 	return (age < window * 1000)
 		&& (post.type == u"text"
 			|| post.type == u"short_text"
-			|| post.type == u"media"
 			|| post.type == u"quote");
 }
 
