@@ -1246,12 +1246,11 @@
 "lng_history_selected_count#other" = "{count} پیام";
 "lng_history_pinned_message" = "پیام سنجاق‌شده";
 "lng_history_conversation_open" = "گفتگو باز است";
-"lng_history_emoji_smileys" = "شکلک‌ها";
-"lng_history_emoji_people" = "آدم‌ها";
-"lng_history_emoji_nature" = "طبیعت";
-"lng_history_emoji_food" = "خوراکی";
+"lng_history_emoji_smileys" = "شکلک‌ها و آدم‌ها";
+"lng_history_emoji_nature" = "حیوانات و طبیعت";
+"lng_history_emoji_food" = "خوراکی و نوشیدنی";
 "lng_history_emoji_activity" = "فعالیت";
-"lng_history_emoji_travel" = "سفر";
+"lng_history_emoji_travel" = "سفر و مکان‌ها";
 "lng_history_emoji_objects" = "اشیا";
 "lng_history_emoji_symbols" = "نمادها";
 "lng_history_emoji_flags" = "پرچم‌ها";

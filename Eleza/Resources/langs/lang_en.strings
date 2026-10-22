@@ -1216,12 +1216,11 @@
 "lng_history_selected_count#other" = "{count} messages";
 "lng_history_pinned_message" = "Pinned message";
 "lng_history_conversation_open" = "Conversation is open";
-"lng_history_emoji_smileys" = "Smileys";
-"lng_history_emoji_people" = "People";
-"lng_history_emoji_nature" = "Nature";
-"lng_history_emoji_food" = "Food & drink";
+"lng_history_emoji_smileys" = "Smileys & People";
+"lng_history_emoji_nature" = "Animals & Nature";
+"lng_history_emoji_food" = "Food & Drink";
 "lng_history_emoji_activity" = "Activity";
-"lng_history_emoji_travel" = "Travel";
+"lng_history_emoji_travel" = "Travel & Places";
 "lng_history_emoji_objects" = "Objects";
 "lng_history_emoji_symbols" = "Symbols";
 "lng_history_emoji_flags" = "Flags";

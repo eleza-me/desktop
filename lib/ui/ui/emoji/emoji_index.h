@@ -21,6 +21,7 @@
 // Plain data, no GUI: any thread.
 #pragma once
 
+#include <QtCore/QHash>
 #include <QtCore/QString>
 #include <QtCore/QStringList>
 #include <QtCore/QStringView>
@@ -94,6 +95,10 @@ struct Range {
 // that other apps and older systems draw an emoji too. Nothing is added where a
 // skin tone, U+FE0F or U+FE0E follows already.
 [[nodiscard]] QString Qualify(QStringView code);
+
+// The words each emoji is searched by: its code without variation selectors ->
+// its phrases (CLDR, Persian first). Built anew on every call (any thread).
+[[nodiscard]] QHash<QString, QStringList> SearchWords();
 
 // The panel's categories (0 smileys & people … 7 flags), in Telegram's order.
 [[nodiscard]] const QStringList &PanelCategory(int index);

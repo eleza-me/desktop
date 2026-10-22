@@ -129,10 +129,38 @@ void Settings::read() {
 		calls.value(QStringLiteral("ringtone_volume")).toDouble(0.7),
 		0.,
 		1.);
-	_recentEmoji.clear();
-	for (const auto &item : root.value(QStringLiteral("recent_emoji")).toArray()) {
-		if (item.isString() && !item.toString().isEmpty()) {
-			_recentEmoji.push_back(item.toString());
+	_emojiUses = std::nullopt;
+	const auto uses = root.value(QStringLiteral("emoji_uses"));
+	if (uses.isObject()) {
+		auto map = QMap<QString, int>();
+		const auto object = uses.toObject();
+		for (auto i = object.begin(); i != object.end(); ++i) {
+			const auto count = i.value().toInt(0);
+			if (!i.key().isEmpty() && count > 0) {
+				map.insert(i.key(), count);
+			}
+		}
+		_emojiUses = std::move(map);
+	} else if (const auto recent = root.value(QStringLiteral("recent_emoji"));
+			recent.isArray()) {
+		// The list of an older version, newest first: the newest counts most.
+		auto map = QMap<QString, int>();
+		const auto list = recent.toArray();
+		auto count = int(list.size());
+		for (const auto &item : list) {
+			if (item.isString() && !item.toString().isEmpty()) {
+				map.insert(item.toString(), count);
+			}
+			--count;
+		}
+		_emojiUses = std::move(map);
+	}
+	_emojiTones.clear();
+	const auto tones = root.value(QStringLiteral("emoji_tones")).toObject();
+	for (auto i = tones.begin(); i != tones.end(); ++i) {
+		const auto tone = i.value().toInt(-1);
+		if (!i.key().isEmpty() && tone >= 0 && tone < 5) {
+			_emojiTones.insert(i.key(), tone);
 		}
 	}
 }
@@ -216,10 +244,19 @@ QJsonObject Settings::serialize() const {
 		calls.insert(QStringLiteral("ringtone_volume"), _calls.ringtoneVolume);
 		root.insert(QStringLiteral("calls"), calls);
 	}
-	if (!_recentEmoji.isEmpty()) {
-		root.insert(
-			QStringLiteral("recent_emoji"),
-			QJsonArray::fromStringList(_recentEmoji));
+	if (_emojiUses) {
+		auto uses = QJsonObject();
+		for (auto i = _emojiUses->begin(); i != _emojiUses->end(); ++i) {
+			uses.insert(i.key(), i.value());
+		}
+		root.insert(QStringLiteral("emoji_uses"), uses);
+	}
+	if (!_emojiTones.isEmpty()) {
+		auto tones = QJsonObject();
+		for (auto i = _emojiTones.begin(); i != _emojiTones.end(); ++i) {
+			tones.insert(i.key(), i.value());
+		}
+		root.insert(QStringLiteral("emoji_tones"), tones);
 	}
 	return root;
 }
@@ -369,9 +406,16 @@ void Settings::setAutoUpdate(bool enabled) {
 	}
 }
 
-void Settings::setRecentEmoji(const QStringList &emoji) {
-	if (_recentEmoji != emoji) {
-		_recentEmoji = emoji;
+void Settings::setEmojiUses(const QMap<QString, int> &uses) {
+	if (_emojiUses != uses) {
+		_emojiUses = uses;
+		scheduleWrite();
+	}
+}
+
+void Settings::setEmojiTones(const QMap<QString, int> &tones) {
+	if (_emojiTones != tones) {
+		_emojiTones = tones;
 		scheduleWrite();
 	}
 }

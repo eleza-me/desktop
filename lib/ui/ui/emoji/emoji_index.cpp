@@ -534,6 +534,26 @@ QString Qualify(QStringView code) {
 	return result;
 }
 
+QHash<QString, QStringList> SearchWords() {
+	auto result = QHash<QString, QStringList>();
+	result.reserve(Tables::kKeywords.count);
+	for (auto i = 0; i != Tables::kKeywords.chunkCount; ++i) {
+		const auto chunk = QStringView(Tables::kKeywords.chunks[i]);
+		for (const auto line : chunk.tokenize(u'\n', Qt::SkipEmptyParts)) {
+			const auto tab = line.indexOf(u'\t');
+			if (tab <= 0) {
+				continue;
+			}
+			auto phrases = QStringList();
+			for (const auto phrase : line.mid(tab + 1).tokenize(u'|', Qt::SkipEmptyParts)) {
+				phrases.push_back(phrase.toString());
+			}
+			result.insert(Strip(line.left(tab)), std::move(phrases));
+		}
+	}
+	return result;
+}
+
 const QStringList &PanelCategory(int index) {
 	static const auto empty = QStringList();
 	return (index >= 0 && index < kPanelCategoryCount)

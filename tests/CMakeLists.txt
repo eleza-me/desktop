@@ -80,6 +80,12 @@ if (TARGET ElezaCore)
 	eleza_add_test(test_history_logic app/test_history_logic.cpp LIBS ElezaCore ElezaUi)
 	target_sources(test_history_logic PRIVATE "${_eleza_app_src}/history/history_logic.cpp")
 	target_include_directories(test_history_logic PRIVATE "${_eleza_app_src}")
+	# The emoji panel's data: categories, search, recents, tones.
+	eleza_add_test(test_history_emoji app/test_history_emoji.cpp LIBS ElezaCore ElezaUi ElezaLang)
+	target_sources(test_history_emoji PRIVATE
+		"${_eleza_app_src}/history/history_emoji_data.cpp"
+		"${_eleza_app_src}/history/history_logic.cpp")
+	target_include_directories(test_history_emoji PRIVATE "${_eleza_app_src}")
 	eleza_add_test(test_history_compose app/test_history_compose.cpp LIBS ElezaCore ElezaUi)
 	target_sources(test_history_compose PRIVATE "${_eleza_app_src}/history/history_compose_logic.cpp")
 	target_include_directories(test_history_compose PRIVATE "${_eleza_app_src}")

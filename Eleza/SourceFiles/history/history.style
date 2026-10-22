@@ -503,11 +503,20 @@ historyPanelHeaderFg: textTertiary;
 historyPanelHeaderHeight: 30px;
 historyPanelHeaderPadding: 8px;
 historyEmojiCell: 40px;
-historyEmojiFont: font(24px);
+historyEmojiSize: 30px; // the pack's picture in a cell
+historyEmojiFont: font(24px); // the fonts' emoji where the pack has none
 historyEmojiOverBg: stateHover;
 historyEmojiOverRadius: 8px;
 historyEmojiCategoryHeight: 40px;
+historyEmojiCategorySize: 22px;
 historyEmojiCategoryFont: font(18px);
+historyEmojiTonesPadding: 4px;
+historyEmojiTonesRadius: 12px;
+historyEmojiTonesShadow: Shadow(defaultShadow) {
+	blur: 8px;
+	offset: point(0px, 2px);
+	extend: margins(8px, 6px, 8px, 10px);
+}
 historyEmojiCategoryActiveBg: stateSelected;
 historyStickerPadding: 6px;
 historyStickerRecentIcon: icon {{ "clock", textSecondary, 22px }};
