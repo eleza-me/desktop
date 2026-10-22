@@ -353,7 +353,7 @@ void ShowNameBox(
 			box,
 			st::defaultInputField,
 			tr::lng_groups_name_placeholder(tr::now)));
-		// (Code points are counted by the rules; units are a loose bound.)
+		// (The rules check the exact limit; the field's is a loose bound.)
 		name->setMaxLength(titleMax * 2);
 		const auto about = box->addRow(Ui::object_ptr<Ui::InputField>(
 			box,
