@@ -415,6 +415,17 @@ Widget::Widget(
 	connect(controller, &Window::SessionController::mainSectionChanged, this, [this] {
 		refreshActive();
 	});
+	// Blocked or unblocked elsewhere (the profile, a block box of another
+	// screen): the composer follows.
+	connect(&data.graph(), &Data::Graph::relationshipChanged, this, [this](
+			const QString &userId,
+			const Data::GraphState &state) {
+		if (userId == _relationshipFor && _blockedByYou != state.blockedByYou) {
+			_relationshipKnown = true;
+			_blockedByYou = state.blockedByYou;
+			refreshBottom();
+		}
+	});
 
 	if (_group) {
 		_groupTimer.setSingleShot(false);
