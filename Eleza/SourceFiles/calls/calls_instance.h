@@ -121,6 +121,8 @@ private:
 	std::unique_ptr<Call> _call;
 	// Two people called each other: theirs waits for mine to fail.
 	std::optional<Data::CallSignal> _waitingIncoming;
+	// The id of the call that ended last: it never rings again.
+	QString _endedCall;
 	base::Timer _incomingTimer;
 	QElapsedTimer _lastIncomingCheck;
 	bool _incomingCheckInFlight = false;

@@ -32,6 +32,8 @@ set(_eleza_core_files
 	crypto/crypto_device_key.h
 	crypto/crypto_primitives.cpp
 	crypto/crypto_primitives.h
+	data/data_action_bar.cpp
+	data/data_action_bar.h
 	data/data_blurhash.cpp
 	data/data_blurhash.h
 	data/data_bots.cpp
@@ -60,12 +62,18 @@ set(_eleza_core_files
 	data/data_media.h
 	data/data_messages.cpp
 	data/data_messages.h
+	data/data_note_types.cpp
+	data/data_note_types.h
+	data/data_notes.cpp
+	data/data_notes.h
 	data/data_notifications.cpp
 	data/data_notifications.h
 	data/data_outbox.cpp
 	data/data_outbox.h
 	data/data_session.cpp
 	data/data_session.h
+	data/data_shared_media.cpp
+	data/data_shared_media.h
 	data/data_social_types.cpp
 	data/data_social_types.h
 	data/data_sticker_decode.cpp

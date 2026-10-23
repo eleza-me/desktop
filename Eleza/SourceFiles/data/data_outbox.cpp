@@ -161,6 +161,14 @@ QString Outbox::sendFile(const QString &chat, const QString &filePath, const Fil
 	Json::Put(item.body, "text"_L1, options.caption);
 	Json::Put(item.body, "entities"_L1, Json::Array(options.entities));
 	Json::Put(item.body, "reply_to_seq"_L1, options.replyToSeq);
+	const auto selfDestruct = options.selfDestruct
+		&& options.selfDestruct->valid()
+		&& (messageKind == u"photo" || messageKind == u"video");
+	if (selfDestruct) {
+		item.body.insert("self_destruct"_L1, options.selfDestruct->toJson());
+		Json::Put(item.body, "silent"_L1, options.silent);
+		return enqueue(std::move(item));
+	}
 	Json::Put(item.body, "media_spoiler"_L1, options.spoiler);
 	if (!options.album.isEmpty()) {
 		item.body.insert("album"_L1, options.album.toLower());
@@ -237,6 +245,9 @@ QString Outbox::forward(
 		const QString &toChat,
 		const Message &source,
 		const QString &album) {
+	if (source.selfDestruct) {
+		return QString(); // never forwarded (the server refuses it too)
+	}
 	switch (source.kind) {
 	case MessageKind::Sticker:
 		return source.sticker ? sendSticker(toChat, source.sticker->id) : QString();
@@ -402,6 +413,18 @@ void Outbox::show(const OutboxItem &item) {
 	message.attachment = item.mediaId;
 	message.mine = true;
 	message.localPath = item.filePath;
+	if (const auto sd = item.body.value("self_destruct"_L1).toObject(); !sd.isEmpty()) {
+		// Its bubble never shows the picture or the caption, not even here.
+		auto state = SelfDestruct();
+		state.mode = Json::Bool(sd, "view_once"_L1) ? u"view_once"_s : u"timer"_s;
+		state.seconds = Json::Int(sd, "seconds"_L1);
+		state.state = u"unopened"_s;
+		message.selfDestruct = state;
+		message.text = QString();
+		message.entities.clear();
+		message.localPath = QString();
+		message.attachment = QString();
+	}
 	message.errorCode = item.errorCode;
 	message.errorText = item.errorText;
 	const auto queue = chatQueue(item.chat);
@@ -644,6 +667,8 @@ void Outbox::uploadFile(const QString &clientMessageId) {
 	request.fileName = item.fileName;
 	request.mime = item.mime;
 	request.resumeId = item.uploadId;
+	// Self-destructing media needs an attachment of its own.
+	request.dedup = !item.body.contains("self_destruct"_L1);
 	auto callbacks = UploadCallbacks();
 	callbacks.onUploadId = [=, this](const QString &uploadId) {
 		const auto i = _items.find(clientMessageId);
@@ -741,7 +766,7 @@ void Outbox::succeeded(const QString &clientMessageId, const QJsonObject &result
 		if (const auto until = Json::Int64(result, "live_until"_L1); until && message.live) {
 			message.live->until = until;
 		}
-		message.attachment = item.mediaId;
+		message.attachment = message.selfDestruct ? QString() : item.mediaId;
 		message.status = MessageStatus::Sent;
 		message.uploadProgress = -1.;
 		// merge() swaps the pending copy for this one (same client message id).

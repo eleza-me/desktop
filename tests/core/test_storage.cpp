@@ -3,6 +3,9 @@
 #include "storage/storage_key_value.h"
 #include "storage/storage_secure_blob.h"
 
+#include <atomic>
+#include <memory>
+
 #include <QtCore/QTemporaryDir>
 #include <QtSql/QSqlDatabase>
 #include <QtSql/QSqlQuery>
@@ -51,6 +54,8 @@ private Q_SLOTS:
 	void metaAndValues();
 	void chats();
 	void messagesPaging();
+	void detachedMessagesGo();
+	void messageChangedInPlace();
 	void users();
 	void outboxKeepsOrder();
 	void drafts();
@@ -220,6 +225,76 @@ void TestStorage::messagesPaging() {
 	}).size(), 1);
 }
 
+// The run of cached messages is dropped when it cannot reach messages that
+// begin at a given seq; a run that touches or overlaps them stays.
+void TestStorage::detachedMessagesGo() {
+	auto db = Database(_dir.path() + u"/detached/cache.db"_s);
+	auto rows = QVector<Database::MessageRow>();
+	for (auto seq = 1; seq <= 10; ++seq) {
+		rows.push_back({ u"c1"_s, seq, Text(QString::number(seq)) });
+	}
+	rows.push_back({ u"c2"_s, 3, Text(u"other chat"_s) });
+	db.putMessages(rows);
+	const auto all = [&](const QString &chat) {
+		return Texts(Read<QVector<QJsonObject>>([&](QObject *guard, Fn<void(QVector<QJsonObject>)> done) {
+			db.messages(chat, 100, 0, guard, std::move(done));
+		}));
+	};
+	db.dropDetachedMessages(u"c1"_s, 11); // right after the newest: one run
+	QCOMPARE(all(u"c1"_s).size(), 10);
+	db.dropDetachedMessages(u"c1"_s, 5); // overlapping
+	QCOMPARE(all(u"c1"_s).size(), 10);
+	db.dropDetachedMessages(u"c1"_s, 12); // seq 11 is missing: a hole
+	QVERIFY(all(u"c1"_s).isEmpty());
+	QCOMPARE(all(u"c2"_s), (QStringList{ u"other chat"_s }));
+	// Nothing cached: nothing to do.
+	db.dropDetachedMessages(u"c3"_s, 100);
+	QVERIFY(all(u"c3"_s).isEmpty());
+}
+
+// One cached row is changed where it is, in order with the other writes;
+// a message that is not cached is not added.
+void TestStorage::messageChangedInPlace() {
+	auto db = Database(_dir.path() + u"/change/cache.db"_s);
+	db.putMessages({
+		{ u"c1"_s, 1, Text(u"one"_s) },
+		{ u"c1"_s, 2, Text(u"two"_s) },
+	});
+	const auto all = [&] {
+		return Texts(Read<QVector<QJsonObject>>([&](QObject *guard, Fn<void(QVector<QJsonObject>)> done) {
+			db.messages(u"c1"_s, 100, 0, guard, std::move(done));
+		}));
+	};
+	const auto append = [](const QString &tail) {
+		return [=](QJsonObject &data) {
+			data.insert(u"text"_s, data.value(u"text"_s).toString() + tail);
+			return true;
+		};
+	};
+	db.changeMessage(u"c1"_s, 2, append(u", changed"_s));
+	// Issued after the change: it sees the changed row.
+	db.changeMessage(u"c1"_s, 2, append(u" twice"_s));
+	QCOMPARE(all(), (QStringList{ u"one"_s, u"two, changed twice"_s }));
+	// A change that changes nothing leaves the row.
+	db.changeMessage(u"c1"_s, 1, [](QJsonObject &data) {
+		data.insert(u"text"_s, u"not this"_s);
+		return false;
+	});
+	QCOMPARE(all(), (QStringList{ u"one"_s, u"two, changed twice"_s }));
+	// Not cached: nothing comes in.
+	const auto called = std::make_shared<std::atomic_bool>(false);
+	db.changeMessage(u"c1"_s, 3, [called](QJsonObject &) {
+		*called = true;
+		return true;
+	});
+	db.changeMessage(u"c2"_s, 1, append(u"!"_s));
+	QCOMPARE(all(), (QStringList{ u"one"_s, u"two, changed twice"_s }));
+	QVERIFY(!*called);
+	QVERIFY(Read<QVector<QJsonObject>>([&](QObject *guard, Fn<void(QVector<QJsonObject>)> done) {
+		db.messages(u"c2"_s, 10, 0, guard, std::move(done));
+	}).isEmpty());
+}
+
 void TestStorage::users() {
 	auto db = Database(_dir.path() + u"/users/cache.db"_s);
 	db.putUsers({ { u"u1"_s, Text(u"sara"_s) }, { u"u2"_s, Text(u"ali"_s) } });
@@ -291,6 +366,33 @@ void TestStorage::callbacksRespectGuardAndThread() {
 	db.meta(u"counter"_s, &owner, [&](QJsonValue value) { last = value.toInt(); });
 	QTRY_COMPARE(last, 199);
 	db.flushSync();
+
+	// What a callback holds dies on the owner's thread, never on the worker
+	// (even when the worker's task is the last to let go of it).
+	struct Holder {
+		QVector<QThread*> *threads = nullptr;
+		~Holder() {
+			threads->push_back(QThread::currentThread());
+		}
+	};
+	auto threads = QVector<QThread*>();
+	auto answered = 0;
+	for (auto i = 0; i != 20; ++i) {
+		auto holder = std::make_shared<Holder>();
+		holder->threads = &threads;
+		db.meta(u"k"_s, &owner, [&answered, holder](QJsonValue) { ++answered; });
+		db.chats(&owner, [holder](QVector<QJsonObject>) {});
+		db.flush(&owner, [holder] {});
+		auto dropped = std::make_shared<Holder>();
+		dropped->threads = &threads;
+		db.meta(u"k"_s, base::Guard(), nullptr);
+		db.users({ u"u1"_s }, &owner, [dropped](QHash<QString, QJsonObject>) {});
+	}
+	QTRY_COMPARE(threads.size(), 40);
+	QCOMPARE(answered, 20);
+	for (const auto thread : threads) {
+		QCOMPARE(thread, QThread::currentThread());
+	}
 }
 
 void TestStorage::persistsAcrossReopenAndWipes() {

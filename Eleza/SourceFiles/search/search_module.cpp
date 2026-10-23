@@ -25,6 +25,24 @@ void Register() {
 			Window::SessionController *controller) {
 		return Ui::Owned<Window::SectionWidget>(new Widget(parent, controller));
 	});
+	// «دیدن همه» of the people you may know.
+	Window::RegisterRouteHandler([](
+			Window::SessionController *controller,
+			const QString &route) {
+		const auto clean = route.startsWith(QLatin1Char('/'))
+			? route.mid(1)
+			: route;
+		if (clean != u"search/people") {
+			return false;
+		}
+		controller->showMainSection([](
+				QWidget *parent,
+				Window::SessionController *controller) {
+			return Ui::Owned<Window::SectionWidget>(
+				new Widget(parent, controller, Widget::Mode::AllPeople));
+		}, { .tab = Window::Tab::Search });
+		return true;
+	});
 	Window::RegisterRouteHandler(Window::RouteType::Search, [](
 			Window::SessionController *controller,
 			const Window::Route &route) {

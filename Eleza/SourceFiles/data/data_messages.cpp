@@ -14,17 +14,25 @@
 namespace Data {
 namespace {
 
-// A story reply / reaction that lost its story reference in the cache.
+// A story reply / reaction / share that lost its story reference in the cache.
 [[nodiscard]] bool StoredWithoutStory(const Message &message) {
 	return (message.seq > 0)
 		&& !message.story
 		&& (message.kind == MessageKind::StoryReply
-			|| message.kind == MessageKind::StoryReaction);
+			|| message.kind == MessageKind::StoryReaction
+			|| message.kind == MessageKind::StoryShare);
 }
 
 // The request field that names the chat: a group has routes of its own.
 [[nodiscard]] QString ChatKey(const QString &chat) {
 	return IsGroupId(chat) ? u"group"_s : u"chat"_s;
+}
+
+// The seq that the key of a server message names (Message::KeyForSeq), or 0.
+[[nodiscard]] qint64 SeqOfKey(const QString &key) {
+	auto ok = false;
+	const auto seq = key.mid(key.lastIndexOf(u':') + 1).toLongLong(&ok);
+	return (ok && seq > 0 && Message::KeyForSeq(seq) == key) ? seq : 0;
 }
 
 } // namespace
@@ -149,8 +157,34 @@ void Messages::forget(const QString &chat) {
 }
 
 void Messages::markAllStale() {
-	for (auto &[chat, history] : _histories) {
-		history.loaded = false;
+	auto chats = QStringList();
+	for (const auto &row : _session->chats().all()) {
+		chats.push_back(row.id);
+	}
+	for (const auto &[chat, history] : _histories) {
+		chats.push_back(chat);
+	}
+	chats.removeDuplicates();
+	for (const auto &chat : std::as_const(chats)) {
+		if (!IsGroupId(chat)) {
+			markStale(chat);
+		}
+	}
+}
+
+void Messages::markStale(const QString &chat) {
+	if (const auto db = _session->local()) {
+		db->clearMessages(chat);
+	}
+	const auto history = existing(chat);
+	if (!history) {
+		return;
+	}
+	const auto shown = live(chat) && (_session->chats().visibleChat() == chat);
+	history->stale = true;
+	history->loaded = false;
+	if (shown) {
+		loadLatest(chat);
 	}
 }
 
@@ -179,6 +213,31 @@ void Messages::persist(const QString &chat, const QVector<Message> &messages) {
 		}
 	}
 	db->putMessages(rows);
+}
+
+void Messages::dropDetached(const QString &chat, qint64 firstSeq, bool complete) {
+	if (firstSeq <= 1) {
+		return;
+	}
+	auto &items = historyRef(chat).items;
+	auto newestOlder = qint64(0);
+	for (const auto &message : std::as_const(items)) {
+		if (message.seq > 0 && message.seq < firstSeq) {
+			newestOlder = std::max(newestOlder, message.seq);
+		}
+	}
+	if (newestOlder > 0 && (complete || newestOlder < firstSeq - 1)) {
+		items.erase(std::remove_if(items.begin(), items.end(), [&](const Message &message) {
+			return message.seq > 0 && message.seq < firstSeq;
+		}), items.end());
+	}
+	if (const auto db = _session->local()) {
+		if (complete) {
+			db->clearMessages(chat, firstSeq);
+		} else {
+			db->dropDetachedMessages(chat, firstSeq);
+		}
+	}
 }
 
 void Messages::merge(const QString &chat, QVector<Message> incoming, bool persist) {
@@ -260,22 +319,73 @@ void Messages::patchMessage(
 		const QString &key,
 		const Fn<void(Message &)> &change) {
 	const auto i = existing(chat);
-	if (!i) {
-		return;
-	}
-	const auto index = i->indexOfKey(key);
+	const auto index = i ? i->indexOfKey(key) : -1;
 	if (index < 0) {
+		// Not in memory (the chat is not open, or the message is older
+		// than the window): the cached copy changes all the same, or the
+		// chat would show it unchanged when it is opened.
+		changeCached(chat, SeqOfKey(key), change);
 		return;
 	}
 	auto &message = i->items[index];
 	change(message);
-	if (message.seq > 0 && i->loaded) {
-		persist(chat, { message });
+	if (message.seq > 0) {
+		storeChanged(*i, { message });
 	}
 	Q_EMIT historyChanged(chat);
 }
 
+void Messages::storeChanged(const History &history, const QVector<Message> &messages) {
+	if (history.loaded) {
+		persist(history.chat, messages);
+	} else {
+		updateCached(history.chat, messages);
+	}
+}
+
+void Messages::changeCached(const QString &chat, qint64 seq, Fn<void(Message &)> change) {
+	const auto db = _session->local();
+	if (!db || seq <= 0) {
+		return;
+	}
+	db->changeMessage(chat, seq, [change = std::move(change)](QJsonObject &data) {
+		auto message = Message::FromStored(data);
+		change(message);
+		data = message.toStored();
+		return true;
+	});
+}
+
+qint64 Messages::peerReadSeq(const QString &chat) const {
+	auto result = qint64(0);
+	if (const auto row = _session->chats().chat(chat)) {
+		result = std::max(row->peerReadSeq, row->info.peerReadSeq);
+	}
+	if (const auto i = _histories.find(chat); i != _histories.end() && i->second.info) {
+		result = std::max(result, i->second.info->peerReadSeq);
+	}
+	return result;
+}
+
+Message Messages::FromCache(const QJsonObject &row, qint64 peerReadSeq) {
+	auto result = Message::FromStored(row);
+	if (result.mine
+		&& result.seq > 0
+		&& result.seq <= peerReadSeq
+		&& result.status == MessageStatus::Sent) {
+		result.status = MessageStatus::Read;
+	}
+	return result;
+}
+
 void Messages::removeMessage(const QString &chat, const QString &key) {
+	// Out of the cache as well, also when it is not in the window: an old
+	// message deleted while it was not shown must not come back from it.
+	if (const auto seq = SeqOfKey(key)) {
+		if (const auto db = _session->local()) {
+			db->deleteMessage(chat, seq);
+		}
+	}
 	const auto i = existing(chat);
 	if (!i) {
 		return;
@@ -284,14 +394,22 @@ void Messages::removeMessage(const QString &chat, const QString &key) {
 	if (index < 0) {
 		return;
 	}
-	const auto seq = i->items[index].seq;
 	i->items.removeAt(index);
-	if (seq > 0) {
-		if (const auto db = _session->local()) {
-			db->deleteMessage(chat, seq);
+	Q_EMIT historyChanged(chat);
+}
+
+void Messages::updateCached(const QString &chat, const QVector<Message> &messages) {
+	const auto db = _session->local();
+	if (!db) {
+		return;
+	}
+	auto rows = QVector<Storage::Database::MessageRow>();
+	for (const auto &message : messages) {
+		if (message.seq > 0) {
+			rows.push_back({ chat, message.seq, message.toStored() });
 		}
 	}
-	Q_EMIT historyChanged(chat);
+	db->replaceMessages(rows);
 }
 
 void Messages::clear(const QString &chat, std::optional<qint64> beforeSeq) {
@@ -341,9 +459,7 @@ void Messages::markPeerRead(const QString &chat, qint64 seq) {
 		}
 	}
 	if (!changed.isEmpty()) {
-		if (i->loaded) {
-			persist(chat, changed);
-		}
+		storeChanged(*i, changed);
 		Q_EMIT historyChanged(chat);
 	}
 }
@@ -423,7 +539,7 @@ bool Messages::applyReactions(
 	if (!find(chat, seq)) {
 		return false;
 	}
-	patchMessage(chat, Message::KeyForSeq(seq), [&](Message &message) {
+	patchMessage(chat, Message::KeyForSeq(seq), [reactions](Message &message) {
 		message.reactions = reactions;
 		for (auto i = message.reactions.begin(); i != message.reactions.end();) {
 			i = (i.value() <= 0) ? message.reactions.erase(i) : std::next(i);
@@ -438,7 +554,7 @@ bool Messages::applyReactions(
 }
 
 void Messages::setMyReaction(const QString &chat, qint64 seq, const QString &emoji) {
-	patchMessage(chat, Message::KeyForSeq(seq), [&](Message &message) {
+	patchMessage(chat, Message::KeyForSeq(seq), [emoji](Message &message) {
 		message.myReaction = emoji;
 	});
 }
@@ -466,8 +582,9 @@ void Messages::loadCached(const QString &chat, base::Guard guard, Fn<void(int)> 
 		auto list = QVector<Message>();
 		list.reserve(rows.size());
 		auto outdated = QVector<qint64>();
+		const auto read = peerReadSeq(chat);
 		for (const auto &row : rows) {
-			auto message = Message::FromStored(row);
+			auto message = FromCache(row, read);
 			if (StoredWithoutStory(message)) {
 				// Cached by a build that did not keep the story reference.
 				outdated.push_back(message.seq);
@@ -515,6 +632,10 @@ void Messages::loadPage(
 				if (header.valid()) {
 					page.group = header;
 					page.info = Groups::InfoFor(header);
+					// Read receipts never go back (frames may have crossed the page).
+					if (const auto row = _session->chats().chat(chat)) {
+						page.info.peerReadSeq = std::max(page.info.peerReadSeq, row->peerReadSeq);
+					}
 				}
 			} else {
 				page.info = ChatInfo::FromJson(result.value("chat"_L1).toObject());
@@ -533,6 +654,9 @@ void Messages::loadPage(
 			const auto me = _session->userId();
 			for (const auto &item : result.value("messages"_L1).toArray()) {
 				auto message = Message::FromJson(item.toObject());
+				if (message.seq > 0 && (!page.firstSeq || message.seq < page.firstSeq)) {
+					page.firstSeq = message.seq;
+				}
 				if (message.chat.isEmpty()) {
 					message.chat = chat;
 				}
@@ -582,14 +706,25 @@ void Messages::loadLatest(
 		Fn<void(const Api::Error &)> fail) {
 	loadPage(chat, PageOptions(), [=, this](const Page &page) {
 		auto &history = historyRef(chat);
-		if (history.hasMoreAfter) {
-			// Coming back from a detached window: start over at the end.
+		if (history.hasMoreAfter || history.stale) {
+			// Coming back from a detached window, or what is held may be
+			// gone: start over at the end.
 			auto &items = history.items;
 			items.erase(std::remove_if(items.begin(), items.end(), [](const Message &message) {
 				return message.seq > 0;
 			}), items.end());
 			history.hasMoreAfter = false;
+			history.stale = false;
 		}
+		// What is held older than the newest page must be one run with it
+		// (an empty page without more before it: the chat has nothing up to
+		// the header's last seq).
+		const auto from = page.firstSeq
+			? page.firstSeq
+			: page.hasMoreBefore
+			? qint64(0)
+			: (page.info.lastSeq + 1);
+		dropDetached(chat, from, !page.hasMoreBefore);
 		setInfo(page.info);
 		history.loaded = true;
 		history.hasMoreBefore = page.hasMoreBefore;
@@ -683,8 +818,9 @@ void Messages::loadOlder(
 	}
 	db->messages(chat, kCachedPageSize, before, this, [=, this](QVector<QJsonObject> rows) {
 		auto list = QVector<Message>();
+		const auto read = peerReadSeq(chat);
 		for (const auto &row : rows) {
-			auto message = Message::FromStored(row);
+			auto message = FromCache(row, read);
 			if (message.visible()) {
 				list.push_back(std::move(message));
 			}
@@ -719,15 +855,20 @@ void Messages::loadNewer(
 		auto &history = historyRef(chat);
 		setInfo(page.info);
 		history.hasMoreAfter = page.hasMoreAfter && !page.messages.isEmpty();
-		if (!history.hasMoreAfter) {
-			// The window reached the end again: live updates extend it.
-			history.loaded = true;
-		}
 		const auto count = int(page.messages.size());
 		if (count) {
 			merge(chat, page.messages, false);
 		} else {
 			Q_EMIT historyChanged(chat);
+		}
+		if (!history.hasMoreAfter) {
+			// The window reached the end again: live updates extend it, and
+			// what they cache must continue the cached run, so the window
+			// becomes that run — all of it, unless what it held before may
+			// be gone (stale): then what was just read.
+			history.loaded = true;
+			dropDetached(chat, history.firstSeq(), !history.hasMoreBefore);
+			persist(chat, history.stale ? page.messages : history.items);
 		}
 		if (done && guard.alive()) {
 			done(count);
@@ -745,7 +886,7 @@ void Messages::loadAround(
 		base::Guard guard,
 		Fn<void()> done,
 		Fn<void(const Api::Error &)> fail) {
-	if (historyRef(chat).find(seq)) {
+	if (const auto &history = historyRef(chat); !history.stale && history.find(seq)) {
 		if (done && guard.alive()) {
 			done();
 		}
@@ -761,13 +902,19 @@ void Messages::loadAround(
 		items.erase(std::remove_if(items.begin(), items.end(), [](const Message &message) {
 			return message.seq > 0;
 		}), items.end());
+		history.stale = false;
 		history.hasMoreBefore = page.hasMoreBefore;
 		history.hasMoreAfter = page.hasMoreAfter;
 		history.loaded = !page.hasMoreAfter;
+		if (history.loaded) {
+			// The window reaches the newest message: as the newest page, it
+			// is what live updates continue in the cache.
+			dropDetached(chat, page.firstSeq, !page.hasMoreBefore);
+		}
 		if (page.messages.isEmpty()) {
 			Q_EMIT historyChanged(chat);
 		} else {
-			merge(chat, page.messages, false);
+			merge(chat, page.messages, history.loaded);
 		}
 		if (done && guard.alive()) {
 			done();
@@ -827,7 +974,11 @@ void Messages::refresh(const QString &chat, qint64 seq) {
 	loadPage(chat, options, [=, this](const Page &page) {
 		for (const auto &message : page.messages) {
 			if (message.seq == seq && find(chat, seq)) {
-				merge(chat, { message }, historyRef(chat).loaded);
+				const auto &history = historyRef(chat);
+				merge(chat, { message }, history.loaded);
+				if (!history.loaded) {
+					updateCached(chat, { message });
+				}
 			}
 		}
 	}, [](const Api::Error &) {
@@ -904,7 +1055,7 @@ void Messages::markRead(const QString &chat, qint64 seq) {
 
 void Messages::react(const QString &chat, qint64 seq, const QString &emoji) {
 	const auto key = Message::KeyForSeq(seq);
-	patchMessage(chat, key, [&](Message &message) {
+	patchMessage(chat, key, [emoji](Message &message) {
 		if (!message.myReaction.isEmpty()) {
 			const auto left = message.reactions.value(message.myReaction) - 1;
 			if (left > 0) {
@@ -952,7 +1103,7 @@ void Messages::edit(
 		.guard(this)
 		.done([=, this] {
 			// The `edited` update brings the server's copy; show ours meanwhile.
-			patchMessage(chat, Message::KeyForSeq(seq), [&](Message &message) {
+			patchMessage(chat, Message::KeyForSeq(seq), [=](Message &message) {
 				message.text = text;
 				message.entities = entities;
 				message.edited = true;
@@ -995,7 +1146,7 @@ void Messages::editWithPreview(
 		.guard(this)
 		.done([=, this] {
 			// The `edited` update brings the server's copy; show ours meanwhile.
-			patchMessage(chat, Message::KeyForSeq(seq), [&](Message &message) {
+			patchMessage(chat, Message::KeyForSeq(seq), [=](Message &message) {
 				message.text = text;
 				message.entities = entities;
 				message.edited = true;

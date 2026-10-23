@@ -18,7 +18,10 @@ add_library(ElezaLang STATIC
 )
 add_library(Eleza::Lang ALIAS ElezaLang)
 target_include_directories(ElezaLang PUBLIC "${_eleza_lang_root}/SourceFiles")
-target_link_libraries(ElezaLang PUBLIC Qt6::Core)
+if (NOT TARGET ElezaBase)
+	add_subdirectory("${_eleza_lang_root}/../lib/base" "${CMAKE_BINARY_DIR}/lib_base")
+endif()
+target_link_libraries(ElezaLang PUBLIC ElezaBase Qt6::Core)
 eleza_target_defaults(ElezaLang)
 eleza_generate_lang(ElezaLang
 	"${_eleza_lang_root}/Resources/langs/lang.strings"

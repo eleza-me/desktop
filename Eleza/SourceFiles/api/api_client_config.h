@@ -68,6 +68,11 @@ public:
 	[[nodiscard]] bool botsInlineEnabled() const;       // feature.bots and bots.inline.enabled
 	[[nodiscard]] int botsInlineQueryMaxChars() const;  // bots.inline.query_max_chars
 	[[nodiscard]] bool deleteChatForBothEnabled() const;
+	// Self-destructing photos and videos (chat.self_destruct.enabled;
+	// absent: off — a server without them would send an ordinary photo).
+	[[nodiscard]] bool selfDestructEnabled() const;
+	// The timers a send may ask for, in seconds (chat.self_destruct.timers).
+	[[nodiscard]] QVector<int> selfDestructTimers() const;
 
 	// ---- sign-in and profile
 	[[nodiscard]] int otpCodeLength() const;

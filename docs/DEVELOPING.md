@@ -36,7 +36,9 @@ Then look at the PNG. Check both languages (`--lang=fa|en`: RTL and LTR) and bot
 Under a real X server use `xvfb-run -a ./build/Eleza/Eleza …` with the same flags.
 
 The session is stored in `--workdir`: the second run with the same directory is already
-signed in (`--debug-login` is skipped then). Delete the directory to start clean.
+signed in (`--debug-login` is skipped then). Delete the directory to start clean. The stored
+session belongs to the API origin that issued it: a run with another `--api` starts signed
+out and sends it nothing, and signing in there replaces it (one workdir per server keeps both).
 
 ## 2. Debug hooks
 
@@ -136,11 +138,13 @@ to answer every "open" dialog at once and `ELEZA_DEBUG_SAVE=/path/out.bin` for "
 | `debug/title[/<states>]` | what the custom title bar shows, the states of `--debug-title-bar` (`debug/title/inactive,hover-close`); without states: back to normal |
 | `debug/notification`, `debug/notifications` | one / three sample notification toasts |
 | `debug/viewer[?file=<path>][&video=<path>]` | the image viewer with generated pictures (and your file / video) |
+| `debug/player[/voice\|/panel]` | the «now playing» bar with made-up songs (or a voice message), paused, nothing opened (no audio device needed); `panel` opens the music player under it too |
 | `debug/crop`, `debug/about`, `debug/peers`, `debug/peers-multi` | the shared boxes |
 | `debug/logout`, `debug/link`, `debug/error`, `debug/upgrade` | sign-out confirmation, external link confirmation, an error toast, the "update required" screen |
 | `debug/session-expired` | ends the session as the server would |
-| `debug/stories-sample`, `debug/stories/<user>`, `debug/story/<owner>/<story>`, `debug/story-compose?file=<path>`, `debug/story-share/<post>`, `debug/story-viewers/<story>`, `debug/story-settings` | stories: a made-up tray and stories (no server), the viewer, the boxes, the settings page |
+| `debug/stories-sample`, `debug/stories/<user>`, `debug/story/<owner>/<story>`, `debug/story-compose?file=<path>`, `debug/story-share/<post>`, `debug/story-send/<story>`, `debug/story-viewers/<story>`, `debug/story-settings` | stories: a made-up tray and stories (no server), the viewer, the boxes («ارسال به…» for one of the sample's stories: `stu10`, `stme0`…), the settings page |
 | `debug/calls/<state>` | a voice call in a given state: the bar, the call view, the incoming window (section 12) |
+| `debug/dialogs/note-new`, `debug/dialogs/note/<user>` | «نوت جدید», a friend's note (from the list the server sent; the mock API has notes for `u_sara`, `u_nika`, `u_reza`) |
 
 Add your own in your module's route handler (`route.startsWith(u"debug/…")`), inside
 `#ifdef ELEZA_DEBUG_TOOLS`.
@@ -373,15 +377,17 @@ One string per place (`window/window_routes.h`). Never build them by hand: use
 | `chats` | `Routes::Chats()` | Chats | dialogs |
 | `chat/<chatId>[?seq=N]` | `Routes::Chat(id, seq)` | Chats | history |
 | `chat/<chatId>?start=<payload>` | `Routes::BotStart(id, payload)` | Chats | history (a bot's chat with «شروع» waiting) |
+| `chat/<chatId>?show=media` | `Routes::ChatMedia(id)` | current | media (the shared media of a direct chat; a group's is `group/<id>?show=media`, the same page) |
 | `user/<userId>` | `Routes::User(id)` | current | profile |
 | `u/<handle>` | `Routes::Handle(handle)` | current | profile |
 | `u/<handle>?start=<payload>` | `Routes::HandleStart(handle, payload)` | Chats | profile (a bot's deep link `eleza.me/<bot>?start=…`: resolves the handle, opens the chat with «شروع»; a person's profile otherwise) |
 | `eli` | `Routes::Eli()` | Eli | eli |
-| `eli/post/<postId>` | `Routes::Post(id)` | Eli | eli |
+| `eli/post/<postId>[?root=<id>]` | `Routes::Post(id, rootHint)` | Eli | eli (a comment opens under its post, its thread first and lit up; `root`: the post at the top of its conversation as a notification named it, read at the same time) |
 | `eli/share/<slug>` | `Routes::SharedPost(slug)` | Eli | eli (resolves the share link, then opens the post) |
 | `eli/topic/<slug>` | `Routes::Topic(slug)` | Eli | eli |
 | `eli/notifications` | `Routes::EliNotifications()` | Eli | eli |
 | `search[?q=text]` | `Routes::Search(query)` | Search | search |
+| `search/people` | — | Search | search («دیدن همه» of the people you may know) |
 | `me` | `Routes::Me()` | Me | profile |
 | `settings[/<section>]` | `Routes::Settings(section)` | Settings | settings |
 | `conversation/topics` | `Routes::ConversationTopics()` | Chats | conversation |
@@ -432,6 +438,12 @@ All in `lib/ui/ui/**`; every header starts with an example. The gallery (`--gall
 * **Text**: keep one `Ui::Text::String` per painted item (`setText` / `setMarkedText` with
   entities in UTF-16 units), `countHeight(width)`, `draw` / `drawLeftElided`, `getState` for
   link hit-testing. `Ui::FlatLabel` wraps it as a widget (selectable, links).
+* **Emoji** (`ui/emoji/*.h`): `Ui::Text::String` and `Ui::InputField` draw Telegram's emoji
+  (the pack's pictures) by themselves; text painted with `QPainter::drawText` keeps the
+  fonts' emoji. One emoji in a cell / chip: `Ui::Emoji::PaintOne(p, emoji, rect, size,
+  fallbackFont)` (and `OneWidth` to measure it). Pictures are decoded on a pool thread
+  when first drawn; a widget that drew a missing one is repainted, a picture painted into
+  an image needs `Ui::Emoji::OnUpdated(guard, callback)`.
 * **Lists**: `Ui::ScrollArea` + `Ui::ListWidget` with your `Ui::ListDelegate`
   (`rowsCount`, `rowHeight`, `paintRow`); the list paints hover / active / ripple and gives
   `rowClicked`, `rowContextMenu`, keyboard selection. `scroll->nearBottom` for pagination.
@@ -443,7 +455,8 @@ All in `lib/ui/ui/**`; every header starts with an example. The gallery (`--gall
   `Ui::MakeConfirmBox({ .text = …, .confirmText = …, .confirmed = [=](auto close) { … close(); }, .destructive = true })`,
   `controller->showSheet(…)` for the side sheet.
 * **Toasts**: `controller->showToast(text)` (lifted above the visible section's bottom
-  controls, see `SectionWidget::toastBottomSkip()`).
+  controls, see `SectionWidget::toastBottomSkip()`); an undo toast is a `Ui::Toast::Config`
+  with `.action = tr::lng_toast_undo(tr::now)` and `.actionClicked`.
 * **Top bar**: `Ui::TopBar` (`setTitle`, `setSubtitle(text, accent)`, `addAction(st)`,
   `setLeadingWidget`).
 
@@ -461,12 +474,13 @@ All in `lib/ui/ui/**`; every header starts with an example. The gallery (`--gall
 | Open a link / mention / hashtag | `Support::OpenLink`, `Support::LinkHandler` |
 | Pick / save files, paste, drop | `Support::PickFiles`, `PickImage`, `SaveFileAs`, `SaveImageAs`, `ReadMimeData`, `CanAcceptDrop`, `SaveImageToTemp` (`support/file_dialogs.h`) |
 | The brand mark | `Support::PaintBrandMark(p, rect)` |
-| A searchable list of people / chats | `Boxes::PeerListBox` with your `Boxes::PeerListController`; ready-made `Boxes::ChooseChatsBox(&session, args, done)` |
+| A searchable list of people / chats | `Boxes::PeerListBox` with your `Boxes::PeerListController` (a button per row: `PeerListRow::action` + `rowActionClicked`; a line of text: `note`); ready-made `Boxes::ChooseChatsBox(&session, args, done)` |
 | A round photo crop | `Boxes::PickAndCropPhoto(parent, show, done)`, `Boxes::SaveCroppedPhoto(image, guard, done)` |
 | Country list, about | `Boxes::CountrySelectBox`, `Boxes::AboutBox` |
 | «گزارش» (post / reply / account / conversation / group / a message of a group) | `Boxes::ShowReportBox(controller, args)` |
-| Full-window photo / video viewer | `Media::ShowImageViewer(controller->window(), items, index)` |
-| Voice / music playback | `Media::Player().toggle(track, &session)`; signals `stateChanged`, `positionChanged`; `cycleSpeed()` |
+| Shared media of a chat or a group (tabs with counts, server pages) | `controller->openRoute(Window::Routes::ChatMedia(chatId))` / `GroupMedia(groupId)` (`media/media_shared.h`); the data side: `data/data_shared_media.h` |
+| Full-window photo / video viewer | `Media::ShowImageViewer(controller->window(), items, index, options)`; `options.paging` pages past the items handed (by `ViewerItem::key`), `options.origin` gives the item's place on screen (it grows out of it and closes into it) |
+| Voice / music playback | `Media::Player().toggle(Media::AudioTrack::ForMessage(message), &session[, queue])`; signals `stateChanged`, `positionChanged`, `queueChanged`, `failed(id, reason)`; `next()` / `previous()`, `cycleSpeed()`, repeat / shuffle / reverse. The «now playing» bar and the music player are `media/media_player_widgets.h`; `Media::OpenTrackPlace(controller, track)` goes to a track's message (a chat open further back comes to the front: `controller->showExistingSection(key)`) |
 | Inline video | `Media::VideoPlayerWidget` (`setSource(localPath)`, `setPoster`, `play`) |
 
 Failed fire-and-forget actions of the stores (`Data::Session::actionFailed`) already show a
@@ -479,9 +493,9 @@ Preferences that exist already in `Core::Settings` (`Core::App().settings()`):
 `notifications()` (`desktopEnabled`, `soundEnabled`, `showPreview` = «نمایش متن پیام»,
 `showSender`, `onlyWhenInactive`, `flashTaskbar`, `countUnreadMuted`), `closeToTray`,
 `themeMode`, `language`, `sideColumnWidth`, `lastTab`, `playbackVolume`,
-`voicePlaybackSpeed`, `systemTitleBar` (applies with the next start). Change them through the setters (they save themselves); language and
-`voicePlaybackSpeed`, `autoUpdate`. Change them through the setters (they save themselves); language and
-theme through `Core::App().setLanguage / setThemeMode`.
+`voicePlaybackSpeed`, `autoUpdate`, `systemTitleBar` (applies with the next start). Change them
+through the setters (they save themselves); language and theme through
+`Core::App().setLanguage / setThemeMode`.
 
 ## 7. The core API
 
@@ -595,6 +609,7 @@ void Feed::react(const QString &id, Reaction reaction);  repost(id, bool);  book
 void Feed::replies(const QString &root, const QString &cursor, base::Guard guard, Fn<void(const RepliesPage &)> done, FailCallback fail = nullptr);
 void Feed::topic(slug, guard, done, fail);  topicPosts(slug, tab, before, guard, done, fail);  trending(guard, done, fail);
 void Feed::bookmarks(cursor, guard, done, fail);  userPosts(userId, tab, before, kind, guard, done, fail);
+void Feed::userTimeline(userId, cursor, cursorIsBefore, guard, done, fail);   // posts tab with reposts (PostsPage::repostedBy)
 void Feed::reportViews(const QStringList &ids);  sendReport(targetKind, target, reason, note, …);
 signals: postChanged(id), postPublished(id), postRemoved(id), authorBlocked(userId), newPosts(count, since)
 
@@ -605,7 +620,7 @@ void Graph::follow / unfollow / block / unblock(const QString &userId, base::Gua
 void Graph::followers / following(const QString &userId, const QString &cursor, base::Guard guard, Fn<void(const GraphList &)> done, FailCallback fail = nullptr);
 void Graph::search(const QString &query, const QString &type, int offset, base::Guard guard, Fn<void(const SearchResults &)> done, FailCallback fail = nullptr);
 void Graph::searchPeople(const QString &query, base::Guard guard, Fn<void(const QVector<Profile> &)> done);
-void Graph::suggestions(cursor, limit, guard, done, fail);
+void Graph::suggestions(cursor, limit, guard, done, fail);  dismissSuggestion(userId);   // signal suggestionDismissed(userId)
 void Graph::updateProfile(const ProfilePatch &patch, base::Guard guard, Fn<void(const Profile &)> done, FailCallback fail = nullptr);
 void Graph::loadSettings(bool force, base::Guard guard, Fn<void(const QJsonObject &)> done, FailCallback fail = nullptr);
 QJsonValue Graph::settingValue(const QString &dotted) const;  void Graph::setSetting(const QString &dotted, const QJsonValue &value);
@@ -629,10 +644,31 @@ const StoryTrayMe &me() const;  const QVector<StoryTrayItem> &tray() const;  ref
 StoryRing ring(userId) const;   // tray > loaded stories > feed author hints; ringsChanged(ids)
 void loadUser(userId, guard, done(const UserStories &), fail);  markSeen(storyId);  flushSeen();
 react / unreact / reply / viewers / deleteStory / create / post(PostStoryRequest) / setMuted / hidden / setHidden
-closeFriends / setCloseFriend / updateCloseFriends / settings / updateSettings
-signals: trayChanged(), ringsChanged(ids), userStoriesChanged(userId), postingChanged(), posted(story)
-// UI: Stories::OpenUserStories(controller, userId, queue), Stories::OpenStory, Stories::ShowComposeBox,
-// Stories::ShareToStory, Stories::PaintRing (stories/).
+closeFriends / setCloseFriend / updateCloseFriends / settings / updateSettings / setAllowSharing
+void share(storyId, recipients, text, guard, done(const StoryShareResult &), fail);   // «ارسال به…»; shareCap()
+void get(storyId, guard, done(const User &owner, const Story &), fail);   // one story by id, decided for me
+markGone(storyId);  isGone(storyId);   // a 404 of the story or of its thumbnail, for this session
+signals: trayChanged(), ringsChanged(ids), userStoriesChanged(userId), postingChanged(), posted(story), storyGone(id)
+// UI: Stories::OpenUserStories(controller, userId, queue), Stories::OpenStory, Stories::OpenStoryFromChat
+// (a chat message's story: stories.get first), Stories::ShowComposeBox, Stories::ShareToStory,
+// Stories::ShowShareBox («ارسال به…»), Stories::PaintRing (stories/).
+// Chat messages: story_reply / story_reaction / story_share carry Message::story (StoryRef); a
+// story_share's Message::text is the sender's comment (never the fallback line for older apps);
+// StoryRef::gone(now) is the rule «استوری دیگر در دسترس نیست» starts from.
+
+// ---- notes (data/data_notes.h; HTTP only: GET /v1/notes, PUT|DELETE /v1/me/note)
+bool Notes::enabled() const;   // client-config `feature.notes` (absent: on), no 404 for the list
+int maxChars() const;   qint64 expirySeconds() const;   // notes.max_chars, notes.expiry
+const NotesFeed &feed() const;  const Note *mine() const;  bool loaded() const;
+void refresh();   // at most once a minute (the chat list shows, the tab comes back); reload(): F5
+void set(text, audience, guard, done(const Note &), fail);  remove(guard, done, fail);
+void reply(userId, noteText, answer, guard, done(const QString &chat), fail);  // the 1:1 chat, NoteReply::Build
+signals: changed(), enabledChanged()
+// No realtime: the list lives on what this app changes; a note leaves the feed at its expiry.
+// The rules (length in code points, one line, the reply message «↩︎ «note»\nanswer» and the old
+// «↩︎ نوتت: «…»» first line) are plain functions: data_note_types.h (tests/core/test_notes.cpp).
+// UI: Dialogs::NotesRow / NotesFaces (dialogs/dialogs_notes.h), the boxes in dialogs_notes_box.h,
+// History::View::NoteReplyView (a note reply drawn above its bubble), Support::MessagePreview.
 
 // ---- notifications (data/data_notifications.h)
 int Notifications::unread() const;   int kind(const QString &name) const;
@@ -857,7 +893,7 @@ list and the ordinary chat screen. So there is no second list and no second chat
 | `data/data_groups.*` | `Data::Groups`: the sync track (catch-up after every Hello, live frames, per-group difference, my own place from the user-level log) and every action. Its header explains the two counters kept per row. `tests/core/test_groups.cpp` drives it on the fake transport |
 | `data/data_chats.*`, `data_messages.*`, `data_outbox.*` | route by `Data::IsGroupId(id)`: a group's row is a `Data::Chat` with `isGroup` and `group`, its history lives in `Data::Messages`, its sends go through the outbox like any other (idempotent by client message id) |
 | `dialogs/` | group rows: the group's photo, «سارا: …» previews, notes with names, the «@» badge of an unread mention, «گروه تازه» in «پیام جدید» |
-| `history/` | the chat screen in a group: the sender's name (one of eight colours by user id) and member tag above the first bubble of a run and the picture next to the last one (`View::Delegate::elementGroup / elementSender`), notes with names, the composer's states (restricted with the time left, slow mode with a countdown), «@» suggestions (`history_mentions.*`), delete for everyone by rights, pins by permission |
+| `history/` | the chat screen in a group: the sender's name (one of eight colours by user id) and member tag above the first bubble of a run and the picture next to the last one (`View::Delegate::elementGroup / elementSender`), notes with names (each name opens that profile: `Support::ServiceNoteLine`), two ticks on my messages up to `outbox_read_seq` (the furthest another member has read; `Data::Groups::applyReads`), the composer's states (restricted with the time left, slow mode with a countdown), «@» suggestions (`history_mentions.*`), the «@» button of unread mentions stacked above «to the end», delete for everyone by rights, pins by permission |
 | `groups/` | everything else: `groups_info.*` (the info screen, route `group/<id>`), `groups_boxes.*` (creating a group, adding members, the box of an invite link, notification level, edit, permissions, admin rights, restrictions, bans, invite links, join requests, delete, report, the menu of a member), `groups_tags.*` (member tags: the badge, the box a tap on it opens, the box that sets a tag), `groups_module.cpp` (routes, the chat menu filler, debug routes) |
 
 **Gates.** `Groups::enabled()` (`feature.groups`): off means no group row, no request and no
@@ -904,3 +940,31 @@ restricted|banned>`, `debug/group-admin/<g>/<u>`, `debug/group-restrict/<g>/<u>`
 `debug/group-delete/<g>`, `debug/group-report/<g>`, `debug/group-tag-info/<g>/<u>/<role>[/<tag>]`
 (the box a tap on a tag opens), `debug/group-tag-edit/<g>/<u>/<role>[/<tag>]` («ویرایش تگ»);
 the screens themselves are routes (`group/<g>`, `g/<token>`, `chat/<g>`).
+
+## 14. The report / block bar and self-destructing media
+
+**The report / block bar** (Telegram's action bar; the backend's `docs/report-block-bar.md` and
+`docs/groups.md` §9.1): `ChatInfo::actionBar` ("stranger") and `Group::actionBar` /
+`Group::addedBy` ("added_by_stranger"). Which bar shows, the plans of «مسدود کردن» / «گزارش
+هرزنامه» / «ترک گروه» (a report always first, a leave last) and how a failure is read are plain
+functions in `data/data_action_bar.h` (`tests/core/test_action_bar.cpp`); the bar itself is
+`history/history_action_bar.*`. The × is `Data::Chats::dismissActionBar`: the bar goes at once, the
+dismissal is kept in the account's database until the server has it and sent again with every
+connection, and meanwhile headers that still carry the bar lose it here. When nothing of a choice
+went through, the bar comes back.
+
+**Self-destructing photos and videos** (`docs/self-destruct-media.md` of the backend). Only the phone
+apps open them: a desktop session is sent a text («only on the phone») with `self_destruct` — this
+app never gets the picture, the caption or a way to open it. `Data::Message::selfDestruct` holds what
+it is and how far it got. As on Telegram Desktop the chat shows it as a centred line
+(`History::IsService`, worded by `Support::SelfDestructLine`): «‹sender› sent you a self-destructing
+message, view it on your phone» (the name opens the profile), «you sent one», «expired»; it has a
+menu (reply, pin, delete) but no reactions. `Support::SelfDestructLabel` is the one-line label of the
+chat list, notifications and reply headers. It is never copied, forwarded, edited, saved, searched
+or shown in the viewer. Sending (`SendFileOptions::selfDestruct`, the timer button of the
+send-files box) needs `chat.self_destruct.enabled` (absent: off) and a direct chat with a person; it
+is uploaded on its own (no dedup) and its local line never shows the file. The screenshot notice
+(`self_destruct_screenshot:<taker>:<seq>`) is worded here, the taker's name opening their profile.
+
+Mock data: `chat/spam` (a stranger wrote first) and `chat/sd` in `tests/tools/mock-history.mjs`,
+`chat/j1promo` (a stranger added me) in `tests/tools/mock-groups.mjs`.

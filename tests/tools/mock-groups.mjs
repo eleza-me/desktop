@@ -35,6 +35,10 @@
 //   j1slow   «گپ آهسته»: slow mode, one message every 20 s (429 group.slow_mode)
 //   j1big    «محلهٔ ما»: 240 members, no join / leave notes, I am an admin who
 //            may ban and invite
+//   j1promo  «تخفیف ویژه»: a stranger (u_john) added me: the report / block bar
+//
+// Read receipts: `outbox_read_seq` of a group is the furthest some member
+// other than me has read (j1class: my message is read).
 //
 // Invite links (https://eleza.me/g/<token>):
 //   j1open.AAAAAAAAAAAAAAAAAAAAAA   joinable: joining adds «کتاب‌خوان‌ها» to the list
@@ -51,7 +55,8 @@
 // 403 group.send_restricted. State lives as long as the process.
 //
 //   GET  /control/stats                 how often each avatar / photo was fetched
-//   POST /control/frame {group, text}   somebody writes into a group
+//   POST /control/frame {group, text, sender?, mention?}   somebody writes into a group
+//                                       (mention: true names me)
 //   POST /control/kick  {group}         I am removed from a group
 import http from 'node:http';
 import zlib from 'node:zlib';
@@ -370,6 +375,8 @@ function groupView(group) {
 	if (group.me.pinned) view.pinned = true;
 	if (group.me.cleared_before_seq) view.cleared_before_seq = group.me.cleared_before_seq;
 	if (PHASE2 && rights.includes('ban_users') && group.requests.length) view.join_requests = group.requests.length;
+	if (group.outbox_read_seq) view.outbox_read_seq = Math.min(group.outbox_read_seq, group.last_seq);
+	if (group.bar && me) { view.action_bar = 'added_by_stranger'; view.added_by = group.bar; }
 	return view;
 }
 function entryOf(group) {
@@ -483,6 +490,17 @@ function addInvite(group, fields = {}) {
 	post(g, 'u_nika', 'sticker', { sticker: { id: 'st3', pack: 'p1', emoji: '🎂', url: '/media/sticker/3.png', width: 256, height: 256 } }, now - 40 * MIN);
 	g.me.last_read_seq = 3;
 	g.me.muted = true;
+	g.outbox_read_seq = 4;
+}
+// -- «تخفیف ویژه»: a stranger added me
+{
+	const g = makeGroup('j1promo', 'تخفیف ویژه', { created_at: now - 2 * HOUR });
+	join(g, 'u_john', 'owner');
+	join(g, 'u_me', 'member', { invited_by: 'u_john' });
+	note(g, 'u_john', 'group_created', g.created_at);
+	note(g, 'u_john', 'member_added:u_me', g.created_at + MIN);
+	post(g, 'u_john', 'text', { text: 'Big sale today only! 🎁 https://example.com' }, now - HOUR);
+	g.bar = 'u_john';
 }
 // -- «اطلاعیه‌ها»: I am restricted
 {
@@ -565,6 +583,8 @@ function configValues(flat) {
 		'realtime.fallback_sync_interval': '5s',
 		'feature.drafts': true,
 		'chat.mute.durations': flat['chat.mute.durations'] || ['1h', '8h', '2d', 'forever'],
+		'chat.self_destruct.enabled': true,
+		'chat.self_destruct.timers': ['3s', '10s', '30s', '1m'],
 		'messaging.reaction_emoji_set': flat['messaging.reaction_emoji_set'] || ['❤️', '👍', '🔥', '😂', '😮', '😢', '🙏', '👏'],
 	});
 	if (VIDEO_ON) values['feature.video_calls'] = true;
@@ -829,6 +849,10 @@ async function handleGroups(req, res, url, raw) {
 			return json(res, 200, memberView(t));
 		}
 	}
+	if (rest === '/action-bar/dismiss' && m === 'POST') {
+		group.bar = null;
+		return json(res, 204);
+	}
 	if (rest === '/leave' && m === 'POST') {
 		if (me.role === 'owner' && count(group) > 1) return problem(res, 409, 'group.owner_must_transfer', 'پیش از ترک گروه مالکیت را واگذار کن');
 		me.status = 'left';
@@ -1075,7 +1099,10 @@ const server = http.createServer(async (req, res) => {
 		const body = parse(raw);
 		const group = groups[body.group];
 		if (!group) return json(res, 404, {});
-		const message = post(group, body.sender || 'u_sara', 'text', { text: body.text || 'سلام' });
+		const text = body.text || 'سلام';
+		// `mention`: the message names me (the «@» button of the chat).
+		const extra = body.mention ? { entities: [{ type: 'mention', offset: 0, length: Math.min(4, text.length), user: ME }] } : {};
+		const message = post(group, body.sender || 'u_sara', 'text', { text, ...extra });
 		return json(res, 200, { seq: message.seq, pts: group.pts });
 	}
 	if (p === '/control/kick' && m === 'POST') {
@@ -1121,6 +1148,8 @@ const server = http.createServer(async (req, res) => {
 			const group = groups[body.target];
 			if (!group || !memberOf(group, ME)) return problem(res, 404, 'report.target_not_found', 'چیزی برای گزارش پیدا نشد');
 			if (body.target_kind === 'group_message' && !(Number(body.message_seq) > 0)) return problem(res, 404, 'report.target_not_found', 'چیزی برای گزارش پیدا نشد');
+			// Any report of the group by me lowers my bar.
+			if (body.target_kind === 'group') group.bar = null;
 			return json(res, 201, { report: 'r1mock', status: 'open' });
 		}
 	}

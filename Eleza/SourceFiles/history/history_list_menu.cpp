@@ -43,7 +43,12 @@ void ListWidget::showContextMenu(
 	}
 	const auto element = _rows[target.index].element.get();
 	const auto zone = target.hit.zone;
-	if (element->isService() || zone == Zone::Date || zone == Zone::None) {
+	// Of the centred lines only self-destructing media is a message one
+	// may reply to, pin or delete.
+	const auto service = element->isService();
+	if ((service && (!element->data().selfDestruct || zone == Zone::Side))
+		|| zone == Zone::Date
+		|| zone == Zone::None) {
 		return;
 	}
 	// A copy: the row may change while the menu is open.
@@ -145,8 +150,8 @@ void ListWidget::showContextMenu(
 		return;
 	}
 
-	// ---- reactions
-	if (_canReact) {
+	// ---- reactions (a centred line shows none)
+	if (_canReact && !service) {
 		auto emoji = config ? config->reactionEmojiSet() : QStringList();
 		if (!emoji.isEmpty()) {
 			const auto strip = menu->setTopWidget(Ui::object_ptr<ReactionsStrip>(
@@ -189,16 +194,18 @@ void ListWidget::showContextMenu(
 		menu->addItem(std::move(copy));
 		// The quote must be an exact part of the message text.
 		// (The shown text has direction marks around its links.)
+		// An album's text is the caption of one of its items: the reply
+		// goes to that item.
 		if (_canWrite
-			&& Ui::Text::StripIsolates(element->text()) == message.text) {
+			&& Ui::Text::StripIsolates(element->text()) == captioned.text) {
 			const auto quote = MakeQuote(
-				message.text,
+				captioned.text,
 				Ui::Text::SourceSelection(element->text(), selection),
 				config ? config->maxQuoteLength() : 0);
 			if (quote) {
 				menu->addAction(tr::lng_chat_quote(tr::now), [=, this] {
 					setTextSelection(QString(), {});
-					Q_EMIT replyRequested(message, quote);
+					Q_EMIT replyRequested(captioned, quote);
 				}, &st::menuIconQuote);
 			}
 		}
@@ -265,7 +272,8 @@ void ListWidget::showContextMenu(
 	// ---- media and files (of the tile under the pointer in an album)
 	const auto &media = tile ? item : message;
 	const auto hidden = media.mediaSpoiler && !_revealed.contains(media.key());
-	switch ((album && !tile) ? Data::MessageKind::Unknown : media.kind) {
+	// Self-destructing media is never saved or copied (nothing of it is here).
+	switch (((album && !tile) || media.selfDestruct) ? Data::MessageKind::Unknown : media.kind) {
 	case Data::MessageKind::Photo:
 		if (!hidden) {
 			menu->addAction(tr::lng_history_copy_image(tr::now), [=, this] {
@@ -375,9 +383,11 @@ void ListWidget::showContextMenu(
 			}, &st::menuIconReport);
 		}
 	}
-	menu->addAction(tr::lng_select(tr::now), [=, this] {
-		toggleSelected(key);
-	}, &st::menuIconSelect);
+	if (selectable(target.index)) {
+		menu->addAction(tr::lng_select(tr::now), [=, this] {
+			toggleSelected(key);
+		}, &st::menuIconSelect);
+	}
 	auto remove = Ui::MenuItem();
 	remove.text = tr::lng_delete(tr::now);
 	remove.icon = &st::menuIconDelete;

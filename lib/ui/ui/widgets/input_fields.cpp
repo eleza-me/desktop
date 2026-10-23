@@ -1,5 +1,7 @@
 #include "ui/widgets/input_fields.h"
 
+#include "base/text_direction.h"
+#include "ui/emoji/emoji_pack.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/painter.h"
@@ -7,6 +9,7 @@
 #include "ui/ui_utility.h"
 
 #include <QtCore/QCoreApplication>
+#include <QtCore/QHash>
 #include <QtCore/QMetaMethod>
 #include <QtCore/QMimeData>
 #include <QtCore/QTimerEvent>
@@ -15,34 +18,63 @@
 #include <QtGui/QContextMenuEvent>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QKeyEvent>
+#include <QtGui/QSyntaxHighlighter>
 #include <QtGui/QTextBlock>
 #include <QtGui/QTextCursor>
 #include <QtGui/QTextDocument>
+#include <QtGui/QTextLayout>
 #include <QtWidgets/QProxyStyle>
 #include <QtWidgets/QScrollBar>
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace Ui {
 namespace {
 
 constexpr auto kCaretBlink = 530;
+// An emoji against the text, as in Ui::Text::String.
+constexpr auto kEmojiScale = 1.3;
 
 [[nodiscard]] bool HasStrongDirection(const QString &text, bool *rtl) {
-	for (const auto ch : text) {
-		switch (ch.direction()) {
-		case QChar::DirL:
-			*rtl = false;
-			return true;
-		case QChar::DirR:
-		case QChar::DirAL:
-			*rtl = true;
-			return true;
-		default: break;
+	const auto strong = base::FirstStrongIsRtl(text);
+	if (strong) {
+		*rtl = *strong;
+	}
+	return strong.has_value();
+}
+
+// The length the server checks: code points, a surrogate pair is one.
+[[nodiscard]] int CodePoints(QStringView text) {
+	auto result = 0;
+	const auto size = text.size();
+	for (auto i = qsizetype(0); i != size; ++i, ++result) {
+		if (text[i].isHighSurrogate()
+			&& i + 1 != size
+			&& text[i + 1].isLowSurrogate()) {
+			++i;
 		}
 	}
-	return false;
+	return result;
+}
+
+// Moves `from` back by up to `count` code points, not below `limit`.
+[[nodiscard]] int BackCodePoints(
+		QStringView text,
+		int from,
+		int limit,
+		int *count) {
+	while (*count > 0 && from > limit) {
+		--from;
+		if (from > limit
+			&& text[from].isLowSurrogate()
+			&& text[from - 1].isHighSurrogate()) {
+			--from;
+		}
+		--*count;
+	}
+	return from;
 }
 
 [[nodiscard]] QString ShortcutText(QKeySequence::StandardKey key) {
@@ -130,9 +162,101 @@ void PaintInputFrame(
 	}
 }
 
+namespace {
+
+// Emoji of the pack in an editor, drawn as their pictures while the text keeps
+// them (typing, undo, copy, the text() of the field are untouched): every emoji
+// gets the width of its picture and no ink — its characters in a 1 px font with
+// letter spacing, transparent — and the editor paints the pictures over them.
+// Formats of a highlighter live in the layouts only, not in the document.
+class EmojiHighlighter final : public QSyntaxHighlighter {
+public:
+	struct BlockData final : QTextBlockUserData {
+		std::vector<Emoji::Range> ranges;
+	};
+
+	EmojiHighlighter(QTextDocument *document, const style::font &font)
+	: QSyntaxHighlighter(document)
+	, _font(font->f) {
+		const auto pixels = (_font.pixelSize() > 0)
+			? _font.pixelSize()
+			: font->height;
+		_size = std::max(
+			std::min(int(std::lround(pixels * kEmojiScale)), font->height),
+			1);
+		_advance = _size + 2 * std::max(_size / 16, 1);
+		_tiny = _font;
+		_tiny.setPixelSize(1);
+		_tiny.setKerning(false);
+	}
+
+	[[nodiscard]] int size() const {
+		return _size;
+	}
+	[[nodiscard]] int advance() const {
+		return _advance;
+	}
+
+protected:
+	void highlightBlock(const QString &text) override {
+		auto data = std::make_unique<BlockData>();
+		data->ranges = Emoji::FindAll(text);
+		for (const auto &range : data->ranges) {
+			const auto length = range.till - range.from;
+			setFormat(
+				range.from,
+				length,
+				format(text.mid(range.from, length)));
+		}
+		setCurrentBlockUserData(data->ranges.empty() ? nullptr : data.release());
+	}
+
+private:
+	// An emoji's characters take `_advance` in all: the 1 px font's own
+	// advances and the letter spacing, which Qt adds once per cluster.
+	[[nodiscard]] QTextCharFormat format(const QString &emoji) {
+		auto i = _spacing.constFind(emoji);
+		if (i == _spacing.cend()) {
+			const auto natural = [&](qreal spacing) {
+				auto font = _tiny;
+				font.setLetterSpacing(QFont::AbsoluteSpacing, spacing);
+				auto layout = QTextLayout(emoji, font);
+				layout.beginLayout();
+				auto line = layout.createLine();
+				line.setLineWidth(1'000'000);
+				layout.endLayout();
+				return line.naturalTextWidth();
+			};
+			const auto base = natural(0.);
+			const auto clusters = std::max(
+				int(std::lround((natural(16.) - base) / 16.)),
+				1);
+			i = _spacing.insert(emoji, (_advance - base) / clusters);
+		}
+		auto font = _tiny;
+		font.setLetterSpacing(QFont::AbsoluteSpacing, *i);
+		auto result = QTextCharFormat();
+		result.setFont(font, QTextCharFormat::FontPropertiesAll);
+		result.setForeground(QBrush(Qt::transparent));
+		return result;
+	}
+
+	QFont _font;
+	QFont _tiny;
+	int _size = 0;
+	int _advance = 0;
+	QHash<QString, qreal> _spacing;
+
+};
+
+} // namespace
+
 class InputField::Inner final : public QTextEdit {
 public:
 	explicit Inner(InputField *owner) : QTextEdit(owner), _owner(owner) {
+		if (Emoji::Available()) {
+			_emoji = new EmojiHighlighter(document(), owner->_st.font);
+		}
 	}
 
 	// The owner is being destroyed: the focus leaves this widget inside
@@ -158,6 +282,12 @@ protected:
 			QTextEdit::keyPressEvent(e);
 		}
 	}
+	void paintEvent(QPaintEvent *e) override {
+		QTextEdit::paintEvent(e);
+		if (_emoji) {
+			paintEmoji(e->rect());
+		}
+	}
 	void contextMenuEvent(QContextMenuEvent *e) override {
 		_owner->innerContextMenu(e->globalPos());
 	}
@@ -178,7 +308,57 @@ protected:
 	}
 
 private:
+	void paintEmoji(QRect clip) {
+		using Data = EmojiHighlighter::BlockData;
+		auto p = QPainter(viewport());
+		const auto offset = QPointF(
+			-horizontalScrollBar()->value(),
+			-verticalScrollBar()->value());
+		const auto size = qreal(_emoji->size());
+		const auto advance = _emoji->advance();
+		const auto layout = document()->documentLayout();
+		for (auto block = document()->firstBlock(); block.isValid(); block = block.next()) {
+			const auto data = static_cast<const Data*>(block.userData());
+			if (!data || !block.layout()) {
+				continue;
+			}
+			const auto bounds = layout->blockBoundingRect(block).translated(offset);
+			if (bounds.bottom() < clip.top()) {
+				continue;
+			} else if (bounds.top() > clip.bottom()) {
+				break;
+			}
+			const auto text = block.layout();
+			const auto origin = text->position() + offset;
+			for (const auto &range : data->ranges) {
+				const auto line = text->lineForTextPosition(range.from);
+				if (!line.isValid()) {
+					continue;
+				}
+				// The emoji's edges: from its start to its end when both are
+				// on one run, else from its start and its first character's
+				// direction.
+				auto leading = range.from;
+				auto trailing = range.from;
+				const auto start = line.cursorToX(&leading, QTextLine::Leading);
+				const auto first = line.cursorToX(&trailing, QTextLine::Trailing);
+				const auto end = line.cursorToX(range.till);
+				const auto left = (std::abs(std::abs(end - start) - advance) < 1.5)
+					? std::min(start, end)
+					: (first >= start)
+					? start
+					: (start - advance);
+				Emoji::Paint(p, range.id, QRectF(
+					origin.x() + left + (advance - size) / 2.,
+					origin.y() + line.y() + (line.height() - size) / 2.,
+					size,
+					size));
+			}
+		}
+	}
+
 	InputField *_owner = nullptr;
+	EmojiHighlighter *_emoji = nullptr;
 
 };
 
@@ -232,6 +412,15 @@ InputField::InputField(
 		&QTextDocument::contentsChanged,
 		this,
 		[this] { innerContentsChanged(); });
+	QObject::connect(
+		_inner->document(),
+		&QTextDocument::contentsChange,
+		this,
+		[this](int position, int removed, int added) {
+			Q_UNUSED(removed);
+			_changeFrom = std::min(_changeFrom, position);
+			_changeTill = std::max(_changeTill, position + added);
+		});
 
 	updateDirection();
 	resize(width(), heightForContent());
@@ -253,8 +442,12 @@ void InputField::setText(const QString &text) {
 	if (_mode == Mode::SingleLine) {
 		value.replace(QLatin1Char('\n'), QLatin1Char(' '));
 	}
-	if (_maxLength > 0 && value.size() > _maxLength) {
-		value.truncate(_maxLength);
+	if (_maxLength > 0) {
+		auto excess = CodePoints(value) - _maxLength;
+		if (excess > 0) {
+			value.truncate(
+				BackCodePoints(value, int(value.size()), 0, &excess));
+		}
 	}
 	_inner->setPlainText(value);
 	setCursorToEnd();
@@ -463,15 +656,40 @@ void InputField::innerContentsChanged() {
 		return;
 	}
 	auto text = _inner->toPlainText();
-	if (_maxLength > 0 && text.size() > _maxLength) {
+	auto excess = (_maxLength > 0) ? (CodePoints(text) - _maxLength) : 0;
+	if (excess > 0) {
+		// The excess goes from the end of what was just typed or pasted (the
+		// caret stays after the part that fits), never splitting a surrogate
+		// pair; whatever is still over (a lowered limit) from the end.
 		_correcting = true;
-		auto cursor = _inner->textCursor();
-		cursor.setPosition(_maxLength);
-		cursor.movePosition(QTextCursor::End, QTextCursor::KeepAnchor);
-		cursor.removeSelectedText();
+		const auto size = int(text.size());
+		auto till = std::clamp(_changeTill, 0, size);
+		const auto from = std::clamp(_changeFrom, 0, till);
+		if (till > 0
+			&& till < size
+			&& text[till].isLowSurrogate()
+			&& text[till - 1].isHighSurrogate()) {
+			++till;
+		}
+		const auto remove = [&](int start, int end) {
+			if (start < end) {
+				auto cursor = QTextCursor(_inner->document());
+				cursor.setPosition(start);
+				cursor.setPosition(end, QTextCursor::KeepAnchor);
+				cursor.removeSelectedText();
+			}
+		};
+		remove(BackCodePoints(text, till, from, &excess), till);
+		if (excess > 0) {
+			text = _inner->toPlainText();
+			const auto end = int(text.size());
+			remove(BackCodePoints(text, end, 0, &excess), end);
+		}
 		_correcting = false;
 		text = _inner->toPlainText();
 	}
+	_changeFrom = std::numeric_limits<int>::max();
+	_changeTill = -1;
 	const auto changedText = (text != _lastText);
 	_lastText = text;
 	const auto hasText = !text.isEmpty();

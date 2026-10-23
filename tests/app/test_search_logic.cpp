@@ -320,6 +320,109 @@ private Q_SLOTS:
 		QCOMPARE(Plain(SuggestionReason(profile)), QStringLiteral("Followed by Sara and 1 other"));
 	}
 
+	void newSuggestionReasons() {
+		auto profile = Data::Profile();
+		profile.handle = QStringLiteral("nika");
+		profile.reason = QStringLiteral("groups");
+		profile.groupCount = 3;
+		QCOMPARE(SuggestionReason(profile), U("۳ گروه مشترک"));
+		// An older server: no count, the generic line.
+		profile.groupCount = 0;
+		QCOMPARE(SuggestionReason(profile), tr::lng_search_suggested(tr::now));
+		profile.reason = QStringLiteral("new");
+		QCOMPARE(SuggestionReason(profile), U("تازه به الزا پیوسته"));
+
+		// Somebody I know who just joined: the tie and that they are new.
+		profile.joinedRecently = true;
+		profile.reason = QStringLiteral("contact");
+		QCOMPARE(SuggestionReason(profile), U("در مخاطبان تو · تازه پیوسته"));
+		profile.reason = QStringLiteral("groups");
+		profile.groupCount = 1;
+		QCOMPARE(SuggestionReason(profile), U("۱ گروه مشترک · تازه پیوسته"));
+		// Not for a tie that is no personal one, nor for the generic line.
+		profile.reason = QStringLiteral("interest");
+		QCOMPARE(SuggestionReason(profile), U("هم‌علاقه با تو"));
+		profile.reason = QStringLiteral("new");
+		QCOMPARE(SuggestionReason(profile), U("تازه به الزا پیوسته"));
+		profile.reason = QStringLiteral("groups");
+		profile.groupCount = 0;
+		QCOMPARE(SuggestionReason(profile), tr::lng_search_suggested(tr::now));
+
+		Lang::SetCurrent(Lang::Language::English);
+		profile.groupCount = 2;
+		QCOMPARE(SuggestionReason(profile), QStringLiteral("2 groups in common · Just joined"));
+		profile.joinedRecently = false;
+		profile.groupCount = 1;
+		QCOMPARE(SuggestionReason(profile), QStringLiteral("1 group in common"));
+	}
+
+	void suggestionQueue() {
+		const auto person = [](const char *id) {
+			auto result = Data::Profile();
+			result.id = QString::fromLatin1(id);
+			return result;
+		};
+		const auto ids = [](const QVector<Data::Profile> &list) {
+			auto result = QStringList();
+			for (const auto &item : list) {
+				result.push_back(item.id);
+			}
+			return result.join(' ');
+		};
+		auto queue = SuggestionQueue(3, 2);
+		QVERIFY(queue.empty());
+		QVERIFY(queue.needsRefill());
+		// Me, somebody hidden here and a repeat are left out.
+		queue.replace(
+			{ person("a"), person("me"), person("b"), person("x"), person("c"), person("a"), person("d"), person("e") },
+			{ QStringLiteral("x") },
+			QStringLiteral("me"));
+		QCOMPARE(ids(queue.visible()), QStringLiteral("a b c"));
+		QCOMPARE(queue.waiting(), 2);
+		QVERIFY(!queue.needsRefill());
+
+		// A followed person leaves, the next one takes the place.
+		QVERIFY(queue.remove(QStringLiteral("b")));
+		QCOMPARE(ids(queue.visible()), QStringLiteral("a c d"));
+		QCOMPARE(queue.waiting(), 1);
+		QVERIFY(queue.needsRefill());
+		QVERIFY(!queue.remove(QStringLiteral("zz")));
+
+		// More from the server: only the new ones, at the end; the rows on
+		// screen keep their places, the handled never come back.
+		QCOMPARE(queue.refill({ person("b"), person("e"), person("f"), person("g") }, {}, QStringLiteral("me")), 2);
+		QCOMPARE(ids(queue.people()), QStringLiteral("a c d e f g"));
+		QCOMPARE(queue.refill({}, {}, QStringLiteral("me")), 0);
+
+		// A fresh first page replaces the line, still without the handled.
+		queue.replace({ person("b"), person("z"), person("a") }, {}, QStringLiteral("me"));
+		QCOMPARE(ids(queue.people()), QStringLiteral("z a"));
+		// Unless the follow was taken back.
+		queue.forget(QStringLiteral("b"));
+		QVERIFY(!queue.handled(QStringLiteral("b")));
+		QCOMPARE(queue.refill({ person("b") }, {}, QStringLiteral("me")), 1);
+		QVERIFY(queue.find(QStringLiteral("b")) != nullptr);
+		QVERIFY(queue.find(QStringLiteral("q")) == nullptr);
+
+		QVERIFY(LeavesSuggestions(FollowState::Following));
+		QVERIFY(LeavesSuggestions(FollowState::Requested));
+		QVERIFY(!LeavesSuggestions(FollowState::None));
+		QVERIFY(!LeavesSuggestions(FollowState::FollowsYou));
+	}
+
+	void refreshThrottle() {
+		auto throttle = RefreshThrottle(600'000);
+		// Never loaded (or only failed so far): due.
+		QVERIFY(throttle.due(1'000));
+		throttle.loaded(1'000);
+		QVERIFY(!throttle.due(1'000));
+		QVERIFY(!throttle.due(600'999));
+		QVERIFY(throttle.due(601'000));
+		// The clock went back (a changed date): due.
+		QVERIFY(throttle.due(500));
+		QCOMPARE(RefreshThrottle::kSuggestionsMs, qint64(600'000));
+	}
+
 };
 
 QTEST_GUILESS_MAIN(TestSearchLogic)

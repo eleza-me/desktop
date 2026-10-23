@@ -69,13 +69,19 @@ QByteArray fromBase64(const QString &text) {
 }
 
 void wipe(QByteArray &bytes) {
-	if (!bytes.isEmpty()) {
-		volatile char *data = bytes.data();
+	if (!bytes.isEmpty() && bytes.isDetached()) {
+		volatile char *data = bytes.data(); // no detach: the only holder
 		for (auto i = qsizetype(0), count = bytes.size(); i != count; ++i) {
 			data[i] = 0;
 		}
 	}
 	bytes.clear();
+}
+
+QByteArray copy(const QByteArray &bytes) {
+	return bytes.isEmpty()
+		? QByteArray()
+		: QByteArray(bytes.constData(), bytes.size());
 }
 
 bool constantTimeEquals(const QByteArray &a, const QByteArray &b) {

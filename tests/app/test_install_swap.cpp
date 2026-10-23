@@ -198,6 +198,7 @@ private Q_SLOTS:
 	void safeVersions();
 	void installs();
 	void installsWithoutFileList();
+	void caseOnlyRenameIsNotStale();
 	void copiesFromAnotherVolume();
 	void rollsBackAtEveryStep();
 	void recoversFromBrokenRollback();
@@ -294,6 +295,53 @@ void TestInstallSwap::installs() {
 	QVERIFY(!fs::exists(fixture.install / "lib" / "old"));
 	QVERIFY(!Install::HasJournal(fixture.install, ops));
 	QVERIFY(lines.contains(QStringLiteral("installed 0.2.0")));
+}
+
+// A file renamed only in case (plugins/a.so -> Plugins/A.so) is the same file
+// where names are case-insensitive: it must not be moved out as stale after
+// the new one took its place. Here the names are told to be case-insensitive
+// on a case-sensitive disk, so the old entry simply stays.
+void TestInstallSwap::caseOnlyRenameIsNotStale() {
+	const auto renamed = [](const Fixture &fixture) {
+		fs::remove(fixture.staged / "plugins" / "a.so");
+		fs::remove(fixture.staged / "plugins");
+		WriteBytes(fixture.staged / "Plugins" / "A.so", "new plugin");
+		WriteBytes(
+			fixture.staged / "eleza-files.list",
+			"Eleza\neleza-files.list\nlib/core.so\nlib/new/added.so\nPlugins/A.so\n");
+	};
+#ifdef _WIN32
+	// The real thing: one file, swapped once and not moved out again.
+	auto fixture = Fixture();
+	renamed(fixture);
+	auto ops = Install::FileOps();
+	const auto result = Install::Apply(fixture.request(), ops);
+	QCOMPARE(result.status, Install::Status::Installed);
+	QCOMPARE(ReadBytes(fixture.install / "plugins" / "a.so"), std::string("new plugin"));
+#else // _WIN32
+	// Names told to be case-insensitive on a case-sensitive disk: the old
+	// entry is not taken for stale, so it simply stays.
+	class FoldingOps final : public Install::FileOps {
+	public:
+		bool caseInsensitiveNames() override {
+			return true;
+		}
+	};
+	for (const auto folding : { false, true }) {
+		auto fixture = Fixture();
+		renamed(fixture);
+		auto plain = Install::FileOps();
+		auto folded = FoldingOps();
+		auto &ops = folding ? static_cast<Install::FileOps&>(folded) : plain;
+		const auto result = Install::Apply(fixture.request(), ops);
+		QCOMPARE(result.status, Install::Status::Installed);
+		const auto installed = fixture.installed();
+		QCOMPARE(installed.at("Plugins/A.so"), std::string("new plugin"));
+		const auto backup = Snapshot(fixture.install / "_backup_0.2.0");
+		QCOMPARE(backup.count("plugins/a.so"), std::size_t(folding ? 0 : 1));
+		QCOMPARE(installed.count("plugins/a.so"), std::size_t(folding ? 1 : 0));
+	}
+#endif // !_WIN32
 }
 
 void TestInstallSwap::installsWithoutFileList() {

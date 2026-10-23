@@ -125,26 +125,6 @@ groupsLogTimeSkip: 2px;
 groupsLogStateHeight: 56px;
 groupsLogStateFont: font(13px);
 
-groupsMediaTabsPadding: margins(16px, 0px, 16px, 0px);
-groupsMediaPadding: margins(16px, 12px, 16px, 12px);
-groupsMediaTileSkip: 4px;
-groupsMediaTileMin: 128px;
-groupsMediaTileRadius: 6px;
-groupsMediaVideoFont: font(12px semibold);
-groupsMediaVideoPadding: margins(6px, 2px, 6px, 2px);
-groupsMediaRowHeight: 60px;
-groupsMediaRowIcon: 40px;
-groupsMediaRowIconSkip: 12px;
-groupsMediaRowRadius: 10px;
-groupsMediaRowTitleFont: font(14px medium);
-groupsMediaRowTitleTop: 11px;
-groupsMediaRowStatusFont: font(12px);
-groupsMediaRowStatusTop: 33px;
-groupsMediaIconFile: icon {{ "file", brandText }};
-groupsMediaIconLink: icon {{ "link", brandText }};
-groupsMediaIconVoice: icon {{ "mic", brandText }};
-groupsMediaStateHeight: 120px;
-
 // ---- member tags
 groupsMenuTag: icon {{ "tag", menuIconFg, 20px }};
 // The tag at the end of a member row.

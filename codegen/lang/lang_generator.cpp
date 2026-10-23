@@ -101,11 +101,15 @@ QList<GeneratedFile> Generate(const Catalog &catalog) {
 		if (extra.isEmpty()) {
 			source += "\treturn " + base + ";\n";
 		} else {
+			// One pass for all the tags: a value is never searched for
+			// the tags that come after it.
 			source += "\tauto result = " + base + ";\n";
+			source += "\tLang::internal::ReplaceTags(result, {";
 			for (const auto &tag : extra) {
-				source += "\tLang::internal::ReplaceTag(result, \""
-					+ tag.toUtf8() + "\", " + tag.toUtf8() + ");\n";
+				source += (&tag == &extra.front()) ? " " : ", ";
+				source += "{ \"" + tag.toUtf8() + "\", " + tag.toUtf8() + " }";
 			}
+			source += " });\n";
 			source += "\treturn result;\n";
 		}
 		source += "}\n\n";

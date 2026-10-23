@@ -19,6 +19,8 @@ namespace {
 constexpr auto kMinDuration = 2200;
 constexpr auto kMaxDuration = 7000;
 constexpr auto kPerCharacter = 55;
+// A toast with an action stays long enough to reach it.
+constexpr auto kActionMinDuration = 5000;
 
 class Manager;
 
@@ -32,6 +34,8 @@ public:
 	, _finished(std::move(finished)) {
 		if (_config.clicked) {
 			setCursor(style::cur_pointer);
+		} else if (hasAction()) {
+			setMouseTracking(true);
 		} else {
 			setAttribute(Qt::WA_TransparentForMouseEvents);
 		}
@@ -47,7 +51,7 @@ public:
 			? _config.duration
 			: std::clamp(
 				int(_config.text.size()) * kPerCharacter,
-				kMinDuration,
+				hasAction() ? kActionMinDuration : kMinDuration,
 				kMaxDuration);
 		_hideTimer.start(duration);
 	}
@@ -61,17 +65,26 @@ public:
 		const auto iconWidth = _config.icon
 			? (_config.icon->width() + _st.iconSkip)
 			: 0;
+		_actionWidth = hasAction() ? _st.actionFont->width(_config.action) : 0;
+		const auto actionWidth = _actionWidth
+			? (_st.actionSkip + _actionWidth)
+			: 0;
 		const auto maxBody = std::min(
 			_st.maxWidth,
 			parent->width() - 2 * _st.margin);
 		const auto maxText = std::max(
-			maxBody - _st.padding.left() - _st.padding.right() - iconWidth,
+			maxBody
+				- _st.padding.left()
+				- _st.padding.right()
+				- iconWidth
+				- actionWidth,
 			1);
 		_textWidth = std::min(_text.maxWidth(), maxText);
 		const auto textHeight = _text.countHeight(_textWidth, _st.maxLines);
 		const auto bodyWidth = _st.padding.left()
 			+ iconWidth
 			+ _textWidth
+			+ actionWidth
 			+ _st.padding.right();
 		const auto bodyHeight = std::max(
 			_st.padding.top() + textHeight + _st.padding.bottom(),
@@ -128,21 +141,67 @@ protected:
 				: style::al_top,
 			.elisionLines = _st.maxLines,
 		});
+		if (_actionWidth) {
+			// At the end of the line: on the left in a right-to-left one.
+			p.setFont(_st.actionFont);
+			p.setPen(_st.actionFg);
+			p.drawText(
+				(style::RightToLeft()
+					? (body.x() + _st.padding.right())
+					: (body.x() + body.width() - _st.padding.right() - _actionWidth)),
+				body.y()
+					+ (body.height() - _st.actionFont->height) / 2
+					+ _st.actionFont->ascent,
+				_config.action);
+		}
+	}
+
+	void mouseMoveEvent(QMouseEvent *e) override {
+		if (!_config.clicked && hasAction()) {
+			const auto over = actionRect(bodyRect()).contains(e->pos());
+			setCursor(over ? style::cur_pointer : style::cur_default);
+		}
 	}
 
 	void mouseReleaseEvent(QMouseEvent *e) override {
 		if (e->button() != Qt::LeftButton || !_shown) {
 			return;
 		}
-		const auto body = rect().marginsRemoved(_st.shadow.extend);
-		if (const auto callback = _config.clicked;
-			callback && body.contains(e->pos())) {
+		const auto body = bodyRect();
+		if (const auto action = _config.actionClicked;
+			action && actionRect(body).contains(e->pos())) {
 			hideNow();
-			callback();
+			action();
+		} else if (const auto clicked = _config.clicked;
+			clicked && body.contains(e->pos())) {
+			hideNow();
+			clicked();
 		}
 	}
 
 private:
+	[[nodiscard]] bool hasAction() const {
+		return !_config.action.isEmpty() && _config.actionClicked;
+	}
+	[[nodiscard]] QRect bodyRect() const {
+		return rect().marginsRemoved(_st.shadow.extend);
+	}
+	// The action's text and the padding around it, at the body's end.
+	[[nodiscard]] QRect actionRect(const QRect &body) const {
+		if (!_actionWidth) {
+			return QRect();
+		}
+		const auto skip = _st.actionSkip / 2;
+		const auto width = skip + _actionWidth + _st.padding.right();
+		return QRect(
+			style::RightToLeft()
+				? body.x()
+				: (body.x() + body.width() - width),
+			body.y(),
+			width,
+			body.height());
+	}
+
 	void toggle(bool shown) {
 		if (_shown == shown) {
 			return;
@@ -171,6 +230,7 @@ private:
 	Config _config;
 	Text::String _text;
 	int _textWidth = 0;
+	int _actionWidth = 0;
 	bool _shown = false;
 	QTimer _hideTimer;
 	Animations::Simple _animation;

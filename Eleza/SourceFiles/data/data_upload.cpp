@@ -17,20 +17,18 @@ namespace {
 
 constexpr auto kDefaultPartSize = qint64(5) << 20;
 
-// SHA-256 of [offset, offset + length) of a file, optionally prefixed.
+// SHA-256 of a whole file, optionally prefixed.
 [[nodiscard]] QByteArray HashFile(
 		const QString &path,
 		const QByteArray &prefix,
-		qint64 offset,
-		qint64 length,
 		const std::atomic<bool> &cancelled) {
 	auto file = QFile(path);
-	if (!file.open(QIODevice::ReadOnly) || !file.seek(offset)) {
+	if (!file.open(QIODevice::ReadOnly)) {
 		return QByteArray();
 	}
 	auto hasher = Crypto::Sha256Hasher();
 	hasher.feed(prefix);
-	auto left = (length < 0) ? (file.size() - offset) : length;
+	auto left = file.size();
 	auto buffer = QByteArray(1 << 20, Qt::Uninitialized);
 	while (left > 0) {
 		if (cancelled.load()) {
@@ -44,6 +42,26 @@ constexpr auto kDefaultPartSize = qint64(5) << 20;
 		left -= read;
 	}
 	return hasher.result();
+}
+
+// HMAC-SHA256 (RFC 2104) of a whole file, read in pieces like the hash.
+[[nodiscard]] QByteArray HmacFile(
+		const QString &path,
+		QByteArray key,
+		const std::atomic<bool> &cancelled) {
+	constexpr auto kBlockSize = 64;
+	if (key.size() > kBlockSize) {
+		key = Crypto::Sha256(key);
+	}
+	key.append(QByteArray(kBlockSize - key.size(), char(0)));
+	auto inner = key;
+	auto outer = key;
+	for (auto i = 0; i != kBlockSize; ++i) {
+		inner[i] = char(inner[i] ^ 0x36);
+		outer[i] = char(outer[i] ^ 0x5c);
+	}
+	const auto digest = HashFile(path, inner, cancelled);
+	return digest.isEmpty() ? QByteArray() : Crypto::Sha256(outer + digest);
 }
 
 [[nodiscard]] bool StateIs(const QString &state, std::initializer_list<const char*> list) {
@@ -185,16 +203,17 @@ Upload::Job *Upload::job(Id id) {
 }
 
 void Upload::later(Id id, int ms, Fn<void()> callback) {
-	const auto current = job(id);
-	if (!current) {
+	if (!job(id)) {
 		return;
 	}
-	current->timer = std::make_unique<base::Timer>([=, this] {
+	// Not a timer the job owns: the callback may end the job (fail, finish),
+	// which must not destroy the timer whose shot is running. Ids are never
+	// reused, so the shot of a job that ended does nothing.
+	QTimer::singleShot(ms, this, [=, this] {
 		if (job(id)) {
 			callback();
 		}
 	});
-	current->timer->callOnce(ms);
 }
 
 Upload::Id Upload::start(
@@ -351,7 +370,7 @@ void Upload::create(Id id) {
 			})
 			.send());
 	};
-	if (current->size > kHashLimit) {
+	if (current->size > kHashLimit || !current->request.dedup) {
 		post();
 		return;
 	}
@@ -359,7 +378,7 @@ void Upload::create(Id id) {
 	const auto path = current->request.filePath;
 	const auto cancelled = current->cancelled;
 	_pool.start([=, this] {
-		const auto hash = HashFile(path, QByteArray(), 0, -1, *cancelled);
+		const auto hash = HashFile(path, QByteArray(), *cancelled);
 		QMetaObject::invokeMethod(this, [=, this] {
 			if (const auto current = job(id)) {
 				current->sha = base::bytes::toHex(hash);
@@ -423,50 +442,65 @@ void Upload::claim(Id id) {
 	if (!current) {
 		return;
 	}
-	const auto nonce = base::bytes::fromBase64(Json::String(current->proof, "nonce"_L1));
-	if (nonce.isEmpty()) {
+	// The challenge (docs/client-media-dedup-forward.md): the nonce in hex,
+	// the proof hex(HMAC-SHA256(key = the nonce's bytes, the whole file)).
+	const auto alg = Json::String(current->proof, "alg"_L1);
+	const auto nonce = base::bytes::fromHex(Json::String(current->proof, "nonce"_L1));
+	if (nonce.isEmpty() || (!alg.isEmpty() && alg != u"hmac-sha256")) {
 		transfer(id);
 		return;
 	}
-	const auto offset = Json::Int64(current->proof, "offset"_L1);
-	const auto length = Json::Int64(current->proof, "length"_L1);
 	const auto path = current->request.filePath;
 	const auto cancelled = current->cancelled;
 	_pool.start([=, this] {
-		const auto hash = HashFile(path, nonce, offset, length, *cancelled);
+		const auto proof = HmacFile(path, nonce, *cancelled);
 		QMetaObject::invokeMethod(this, [=, this] {
-			const auto current = job(id);
-			if (!current) {
+			if (!job(id)) {
 				return;
-			} else if (hash.isEmpty()) {
+			} else if (proof.isEmpty()) {
 				transfer(id);
 				return;
 			}
-			current->requests.push_back(_session->api().request(
-				Api::Post,
-				u"/v1/uploads/%1/claim"_s.arg(QString::fromLatin1(QUrl::toPercentEncoding(current->uploadId))))
-				.body(QJsonObject{ { u"proof"_s, base::bytes::toHex(hash) } })
-				.guard(this)
-				.done([=, this](const QJsonObject &result) {
-					const auto current = job(id);
-					if (!current) {
-						return;
-					}
-					if (const auto media = Json::String(result, "media_id"_L1); !media.isEmpty()) {
-						current->mediaId = media;
-					}
-					if (current->callbacks.progress && current->guard.alive()) {
-						current->callbacks.progress(current->size, current->size);
-					}
-					finish(id);
-				})
-				.fail([=, this](const Api::Error &) {
-					// The claim was not accepted: send the bytes.
-					transfer(id);
-				})
-				.send());
+			sendClaim(id, base::bytes::toHex(proof), 0);
 		}, Qt::QueuedConnection);
 	});
+}
+
+void Upload::sendClaim(Id id, const QString &proof, int attempt) {
+	const auto current = job(id);
+	if (!current) {
+		return;
+	}
+	current->requests.push_back(_session->api().request(
+		Api::Post,
+		u"/v1/uploads/%1/claim"_s.arg(QString::fromLatin1(QUrl::toPercentEncoding(current->uploadId))))
+		.body(QJsonObject{ { u"proof"_s, proof } })
+		.noOverloadRetry()
+		.guard(this)
+		.done([=, this](const QJsonObject &result) {
+			const auto current = job(id);
+			if (!current) {
+				return;
+			}
+			if (const auto media = Json::String(result, "media_id"_L1); !media.isEmpty()) {
+				current->mediaId = media;
+			}
+			if (current->callbacks.progress && current->guard.alive()) {
+				current->callbacks.progress(current->size, current->size);
+			}
+			finish(id);
+		})
+		.fail([=, this](const Api::Error &error) {
+			// Dedup only saves the transfer and never stands in the way of
+			// sending: a lost answer or a server error is asked once more,
+			// anything else (the content is not known) sends the bytes.
+			if (attempt < kClaimRetries && (error.offline() || error.serverSide())) {
+				sendClaim(id, proof, attempt + 1);
+			} else {
+				transfer(id);
+			}
+		})
+		.send());
 }
 
 void Upload::transfer(Id id) {
@@ -651,8 +685,8 @@ void Upload::waitUntilReady(Id id) {
 		return entry.first == current->mediaId;
 	});
 	if (known) {
-		// The signal came first. Not from inside the poll timer's own
-		// callback: finishing destroys the job and its timer.
+		// The signal came first: answered on the next turn of the event
+		// loop, as a poll would be.
 		++current->readyAttempt;
 		QTimer::singleShot(0, this, [=, this] {
 			applyProcessed(id);

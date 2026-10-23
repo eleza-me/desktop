@@ -1,6 +1,7 @@
 // The widget-free rules of the chat list (dialogs/dialogs_logic.h): folders,
 // order, search, previews and delivery marks.
 #include "dialogs/dialogs_logic.h"
+#include "support/chat_text.h"
 #include "lang/lang_instance.h"
 #include "lang_auto.h"
 
@@ -290,6 +291,114 @@ private Q_SLOTS:
 		QCOMPARE(
 			Dialogs::PreviewFor(chat).kind,
 			Dialogs::Preview::Kind::Empty);
+	}
+
+	void noteNames() {
+		auto note = Data::Message();
+		note.chat = QStringLiteral("j1group");
+		note.kind = Data::MessageKind::System;
+		note.system = QStringLiteral("member_added:u_ali");
+		note.sender = QStringLiteral("u_sara");
+		note.seq = 7;
+		const auto person = [](const QString &name, const char *id, bool me = false) {
+			auto result = Support::NotePerson();
+			result.name = name;
+			result.userId = QString::fromLatin1(id);
+			result.me = me;
+			result.linkable = !me;
+			return result;
+		};
+		const auto check = [&](const Support::NoteLine &line, const QMap<QString, QString> &expected) {
+			QCOMPARE(line.names.size(), expected.size());
+			for (const auto &name : line.names) {
+				QVERIFY(expected.contains(name.userId));
+				QCOMPARE(line.text.mid(name.offset, name.length), expected.value(name.userId));
+			}
+		};
+		for (const auto language : { Lang::Language::Persian, Lang::Language::English }) {
+			Lang::SetCurrent(language);
+			// Who did it and whom it names: both open a profile, wherever
+			// the language puts them.
+			auto line = Support::GroupNoteLine(note, person(U("سارا"), "u_sara"), person(QStringLiteral("Ali"), "u_ali"));
+			check(line, { { QStringLiteral("u_sara"), U("سارا") }, { QStringLiteral("u_ali"), QStringLiteral("Ali") } });
+			// Two people of the same name are told apart by where they are.
+			line = Support::GroupNoteLine(note, person(U("رضا"), "u_sara"), person(U("رضا"), "u_ali"));
+			QCOMPARE(line.names.size(), 2);
+			QVERIFY(line.names[0].offset != line.names[1].offset);
+			check(line, { { QStringLiteral("u_sara"), U("رضا") }, { QStringLiteral("u_ali"), U("رضا") } });
+			// I am never a link: a note about me speaks to me.
+			line = Support::GroupNoteLine(note, person(U("من"), "u_me", true), person(U("علی"), "u_ali"));
+			check(line, { { QStringLiteral("u_ali"), U("علی") } });
+			auto toMe = note;
+			toMe.system = QStringLiteral("member_added:u_me");
+			line = Support::GroupNoteLine(toMe, person(U("سارا"), "u_sara"), person(U("من"), "u_me", true));
+			check(line, { { QStringLiteral("u_sara"), U("سارا") } });
+			// A deleted account is named, without a link.
+			auto deleted = person(tr::lng_deleted_account(tr::now), "u_gone");
+			deleted.linkable = false;
+			auto left = note;
+			left.system = QStringLiteral("member_left");
+			line = Support::GroupNoteLine(left, deleted, Support::NotePerson());
+			QVERIFY(line.names.isEmpty());
+			QVERIFY(line.text.contains(tr::lng_deleted_account(tr::now)));
+		}
+		Lang::SetCurrent(Lang::Language::Persian);
+		// Not a note of a group: nothing.
+		auto text = Text("hello");
+		QVERIFY(Support::GroupNoteLine(text, person(U("سارا"), "u_sara"), Support::NotePerson()).text.isEmpty());
+	}
+
+	void selfDestructLines() {
+		auto message = Text("این پیام فقط روی گوشی قابل دیدن است", 9);
+		message.chat = QStringLiteral("c1");
+		message.sender = QStringLiteral("u_nika");
+		auto sd = Data::SelfDestruct();
+		sd.mode = QStringLiteral("timer");
+		sd.seconds = 10;
+		sd.state = QStringLiteral("unopened");
+		message.selfDestruct = sd;
+		auto sender = Support::NotePerson();
+		sender.name = QStringLiteral("Nika");
+		sender.userId = QStringLiteral("u_nika");
+		sender.linkable = true;
+		for (const auto language : { Lang::Language::Persian, Lang::Language::English }) {
+			Lang::SetCurrent(language);
+			// Received: who sent it, a link to their profile; never the
+			// server's text.
+			auto line = Support::SelfDestructLine(message, sender);
+			QCOMPARE(line.names.size(), 1);
+			QCOMPARE(line.text.mid(line.names[0].offset, line.names[0].length), QStringLiteral("Nika"));
+			QCOMPARE(line.names[0].userId, QStringLiteral("u_nika"));
+			QVERIFY(!line.text.contains(message.text));
+			auto opened = message;
+			opened.selfDestruct->state = QStringLiteral("opened");
+			QCOMPARE(Support::SelfDestructLine(opened, sender).text, line.text);
+			// Mine: no name; on its way and failed say so.
+			auto mine = message;
+			mine.mine = true;
+			line = Support::SelfDestructLine(mine, sender);
+			QCOMPARE(line.text, tr::lng_history_sd_sent(tr::now));
+			QVERIFY(line.names.isEmpty());
+			mine.seq = 0;
+			mine.status = Data::MessageStatus::Sending;
+			QCOMPARE(Support::SelfDestructLine(mine, sender).text, tr::lng_history_sd_sending(tr::now));
+			mine.status = Data::MessageStatus::Failed;
+			QCOMPARE(Support::SelfDestructLine(mine, sender).text, tr::lng_history_sd_not_sent(tr::now));
+			// Expired, on either side.
+			auto expired = message;
+			expired.selfDestruct->state = QStringLiteral("expired");
+			QCOMPARE(Support::SelfDestructLine(expired, sender).text, tr::lng_history_sd_expired(tr::now));
+			expired.mine = true;
+			QCOMPARE(Support::SelfDestructLine(expired, sender).text, tr::lng_history_sd_expired(tr::now));
+			// The chat list says its label only.
+			auto chat = Chat("c1", 10);
+			chat.lastMessage = message;
+			const auto preview = Dialogs::PreviewFor(chat);
+			QCOMPARE(preview.text, tr::lng_history_sd_media(tr::now));
+			QVERIFY(!preview.thumbnail);
+		}
+		Lang::SetCurrent(Lang::Language::Persian);
+		QVERIFY(Support::SelfDestructLine(Text("x"), sender).text.isEmpty());
 	}
 
 	void activityWording() {

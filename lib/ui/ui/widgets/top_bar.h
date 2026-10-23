@@ -5,6 +5,7 @@
 //   bar->setBackShown(true);  connect(bar, &Ui::TopBar::backRequested, ...);
 //   const auto more = bar->addAction(st::topBarMoreButton);     // trailing side, in order
 //   bar->setLeadingWidget(Ui::object_ptr<Ui::UserpicWidget>(...));  // between back and title
+//                                   (a hidden one takes no room; its width may change)
 //   bar->resizeToWidth(width());                                 // height = st::topBarHeight
 #pragma once
 
@@ -58,6 +59,7 @@ protected:
 	void mouseMoveEvent(QMouseEvent *e) override;
 	void leaveEvent(QEvent *e) override;
 	int resizeGetHeight(int newWidth) override;
+	bool eventFilter(QObject *object, QEvent *event) override;
 
 private:
 	void doSetLeadingWidget(object_ptr<RpWidget> widget);

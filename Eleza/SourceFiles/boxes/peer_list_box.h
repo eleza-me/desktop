@@ -26,6 +26,13 @@
 // Remote search: return true from searchRemotely() and answer
 // searchQueryChanged(query) with setRows(); otherwise the box filters the rows
 // by title and subtitle itself.
+// A button at the end of a row («تو هم دنبال کن»): set `action` (and
+// `actionFilled` / `actionBusy`), answer rowActionClicked(row) and change the
+// row with updateRow(). A `note` row is a line of text under the people
+// («و ۳ نفر دیگر»): not clickable, never filtered out.
+// A message to go with the choice («ارسال به…»): return its placeholder from
+// commentPlaceholder(); the field sits under the list and submit() reads it
+// with delegate()->commentText().
 //
 // Ready-made: Boxes::ChooseChatsBox(session, args, done) lists the user's chats
 // (forward, share).
@@ -34,7 +41,7 @@
 #include "data/data_types.h"
 #include "ui/image/userpic.h"
 #include "ui/layers/box_content.h"
-#include "ui/widgets/list_widget.h"
+#include "ui/widgets/action_list.h"
 
 #include <QtCore/QPointer>
 #include <QtCore/QSet>
@@ -50,6 +57,7 @@ class UserpicPainter;
 } // namespace Support
 
 namespace Ui {
+class InputField;
 class RoundButton;
 class SearchField;
 } // namespace Ui
@@ -68,6 +76,10 @@ struct PeerListRow {
 	QString groupPhoto;
 	bool verified = false;
 	bool disabled = false; // shown but cannot be chosen
+	QString action; // the text of the row's button, empty: none
+	bool actionFilled = true; // the brand fill, otherwise an outline
+	bool actionBusy = false; // dimmed, clicks are ignored
+	bool note = false; // `title` alone, centered
 
 	[[nodiscard]] static PeerListRow FromUser(const Data::User &user);
 	// The subtitle is left empty (the caller knows what matters: a draft, the
@@ -88,6 +100,10 @@ public:
 	virtual void setSelected(const QString &id, bool selected) = 0;
 	[[nodiscard]] virtual QStringList selectedIds() const = 0;
 	[[nodiscard]] virtual QString searchQuery() const = 0;
+	// The text of the message field ("" without one).
+	[[nodiscard]] virtual QString commentText() const = 0;
+	// The submit button waits for an answer (and ignores clicks).
+	virtual void setSubmitLoading(bool loading) = 0;
 	[[nodiscard]] virtual Main::Session *peerListSession() const = 0;
 	// The box itself: a guard for requests, a parent for other boxes.
 	[[nodiscard]] virtual Ui::BoxContent *peerListBox() = 0;
@@ -120,12 +136,27 @@ public:
 	// The list was scrolled near its end.
 	virtual void loadMore() {
 	}
+	// The button of a row (PeerListRow::action) was clicked.
+	virtual void rowActionClicked(const PeerListRow &row) {
+		Q_UNUSED(row);
+	}
 
 	[[nodiscard]] virtual bool multiSelect() const {
 		return false;
 	}
 	// 0 = unlimited.
 	[[nodiscard]] virtual int selectionLimit() const {
+		return 0;
+	}
+	// A row was clicked while selectionLimit() rows are chosen already.
+	virtual void selectionLimitReached() {
+	}
+	// Non-empty: a message field under the list with this placeholder.
+	[[nodiscard]] virtual QString commentPlaceholder() const {
+		return QString();
+	}
+	// 0 = unlimited.
+	[[nodiscard]] virtual int commentMaxLength() const {
 		return 0;
 	}
 	[[nodiscard]] virtual QString submitText() const;
@@ -155,7 +186,7 @@ private:
 
 class PeerListBox final
 	: public Ui::BoxContent
-	, private Ui::ListDelegate
+	, private Ui::ActionListDelegate
 	, private PeerListDelegate {
 public:
 	PeerListBox(
@@ -182,6 +213,7 @@ private:
 		const QRect &rect,
 		const Ui::ListRowState &state) override;
 	bool rowClickable(int index) const override;
+	int rowActionAt(int index, QPoint point, int width) const override;
 
 	// PeerListDelegate
 	void setRows(const QVector<PeerListRow> &rows) override;
@@ -192,12 +224,16 @@ private:
 	void setSelected(const QString &id, bool selected) override;
 	QStringList selectedIds() const override;
 	QString searchQuery() const override;
+	QString commentText() const override;
+	void setSubmitLoading(bool loading) override;
 	Main::Session *peerListSession() const override;
 	Ui::BoxContent *peerListBox() override;
 	void closeBox() override;
 
 	void applyFilter();
 	void rowChosen(int index);
+	[[nodiscard]] QRect actionRect(const PeerListRow &row, int width) const;
+	[[nodiscard]] bool canSubmit() const;
 	void refreshSubmit();
 	void userpicUpdated(const QString &userId);
 	[[nodiscard]] const PeerListRow &shown(int index) const;
@@ -206,7 +242,8 @@ private:
 	std::unique_ptr<PeerListController> _controller;
 	std::unique_ptr<Support::UserpicPainter> _userpics;
 	Ui::SearchField *_search = nullptr;
-	Ui::ListWidget *_list = nullptr;
+	Ui::ActionList *_list = nullptr;
+	Ui::InputField *_comment = nullptr;
 	Ui::RoundButton *_submit = nullptr;
 	QVector<PeerListRow> _rows;
 	std::vector<int> _filtered; // indexes into _rows
@@ -214,6 +251,7 @@ private:
 	QStringList _selectedOrder;
 	QTimer *_searchTimer = nullptr;
 	bool _loading = false;
+	bool _submitLoading = false;
 
 };
 

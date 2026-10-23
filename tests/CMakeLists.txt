@@ -36,6 +36,10 @@ eleza_add_test(test_lang_codegen ui/test_lang_codegen.cpp LIBS codegen_lang_lib)
 eleza_add_test(test_lang_format ui/test_lang_format.cpp LIBS ElezaLang)
 eleza_add_test(test_ui_text ui/test_ui_text.cpp LIBS ElezaUi Qt6::Gui GUI)
 eleza_add_test(test_ui_style ui/test_ui_style.cpp LIBS ElezaUi Qt6::Gui GUI)
+# Telegram's emoji: the pack reader against the real pack, the parser, the tables.
+eleza_add_test(test_emoji ui/test_emoji.cpp LIBS ElezaUi Qt6::Gui GUI)
+target_compile_definitions(test_emoji PRIVATE
+	ELEZA_EMOJI_PACK="${ELEZA_RESOURCES_DIR}/emoji/emoji.pack")
 
 # Parts of the executable that have no widget dependencies are compiled straight
 # into their tests.
@@ -54,6 +58,14 @@ eleza_add_test(test_title_hit_test app/test_title_hit_test.cpp)
 target_sources(test_title_hit_test PRIVATE
 	"${_eleza_app_src}/window/window_title_hit_test.cpp")
 target_include_directories(test_title_hit_test PRIVATE "${_eleza_app_src}")
+# The media screens: month headings and the grid of the shared media page.
+eleza_add_test(test_media_logic app/test_media_logic.cpp LIBS ElezaLang)
+target_sources(test_media_logic PRIVATE "${_eleza_app_src}/media/media_shared_logic.cpp")
+target_include_directories(test_media_logic PRIVATE "${_eleza_app_src}")
+# The order of the player's songs (newest first, ⏭ round, repeat, shuffle).
+eleza_add_test(test_media_playlist app/test_media_playlist.cpp)
+target_sources(test_media_playlist PRIVATE "${_eleza_app_src}/media/media_playlist.cpp")
+target_include_directories(test_media_playlist PRIVATE "${_eleza_app_src}")
 eleza_add_test(test_eli_logic app/test_eli_logic.cpp)
 target_sources(test_eli_logic PRIVATE "${_eleza_app_src}/eli/eli_logic.cpp")
 target_include_directories(test_eli_logic PRIVATE "${_eleza_app_src}")
@@ -76,6 +88,12 @@ if (TARGET ElezaCore)
 	eleza_add_test(test_history_logic app/test_history_logic.cpp LIBS ElezaCore ElezaUi)
 	target_sources(test_history_logic PRIVATE "${_eleza_app_src}/history/history_logic.cpp")
 	target_include_directories(test_history_logic PRIVATE "${_eleza_app_src}")
+	# The emoji panel's data: categories, search, recents, tones.
+	eleza_add_test(test_history_emoji app/test_history_emoji.cpp LIBS ElezaCore ElezaUi ElezaLang)
+	target_sources(test_history_emoji PRIVATE
+		"${_eleza_app_src}/history/history_emoji_data.cpp"
+		"${_eleza_app_src}/history/history_logic.cpp")
+	target_include_directories(test_history_emoji PRIVATE "${_eleza_app_src}")
 	eleza_add_test(test_history_compose app/test_history_compose.cpp LIBS ElezaCore ElezaUi)
 	target_sources(test_history_compose PRIVATE "${_eleza_app_src}/history/history_compose_logic.cpp")
 	target_include_directories(test_history_compose PRIVATE "${_eleza_app_src}")

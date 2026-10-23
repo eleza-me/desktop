@@ -1,12 +1,12 @@
 // The third release of groups (a server that lists `groups.admin_log.page_size`):
-// slow mode, hidden members, recent actions (the admin log), the shared media
-// of a group by kind, who reacted to a message, and the people who joined
-// through one invite link.
+// slow mode, hidden members, recent actions (the admin log), who reacted to a
+// message, and the people who joined through one invite link. The shared media
+// of a group (route group/<id>?show=media) is the page of every chat:
+// media/media_shared.h.
 //
 //   Groups::ShowSlowModeBox(controller, groupId);          // «حالت آهسته» (ban_users)
 //   Groups::ShowHideMembersBox(controller, groupId);       // «پنهان کردن اعضا» (ban_users)
 //   controller->openRoute(Window::Routes::GroupAdminLog(groupId));   // owner and admins
-//   controller->openRoute(Window::Routes::GroupMedia(groupId));
 //   controller->openRoute(Window::Routes::GroupReactions(groupId, seq));
 //
 // Every list here is paged from the server; nothing is polled (the admin log
@@ -44,8 +44,7 @@ void ShowInviteMembersBox(
 	const QString &link,
 	const QString &title);
 
-// The sections (routes group/<id>?show=log, group/<id>?show=media).
+// The section of route group/<id>?show=log.
 [[nodiscard]] Window::SectionFactory AdminLogFactory(const QString &groupId);
-[[nodiscard]] Window::SectionFactory MediaFactory(const QString &groupId);
 
 } // namespace Groups

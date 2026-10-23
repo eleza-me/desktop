@@ -299,6 +299,7 @@ void VideoPlayerWidget::setMuted(bool muted) {
 		_output->setMuted(muted);
 	}
 	update();
+	emit mutedChanged(muted);
 }
 
 void VideoPlayerWidget::setLooped(bool looped) {

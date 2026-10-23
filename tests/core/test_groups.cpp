@@ -256,6 +256,7 @@ private Q_SLOTS:
 	void memberTagsFollowTheServer();
 	void memberTagsAreSet();
 	void permissionWritesSayWithTags();
+	void readReceipts();
 
 };
 
@@ -1433,6 +1434,84 @@ void TestGroups::permissionWritesSayWithTags() {
 	const auto requests = fixture.harness->http.to("/v1/groups/j1group/permissions");
 	QCOMPARE(requests.size(), 1);
 	QCOMPARE(requests[0].json().value("with_tags"_L1).toBool(), true);
+}
+
+void TestGroups::readReceipts() {
+	auto fixture = Fixture();
+	QVERIFY(fixture.startWithGroup());
+	QVERIFY(fixture.open());
+	const auto status = [&](qint64 seq) {
+		const auto message = fixture.harness->messages().find(kGroup, seq);
+		return message ? message->status : Data::MessageStatus::Failed;
+	};
+	fixture.frame(GroupFrame(kGroup, 7, u"message"_s, MessageJson(kGroup, 5, u"u_me"_s, u"mine 5"_s)));
+	fixture.frame(GroupFrame(kGroup, 8, u"message"_s, MessageJson(kGroup, 6, u"u_me"_s, u"mine 6"_s)));
+	QCOMPARE(status(5), Data::MessageStatus::Sent);
+	QCOMPARE(status(6), Data::MessageStatus::Sent);
+
+	// A `read` frame (pts 0) skips the pts rule and stores no pts.
+	fixture.frame(GroupFrame(kGroup, 0, u"read"_s, QJsonObject{
+		{ u"group"_s, kGroup },
+		{ u"outbox_read_seq"_s, 5 },
+	}));
+	QCOMPARE(status(5), Data::MessageStatus::Read);
+	QCOMPARE(status(6), Data::MessageStatus::Sent);
+	QCOMPARE(fixture.row()->peerReadSeq, qint64(5));
+	QCOMPARE(fixture.row()->group->outboxReadSeq, qint64(5));
+	QCOMPARE(fixture.row()->groupPts, qint64(8));
+	// Frames that crossed never take it back.
+	fixture.frame(GroupFrame(kGroup, 0, u"read"_s, QJsonObject{
+		{ u"group"_s, kGroup },
+		{ u"outbox_read_seq"_s, 3 },
+	}));
+	QCOMPARE(fixture.row()->peerReadSeq, qint64(5));
+
+	// A note is no read; a message of somebody else is.
+	fixture.frame(GroupFrame(kGroup, 9, u"message"_s, Note(kGroup, 7, u"u_ali"_s, u"member_left"_s)));
+	QCOMPARE(status(6), Data::MessageStatus::Sent);
+	fixture.frame(GroupFrame(kGroup, 10, u"message"_s, MessageJson(kGroup, 8, u"u_ali"_s, u"answer"_s)));
+	QCOMPARE(status(6), Data::MessageStatus::Read);
+	QCOMPARE(fixture.row()->peerReadSeq, qint64(8));
+
+	// A header that is behind (read before the frames) keeps the higher value.
+	fixture.groups().applyHeader(Group::FromJson(Header(kGroup, 10, 8, { { u"outbox_read_seq"_s, 4 } })));
+	QCOMPARE(fixture.row()->peerReadSeq, qint64(8));
+	QCOMPARE(status(6), Data::MessageStatus::Read);
+
+	// The catch-up sends what is held and takes the receipts that moved.
+	fixture.harness->on(u"groups.sync"_s, [](const Call &) {
+		return Reply::Ok(QJsonObject{
+			{ u"groups"_s, QJsonArray() },
+			{ u"count"_s, 1 },
+			{ u"reads"_s, QJsonArray{ QJsonObject{
+				{ u"group"_s, kGroup },
+				{ u"outbox_read_seq"_s, 9 },
+			} } },
+		});
+	});
+	fixture.harness->transport.setOnline(true);
+	fixture.frame(Hello(100));
+	QVERIFY(Test::WaitFor([&] { return fixture.row()->peerReadSeq == 9; }));
+	const auto bodies = fixture.harness->bodies(u"groups.sync"_s);
+	QCOMPARE(bodies.size(), 1);
+	const auto known = bodies[0].value("known"_L1).toArray();
+	QCOMPARE(known.size(), 1);
+	QCOMPARE(Json::Int64(known[0].toObject(), "outbox_read_seq"_L1), qint64(8));
+	QCOMPARE(fixture.row()->group->outboxReadSeq, qint64(9));
+
+	// Every difference answer carries it too.
+	fixture.harness->on(u"groups.difference"_s, [](const Call &) {
+		return Reply::Ok(QJsonObject{
+			{ u"pts"_s, 12 },
+			{ u"messages"_s, QJsonArray{ MessageJson(kGroup, 9, u"u_me"_s, u"mine 9"_s) } },
+			{ u"outbox_read_seq"_s, 9 },
+			{ u"more"_s, false },
+			{ u"too_long"_s, false },
+		});
+	});
+	fixture.frame(GroupFrame(kGroup, 12, u"message"_s, MessageJson(kGroup, 9, u"u_me"_s, u"mine 9"_s)));
+	QVERIFY(Test::WaitFor([&] { return fixture.groups().pts(kGroup) == 12; }));
+	QCOMPARE(status(9), Data::MessageStatus::Read);
 }
 
 QTEST_GUILESS_MAIN(TestGroups)

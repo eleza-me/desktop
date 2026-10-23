@@ -178,6 +178,7 @@ profileStateTextStyle: TextStyle(defaultTextStyle) {
 profileMenuBellIcon: icon {{ "notifications", menuIconFg, 20px }};
 profileMenuVideoCallIcon: icon {{ "videocam", menuIconFg, 20px }};
 profileMenuCallIcon: icon {{ "call", menuIconFg, 20px }};
+profileMenuMediaIcon: icon {{ "image", menuIconFg, 20px }};
 profileMenuRemoveIcon: icon {{ "close-circle", menuIconFg, 20px }};
 profileMenuHideIcon: icon {{ "eye-off", menuIconFg, 20px }};
 profileMenuShowIcon: icon {{ "eye", menuIconFg, 20px }};

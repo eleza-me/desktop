@@ -97,6 +97,8 @@ public:
 	void loadMore();
 	void prepend(const QString &postId);
 	void remove(const QString &postId);
+	// Puts a removed row back at `index` (clamped to the list).
+	void insert(int index, const Data::FeedItem &item);
 	// Static content (replies): cards of ids that stay are kept.
 	void setRows(const QVector<ListRow> &rows);
 
@@ -169,7 +171,10 @@ private:
 	QObject *cardGuard() override;
 
 	void load(bool reset);
-	void applyPage(const ListPage &page, bool reset);
+	void applyPage(
+		const ListPage &page,
+		bool reset,
+		const QString &requested);
 	void appendRow(const Data::FeedItem &item);
 	[[nodiscard]] CardOptions optionsFor(const Data::FeedItem &item) const;
 	void rebuildIndex();
@@ -182,6 +187,7 @@ private:
 	void updateHover(QPoint position);
 	void setHover(int row, Hit hit);
 	void activate(int row, Hit hit, QPoint globalPosition);
+	void openPendingBody();
 	void select(int index);
 	void rangeChanged();
 	void checkViews();
@@ -210,6 +216,7 @@ private:
 	bool _failedMore = false;
 	QString _errorText;
 	int _generation = 0;
+	int _idlePages = 0; // pages in a row that added nothing
 
 	Ui::EmptyPlaceholder *_placeholder = nullptr;
 	bool _placeholderIsError = false;
@@ -241,6 +248,10 @@ private:
 	QSet<QString> _halfVisible;
 	base::Timer _viewTimer;
 	base::Timer _minuteTimer;
+	// A click on a post's text opens it after the double click interval,
+	// unless a second click (a like) came first.
+	QString _bodyPendingId;
+	base::Timer _bodyTimer;
 
 };
 

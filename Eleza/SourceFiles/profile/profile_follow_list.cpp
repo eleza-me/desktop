@@ -457,6 +457,11 @@ FollowRequestsSection::FollowRequestsSection(
 	_skeleton = Ui::CreateChild<Ui::SkeletonList>(
 		this,
 		Ui::SkeletonList::Kind::Chats);
+	connect(_scroll, &Ui::ScrollArea::nearBottom, this, [this] {
+		if (!_loading && !_cursor.isEmpty()) {
+			loadPage();
+		}
+	});
 	connect(
 		_list,
 		&PeopleList::scrollToRequested,
@@ -471,6 +476,7 @@ FollowRequestsSection::FollowRequestsSection(
 				userId).displayName;
 			_list->removePerson(userId);
 			refreshState();
+			checkLoadMore();
 			this->controller()->showToast((accepted && !name.isEmpty())
 				? tr::lng_profile_request_accepted(tr::now, lt_name, name)
 				: accepted
@@ -491,20 +497,67 @@ QString FollowRequestsSection::sectionKey() const {
 }
 
 void FollowRequestsSection::reload() {
+	++_generation;
+	_cursor = QString();
+	_loading = false;
+	_error = std::nullopt;
+	_list->setPeople({});
+	_list->setLoadingMore(false);
+	loadPage();
+}
+
+void FollowRequestsSection::loadPage() {
+	if (_loading) {
+		return;
+	}
 	_loading = true;
 	_error = std::nullopt;
-	refreshState();
+	const auto generation = _generation;
+	const auto first = _cursor.isEmpty();
 	auto &data = controller()->session().data();
-	data.graph().followRequests(this, [this](const QVector<Data::Profile> &list) {
+	data.graph().incomingFollowRequests(_cursor, this, [=, this](
+			const Data::GraphList &page) {
+		if (generation != _generation) {
+			return;
+		}
 		_loading = false;
-		this->controller()->session().data().users().seed(list);
-		_list->setPeople(list);
+		_cursor = page.nextCursor;
+		_list->setLoadingMore(false);
+		if (first) {
+			_list->setPeople(page.users);
+		} else {
+			_list->appendPeople(page.users);
+		}
 		refreshState();
-	}, [this](const Api::Error &error) {
+		checkLoadMore();
+	}, [=, this](const Api::Error &error) {
+		if (generation != _generation) {
+			return;
+		}
 		_loading = false;
 		_error = error;
+		_list->setLoadingMore(false);
+		if (_list->totalCount() > 0) {
+			// Rows stay; the next scroll to the end tries again.
+			Support::ShowError(
+				this->controller(),
+				error,
+				tr::lng_error_load(tr::now));
+		}
 		refreshState();
 	});
+	_list->setLoadingMore(_list->totalCount() > 0);
+	refreshState();
+}
+
+// A list that does not fill the window yet reads the next page.
+void FollowRequestsSection::checkLoadMore() {
+	if (_loading || _cursor.isEmpty() || _error) {
+		return;
+	}
+	if (_wrap->height() <= _scroll->height()) {
+		loadPage();
+	}
 }
 
 void FollowRequestsSection::refreshState() {

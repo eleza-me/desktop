@@ -13,6 +13,7 @@
 #include "data/data_outbox.h"
 #include "data/data_users.h"
 #include "data/data_session.h"
+#include "history/history_action_bar.h"
 #include "history/history_bars.h"
 #include "history/history_bot_logic.h"
 #include "history/history_bot_widgets.h"
@@ -49,6 +50,8 @@
 #include <QtGui/QKeyEvent>
 #include <QtGui/QPainterPath>
 
+#include <cmath>
+
 namespace History {
 namespace {
 
@@ -81,11 +84,14 @@ Window::SectionFactory Factory(
 	};
 }
 
-// ---- the floating «to the bottom» button
+// ---- the floating buttons: «to the bottom», and in a group «@» (unread
+// mentions) that stacks above it
 
 class Widget::DownButton final : public Ui::AbstractButton {
 public:
-	explicit DownButton(QWidget *parent) : AbstractButton(parent) {
+	DownButton(QWidget *parent, bool mentions)
+	: AbstractButton(parent)
+	, _mentions(mentions) {
 		const auto extra = st::historyDownBadgeShift;
 		resize(st::historyDownSize + 8, st::historyDownSize + 8 + extra);
 		setPointerCursor(true);
@@ -115,9 +121,15 @@ protected:
 			p.setBrush(st::historyDownBg);
 			p.drawEllipse(circle);
 		}
-		(isOver() ? st::historyDownIconOver : st::historyDownIcon).paintInCenter(
-			p,
-			circle);
+		if (_mentions) {
+			p.setPen(isOver() ? st::textPrimary : st::textSecondary);
+			p.setFont(st::historyMentionsButtonFont);
+			p.drawText(circle, Qt::AlignCenter, u"@"_s);
+		} else {
+			(isOver() ? st::historyDownIconOver : st::historyDownIcon).paintInCenter(
+				p,
+				circle);
+		}
 		if (_unread > 0) {
 			const auto text = Ui::BadgeText(_unread);
 			const auto badge = Ui::BadgeWidth(text, st::defaultBadge);
@@ -138,6 +150,7 @@ protected:
 	}
 
 private:
+	bool _mentions = false;
 	int _unread = 0;
 
 };
@@ -332,13 +345,24 @@ Widget::Widget(
 	setupBars();
 	setupCompose();
 
-	_down = Ui::CreateChild<DownButton>(this);
+	_down = Ui::CreateChild<DownButton>(this, false);
 	_down->hide();
 	_down->setClickedCallback([this] {
-		_list->jumpToBottom();
+		pressDown();
 		setInnerFocus();
 	});
 	Ui::InstallTooltip(_down, [] { return tr::lng_chat_jump_bottom(tr::now); });
+	if (_group) {
+		_mentions = Ui::CreateChild<DownButton>(this, true);
+		_mentions->hide();
+		_mentions->setClickedCallback([this] {
+			pressMentions();
+			setInnerFocus();
+		});
+		Ui::InstallTooltip(_mentions, [] {
+			return tr::lng_history_jump_mention(tr::now);
+		});
+	}
 	_state = Ui::CreateChild<StateView>(this);
 	_state->setRetryCallback([this] { _list->retryLoad(); });
 	_botIntro = Ui::CreateChild<BotIntroCard>(this, controller);
@@ -392,6 +416,17 @@ Widget::Widget(
 	connect(controller, &Window::SessionController::mainSectionChanged, this, [this] {
 		refreshActive();
 	});
+	// Blocked or unblocked elsewhere (the report / block bar, the profile):
+	// the composer follows.
+	connect(&data.graph(), &Data::Graph::relationshipChanged, this, [this](
+			const QString &userId,
+			const Data::GraphState &state) {
+		if (userId == _relationshipFor && _blockedByYou != state.blockedByYou) {
+			_relationshipKnown = true;
+			_blockedByYou = state.blockedByYou;
+			refreshBottom();
+		}
+	});
 
 	if (_group) {
 		_groupTimer.setSingleShot(false);
@@ -402,6 +437,9 @@ Widget::Widget(
 				const QString &group,
 				const QString &status) {
 			if (group != _chatId) {
+				return;
+			} else if (_leavingByBar && status == u"left") {
+				// The report / block bar says how its choice went.
 				return;
 			}
 			this->controller()->showToast((status == u"banned")
@@ -482,6 +520,7 @@ void Widget::setupList() {
 	connect(_list, &ListWidget::selectionChanged, this, [this] { selectionChanged(); });
 	connect(_list, &ListWidget::stateChanged, this, [this] {
 		refreshDownButton();
+		refreshMentionsButton();
 		refreshBottom();
 		refreshState();
 		// Scrolled up, new messages count as unread until they are seen.
@@ -524,6 +563,11 @@ void Widget::setupTopBar() {
 }
 
 void Widget::setupBars() {
+	_actionBar = Ui::CreateChild<ActionBar>(this, controller(), _chatId);
+	connect(_actionBar, &ActionBar::shownChanged, this, [this] { updateLayout(); });
+	connect(_actionBar, &ActionBar::leaving, this, [this](bool leaving) {
+		_leavingByBar = leaving;
+	});
 	_pinned = Ui::CreateChild<PinnedBar>(this, _session, _chatId);
 	_pinned->setVisible(_pinned->hasPins());
 	connect(_pinned, &PinnedBar::jumpRequested, this, [this](qint64 seq) {
@@ -575,7 +619,11 @@ void Widget::refreshChat() {
 		_list->setTheme((chat->isConversation || chat->saved) ? QString() : chat->theme);
 		_list->setAnonymousPeer(chat->anonymous);
 		_down->setUnread(chat->unread);
+		if (_mentions) {
+			_mentions->setUnread(chat->unreadMentions);
+		}
 	}
+	refreshMentionsButton();
 	refreshBotInfo();
 	refreshRelationship();
 	refreshBottom();
@@ -827,11 +875,114 @@ void Widget::refreshState() {
 
 void Widget::refreshDownButton() {
 	const auto shown = _list->awayFromBottom() && !_list->empty();
+	if (_list->atBottom()) {
+		// Back at the end: the next press makes its first stop again.
+		_downStopped = false;
+	}
 	if (_down->isHidden() == shown) {
 		_down->setVisible(shown);
 		if (shown) {
 			_down->raise();
 		}
+		// «@» slides one place up as the arrow comes, back as it goes.
+		if (_mentions) {
+			const auto to = shown ? 1. : 0.;
+			_mentionsSlide.start(
+				[this] { placeFloatingButtons(); },
+				shown ? 0. : 1.,
+				to,
+				st::motionFast,
+				anim::easeOutCubic);
+			placeFloatingButtons();
+		}
+	}
+}
+
+void Widget::refreshMentionsButton() {
+	if (!_mentions) {
+		return;
+	}
+	const auto chat = _session->data().chats().chat(_chatId);
+	const auto shown = chat
+		&& chat->isGroup
+		&& (chat->unreadMentions > 0)
+		&& _session->data().groups().administration()
+		&& !_list->empty();
+	if (!shown) {
+		_mentionQueue.clear();
+	}
+	if (_mentions->isHidden() == shown) {
+		_mentions->setVisible(shown);
+		if (shown) {
+			_mentions->raise();
+			placeFloatingButtons();
+		}
+	}
+}
+
+// «to the end»: first to the oldest message that came in below the reader
+// (when there is one), then to the end.
+void Widget::pressDown() {
+	const auto chat = _session->data().chats().chat(_chatId);
+	if (chat && !_downStopped) {
+		const auto stop = DownFirstStop(
+			_session->data().messages().history(_chatId).items,
+			chat->unread,
+			chat->lastReadSeq,
+			_list->bottomVisibleSeq());
+		if (stop > 0) {
+			_downStopped = true;
+			_list->jumpTo(stop);
+			return;
+		}
+	}
+	_list->jumpToBottom();
+}
+
+// «@»: the unread mentions one by one, oldest first; the list is asked for
+// again when it runs out while the header still counts some.
+void Widget::pressMentions() {
+	const auto chat = _session->data().chats().chat(_chatId);
+	if (!chat || _mentionsLoading) {
+		return;
+	}
+	const auto read = chat->lastReadSeq;
+	auto next = NextMention(_mentionQueue, std::max(read, _mentionShown));
+	if (next > 0) {
+		_mentionShown = next;
+		_list->jumpTo(next);
+		return;
+	}
+	_mentionsLoading = true;
+	_session->data().groups().loadMentions(_chatId, this, [this](
+			const QVector<qint64> &seqs) {
+		_mentionsLoading = false;
+		_mentionQueue = seqs;
+		const auto chat = _session->data().chats().chat(_chatId);
+		const auto next = NextMention(seqs, chat ? chat->lastReadSeq : 0);
+		if (next > 0) {
+			_mentionShown = next;
+			_list->jumpTo(next);
+		} else if (chat && chat->unreadMentions > 0) {
+			// Nothing above my read mark any more: the count is old.
+			_session->data().groups().refreshHeader(_chatId);
+		}
+	});
+}
+
+void Widget::placeFloatingButtons() {
+	const auto &margin = st::historyDownMargin;
+	const auto bottom = _scroll->y() + _scroll->height();
+	const auto right = FloatingButtonsAtPhysicalRight(_group, style::RightToLeft());
+	const auto x = right
+		? (width() - (margin.right() - 4) - _down->width())
+		: (margin.right() - 4);
+	const auto downY = bottom - margin.bottom() - _down->height() + 4;
+	_down->move(x, downY);
+	if (_mentions) {
+		const auto step = st::historyDownSize + st::historyDownStackSkip;
+		const auto lifted = _mentionsSlide.value(_down->isHidden() ? 0. : 1.);
+		_mentions->move(x, downY - int(std::round(step * lifted)));
 	}
 }
 
@@ -865,10 +1016,8 @@ void Widget::selectionChanged() {
 }
 
 void Widget::copySelection() {
-	if (_list->copySelection()) {
-		controller()->showToast(tr::lng_copied(tr::now));
-		_list->clearSelection();
-	}
+	// The list says «Copied» and clears the selection itself.
+	_list->copySelection();
 }
 
 void Widget::forwardSelection() {
@@ -978,6 +1127,15 @@ void Widget::showMoreMenu() {
 	menu->addAction(tr::lng_history_search(tr::now), [this] {
 		showSearch();
 	}, &st::menuIconSearch);
+	// «رسانه، فایل و پیوند»: a group's media pages came with its third release.
+	if (!chat->isGroup || session->data().groups().thirdRelease()) {
+		const auto route = chat->isGroup
+			? Window::Routes::GroupMedia(chatId)
+			: Window::Routes::ChatMedia(chatId);
+		menu->addAction(tr::lng_media_shared_open(tr::now), [=] {
+			window->openRoute(route);
+		}, &st::menuIconImage);
+	}
 	if (!chat->saved) {
 		if (chat->muted) {
 			menu->addAction(tr::lng_chat_unmute(tr::now), [=] {
@@ -1389,6 +1547,11 @@ void Widget::updateLayout() {
 		_topBar->move(0, top);
 		top += _topBar->height();
 	}
+	if (!_actionBar->isHidden()) {
+		_actionBar->resizeToWidth(width());
+		_actionBar->move(0, top);
+		top += _actionBar->height();
+	}
 	if (!_pinned->isHidden()) {
 		_pinned->resizeToWidth(width());
 		_pinned->move(0, top);
@@ -1414,11 +1577,7 @@ void Widget::updateLayout() {
 		_scroll->setGeometry(listGeometry);
 		_list->resizeToWidth(listGeometry.width());
 	}
-	const auto &margin = st::historyDownMargin;
-	_down->moveToRight(
-		margin.right() - 4,
-		bottom - margin.bottom() - _down->height() + 4,
-		width());
+	placeFloatingButtons();
 	if (!_drop->isHidden()) {
 		_drop->setGeometry(listGeometry);
 	}
@@ -1428,6 +1587,7 @@ void Widget::updateLayout() {
 	_compose->updatePanelPosition();
 	refreshState();
 	refreshDownButton();
+	refreshMentionsButton();
 }
 
 void Widget::paintEvent(QPaintEvent *e) {

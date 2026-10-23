@@ -189,9 +189,14 @@ private:
 		_input->setFrameCallback([this](qint16 *samples) {
 			_peak = std::max(_peak, Audio::Level(samples, Audio::kFrameSamples));
 		});
-		_input->setFailedCallback([this] {
+		_input->setFailedCallback([this, input = _input.get()] {
 			_failed = true;
-			stop();
+			// Not from inside the input's own callback: stop() destroys it.
+			QTimer::singleShot(0, this, [this, input] {
+				if (_input.get() == input) {
+					stop();
+				}
+			});
 		});
 		if (!_input->start(device)) {
 			_input = nullptr;

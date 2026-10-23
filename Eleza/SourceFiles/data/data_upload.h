@@ -1,8 +1,8 @@
 // Resumable media upload: `POST /v1/uploads` returns presigned part URLs,
 // each part is PUT to storage (up to three at a time, three attempts each),
 // `.../complete` finishes, then the media is read until it is `ready`.
-// Dedup: with `sha256` the server may answer a proof challenge; a successful
-// claim skips the transfer.
+// Dedup: with `sha256` the server may answer a proof challenge (an HMAC of the
+// whole file keyed with its nonce); a successful claim skips the transfer.
 //
 //   const auto id = upload.start(request, this, {
 //       .onUploadId = [=](const QString &id) { ... },      // persist for resume
@@ -53,6 +53,7 @@ struct UploadRequest {
 	QString fileName;   // defaults to the file's name
 	QString mime;       // defaults to the detected type
 	QString resumeId;   // an upload id from an interrupted run
+	bool dedup = true;  // false: never claim a file the server already has
 };
 
 struct UploadResult {
@@ -111,6 +112,7 @@ public:
 	static constexpr auto kPartAttempts = 3;
 	static constexpr auto kReadyAttempts = 60;
 	static constexpr auto kRememberProcessed = 32;
+	static constexpr auto kClaimRetries = 1;
 
 private:
 	struct Part {
@@ -141,7 +143,6 @@ private:
 		int readyAttempt = 0;
 		QVector<Api::RequestId> requests;
 		std::shared_ptr<std::atomic<bool>> cancelled;
-		std::unique_ptr<base::Timer> timer;
 	};
 
 	[[nodiscard]] Job *job(Id id);
@@ -149,6 +150,7 @@ private:
 	void create(Id id);
 	void created(Id id, const QJsonObject &upload);
 	void claim(Id id);
+	void sendClaim(Id id, const QString &proof, int attempt);
 	void transfer(Id id);
 	void pumpParts(Id id);
 	void startPart(Id id, int index);

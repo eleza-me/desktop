@@ -1704,6 +1704,13 @@ message Join {
   string peer = 7 [json_name = "peer"];
   bool relay_only = 8 [json_name = "relay_only"];
   bool video = 9 [json_name = "video"];
+  string group = 10 [json_name = "group"];
+  string identity = 11 [json_name = "identity"];
+  bool muted_by_admin = 12 [json_name = "muted_by_admin"];
+  bool can_self_unmute = 13 [json_name = "can_self_unmute"];
+  bool can_publish_video = 14 [json_name = "can_publish_video"];
+  bool record = 15 [json_name = "record"];
+  GroupCallView summary = 16 [json_name = "summary"];
 }
 
 // CallbackAnswer (github.com/haznetiv/eleza-backend/internal/chat).
@@ -1967,6 +1974,7 @@ message GroupView {
   string action_bar = 37 [json_name = "action_bar"];
   string added_by = 38 [json_name = "added_by"];
   bool suspended = 39 [json_name = "suspended"];
+  GroupCallSummary call = 41 [json_name = "call"];
 }
 
 // GroupNotAdded (github.com/haznetiv/eleza-backend/internal/chat).
@@ -2444,6 +2452,28 @@ message TURNCredential {
   int64 expires_at = 4 [json_name = "expires_at"];
 }
 
+// GroupCallView (github.com/haznetiv/eleza-backend/internal/voice).
+message GroupCallView {
+  string call = 1 [json_name = "call"];
+  string group = 2 [json_name = "group"];
+  string state = 3 [json_name = "state"];
+  bool video = 4 [json_name = "video"];
+  string started_by = 5 [json_name = "started_by"];
+  string title = 6 [json_name = "title"];
+  int64 scheduled_at = 7 [json_name = "scheduled_at"];
+  int64 started_at = 8 [json_name = "started_at"];
+  int64 ended_at = 9 [json_name = "ended_at"];
+  string end_reason = 10 [json_name = "end_reason"];
+  int64 duration_s = 11 [json_name = "duration_s"];
+  int64 participants = 12 [json_name = "participants"];
+  bool join_muted = 13 [json_name = "join_muted"];
+  bool can_self_unmute = 14 [json_name = "can_self_unmute"];
+  bool record = 15 [json_name = "record"];
+  string record_title = 16 [json_name = "record_title"];
+  bool subscribed = 17 [json_name = "subscribed"];
+  int64 subscribers = 18 [json_name = "subscribers"];
+}
+
 // Participant (github.com/haznetiv/eleza-backend/internal/chat).
 message Participant {
   string ref = 1 [json_name = "ref"];
@@ -2495,6 +2525,19 @@ message GroupAdminLogDetail {
   bool delete_messages = 12 [json_name = "delete_messages"];
   string tag = 14 [json_name = "tag"];
   string prev_tag = 15 [json_name = "prev_tag"];
+}
+
+// GroupCallSummary (github.com/haznetiv/eleza-backend/internal/chat).
+message GroupCallSummary {
+  string call = 1 [json_name = "call"];
+  string state = 2 [json_name = "state"];
+  bool video = 3 [json_name = "video"];
+  bool record = 4 [json_name = "record"];
+  string started_by = 5 [json_name = "started_by"];
+  int64 participants = 6 [json_name = "participants"];
+  int64 scheduled_at = 7 [json_name = "scheduled_at"];
+  bool subscribed = 9 [json_name = "subscribed"];
+  bool can_join = 8 [json_name = "can_join"];
 }
 
 // MediaMeta (github.com/haznetiv/eleza-backend/internal/chat).

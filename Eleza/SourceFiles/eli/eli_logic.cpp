@@ -295,7 +295,8 @@ QStringList SplitIntoThread(const QString &text, int limit, int maxParts) {
 QVector<ReplyRow> ArrangeReplies(
 		const QVector<ReplyNode> &all,
 		const QString &rootId,
-		bool newestFirst) {
+		bool newestFirst,
+		const QStringList &first) {
 	auto byParent = QHash<QString, QVector<int>>();
 	auto known = QSet<QString>();
 	for (const auto &node : all) {
@@ -309,9 +310,23 @@ QVector<ReplyRow> ArrangeReplies(
 			: node.replyTo;
 		byParent[key].push_back(i);
 	}
-	if (newestFirst) {
+	{
 		auto &top = byParent[rootId];
-		std::reverse(top.begin(), top.end());
+		if (newestFirst) {
+			std::stable_sort(top.begin(), top.end(), [&](int a, int b) {
+				return all[a].createdAt > all[b].createdAt;
+			});
+		}
+		if (!first.isEmpty()) {
+			// (stable: the others keep the order of the sort)
+			const auto rank = [&](int index) {
+				const auto at = first.indexOf(all[index].id);
+				return (at < 0) ? int(first.size()) : int(at);
+			};
+			std::stable_sort(top.begin(), top.end(), [&](int a, int b) {
+				return rank(a) < rank(b);
+			});
+		}
 	}
 	auto hasLiving = std::function<bool(const QString &, int)>();
 	hasLiving = [&](const QString &id, int guard) {
@@ -349,6 +364,78 @@ QVector<ReplyRow> ArrangeReplies(
 		rows[i].line = (rows[i + 1].depth == 1);
 	}
 	return rows;
+}
+
+QStringList FocusPath(const QVector<ClimbStep> &climb) {
+	if (climb.isEmpty() || !climb.front().comment || climb.front().deleted) {
+		return {};
+	}
+	auto result = QStringList();
+	for (const auto &step : climb) {
+		if (!step.comment) {
+			break;
+		} else if (!result.contains(step.id)) {
+			result.push_front(step.id);
+		}
+	}
+	return result;
+}
+
+QStringList PinThread(const QStringList &page, const QStringList &path) {
+	const auto onPage = std::all_of(path.cbegin(), path.cend(), [&](
+			const QString &id) {
+		return page.contains(id);
+	});
+	if (path.isEmpty() || onPage) {
+		return page;
+	}
+	auto result = path;
+	for (const auto &id : page) {
+		if (!result.contains(id)) {
+			result.push_back(id);
+		}
+	}
+	return result;
+}
+
+CommentTarget CommentTargetOf(
+		const QString &kind,
+		const QMap<QString, QString> &refs) {
+	const auto ref = [&](const char *name) {
+		return refs.value(QString::fromLatin1(name)).trimmed();
+	};
+	auto result = CommentTarget();
+	if (kind == u"reply") {
+		result.post = ref("reply");
+		if (result.post.isEmpty()) {
+			// An older item: what was answered.
+			result.post = ref("post");
+		}
+	} else if (kind == u"mention") {
+		result.post = ref("post");
+	} else {
+		return {};
+	}
+	if (result.post.isEmpty()) {
+		result.post = ref("root");
+	}
+	const auto root = ref("root");
+	if (!result.post.isEmpty() && root != result.post) {
+		result.rootHint = root;
+	}
+	return result;
+}
+
+bool AnswersComment(const QMap<QString, QString> &refs) {
+	const auto root = refs.value(QStringLiteral("root")).trimmed();
+	if (root.isEmpty()) {
+		return false;
+	}
+	auto parent = refs.value(QStringLiteral("parent")).trimmed();
+	if (parent.isEmpty()) {
+		parent = refs.value(QStringLiteral("post")).trimmed();
+	}
+	return !parent.isEmpty() && (parent != root);
 }
 
 void ViewTracker::setVisible(const QStringList &ids, qint64 now) {
@@ -440,6 +527,27 @@ QStringList CountsFreshness::takeStale(const QStringList &appeared, qint64 now) 
 
 void CountsFreshness::forget(const QString &id) {
 	_at.remove(id);
+}
+
+void TakenBack::remember(const QString &id, int index, qint64 now) {
+	for (auto i = _entries.begin(); i != _entries.end();) {
+		if (now - i->at > kKeepMs) {
+			i = _entries.erase(i);
+		} else {
+			++i;
+		}
+	}
+	_entries.insert(id, Entry{ std::max(index, 0), now });
+}
+
+int TakenBack::take(const QString &id, qint64 now) {
+	const auto i = _entries.constFind(id);
+	if (i == _entries.cend()) {
+		return -1;
+	}
+	const auto result = (now - i->at <= kKeepMs) ? i->index : -1;
+	_entries.erase(i);
+	return result;
 }
 
 } // namespace Eli::Logic

@@ -26,10 +26,17 @@ QByteArray ProtocolName() {
 	return QByteArrayLiteral("Noise_NK_25519_ChaChaPoly_SHA256");
 }
 
+CipherState::CipherState(const CipherState &other)
+: _key(base::bytes::copy(other._key))
+, _nonce(other._nonce)
+, _count(other._count)
+, _hasKey(other._hasKey) {
+}
+
 CipherState &CipherState::operator=(const CipherState &other) {
 	if (this != &other) {
 		base::bytes::wipe(_key);
-		_key = other._key;
+		_key = base::bytes::copy(other._key);
 		_nonce = other._nonce;
 		_count = other._count;
 		_hasKey = other._hasKey;
@@ -43,7 +50,7 @@ CipherState::~CipherState() {
 
 void CipherState::initializeKey(const QByteArray &key) {
 	base::bytes::wipe(_key);
-	_key = key;
+	_key = base::bytes::copy(key);
 	_nonce = 0;
 	_count = 0;
 	_hasKey = true;
@@ -114,6 +121,22 @@ SymmetricState::SymmetricState() {
 	_chainingKey = _hash;
 }
 
+SymmetricState::SymmetricState(const SymmetricState &other)
+: _cipher(other._cipher)
+, _chainingKey(base::bytes::copy(other._chainingKey))
+, _hash(other._hash) {
+}
+
+SymmetricState &SymmetricState::operator=(const SymmetricState &other) {
+	if (this != &other) {
+		_cipher = other._cipher;
+		base::bytes::wipe(_chainingKey);
+		_chainingKey = base::bytes::copy(other._chainingKey);
+		_hash = other._hash;
+	}
+	return *this;
+}
+
 SymmetricState::~SymmetricState() {
 	base::bytes::wipe(_chainingKey);
 }
@@ -121,7 +144,7 @@ SymmetricState::~SymmetricState() {
 void SymmetricState::mixKey(const QByteArray &inputKeyMaterial) {
 	auto output = Crypto::NoiseHkdf(_chainingKey, inputKeyMaterial, 2);
 	base::bytes::wipe(_chainingKey);
-	_chainingKey = output.first;
+	_chainingKey = base::bytes::copy(output.first);
 	_cipher.initializeKey(output.second);
 	base::bytes::wipe(output.first);
 	base::bytes::wipe(output.second);
@@ -162,7 +185,7 @@ Initiator::Initiator(
 	const QByteArray &prologue,
 	const QByteArray &ephemeral)
 : _remoteStatic(remoteStatic)
-, _ephemeralPrivate(ephemeral)
+, _ephemeralPrivate(base::bytes::copy(ephemeral))
 , _valid(remoteStatic.size() == kKeySize
 	&& (ephemeral.isEmpty() || ephemeral.size() == kKeySize)) {
 	_symmetric.mixHash(prologue);
@@ -228,8 +251,8 @@ Responder::Responder(
 	const QByteArray &staticPrivate,
 	const QByteArray &prologue,
 	const QByteArray &ephemeral)
-: _staticPrivate(staticPrivate)
-, _ephemeralPrivate(ephemeral) {
+: _staticPrivate(base::bytes::copy(staticPrivate))
+, _ephemeralPrivate(base::bytes::copy(ephemeral)) {
 	_symmetric.mixHash(prologue);
 	_symmetric.mixHash(Crypto::X25519PublicFromPrivate(_staticPrivate));
 }

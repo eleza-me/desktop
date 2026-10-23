@@ -183,6 +183,24 @@ private Q_SLOTS:
 		QCOMPARE(diff.removed, 3);
 	}
 
+	void anchorSurvivesItsRow() {
+		const auto was = Ids({ u"seq:3"_s, u"seq:4"_s, u"seq:5"_s, u"seq:6"_s });
+		// The anchor's row stays: it is kept, also with rows put in above.
+		auto diff = History::DiffRows(was, Ids({ u"seq:1"_s, u"seq:3"_s, u"seq:4"_s, u"seq:5"_s, u"seq:6"_s }));
+		QCOMPARE(History::SurvivingAnchor(diff, 2), 2);
+		// Deleted while older rows come in: the row above takes its place.
+		diff = History::DiffRows(was, Ids({ u"seq:1"_s, u"seq:2"_s, u"seq:3"_s, u"seq:4"_s, u"seq:6"_s }));
+		QCOMPARE(History::SurvivingAnchor(diff, 2), 1);
+		// Nothing above survives: the nearest row below.
+		diff = History::DiffRows(was, Ids({ u"seq:5"_s, u"seq:6"_s }));
+		QCOMPARE(History::SurvivingAnchor(diff, 1), 2);
+		// Nothing survives, or there was no anchor.
+		diff = History::DiffRows(was, Ids({ u"seq:90"_s }));
+		QCOMPARE(History::SurvivingAnchor(diff, 1), -1);
+		QCOMPARE(History::SurvivingAnchor(diff, -1), -1);
+		QCOMPARE(History::SurvivingAnchor(diff, 9), -1);
+	}
+
 	void diffPendingBecomesSent() {
 		auto was = Ids({ u"seq:3"_s });
 		was.push_back({ u"local:abc"_s, u"abc"_s });
@@ -239,6 +257,10 @@ private Q_SLOTS:
 		QCOMPARE(History::JumboEmojiCount(U("❤️")), 1);
 		QCOMPARE(History::JumboEmojiCount(QString::fromUcs4(U"\U0001F64B\u200D\u2642\uFE0F")), 1);
 		QCOMPARE(History::JumboEmojiCount(U("❤️🇮🇷👍🏽")), 3);
+		// A keycap, a subdivision flag.
+		QCOMPARE(History::JumboEmojiCount(U("1️⃣")), 1);
+		QCOMPARE(History::JumboEmojiCount(U("🏴󠁧󠁢󠁳󠁣󠁴󠁿 #⃣")), 2);
+		QCOMPARE(History::JumboEmojiCount(U("1️⃣2️⃣3️⃣4️⃣")), 0);
 	}
 
 	void quoteFromSelection() {
@@ -470,9 +492,111 @@ private Q_SLOTS:
 		QVERIFY(!History::CurrentReplyKeyboard({ inlineOnly }).has_value());
 	}
 
+	void floatingButtons() {
+		const auto at = At(3, 10, 0);
+		// A group: two messages of mine, then three that came in, one of
+		// them a note.
+		auto items = QVector<Data::Message>();
+		for (auto seq = 1; seq <= 4; ++seq) {
+			items.push_back(Text(seq, false, at));
+		}
+		items.push_back(Text(5, true, at));
+		items.push_back(Text(6, false, at));
+		auto note = Text(7, false, at, QString());
+		note.chat = u"j1group"_s;
+		note.kind = Data::MessageKind::System;
+		note.system = u"member_left"_s;
+		items.push_back(note);
+		items.push_back(Text(8, true, at));
+		items.push_back(Text(9, false, at));
+		for (auto &item : items) {
+			item.chat = u"j1group"_s;
+		}
+		// Three unread (6, the note, 9): the first stop is 6, below the screen.
+		QCOMPARE(History::DownFirstStop(items, 3, 5, 4), qint64(6));
+		// Two unread: 9 and the note (skipping the note would land on 6,
+		// which was read).
+		QCOMPARE(History::DownFirstStop(items, 2, 5, 4), qint64(7));
+		// Already on screen: straight to the end.
+		QCOMPARE(History::DownFirstStop(items, 3, 5, 6), qint64(0));
+		// Nothing unread, or all of it read already.
+		QCOMPARE(History::DownFirstStop(items, 0, 5, 4), qint64(0));
+		QCOMPARE(History::DownFirstStop(items, 3, 9, 4), qint64(0));
+		// Never at or below my read mark, whatever the count says.
+		QCOMPARE(History::DownFirstStop(items, 10, 6, 1), qint64(7));
+		// A deleted message is no row.
+		items[5].deleted = true;
+		QCOMPARE(History::DownFirstStop(items, 3, 5, 4), qint64(7));
+
+		// The side: mine are on the physical right in both directions.
+		QVERIFY(History::FloatingButtonsAtPhysicalRight(true, true));
+		QVERIFY(History::FloatingButtonsAtPhysicalRight(true, false));
+		QVERIFY(History::FloatingButtonsAtPhysicalRight(false, false));
+		QVERIFY(!History::FloatingButtonsAtPhysicalRight(false, true));
+
+		const auto seqs = QVector<qint64>{ 3, 9, 14 };
+		QCOMPARE(History::NextMention(seqs, 0), qint64(3));
+		QCOMPARE(History::NextMention(seqs, 3), qint64(9));
+		QCOMPARE(History::NextMention(seqs, 10), qint64(14));
+		QCOMPARE(History::NextMention(seqs, 14), qint64(0));
+		QCOMPARE(History::NextMention({}, 0), qint64(0));
+	}
+
+	void selfDestruct() {
+		auto chat = Data::Chat();
+		chat.id = u"c1"_s;
+		chat.peerUserId = u"u_sara"_s;
+		chat.info.kind = u"direct"_s;
+		QVERIFY(History::SelfDestructAllowed(chat));
+		auto other = chat;
+		other.saved = true;
+		QVERIFY(!History::SelfDestructAllowed(other));
+		other = chat;
+		other.isBot = true;
+		QVERIFY(!History::SelfDestructAllowed(other));
+		other = chat;
+		other.isConversation = true;
+		QVERIFY(!History::SelfDestructAllowed(other));
+		other = chat;
+		other.peerDeleted = true;
+		QVERIFY(!History::SelfDestructAllowed(other));
+		other = chat;
+		other.id = u"j1group"_s;
+		other.isGroup = true;
+		QVERIFY(!History::SelfDestructAllowed(other));
+
+		auto message = Text(5, false, At(3, 10, 0), U("این پیام فقط روی گوشی قابل دیدن است"));
+		auto sd = Data::SelfDestruct();
+		sd.mode = u"view_once"_s;
+		sd.state = u"unopened"_s;
+		message.selfDestruct = sd;
+		// A centred line of its own, as on Telegram Desktop: it does not
+		// join a run of bubbles, and it is where the unread divider goes.
+		QVERIFY(History::IsService(message));
+		const auto before = Text(4, false, At(3, 10, 0));
+		QVERIFY(!History::CanAttach(before, message));
+		const auto flags = History::ComputeRowFlags({ before, message }, 5);
+		QVERIFY(flags[1].showUnread);
+		message.mine = true;
+		message.selfDestruct->state = u"opened"_s;
+		auto expired = message;
+		expired.selfDestruct->state = u"expired"_s;
+		// Its line follows its state, and whether it is on its way.
+		auto sending = message;
+		sending.status = Data::MessageStatus::Sending;
+		QVERIFY(!History::SameLayout(message, sending));
+		// A change of state is a change of the row.
+		QVERIFY(!History::SameLayout(message, expired));
+		// Its text is the server's: never copied, edited, forwarded or found.
+		QVERIFY(!History::HasCopyableText(message));
+		QVERIFY(!History::CanForward(message));
+		QVERIFY(!History::CanEdit(message, At(3, 10, 0), 0));
+		QVERIFY(History::SearchMessages({ message }, U("گوشی")).empty());
+	}
+
 	void messageText() {
 		auto message = Text(1, false, At(5, 10, 0), U("ببین https://eleza.me و @sara #تهران"));
-		message.entities.push_back(Data::Entity{ u"spoiler"_s, 0, 4, QString(), QString() });
+		message.entities.push_back(Data::Entity{ u"spoiler"_s, 0, 4, QString(), QString(), QString() });
 		const auto text = History::TextForMessage(message);
 		auto spoilers = 0;
 		auto links = 0;

@@ -81,6 +81,7 @@
 		<file alias="pin.svg">../icons/pin.svg</file>
 		<file alias="play.svg">../icons/play.svg</file>
 		<file alias="play_active.svg">../icons/play_active.svg</file>
+		<file alias="playlist.svg">../icons/playlist.svg</file>
 		<file alias="plus.svg">../icons/plus.svg</file>
 		<file alias="poll.svg">../icons/poll.svg</file>
 		<file alias="quote.svg">../icons/quote.svg</file>
@@ -88,6 +89,8 @@
 		<file alias="refresh.svg">../icons/refresh.svg</file>
 		<file alias="region.svg">../icons/region.svg</file>
 		<file alias="region_active.svg">../icons/region_active.svg</file>
+		<file alias="repeat.svg">../icons/repeat.svg</file>
+		<file alias="repeat-one.svg">../icons/repeat-one.svg</file>
 		<file alias="reply.svg">../icons/reply.svg</file>
 		<file alias="reply-arrow.svg">../icons/reply-arrow.svg</file>
 		<file alias="report.svg">../icons/report.svg</file>
@@ -97,6 +100,10 @@
 		<file alias="send.svg">../icons/send.svg</file>
 		<file alias="settings.svg">../icons/settings.svg</file>
 		<file alias="share.svg">../icons/share.svg</file>
+		<file alias="shuffle.svg">../icons/shuffle.svg</file>
+		<file alias="skip-next.svg">../icons/skip-next.svg</file>
+		<file alias="skip-previous.svg">../icons/skip-previous.svg</file>
+		<file alias="sort.svg">../icons/sort.svg</file>
 		<file alias="speaker.svg">../icons/speaker.svg</file>
 		<file alias="star.svg">../icons/star.svg</file>
 		<file alias="sticker.svg">../icons/sticker.svg</file>

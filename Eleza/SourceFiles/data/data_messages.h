@@ -37,6 +37,7 @@ struct History {
 	bool loaded = false;        // the newest page came from the server in this run
 	bool hasMoreBefore = true;
 	bool hasMoreAfter = false;  // the window does not reach the newest message
+	bool stale = false;         // may hold messages that are gone: read again
 	std::optional<ChatInfo> info;
 	QVector<PinnedMessage> pins; // after loadPins()
 	bool pinsLoaded = false;
@@ -187,17 +188,36 @@ public:
 	// pending message with the same client message id.
 	void merge(const QString &chat, QVector<Message> incoming, bool persist = true);
 	void addLocal(const Message &message);
+	// Changes a message in memory and in the cache. A server message that
+	// is cached but not in memory (the chat is not open, the message is
+	// older than the window) changes in the cache alone, later, on the
+	// database's thread: `change` must hold values, not references.
 	void patchMessage(const QString &chat, const QString &key, const Fn<void(Message &)> &change);
 	void removeMessage(const QString &chat, const QString &key);
+	// Brings the cached copies of these messages up to date (an old message
+	// edited outside the window); one that is not cached stays out.
+	void updateCached(const QString &chat, const QVector<Message> &messages);
 	// Drops messages with seq < beforeSeq (all server messages when nullopt).
 	void clear(const QString &chat, std::optional<qint64> beforeSeq = std::nullopt);
-	// The peer read up to `seq`: my messages up to it become Read.
+	// The peer read up to `seq`: my messages up to it become Read. The
+	// cached ones that are not in memory become Read when they are read
+	// from the cache (the mark also moves with headers, which never come
+	// here).
 	void markPeerRead(const QString &chat, qint64 seq);
 	void setInfo(const ChatInfo &info);
 	void applyPin(const QString &chat, qint64 seq, bool pinned);
 	void forget(const QString &chat);
-	// After a `too_long` difference: every timeline must be re-read.
+	// After a `too_long` difference: nothing tells what changed in the gap
+	// (an edit, a deletion or a reaction moves nothing a header shows), so
+	// every chat is stale as below — its cache goes, its timeline is read
+	// again from the end. Groups keep theirs: they have a sync track of
+	// their own (Data::Groups).
 	void markAllStale();
+	// Something changed in the chat that no update spelled out (a history
+	// cleared for me arrives in a difference as a bare "member" item): its
+	// cache goes, and its timeline is read again from the end, at once when
+	// it is on screen, when the chat opens otherwise.
+	void markStale(const QString &chat);
 	// Refetches one message of the window (a reaction changed).
 	void refresh(const QString &chat, qint64 seq);
 
@@ -231,6 +251,9 @@ private:
 		std::optional<Group> group; // the header of a group's page
 		bool hasMoreBefore = true;
 		bool hasMoreAfter = false;
+		// The oldest seq the server returned, messages that are not shown
+		// (deleted ones) included: where the page begins.
+		qint64 firstSeq = 0;
 	};
 
 	[[nodiscard]] History &historyRef(const QString &chat);
@@ -241,6 +264,22 @@ private:
 		Fn<void(const Page &)> done,
 		Fn<void(const Api::Error &)> fail);
 	void persist(const QString &chat, const QVector<Message> &messages);
+	// Changed messages of a timeline to the cache: a timeline that reaches
+	// the newest message is the cached run, any other one only brings the
+	// rows the cache holds up to date.
+	void storeChanged(const History &history, const QVector<Message> &messages);
+	void changeCached(const QString &chat, qint64 seq, Fn<void(Message &)> change);
+	// The peer's read mark as far as it is known here.
+	[[nodiscard]] qint64 peerReadSeq(const QString &chat) const;
+	// A cached message, my own read when it is at or below the mark.
+	[[nodiscard]] static Message FromCache(const QJsonObject &row, qint64 peerReadSeq);
+	// A window that reaches the newest message begins at `firstSeq`, and
+	// with `complete` nothing older exists. The older messages held in
+	// memory and in the database go unless they are one run with it:
+	// messages written while the chat was not open are never cached, and
+	// the older pages are read from the cache first, so a hole between the
+	// two would never be filled.
+	void dropDetached(const QString &chat, qint64 firstSeq, bool complete);
 	void simple(
 		const QString &method,
 		const QJsonObject &body,

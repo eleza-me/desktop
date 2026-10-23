@@ -19,6 +19,7 @@
 #include "base/weak_guard.h"
 #include "rt/rt_session.h"
 
+#include <QtCore/QHash>
 #include <QtCore/QJsonArray>
 #include <QtCore/QSet>
 
@@ -159,8 +160,19 @@ public:
 		base::Guard guard = base::Guard(),
 		Fn<void(const QJsonArray &)> done = nullptr);
 	void unsubscribePresence(const QStringList &users);
-	// Card change notifications (Frame::Type::Profile) for these users.
+	// Presence subscriptions are counted per user: two screens showing the
+	// same person need two unsubscribes. At most kPresenceSubMax are sent.
+	static constexpr auto kPresenceSubMax = 200; // presence.max_subscriptions_per_connection
+	// Card change notifications (Frame::Type::Profile) for these users. The
+	// most recently shown kProfileSubMax are followed (the gateway's cap);
+	// both kinds of subscription expire on the server and are renewed while
+	// connected.
 	void followProfiles(const QStringList &users);
+	static constexpr auto kProfileSubMax = 300;  // cardSubMax of the gateway
+	static constexpr auto kProfileSubKeep = 200; // what a full resend keeps
+	[[nodiscard]] QStringList followedProfiles() const {
+		return _profileSubs;
+	}
 	// Open-topics hints for a category ("" = all).
 	void subscribeTopics(const QString &category);
 	void unsubscribeTopics();
@@ -191,6 +203,9 @@ private:
 	void onUpdate(const QJsonObject &frame);
 	void onSignal(const QString &type, const QJsonObject &body);
 	void resendSubscriptions();
+	void renewSubscriptions();
+	void sendPresenceSubs(Session *session);
+	void sendProfileSubs(Session *session, const QStringList &users);
 	void watchdogTick();
 	void setConnected(bool connected);
 	void updateState();
@@ -208,6 +223,7 @@ private:
 	base::ExponentialBackoff _backoff;
 	base::Timer _pauseTimer;
 	base::Timer _watchdog;
+	base::Timer _renewTimer;
 	State _state = State::Stopped;
 	int _generation = 0;
 	int _pausedGeneration = 0;
@@ -225,8 +241,10 @@ private:
 	bool _background = false;
 	bool _networkWatched = false;
 
-	QSet<QString> _presenceSubs;
-	QSet<QString> _profileSubs;
+	QHash<QString, int> _presenceSubs;  // user -> subscribers here
+	int _presenceTtl = 300;             // seconds (PresenceSubResult.ttl_s)
+	QStringList _profileSubs;           // most recently shown first
+	QSet<QString> _profileSubsOnServer; // what the gateway holds, at most
 	std::optional<QString> _topicsCategory;
 	std::optional<qint64> _feedSince;
 

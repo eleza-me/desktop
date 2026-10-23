@@ -1,0 +1,19 @@
+<RCC>
+	<qresource prefix="/emoji">
+		<!-- Read in place by lib/ui/ui/emoji/emoji_pack.cpp: never compressed (its
+		     records are WebP / DEFLATE already). -->
+		<file alias="emoji.pack" compression-algorithm="none">../emoji/emoji.pack</file>
+		<file alias="compound/0_-1_0.png">../emoji/compound/0_-1_0.png</file>
+		<file alias="compound/0_-1_1.png">../emoji/compound/0_-1_1.png</file>
+		<file alias="compound/0_0_0.png">../emoji/compound/0_0_0.png</file>
+		<file alias="compound/0_0_1.png">../emoji/compound/0_0_1.png</file>
+		<file alias="compound/0_1_0.png">../emoji/compound/0_1_0.png</file>
+		<file alias="compound/0_1_1.png">../emoji/compound/0_1_1.png</file>
+		<file alias="compound/0_2_0.png">../emoji/compound/0_2_0.png</file>
+		<file alias="compound/0_2_1.png">../emoji/compound/0_2_1.png</file>
+		<file alias="compound/0_3_0.png">../emoji/compound/0_3_0.png</file>
+		<file alias="compound/0_3_1.png">../emoji/compound/0_3_1.png</file>
+		<file alias="compound/0_4_0.png">../emoji/compound/0_4_0.png</file>
+		<file alias="compound/0_4_1.png">../emoji/compound/0_4_1.png</file>
+	</qresource>
+</RCC>

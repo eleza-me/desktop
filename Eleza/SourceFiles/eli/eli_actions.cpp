@@ -23,6 +23,7 @@
 #include "styles/style_stories.h"
 
 #include <QtCore/QDateTime>
+#include <QtCore/QPointer>
 #include <QtGui/QClipboard>
 #include <QtGui/QGuiApplication>
 
@@ -54,7 +55,6 @@ constexpr auto kDefaultEditWindow = qint64(48) * 3600;
 	return (age < window * 1000)
 		&& (post.type == u"text"
 			|| post.type == u"short_text"
-			|| post.type == u"media"
 			|| post.type == u"quote");
 }
 
@@ -164,8 +164,14 @@ void FillMore(
 					if (key == current) {
 						return;
 					}
-					controller->session().data().feed().setReplyPolicy(id, key);
-					controller->showToast(tr::lng_eli_policy_changed(tr::now));
+					controller->session().data().feed().setReplyPolicy(
+						id,
+						key,
+						controller,
+						[=] {
+							controller->showToast(
+								tr::lng_eli_policy_changed(tr::now));
+						});
 				};
 				submenu->addItem(std::move(item));
 			}
@@ -176,10 +182,15 @@ void FillMore(
 		menu->addAction(
 			pinned ? tr::lng_unpin(tr::now) : tr::lng_eli_pin_profile(tr::now),
 			[=] {
-				controller->session().data().feed().setPinned(id, !pinned);
-				controller->showToast(pinned
-					? tr::lng_eli_unpinned_toast(tr::now)
-					: tr::lng_eli_pinned_toast(tr::now));
+				controller->session().data().feed().setPinned(
+					id,
+					!pinned,
+					controller,
+					[=] {
+						controller->showToast(pinned
+							? tr::lng_eli_unpinned_toast(tr::now)
+							: tr::lng_eli_pinned_toast(tr::now));
+					});
 			},
 			&st::menuIconPin);
 		menu->addAction(
@@ -350,9 +361,26 @@ void ToggleRepost(Window::SessionController *controller, const QString &postId) 
 			return;
 		}
 		controller->session().data().feed().repost(postId, on);
-		controller->showToast(on
-			? tr::lng_eli_reposted(tr::now)
-			: tr::lng_eli_repost_removed(tr::now));
+		if (on) {
+			controller->showToast(tr::lng_eli_reposted(tr::now));
+			return;
+		}
+		// As Telegram's undo toasts: «واگرد» reposts it again (and on my
+		// profile its row comes back, eli_posts_embed.cpp).
+		const auto guard = QPointer<Window::SessionController>(controller);
+		auto toast = Ui::Toast::Config();
+		toast.text = tr::lng_eli_repost_removed(tr::now);
+		toast.action = tr::lng_toast_undo(tr::now);
+		toast.actionClicked = [=] {
+			if (!guard) {
+				return;
+			}
+			auto &feed = guard->session().data().feed();
+			if (const auto post = feed.post(postId); post && !post->my.reposted) {
+				feed.repost(postId, true);
+			}
+		};
+		controller->showToast(std::move(toast));
 	}
 }
 

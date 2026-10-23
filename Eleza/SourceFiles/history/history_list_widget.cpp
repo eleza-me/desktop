@@ -8,6 +8,7 @@
 #include "data/data_chats.h"
 #include "data/data_feed.h"
 #include "data/data_session.h"
+#include "data/data_stories.h"
 #include "data/data_users.h"
 #include "history/history_album.h"
 #include "history/history_downloads.h"
@@ -132,30 +133,78 @@ ListWidget::ListWidget(
 	});
 	connect(&data.users(), &Data::Users::changed, this, [this](const QStringList &ids) {
 		// Names in reply headers and shared posts; in a group also above
-		// the bubbles and in the notes.
-		if (_group) {
-			auto changed = false;
-			for (auto &row : _rows) {
-				const auto &message = row.element->data();
-				if (ids.contains(message.sender)
-					|| (message.kind == Data::MessageKind::System
-						&& ids.contains(Data::GroupRules::NoteUser(message.system)))) {
-					row.element->unloadHeavy();
+		// the bubbles and in the notes; the lines of self-destructing
+		// media and its screenshot notice. Only the rows that show one of
+		// these people change, and their pictures stay.
+		const auto myId = _session->data().users().myId();
+		const auto chat = _session->data().chats().chat(_chatId);
+		const auto peer = chat ? chat->peerUserId : QString();
+		const auto replyNamed = [&](const Data::Message &message) {
+			// Whose name the header shows (senderName()); a target that is
+			// not known yet shows none.
+			const auto seq = message.replyToSeq;
+			auto target = (seq > 0) ? this->message(seq) : nullptr;
+			if (seq > 0 && !target) {
+				const auto cached = _replyTargets.constFind(seq);
+				target = (cached != _replyTargets.cend()) ? &*cached : nullptr;
+			}
+			return target
+				&& ids.contains(target->mine
+					? myId
+					: _group
+					? target->sender
+					: peer);
+		};
+		auto changed = false;
+		for (auto &row : _rows) {
+			const auto &message = row.element->data();
+			const auto system = (message.kind == Data::MessageKind::System);
+			if ((_group
+					&& (ids.contains(message.sender)
+						|| (system && ids.contains(Data::GroupRules::NoteUser(message.system)))))
+				|| (system && ids.contains(Data::SelfDestructScreenshotTaker(message.system)))
+				|| (message.selfDestruct && ids.contains(message.sender))
+				|| replyNamed(message)) {
+				row.element->reloadTexts();
+				row.exact = false;
+				changed = true;
+			} else if (!message.forwardedPost.isEmpty()) {
+				// The card lays its author's name out again.
+				const auto post = _session->data().feed().post(message.forwardedPost);
+				if (post && ids.contains(post->author)) {
 					row.element->invalidate();
 					row.exact = false;
 					changed = true;
 				}
 			}
-			if (changed) {
-				relayoutKeepingAnchor();
-			}
 		}
-		invalidateAll();
+		if (changed) {
+			relayoutKeepingAnchor();
+		}
+		// Story cards paint their owner's name as it is now.
+		update();
 	});
 	connect(&data.feed(), &Data::Feed::postChanged, this, [this](const QString &id) {
 		auto changed = false;
 		for (auto &row : _rows) {
 			if (row.element->data().forwardedPost == id) {
+				row.element->invalidate();
+				row.exact = false;
+				changed = true;
+			}
+		}
+		if (changed) {
+			relayoutKeepingAnchor();
+			update();
+		}
+	});
+	connect(&data.stories(), &Data::Stories::storyGone, this, [this](
+			const QString &storyId) {
+		// Its card turns into «استوری دیگر در دسترس نیست».
+		auto changed = false;
+		for (auto &row : _rows) {
+			const auto &message = row.element->data();
+			if (message.story && message.story->storyId == storyId) {
 				row.element->invalidate();
 				row.exact = false;
 				changed = true;
@@ -174,10 +223,14 @@ ListWidget::ListWidget(
 	connect(_downloads, &Downloads::failed, this, [this](const QString &chat, qint64 seq) {
 		if (chat == _chatId) {
 			const auto item = message(seq);
-			_controller->showToast(
-				(item && _downloads->state(*item).oversized)
-					? tr::lng_chat_file_larger_than_declared(tr::now)
-					: tr::lng_chat_file_isnt_available(tr::now));
+			const auto state = item
+				? _downloads->state(*item)
+				: View::DownloadState();
+			_controller->showToast(state.oversized
+				? tr::lng_chat_file_larger_than_declared(tr::now)
+				: state.gone
+				? tr::lng_chat_file_isnt_available(tr::now)
+				: tr::lng_chat_file_download_failed(tr::now));
 		}
 	});
 	const auto player = &Media::Player();
@@ -317,13 +370,18 @@ void ListWidget::elementPaintUserpic(
 		Painter &p,
 		const QRect &rect,
 		const QString &userId) {
-	if (_userpics) {
-		_userpics->paint(p, rect, userId);
+	if (!_userpics) {
+		// Outside a group only a story sent on shows a face (its owner's).
+		_userpics = std::make_unique<Support::UserpicPainter>(
+			_session,
+			[this](const QString &) { update(); });
 	}
+	_userpics->paint(p, rect, userId);
 }
 
-QString ListWidget::elementServiceText(const Data::Message &message) {
-	return _group ? Support::MessagePreview(_session, message) : QString();
+Support::NoteLine ListWidget::elementServiceText(const Data::Message &message) {
+	// The notes of a group, the screenshot notice of a direct chat.
+	return Support::ServiceNoteLine(_session, message);
 }
 
 // Who is the owner and who an admin (with a tag of their own or without):
@@ -438,6 +496,7 @@ View::PlaybackState ListWidget::elementPlayback(const Data::Message &message) {
 	result.current = true;
 	result.playing = player.isPlaying(id);
 	result.loading = player.isLoading(id);
+	result.loadProgress = player.loadProgress();
 	result.progress = player.progress();
 	result.positionMs = player.positionMs();
 	result.speed = player.speed();
@@ -590,8 +649,22 @@ bool ListWidget::awayFromBottom() const {
 	} else if (!_debugMode && history().hasMoreAfter) {
 		return true;
 	}
+	// As soon as the reader leaves the end (Telegram): then the list no
+	// longer follows new messages, and the button is the way back.
 	return _scroll
-		&& (_scroll->scrollTopMax() - _scroll->scrollTop() > viewportHeight() / 3);
+		&& (_scroll->scrollTopMax() - _scroll->scrollTop() > kBottomSlack);
+}
+
+qint64 ListWidget::bottomVisibleSeq() const {
+	if (_rows.empty()) {
+		return 0;
+	}
+	for (auto i = rowNear(_visibleBottom - 1); i >= 0; --i) {
+		if (const auto value = _rows[i].element->lastSeq(); value > 0) {
+			return value;
+		}
+	}
+	return 0;
 }
 
 void ListWidget::scrollByPage(bool up) {
@@ -607,12 +680,15 @@ std::optional<Data::Message> ListWidget::lastEditable() const {
 	const auto window = config ? config->editWindow() : qint64(0);
 	const auto now = QDateTime::currentMSecsSinceEpoch();
 	for (auto i = int(_rows.size()) - 1; i >= 0; --i) {
-		const auto &message = _rows[i].element->data();
-		if (message.mine && CanEdit(message, now, window)) {
-			return message;
+		const auto element = _rows[i].element.get();
+		const auto &message = element->data();
+		// An album's caption lives on one of its items.
+		const auto &captioned = element->captionMessage();
+		if (message.mine && CanEdit(captioned, now, window)) {
+			return captioned;
 		} else if (message.mine && message.seq > 0) {
 			// Only the last own message is edited this way.
-			if (!IsService(message)) {
+			if (!IsService(message) || message.selfDestruct) {
 				return std::nullopt;
 			}
 		}
@@ -699,6 +775,20 @@ void ListWidget::applyRows(const QVector<Data::Message> &timeline) {
 		now.push_back(RowId::From(message));
 	}
 	const auto diff = DiffRows(was, now);
+	if (!_anchor.bottom) {
+		// The row the reading position holds on to may go in this rebuild
+		// (deleted, maybe while older rows come in above it): a neighbour
+		// that stays takes its place, so what is being read does not jump.
+		const auto anchor = indexOfKey(_anchor.key);
+		const auto kept = SurvivingAnchor(diff, anchor);
+		if (kept >= 0 && kept != anchor) {
+			const auto bottom = [&](int index) {
+				return rowTop(index) + _rows[index].height;
+			};
+			_anchor.offset += bottom(anchor) - bottom(kept);
+			_anchor.key = _rows[kept].element->key();
+		}
+	}
 	auto flags = ComputeRowFlags(items, _firstUnreadSeq);
 	const auto firstBack = int(items.size()) - diff.addedAtBack;
 	auto sentByMe = false;
@@ -876,22 +966,6 @@ void ListWidget::updateRow(int index) {
 	if (index >= 0 && index < int(_rows.size())) {
 		update(rowRect(index));
 	}
-}
-
-void ListWidget::invalidateAll() {
-	if (_rows.empty()) {
-		return;
-	}
-	for (auto &row : _rows) {
-		if (row.element->data().replyToSeq > 0
-			|| !row.element->data().forwardedPost.isEmpty()) {
-			row.element->unloadHeavy();
-			row.element->invalidate();
-			row.exact = false;
-		}
-	}
-	relayoutKeepingAnchor();
-	update();
 }
 
 // ---- layout

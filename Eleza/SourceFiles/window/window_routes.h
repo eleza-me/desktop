@@ -2,6 +2,7 @@
 //
 //   chats                      the chat list tab
 //   chat/<chatId>[?seq=N]      a chat (optionally at a message)
+//   chat/<chatId>?show=media   the shared media of a direct chat (photos, files, links, music, voice)
 //   chat/<chatId>?start=<p>    a chat with a bot opened from its deep link: «شروع» sends "/start <p>"
 //   user/<userId>              a profile by user id
 //   u/<handle>                 a profile by handle
@@ -9,6 +10,8 @@
 //                              with the bot and its «شروع»; a profile when it is not a bot
 //   eli                        the feed tab
 //   eli/post/<postId>          a post with its replies
+//   eli/post/<id>?root=<root>  a comment, opened under its post (`root`: the post at the top of its
+//                              conversation as a notification named it, read at the same time)
 //   eli/share/<slug>           a post by its share link (https://eleza.me/s/<slug>)
 //   eli/topic/<slug>           a topic (#tag) page
 //   eli/notifications          the notifications list
@@ -19,7 +22,7 @@
 //   conversation/<id>          an anonymous conversation (its sheet / chat)
 //   group/new                  «گروه تازه»: pick people, then name the group
 //   group/<groupId>            the info of a group (members, settings, administration)
-//   group/<groupId>?show=media the shared media of a group (photos, files, links, voice)
+//   group/<groupId>?show=media the shared media of a group
 //   group/<groupId>?show=log   «اقدام‌های اخیر» (the admin log)
 //   group/<groupId>?show=reactions&seq=N   who reacted to a message (a box)
 //   g/<token>                  an invite link of a group (https://eleza.me/g/<token>)
@@ -108,8 +111,10 @@ namespace Routes {
 [[nodiscard]] QString HandleStart(const QString &handle, const QString &payload);
 // The chat with a bot, «شروع» shown with the payload of a deep link.
 [[nodiscard]] QString BotStart(const QString &chatId, const QString &payload);
+// The shared media of a direct chat (a group's: GroupMedia).
+[[nodiscard]] QString ChatMedia(const QString &chatId);
 [[nodiscard]] QString Eli();
-[[nodiscard]] QString Post(const QString &postId);
+[[nodiscard]] QString Post(const QString &postId, const QString &rootHint = QString());
 [[nodiscard]] QString SharedPost(const QString &slug);
 [[nodiscard]] QString Topic(const QString &slug);
 [[nodiscard]] QString EliNotifications();

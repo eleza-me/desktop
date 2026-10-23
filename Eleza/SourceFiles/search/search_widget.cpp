@@ -21,6 +21,7 @@
 #include "ui/widgets/misc_widgets.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/scroll_area.h"
+#include "ui/widgets/top_bar.h"
 #include "ui/wrap/vertical_layout.h"
 #include "window/window_embeds.h"
 #include "window/window_routes.h"
@@ -44,6 +45,7 @@ constexpr auto kBrowseParts = 3;
 constexpr auto kBrowseTrends = 5;
 constexpr auto kBrowseVideos = 6;
 constexpr auto kBrowsePeople = 5;
+constexpr auto kPeopleLowWater = 3;
 constexpr auto kAllPeople = 5;
 constexpr auto kAllTopics = 5;
 constexpr auto kAllPosts = 5;
@@ -52,6 +54,7 @@ constexpr auto kSuggestionsPage = 20;
 constexpr auto kBrowseStaleMs = qint64(5) * 60 * 1000;
 constexpr auto kMaxHiddenPeople = 500;
 constexpr auto kTopicInfoLimit = 12;
+constexpr auto kTopicInfoRetryMs = qint64(60) * 1000;
 constexpr auto kPosterFit = QSize(480, 640);
 
 const auto kRecentKey = u"search.recent"_s;
@@ -101,7 +104,11 @@ enum Command {
 	kCmdRetryBrowse,
 	kCmdRetrySearch,
 	kCmdNewConversation,
+	kCmdAllPeople,
+	kCmdRetryAllPeople,
 };
+
+const auto kAllPeopleRoute = u"search/people"_s;
 
 [[nodiscard]] qint64 NowMs() {
 	return QDateTime::currentMSecsSinceEpoch();
@@ -136,9 +143,13 @@ struct Widget::Row {
 struct Widget::Browse {
 	std::optional<QVector<Data::Trend>> trends;
 	std::optional<QStringList> videos;
-	std::optional<QVector<Data::Profile>> people; // the pool, not yet shown
-	QVector<Data::Profile> shown;
+	// The five rows and the line behind them.
+	SuggestionQueue people = SuggestionQueue(kBrowsePeople, kPeopleLowWater);
+	bool peopleLoaded = false;
 	QString peopleCursor;
+	bool peopleFromStart = false; // the line was refilled from page 1 again
+	RefreshThrottle peopleThrottle;
+	int peopleGeneration = 0;
 	std::optional<Api::Error> error;
 	int pending = 0;
 	int generation = 0;
@@ -161,14 +172,28 @@ struct Widget::Results {
 	bool loadingMore = false;
 };
 
+struct Widget::AllPeople {
+	QVector<Data::Profile> people;
+	QString cursor;
+	std::optional<Api::Error> error;
+	int generation = 0;
+	bool loading = false;
+	bool loaded = false;
+	bool done = false;
+};
+
 struct Widget::Poster {
 	Data::MediaHandlePtr handle;
 	QPixmap prepared;
 	QSize preparedFor;
 };
 
-Widget::Widget(QWidget *parent, Window::SessionController *controller)
+Widget::Widget(
+	QWidget *parent,
+	Window::SessionController *controller,
+	Mode mode)
 : SectionWidget(parent, controller)
+, _mode(mode)
 , _field(new Ui::SearchField(
 	this,
 	tr::lng_search_search_people_topics_posts(tr::now)))
@@ -187,6 +212,7 @@ Widget::Widget(QWidget *parent, Window::SessionController *controller)
 })
 , _browse(std::make_unique<Browse>())
 , _results(std::make_unique<Results>())
+, _all(std::make_unique<AllPeople>())
 , _scope(kScopeAll) {
 	setBackground(st::searchBg);
 	_inner = _scroll->setOwnedWidget(Ui::object_ptr<Ui::VerticalLayout>(_scroll));
@@ -283,6 +309,23 @@ Widget::Widget(QWidget *parent, Window::SessionController *controller)
 			}
 		});
 	QObject::connect(
+		&data().graph(),
+		&Data::Graph::suggestionDismissed,
+		this,
+		[this](const QString &userId) { hidePerson(userId); });
+	if (_mode == Mode::Browse) {
+		// Back to the app: the suggestions may be due again.
+		QObject::connect(
+			qApp,
+			&QGuiApplication::applicationStateChanged,
+			this,
+			[this](Qt::ApplicationState state) {
+				if (state == Qt::ApplicationActive && isVisible()) {
+					maybeRefresh();
+				}
+			});
+	}
+	QObject::connect(
 		Conversation::Events(),
 		&Conversation::Notifier::topicHidden,
 		this,
@@ -330,11 +373,32 @@ Widget::Widget(QWidget *parent, Window::SessionController *controller)
 					_hiddenPeopleOrder.push_back(id);
 				}
 			}
-			if (_query.isEmpty() && _browse->loaded) {
-				fillSuggestions();
+			auto changed = false;
+			for (const auto &id : _hiddenPeople) {
+				changed = _browse->people.remove(id) || changed;
+			}
+			const auto before = _all->people.size();
+			_all->people.erase(
+				std::remove_if(_all->people.begin(), _all->people.end(), [&](
+						const Data::Profile &person) {
+					return _hiddenPeople.contains(person.id);
+				}),
+				_all->people.end());
+			changed = changed || (_all->people.size() != before);
+			if (changed && _query.isEmpty()) {
+				refillSuggestions();
 				rebuild();
 			}
 		});
+	}
+	if (_mode == Mode::AllPeople) {
+		_field->hide();
+		_bar = new Ui::TopBar(this);
+		_bar->setTitle(tr::lng_search_suggested(tr::now));
+		setTopBar(_bar);
+		data().graph().retryDismissals();
+		loadAllPeople(true);
+		return;
 	}
 	data().conversations().loadDismissed(this, nullptr);
 	loadBrowse();
@@ -347,7 +411,9 @@ Data::Session &Widget::data() const {
 }
 
 QString Widget::sectionKey() const {
-	return Window::Routes::Search();
+	return (_mode == Mode::AllPeople)
+		? kAllPeopleRoute
+		: Window::Routes::Search();
 }
 
 void Widget::keyPressEvent(QKeyEvent *e) {
@@ -364,7 +430,13 @@ void Widget::keyPressEvent(QKeyEvent *e) {
 }
 
 bool Widget::handleCommand(Window::Command command) {
-	if (command == Window::Command::Find) {
+	if (_mode == Mode::AllPeople) {
+		if (command == Window::Command::Refresh) {
+			loadAllPeople(true);
+			return true;
+		}
+		return false;
+	} else if (command == Window::Command::Find) {
 		_field->setFocusFast();
 		_field->field()->selectAll();
 		return true;
@@ -373,11 +445,16 @@ bool Widget::handleCommand(Window::Command command) {
 }
 
 void Widget::setInnerFocus() {
+	if (_mode == Mode::AllPeople) {
+		_list->setFocus();
+		return;
+	}
 	_field->setFocusFast();
 }
 
 bool Widget::onBackRequest() {
-	if (_field->text().isEmpty() && _query.isEmpty()) {
+	if (_mode == Mode::AllPeople
+		|| (_field->text().isEmpty() && _query.isEmpty())) {
 		return false;
 	}
 	_field->clear();
@@ -436,14 +513,16 @@ void Widget::setScope(const QString &scope) {
 // ---- browse
 
 void Widget::loadBrowse() {
+	// Read again after a while: what is on screen stays until the new one
+	// arrives (and when it fails).
+	const auto refresh = _browse->loaded;
 	const auto generation = ++_browse->generation;
-	_browse->pending = kBrowseParts;
 	_browse->error = std::nullopt;
-	_browse->trends = std::nullopt;
-	_browse->videos = std::nullopt;
-	_browse->people = std::nullopt;
-	_browse->shown.clear();
-	_browse->peopleCursor = QString();
+	_browse->pending = refresh ? (kBrowseParts - 1) : kBrowseParts;
+	if (!refresh) {
+		_browse->trends = std::nullopt;
+		_browse->videos = std::nullopt;
+	}
 	const auto done = [=, this] {
 		if (generation == _browse->generation) {
 			browsePartDone();
@@ -451,7 +530,7 @@ void Widget::loadBrowse() {
 	};
 	const auto failed = [=, this](const Api::Error &error) {
 		if (generation == _browse->generation) {
-			if (!_browse->error) {
+			if (!_browse->error && !refresh) {
 				_browse->error = error;
 			}
 			browsePartDone();
@@ -487,17 +566,34 @@ void Widget::loadBrowse() {
 		_browse->videos = list;
 		done();
 	}, failed);
+	if (refresh) {
+		// The suggestions keep their own pace.
+		refreshSuggestions();
+		return;
+	}
 	// Dismissals that did not reach the server go out again first.
 	data().graph().retryDismissals();
+	const auto people = ++_browse->peopleGeneration;
+	_browse->fetchingPeople = true;
 	data().graph().suggestions(QString(), kSuggestionsPage, this, [=, this](
 			const Data::SuggestionsPage &page) {
-		if (generation != _browse->generation) {
+		if (people != _browse->peopleGeneration) {
 			return;
 		}
-		_browse->people = page.people;
-		_browse->peopleCursor = page.nextCursor;
+		auto &browse = *_browse;
+		browse.fetchingPeople = false;
+		browse.people.replace(page.people, _hiddenPeople, data().userId());
+		browse.peopleCursor = page.nextCursor;
+		browse.peopleFromStart = false;
+		browse.peopleLoaded = true;
+		browse.peopleThrottle.loaded(NowMs());
 		done();
-	}, failed);
+	}, [=, this](const Api::Error &error) {
+		if (people == _browse->peopleGeneration) {
+			_browse->fetchingPeople = false;
+			failed(error);
+		}
+	});
 	if (_query.isEmpty()) {
 		rebuild();
 	}
@@ -509,60 +605,210 @@ void Widget::browsePartDone() {
 	}
 	_browse->loaded = true;
 	_browse->loadedAt = NowMs();
-	fillSuggestions();
+	refillSuggestions();
 	if (_query.isEmpty()) {
 		rebuild();
 	}
 }
 
-// Keeps up to five people on screen: from the pool, then from the next page.
-void Widget::fillSuggestions() {
-	if (!_browse->people) {
+// Shown again (the tab, the app back in front): what is stale is read again.
+void Widget::maybeRefresh() {
+	if (_mode != Mode::Browse || !_query.isEmpty() || !_browse->loaded) {
+		return;
+	} else if (_browse->pending <= 0
+		&& (NowMs() - _browse->loadedAt > kBrowseStaleMs)) {
+		loadBrowse();
+	} else {
+		refreshSuggestions();
+	}
+}
+
+// A fresh first page of suggestions, at most every ten minutes after the
+// last one that arrived: swapped in place.
+void Widget::refreshSuggestions() {
+	auto &browse = *_browse;
+	if (!browse.peopleThrottle.due(NowMs())) {
 		return;
 	}
-	auto &pool = *_browse->people;
-	const auto myId = data().userId();
-	while (_browse->shown.size() < kBrowsePeople && !pool.isEmpty()) {
-		const auto person = pool.takeFirst();
-		const auto known = std::any_of(
-			_browse->shown.cbegin(),
-			_browse->shown.cend(),
-			[&](const Data::Profile &shown) { return shown.id == person.id; });
-		if (!known && !_hiddenPeople.contains(person.id) && person.id != myId) {
-			_browse->shown.push_back(person);
+	const auto generation = ++browse.peopleGeneration;
+	browse.fetchingPeople = true;
+	data().graph().suggestions(QString(), kSuggestionsPage, this, [=, this](
+			const Data::SuggestionsPage &page) {
+		if (generation != _browse->peopleGeneration) {
+			return;
 		}
-	}
-	if (_browse->shown.size() >= kBrowsePeople
-		|| _browse->peopleCursor.isEmpty()
-		|| _browse->fetchingPeople) {
+		auto &browse = *_browse;
+		browse.fetchingPeople = false;
+		browse.people.replace(page.people, _hiddenPeople, data().userId());
+		browse.peopleCursor = page.nextCursor;
+		browse.peopleFromStart = false;
+		browse.peopleLoaded = true;
+		browse.peopleThrottle.loaded(NowMs());
+		refillSuggestions();
+		if (_query.isEmpty()) {
+			rebuild();
+		}
+	}, [=, this](const Api::Error &) {
+		// Still due: the next showing tries again.
+		if (generation == _browse->peopleGeneration) {
+			_browse->fetchingPeople = false;
+		}
+	});
+}
+
+// Few left waiting behind the rows: the next page, or page 1 again once
+// the server's list ended (it ends after `feed.suggest_max_total` people).
+void Widget::refillSuggestions() {
+	auto &browse = *_browse;
+	if (_mode != Mode::Browse
+		|| !browse.peopleLoaded
+		|| browse.fetchingPeople
+		|| !browse.people.needsRefill()) {
 		return;
 	}
-	_browse->fetchingPeople = true;
-	const auto generation = _browse->generation;
-	data().graph().suggestions(
-		_browse->peopleCursor,
-		kSuggestionsPage,
-		this,
-		[=, this](const Data::SuggestionsPage &page) {
-			if (generation != _browse->generation) {
-				return;
-			}
+	const auto cursor = browse.peopleCursor;
+	if (cursor.isEmpty()) {
+		if (browse.peopleFromStart) {
+			return;
+		}
+		browse.peopleFromStart = true;
+	}
+	browse.fetchingPeople = true;
+	const auto generation = browse.peopleGeneration;
+	data().graph().suggestions(cursor, kSuggestionsPage, this, [=, this](
+			const Data::SuggestionsPage &page) {
+		if (generation != _browse->peopleGeneration) {
+			return;
+		}
+		auto &browse = *_browse;
+		browse.fetchingPeople = false;
+		const auto added = browse.people.refill(
+			page.people,
+			_hiddenPeople,
+			data().userId());
+		browse.peopleCursor = page.people.isEmpty()
+			? QString()
+			: page.nextCursor;
+		if (added && _query.isEmpty()) {
+			rebuild();
+		}
+		refillSuggestions();
+	}, [=, this](const Api::Error &) {
+		if (generation == _browse->peopleGeneration) {
 			_browse->fetchingPeople = false;
-			_browse->peopleCursor = page.people.isEmpty()
-				? QString()
-				: page.nextCursor;
-			*_browse->people += page.people;
-			fillSuggestions();
-			if (_query.isEmpty()) {
-				rebuild();
+			_browse->peopleCursor = QString();
+			_browse->peopleFromStart = true;
+		}
+	});
+}
+
+// A followed suggestion gives its place a moment after the click.
+void Widget::leaveSuggestions(const QString &userId) {
+	auto &browse = *_browse;
+	const auto person = browse.people.find(userId);
+	if (!person || !LeavesSuggestions(FollowStateOf(*person))) {
+		return;
+	}
+	browse.people.remove(userId);
+	refillSuggestions();
+	if (_query.isEmpty()) {
+		rebuild();
+	}
+}
+
+// ---- «دیدن همه»
+
+void Widget::loadAllPeople(bool reset) {
+	auto &all = *_all;
+	if (reset) {
+		++all.generation;
+		all.loading = false;
+		all.done = false;
+		all.cursor = QString();
+		all.error = std::nullopt;
+	}
+	if (all.loading || all.done) {
+		return;
+	}
+	all.loading = true;
+	const auto generation = all.generation;
+	const auto first = all.cursor.isEmpty();
+	data().graph().suggestions(all.cursor, kSuggestionsPage, this, [=, this](
+			const Data::SuggestionsPage &page) {
+		if (generation != _all->generation) {
+			return;
+		}
+		auto &all = *_all;
+		all.loading = false;
+		all.loaded = true;
+		all.error = std::nullopt;
+		if (first) {
+			// (a reload: the people on screen stayed until now)
+			all.people.clear();
+		}
+		const auto me = data().userId();
+		auto added = 0;
+		for (const auto &person : page.people) {
+			const auto known = std::any_of(
+				all.people.cbegin(),
+				all.people.cend(),
+				[&](const Data::Profile &other) { return other.id == person.id; });
+			if (!known
+				&& !person.me
+				&& person.id != me
+				&& !_hiddenPeople.contains(person.id)) {
+				all.people.push_back(person);
+				++added;
 			}
-		},
-		[=, this](const Api::Error &) {
-			if (generation == _browse->generation) {
-				_browse->fetchingPeople = false;
-				_browse->peopleCursor = QString();
-			}
-		});
+		}
+		all.cursor = page.nextCursor;
+		all.done = all.cursor.isEmpty() || page.people.isEmpty();
+		rebuild();
+		// A page with nobody new (hidden here): go on.
+		if (!added && !all.done) {
+			loadAllPeople(false);
+		}
+	}, [=, this](const Api::Error &error) {
+		if (generation != _all->generation) {
+			return;
+		}
+		_all->loading = false;
+		_all->error = error;
+		rebuild();
+	});
+	rebuild();
+}
+
+void Widget::buildAll() {
+	const auto &all = *_all;
+	const auto retry = [&](const Api::Error &error) {
+		addState(
+			&st::searchStateErrorIcon,
+			tr::lng_error_load(tr::now),
+			Support::ErrorText(error),
+			tr::lng_retry(tr::now),
+			kCmdRetryAllPeople);
+	};
+	if (!all.loaded) {
+		if (all.error && !all.loading) {
+			retry(*all.error);
+		}
+		return;
+	} else if (all.people.isEmpty() && all.done) {
+		addState(
+			&st::searchStateDiscoverIcon,
+			tr::lng_search_no_suggestions(tr::now),
+			QString());
+		return;
+	}
+	for (const auto &person : all.people) {
+		addPerson(person, true);
+	}
+	if (all.loading) {
+		addRow(kLoader);
+	} else if (all.error) {
+		retry(*all.error);
+	}
 }
 
 // ---- results
@@ -631,7 +877,10 @@ void Widget::searchPartDone(int generation) {
 }
 
 void Widget::loadMoreResults() {
-	if (_query.isEmpty()) {
+	if (_mode == Mode::AllPeople) {
+		loadAllPeople(false);
+		return;
+	} else if (_query.isEmpty()) {
 		return;
 	}
 	if (_embed) {
@@ -652,7 +901,8 @@ void Widget::loadMoreResults() {
 	results.loadingMore = true;
 	const auto generation = results.generation;
 	const auto scope = _scope;
-	data().graph().search(_query, scope, results.nextOffset, this, [=, this](
+	const auto offset = results.nextOffset;
+	data().graph().search(_query, scope, offset, this, [=, this](
 			const Data::SearchResults &page) {
 		if (generation != _results->generation) {
 			return;
@@ -699,16 +949,27 @@ void Widget::loadMoreResults() {
 				}
 			}
 		}
-		// A page that brought nothing new ends the list.
-		results.nextOffset = added ? page.nextOffset : 0;
+		// The offset only goes forward: a page whose rows were all known
+		// or left out (hidden posts, filtered conversations) goes on.
+		results.nextOffset = (page.nextOffset > offset) ? page.nextOffset : 0;
 		rebuild();
+		if (!added && results.nextOffset > 0) {
+			loadMoreResults();
+		}
 	}, [=, this](const Api::Error &error) {
 		if (generation != _results->generation) {
 			return;
 		}
 		_results->loadingMore = false;
 		_results->nextOffset = 0;
-		Support::ShowError(controller(), error);
+		// The server pages only so deep (search.max_page × 10) and answers
+		// an offset past that with `search.query_invalid`: the list ends.
+		const auto tooDeep = (offset > 0)
+			&& (error.status == 400)
+			&& (error.code == u"search.query_invalid");
+		if (!tooDeep) {
+			Support::ShowError(controller(), error);
+		}
 		rebuild();
 	});
 	rebuild();
@@ -817,7 +1078,9 @@ void Widget::addState(
 
 void Widget::rebuild() {
 	_rows.clear();
-	if (_query.isEmpty()) {
+	if (_mode == Mode::AllPeople) {
+		buildAll();
+	} else if (_query.isEmpty()) {
 		buildBrowse();
 	} else {
 		buildResults();
@@ -848,7 +1111,9 @@ void Widget::refreshList() {
 }
 
 void Widget::updateSkeleton() {
-	const auto loading = _query.isEmpty()
+	const auto loading = (_mode == Mode::AllPeople)
+		? (!_all->loaded && !_all->error)
+		: _query.isEmpty()
 		? (!_browse->loaded && _recent.empty())
 		: (!_results->loaded && !_embed);
 	_skeleton->setVisible(loading && _rows.empty());
@@ -870,7 +1135,7 @@ void Widget::buildBrowse() {
 	if (!browse.loaded) {
 		return;
 	}
-	if (!browse.trends && !browse.videos && !browse.people) {
+	if (!browse.trends && !browse.videos && !browse.peopleLoaded) {
 		addState(
 			&st::searchStateErrorIcon,
 			tr::lng_error_load(tr::now),
@@ -925,10 +1190,13 @@ void Widget::buildBrowse() {
 			row.posts = videos.mid(i, columns);
 		}
 	}
-	if (!browse.shown.isEmpty()) {
+	if (const auto people = browse.people.visible(); !people.isEmpty()) {
 		any = true;
-		addHeader(tr::lng_search_people_may_know(tr::now));
-		for (const auto &person : browse.shown) {
+		addHeader(
+			tr::lng_search_people_may_know(tr::now),
+			tr::lng_search_see_all(tr::now),
+			kCmdAllPeople);
+		for (const auto &person : people) {
 			addPerson(person, true);
 		}
 	}
@@ -1088,13 +1356,24 @@ void Widget::buildResults() {
 }
 
 void Widget::requestTopicInfo(const QStringList &slugs) {
+	// At most so many at once; the others are asked for when the rows are
+	// built again.
+	const auto now = NowMs();
 	for (const auto &slug : slugs) {
-		if (_topicInfoRequested.contains(slug)
-			|| _topicInfoRequested.size() >= kTopicInfoLimit * 8) {
+		if (_topicInfoRequested.size() >= kTopicInfoLimit * 8) {
+			break;
+		} else if (_topicInfoRequested.contains(slug)
+			|| _topicInfo.contains(slug)) {
+			continue;
+		} else if (const auto failed = _topicInfoFailedAt.constFind(slug);
+			failed != _topicInfoFailedAt.cend()
+				&& now - *failed < kTopicInfoRetryMs) {
 			continue;
 		}
 		_topicInfoRequested.insert(slug);
 		data().feed().topic(slug, this, [=, this](const Data::TopicInfo &info) {
+			_topicInfoRequested.remove(slug);
+			_topicInfoFailedAt.remove(slug);
 			_topicInfo.insert(slug, info);
 			for (auto i = 0; i != int(_rows.size()); ++i) {
 				auto &row = *_rows[i];
@@ -1110,8 +1389,10 @@ void Widget::requestTopicInfo(const QStringList &slugs) {
 					_list->updateRow(i);
 				}
 			}
-		}, [](const Api::Error &) {
-			// The row stays without counts.
+		}, [=, this](const Api::Error &) {
+			// The row stays without counts for now.
+			_topicInfoRequested.remove(slug);
+			_topicInfoFailedAt.insert(slug, NowMs());
 		});
 	}
 }
@@ -1974,6 +2255,8 @@ void Widget::actionTriggered(int index, int action) {
 		break;
 	case kCmdRetrySearch: runSearch(); break;
 	case kCmdNewConversation: openNewConversation(); break;
+	case kCmdAllPeople: controller()->openRoute(kAllPeopleRoute); break;
+	case kCmdRetryAllPeople: loadAllPeople(true); break;
 	}
 }
 
@@ -1994,13 +2277,22 @@ void Widget::setFollowState(
 	for (auto &profile : _results->users) {
 		apply(profile);
 	}
-	for (auto &profile : _browse->shown) {
-		apply(profile);
-	}
-	if (_browse->people) {
-		for (auto &profile : *_browse->people) {
-			apply(profile);
+	if (const auto person = _browse->people.find(userId)) {
+		apply(*person);
+		// Followed: the row gives its place a moment later (unless the
+		// follow is taken back or fails meanwhile).
+		if (_mode == Mode::Browse
+			&& LeavesSuggestions(state)
+			&& !_leaving.contains(userId)) {
+			_leaving.insert(userId);
+			Ui::CallDelayed(SuggestionQueue::kFollowLeaveMs, this, [=, this] {
+				_leaving.remove(userId);
+				leaveSuggestions(userId);
+			});
 		}
+	}
+	for (auto &profile : _all->people) {
+		apply(profile);
 	}
 	for (auto i = 0; i != int(_rows.size()); ++i) {
 		auto &row = *_rows[i];
@@ -2082,29 +2374,50 @@ void Widget::applyFollow(const QString &userId, bool follow) {
 }
 
 void Widget::dismissSuggestion(const QString &userId) {
-	auto &shown = _browse->shown;
-	shown.erase(
-		std::remove_if(shown.begin(), shown.end(), [&](const Data::Profile &person) {
-			return person.id == userId;
-		}),
-		shown.end());
-	// Never again on this device, whatever the server remembers.
 	if (!_hiddenPeople.contains(userId)) {
-		_hiddenPeople.insert(userId);
-		_hiddenPeopleOrder.push_back(userId);
-		while (_hiddenPeopleOrder.size() > kMaxHiddenPeople) {
-			_hiddenPeople.remove(_hiddenPeopleOrder.takeFirst());
-		}
+		// Never again on this device, whatever the server remembers.
+		hidePerson(userId);
 		if (const auto db = data().local()) {
 			db->setValue(
 				kHiddenPeopleKey,
 				QJsonArray::fromStringList(_hiddenPeopleOrder));
 		}
 	}
+	// Every list of suggestions hears of it (hidePerson again: no-op here).
 	data().graph().dismissSuggestion(userId);
-	fillSuggestions();
-	if (_query.isEmpty()) {
+}
+
+void Widget::hidePerson(const QString &userId) {
+	if (!_hiddenPeople.contains(userId)) {
+		_hiddenPeople.insert(userId);
+		_hiddenPeopleOrder.push_back(userId);
+		while (_hiddenPeopleOrder.size() > kMaxHiddenPeople) {
+			_hiddenPeople.remove(_hiddenPeopleOrder.takeFirst());
+		}
+	}
+	auto &all = _all->people;
+	const auto before = all.size();
+	all.erase(
+		std::remove_if(all.begin(), all.end(), [&](const Data::Profile &person) {
+			return person.id == userId;
+		}),
+		all.end());
+	if (all.size() != before && _mode == Mode::AllPeople) {
 		rebuild();
+		if (all.isEmpty()) {
+			loadAllPeople(false);
+		}
+	}
+	if (_browse->people.find(userId)) {
+		// The click lands, then the next one takes the place.
+		Ui::CallDelayed(SuggestionQueue::kDismissLeaveMs, this, [=, this] {
+			if (_browse->people.remove(userId)) {
+				refillSuggestions();
+				if (_query.isEmpty()) {
+					rebuild();
+				}
+			}
+		});
 	}
 }
 
@@ -2157,18 +2470,53 @@ void Widget::showRowMenu(int index, QPoint globalPosition) {
 		if (row.kind == kTrend && !topicId.isEmpty()) {
 			menu->addSeparator();
 			menu->addAction(tr::lng_eli_topic_not_interested(tr::now), [=] {
-				window->session().data().feed().hideTopic(topicId, true);
-				if (!weak || !weak->_browse->trends) {
+				if (!weak) {
 					return;
 				}
-				auto &trends = *weak->_browse->trends;
-				trends.erase(
-					std::remove_if(trends.begin(), trends.end(), [&](
-							const Data::Trend &trend) {
-						return trend.id == topicId;
-					}),
-					trends.end());
-				window->showToast(tr::lng_search_topic_hidden(tr::now));
+				// The row leaves at once and comes back where it was when
+				// the server did not take it.
+				auto removed = std::optional<Data::Trend>();
+				auto at = 0;
+				if (weak->_browse->trends) {
+					auto &trends = *weak->_browse->trends;
+					for (auto i = 0; i != int(trends.size()); ++i) {
+						if (trends[i].id == topicId) {
+							removed = trends[i];
+							at = i;
+							trends.remove(i);
+							break;
+						}
+					}
+				}
+				const auto generation = weak->_browse->generation;
+				window->session().data().feed().hideTopic(
+					topicId,
+					true,
+					weak.data(),
+					[=] { window->showToast(tr::lng_search_topic_hidden(tr::now)); },
+					[=] {
+						if (!weak
+							|| !removed
+							|| weak->_browse->generation != generation
+							|| !weak->_browse->trends) {
+							return;
+						}
+						auto &trends = *weak->_browse->trends;
+						const auto known = std::any_of(
+							trends.cbegin(),
+							trends.cend(),
+							[&](const Data::Trend &trend) {
+								return trend.id == topicId;
+							});
+						if (!known) {
+							trends.insert(
+								std::min(at, int(trends.size())),
+								*removed);
+							if (weak->_query.isEmpty()) {
+								weak->rebuild();
+							}
+						}
+					});
 				if (weak->_query.isEmpty()) {
 					weak->rebuild();
 				}
@@ -2228,6 +2576,18 @@ void Widget::showRowMenu(int index, QPoint globalPosition) {
 
 void Widget::resizeEvent(QResizeEvent *e) {
 	Q_UNUSED(e);
+	if (_bar) {
+		_bar->resizeToWidth(width());
+		_bar->move(0, 0);
+		const auto area = QRect(
+			0,
+			_bar->height(),
+			width(),
+			std::max(height() - _bar->height(), 0));
+		_scroll->setGeometry(area);
+		_skeleton->setGeometry(area);
+		return;
+	}
 	const auto &padding = st::searchFieldPadding;
 	_field->resizeToWidth(std::max(width() - padding.left() - padding.right(), 1));
 	_field->moveToLeft(
@@ -2256,11 +2616,7 @@ void Widget::paintEvent(QPaintEvent *e) {
 void Widget::showEvent(QShowEvent *e) {
 	SectionWidget::showEvent(e);
 	// Back on the tab after a while: the browse sections are read again.
-	if (_query.isEmpty()
-		&& _browse->loaded
-		&& (NowMs() - _browse->loadedAt > kBrowseStaleMs)) {
-		loadBrowse();
-	}
+	maybeRefresh();
 }
 
 bool Widget::eventFilter(QObject *object, QEvent *event) {

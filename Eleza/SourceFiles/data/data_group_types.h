@@ -51,6 +51,13 @@ struct Group {
 	int adminCount = 0;         // the owner and the admins together
 	bool hideMembers = false;   // the group's setting: ordinary members see only the admins
 	bool membersHidden = false; // the member list is limited for me (the setting, and I am a member)
+	// Read receipts: the furthest any member other than me has read. My own
+	// messages up to it show two ticks. It only ever grows.
+	qint64 outboxReadSeq = 0;
+	// The report / block bar: "added_by_stranger" with who added me
+	// (`addedBy`); empty: no bar.
+	QString actionBar;
+	QString addedBy;
 
 	[[nodiscard]] bool valid() const {
 		return !id.isEmpty();

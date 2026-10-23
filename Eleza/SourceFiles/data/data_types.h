@@ -65,8 +65,10 @@ struct Profile : User {
 	QVector<User> mutuals;
 	int mutualsTotal = 0;
 	std::optional<Birthday> birthday;
-	QString reason;       // suggestions: mutual | popular | follows_you | province
+	QString reason;       // suggestions: mutual | contact | follows_you | groups | interest | province | new | popular | active
 	int mutualCount = 0;  // suggestions
+	int groupCount = 0;   // suggestions: small groups shared with me (`groups`)
+	bool joinedRecently = false; // suggestions: signed up lately
 
 	[[nodiscard]] const User &card() const {
 		return *this;
@@ -158,6 +160,9 @@ struct ChatInfo {
 	std::optional<Draft> draft;
 	QVector<qint64> pins;   // pinned message seqs
 	int liveShares = 0;
+	// The report / block bar: "stranger" (somebody I have no tie with
+	// wrote first); empty: no bar.
+	QString actionBar;
 
 	[[nodiscard]] bool valid() const {
 		return !chat.isEmpty();
@@ -266,20 +271,77 @@ struct ViaBot {
 	[[nodiscard]] QJsonObject toJson() const;
 };
 
-// The story a story_reply / story_reaction message points at (StoryRefView).
+// The story a story_reply / story_reaction / story_share message points at
+// (StoryRefView).
 struct StoryRef {
 	QString storyId;
-	QString owner;      // the story's owner (the other member, or me)
+	QString owner;      // the story's owner (the other member, me, or a third person)
 	QString thumbUrl;   // an API path: fetched with the token (MediaRef::Story)
 	QString kind;       // image | video | post
 	qint64 expiresAt = 0; // unix seconds
 	QString emoji;      // story_reaction
+	QString comment;    // story_share: the sender's own words
+	// Whether I may open it, computed for me on history and sync pages;
+	// absent on a live message (and from an older server).
+	std::optional<bool> available;
+
+	// How far past `expires_at` this clock must be before the story counts
+	// as gone: the computer's clock may run a little ahead of the server's.
+	static constexpr auto kExpirySkew = qint64(60);
 
 	// `now` in unix seconds.
 	[[nodiscard]] bool expired(qint64 now) const {
 		return expiresAt > 0 && now >= expiresAt;
 	}
+	// Known to be gone: «استوری دیگر در دسترس نیست» instead of the story.
+	// Past `expires_at` it is gone whatever the message says; then the
+	// server's `available: false`. A stored `true` only says it was there
+	// when that page was read (the message is never refreshed), so like an
+	// absent value it leaves the answer to the thumbnail and to opening it.
+	[[nodiscard]] bool gone(qint64 now) const {
+		if (expiresAt > 0 && now - expiresAt >= kExpirySkew) {
+			return true;
+		}
+		return available.has_value() && !*available;
+	}
 	[[nodiscard]] static StoryRef FromJson(const QJsonObject &json);
+	[[nodiscard]] QJsonObject toJson() const;
+};
+
+// A self-destructing photo or video (the backend's
+// docs/self-destruct-media.md): view once, or a timer that starts when the
+// recipient's phone shows it. Only the phone apps open one; this app is sent
+// a text that says so, with this to tell what it is and how far it got.
+struct SelfDestruct {
+	QString mode;          // view_once | timer
+	int seconds = 0;       // a timer
+	QString state;         // unopened | opened | expired
+	qint64 openedAt = 0;   // ms, the server's clock (once shown)
+	qint64 destructAt = 0; // ms, the server's clock (once shown)
+
+	[[nodiscard]] bool viewOnce() const {
+		return mode == u"view_once";
+	}
+	[[nodiscard]] bool opened() const {
+		return state == u"opened";
+	}
+	[[nodiscard]] bool expired() const {
+		return state == u"expired";
+	}
+	[[nodiscard]] static SelfDestruct FromJson(const QJsonObject &json);
+	[[nodiscard]] QJsonObject toJson() const;
+	friend bool operator==(const SelfDestruct &, const SelfDestruct &) = default;
+};
+
+// What a send asks for: exactly one of the two (`seconds` one of
+// client-config chat.self_destruct.timers).
+struct SelfDestructInput {
+	bool viewOnce = false;
+	int seconds = 0;
+
+	[[nodiscard]] bool valid() const {
+		return viewOnce != (seconds > 0);
+	}
 	[[nodiscard]] QJsonObject toJson() const;
 };
 
@@ -327,6 +389,7 @@ enum class MessageKind {
 	Call,
 	StoryReply,    // "story_reply": text + Message::story
 	StoryReaction, // "story_reaction": Message::story (with the emoji)
+	StoryShare,    // "story_share": a story sent on; Message::story, the comment as the text
 	Unknown,       // a kind this build does not know: Message::kindName has the wire value
 };
 [[nodiscard]] MessageKind MessageKindFromString(const QString &kind);
@@ -392,7 +455,10 @@ struct Message {
 	std::optional<Sticker> sticker;
 	std::optional<ReplyMarkup> replyMarkup;
 	std::optional<ViaBot> viaBot;
-	std::optional<StoryRef> story; // story_reply / story_reaction
+	std::optional<StoryRef> story; // story_reply / story_reaction / story_share
+	// Self-destructing media: the bubble is drawn from this, never from the
+	// text (the server's «only on the phone» line) or an attachment.
+	std::optional<SelfDestruct> selfDestruct;
 	// Groups: the sender's tag and role ("owner" | "admin") when it was read
 	// (Data::Groups::senderTag has the latest); both "" for an ordinary
 	// member without a tag.
@@ -429,6 +495,11 @@ struct Message {
 	// Resolves `mine` and the read state against a chat header.
 	void resolveLocal(const ChatInfo *info, const QString &myUserId);
 };
+
+// The person whose screenshot of a self-destructing message a service
+// message tells about («self_destruct_screenshot:<taker>:<seq>»); empty for
+// any other code.
+[[nodiscard]] QString SelfDestructScreenshotTaker(const QString &systemCode);
 
 // Server messages by seq, then local pending ones by creation time.
 [[nodiscard]] bool MessageLess(const Message &a, const Message &b);

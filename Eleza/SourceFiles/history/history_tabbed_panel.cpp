@@ -12,6 +12,7 @@
 #include "support/media_image.h"
 #include "support/sticker_player.h"
 #include "ui/effects/shadow.h"
+#include "ui/emoji/emoji_pack.h"
 #include "ui/painter.h"
 #include "ui/ui_utility.h"
 #include "ui/widgets/buttons.h"
@@ -32,25 +33,197 @@
 namespace History {
 namespace {
 
-constexpr auto kMaxRecentEmoji = 36;
+// Pressed and held this long on an emoji that takes a skin tone: the tones.
+constexpr auto kEmojiTonesDelay = 350;
 constexpr auto kStickerColumns = 4;
 // Pressed and held this long: the big preview instead of sending.
 constexpr auto kStickerPreviewDelay = 350;
 
+struct EmojiItem {
+	QString base; // the panel's own (without a tone)
+	QString code; // what is shown and sent
+};
+
 struct EmojiSection {
 	QString title;
-	QStringList emoji;
+	std::vector<EmojiItem> items;
 	int top = 0;
 	int category = -1; // index in EmojiCategories(), -1 for recents / results
+	bool tones = false; // a long press offers the skin tones
 };
 
 // ---- the emoji grid
+
+// The skin tones of one emoji over the grid: the emoji without a tone and
+// with each of the five, light to dark (in both directions, as everywhere).
+class EmojiTones final : public Ui::RpWidget {
+public:
+	explicit EmojiTones(QWidget *parent)
+	: RpWidget(parent) {
+		setMouseTracking(true);
+		setCursor(style::cur_pointer);
+		hide();
+	}
+
+	void showFor(const QString &base, int current, QRect cell) {
+		_base = base;
+		_current = current;
+		_over = -1;
+		const auto side = int(st::historyEmojiCell);
+		const auto padding = int(st::historyEmojiTonesPadding);
+		const auto w = (Ui::Emoji::kToneCount + 1) * side + 2 * padding;
+		const auto h = side + 2 * padding;
+		const auto parent = parentWidget();
+		const auto left = std::clamp(
+			cell.center().x() - w / 2,
+			padding,
+			std::max(parent->width() - w - padding, padding));
+		const auto above = cell.top() - h;
+		const auto &extend = st::historyEmojiTonesShadow.extend;
+		setGeometry(QRect(
+			left,
+			(above >= 0) ? above : (cell.bottom() + 1),
+			w,
+			h).marginsAdded(extend));
+		show();
+		raise();
+		update();
+	}
+	[[nodiscard]] QString base() const {
+		return _base;
+	}
+	void setChosenCallback(Fn<void(int tone)> callback) {
+		_chosen = std::move(callback);
+	}
+	// While the press that opened it is still held on the grid.
+	void dragTo(QPoint global) {
+		setOver(toneAt(mapFromGlobal(global)));
+	}
+	// The press is released over the grid: picks the tone under it, if any.
+	bool dropAt(QPoint global) {
+		const auto tone = toneAt(mapFromGlobal(global));
+		if (tone == -2) {
+			return false;
+		}
+		choose(tone);
+		return true;
+	}
+
+protected:
+	void paintEvent(QPaintEvent *e) override {
+		Q_UNUSED(e);
+		auto p = Painter(this);
+		const auto body = bodyRect();
+		Ui::Shadow::Paint(
+			p,
+			body,
+			st::historyEmojiTonesRadius,
+			st::historyEmojiTonesShadow);
+		{
+			auto hq = PainterHighQualityEnabler(p);
+			p.setPen(QPen(st::historyPanelBorder->c, 1.));
+			p.setBrush(st::historyPanelBg);
+			p.drawRoundedRect(
+				QRectF(body).marginsRemoved(QMarginsF(0.5, 0.5, 0.5, 0.5)),
+				st::historyEmojiTonesRadius,
+				st::historyEmojiTonesRadius);
+		}
+		for (auto tone = -1; tone != Ui::Emoji::kToneCount; ++tone) {
+			const auto rect = toneRect(tone);
+			if (tone == _current || tone == _over) {
+				auto hq = PainterHighQualityEnabler(p);
+				p.setPen(Qt::NoPen);
+				p.setBrush((tone == _over)
+					? st::historyEmojiOverBg
+					: st::historyEmojiCategoryActiveBg);
+				p.drawRoundedRect(
+					rect.marginsRemoved(QMargins(1, 1, 1, 1)),
+					st::historyEmojiOverRadius,
+					st::historyEmojiOverRadius);
+			}
+			p.setPen(st::textPrimary);
+			Ui::Emoji::PaintOne(
+				p,
+				Ui::Emoji::WithTone(_base, tone),
+				rect,
+				st::historyEmojiSize,
+				st::historyEmojiFont->f);
+		}
+	}
+	void mouseMoveEvent(QMouseEvent *e) override {
+		setOver(toneAt(e->pos()));
+	}
+	void mousePressEvent(QMouseEvent *e) override {
+		if (!bodyRect().contains(e->pos())) {
+			// The shadow: as if it was not there.
+			hide();
+		}
+	}
+	void leaveEvent(QEvent *e) override {
+		Q_UNUSED(e);
+		setOver(-2);
+	}
+	void mouseReleaseEvent(QMouseEvent *e) override {
+		const auto tone = toneAt(e->pos());
+		if (e->button() == Qt::LeftButton && tone != -2) {
+			choose(tone);
+		}
+	}
+
+private:
+	[[nodiscard]] QRect bodyRect() const {
+		return rect().marginsRemoved(st::historyEmojiTonesShadow.extend);
+	}
+	// -1: without a tone, 0…4 the tones; -2: none of them.
+	[[nodiscard]] QRect toneRect(int tone) const {
+		const auto side = int(st::historyEmojiCell);
+		const auto padding = int(st::historyEmojiTonesPadding);
+		const auto body = bodyRect();
+		return QRect(
+			body.x() + padding + (tone + 1) * side,
+			body.y() + padding,
+			side,
+			side);
+	}
+	[[nodiscard]] int toneAt(QPoint position) const {
+		for (auto tone = -1; tone != Ui::Emoji::kToneCount; ++tone) {
+			if (toneRect(tone).contains(position)) {
+				return tone;
+			}
+		}
+		return -2;
+	}
+	void setOver(int tone) {
+		if (_over != tone) {
+			_over = tone;
+			update();
+		}
+	}
+	void choose(int tone) {
+		hide();
+		if (const auto callback = _chosen) {
+			callback(tone);
+		}
+	}
+
+	QString _base;
+	int _current = -1;
+	int _over = -2;
+	Fn<void(int tone)> _chosen;
+
+};
 
 class EmojiGrid final : public Ui::RpWidget {
 public:
 	explicit EmojiGrid(QWidget *parent)
 	: RpWidget(parent) {
 		setMouseTracking(true);
+		_holdTimer.setSingleShot(true);
+		connect(&_holdTimer, &QTimer::timeout, this, [this] {
+			if (_pressed.x() >= 0) {
+				offerTones(_pressed);
+			}
+		});
 	}
 
 	void setSections(std::vector<EmojiSection> sections) {
@@ -61,8 +234,29 @@ public:
 		}
 		update();
 	}
-	void setChosenCallback(Fn<void(const QString &)> callback) {
+	void setChosenCallback(Fn<void(const EmojiItem &)> callback) {
 		_chosen = std::move(callback);
+	}
+	// A press held on an emoji that takes a tone: `cell` in the grid.
+	void setTonesCallback(Fn<void(const EmojiItem &, QRect cell)> callback) {
+		_tones = std::move(callback);
+	}
+	void setTonesPopup(EmojiTones *popup) {
+		_tonesPopup = popup;
+	}
+	// The tone of an emoji was chosen: the grid shows it from now on.
+	void updateCode(const QString &base, const QString &code) {
+		for (auto &section : _sections) {
+			if (!section.tones) {
+				continue;
+			}
+			for (auto &item : section.items) {
+				if (item.base == base) {
+					item.code = code;
+				}
+			}
+		}
+		update();
 	}
 	[[nodiscard]] int sectionTop(int category) const {
 		for (const auto &section : _sections) {
@@ -83,7 +277,7 @@ public:
 	}
 	[[nodiscard]] bool empty() const {
 		for (const auto &section : _sections) {
-			if (!section.emoji.isEmpty()) {
+			if (!section.items.empty()) {
 				return false;
 			}
 		}
@@ -99,11 +293,11 @@ protected:
 		auto top = 0;
 		for (auto &section : _sections) {
 			section.top = top;
-			if (section.emoji.isEmpty()) {
+			if (section.items.empty()) {
 				continue;
 			}
 			top += st::historyPanelHeaderHeight;
-			const auto rows = (int(section.emoji.size()) + _columns - 1) / _columns;
+			const auto rows = (int(section.items.size()) + _columns - 1) / _columns;
 			top += rows * st::historyEmojiCell;
 		}
 		return top + padding.bottom();
@@ -116,10 +310,10 @@ protected:
 		const auto &padding = st::historyPanelPadding;
 		for (auto s = 0; s != int(_sections.size()); ++s) {
 			const auto &section = _sections[s];
-			if (section.emoji.isEmpty()) {
+			if (section.items.empty()) {
 				continue;
 			}
-			const auto rows = (int(section.emoji.size()) + _columns - 1) / _columns;
+			const auto rows = (int(section.items.size()) + _columns - 1) / _columns;
 			const auto bottom = section.top + st::historyPanelHeaderHeight + rows * cell;
 			if (bottom < clip.top() || section.top > clip.bottom()) {
 				continue;
@@ -133,9 +327,8 @@ protected:
 					+ 2,
 				width(),
 				section.title);
-			p.setFont(st::historyEmojiFont);
 			p.setPen(st::textPrimary);
-			for (auto i = 0; i != int(section.emoji.size()); ++i) {
+			for (auto i = 0; i != int(section.items.size()); ++i) {
 				const auto rect = cellRect(s, i);
 				if (!rect.intersects(clip)) {
 					continue;
@@ -150,17 +343,29 @@ protected:
 						st::historyEmojiOverRadius);
 					p.setPen(st::textPrimary);
 				}
-				p.drawText(rect, Qt::AlignCenter, section.emoji[i]);
+				Ui::Emoji::PaintOne(
+					p,
+					section.items[i].code,
+					rect,
+					st::historyEmojiSize,
+					st::historyEmojiFont->f);
 			}
 		}
 	}
 
 	void mouseMoveEvent(QMouseEvent *e) override {
+		if (_tonesShownByPress && _tonesPopup && _tonesPopup->isVisible()) {
+			_tonesPopup->dragTo(e->globalPosition().toPoint());
+			return;
+		}
 		const auto over = itemAt(e->pos());
 		if (_over != over) {
 			_over = over;
 			setCursor((over.x() >= 0) ? style::cur_pointer : style::cur_default);
 			update();
+		}
+		if (_pressed.x() >= 0 && _pressed != over) {
+			_holdTimer.stop();
 		}
 	}
 	void leaveEvent(QEvent *e) override {
@@ -171,19 +376,50 @@ protected:
 		}
 	}
 	void mousePressEvent(QMouseEvent *e) override {
+		if (_tonesPopup && _tonesPopup->isVisible()) {
+			_tonesPopup->hide();
+		}
+		_tonesShownByPress = false;
 		_pressed = (e->button() == Qt::LeftButton) ? itemAt(e->pos()) : QPoint(-1, -1);
+		if (_pressed.x() >= 0 && takesTones(_pressed)) {
+			_holdTimer.start(kEmojiTonesDelay);
+		} else if (e->button() == Qt::RightButton) {
+			// The context click offers the tones at once.
+			const auto item = itemAt(e->pos());
+			if (item.x() >= 0 && takesTones(item)) {
+				offerTones(item);
+			}
+		}
 	}
 	void mouseReleaseEvent(QMouseEvent *e) override {
+		_holdTimer.stop();
 		const auto pressed = std::exchange(_pressed, QPoint(-1, -1));
+		if (std::exchange(_tonesShownByPress, false)) {
+			// Released over a tone: that one; anywhere else: the tones stay.
+			if (_tonesPopup) {
+				_tonesPopup->dropAt(e->globalPosition().toPoint());
+			}
+			return;
+		}
 		const auto item = itemAt(e->pos());
 		if (e->button() == Qt::LeftButton && item.x() >= 0 && item == pressed) {
 			if (const auto callback = _chosen) {
-				callback(_sections[item.x()].emoji[item.y()]);
+				callback(_sections[item.x()].items[item.y()]);
 			}
 		}
 	}
 
 private:
+	[[nodiscard]] bool takesTones(QPoint item) const {
+		const auto &section = _sections[item.x()];
+		return section.tones && Ui::Emoji::TakesTone(section.items[item.y()].base);
+	}
+	void offerTones(QPoint item) {
+		if (const auto callback = _tones) {
+			_tonesShownByPress = (_pressed == item);
+			callback(_sections[item.x()].items[item.y()], cellRect(item.x(), item.y()));
+		}
+	}
 	[[nodiscard]] QRect cellRect(int section, int index) const {
 		const auto cell = int(st::historyEmojiCell);
 		const auto column = index % _columns;
@@ -196,9 +432,15 @@ private:
 			width());
 	}
 	[[nodiscard]] QPoint itemAt(QPoint position) const {
+		const auto cell = int(st::historyEmojiCell);
 		for (auto s = 0; s != int(_sections.size()); ++s) {
 			const auto &section = _sections[s];
-			for (auto i = 0; i != int(section.emoji.size()); ++i) {
+			const auto top = section.top + st::historyPanelHeaderHeight;
+			const auto rows = (int(section.items.size()) + _columns - 1) / _columns;
+			if (position.y() < top || position.y() >= top + rows * cell) {
+				continue;
+			}
+			for (auto i = 0; i != int(section.items.size()); ++i) {
 				if (cellRect(s, i).contains(position)) {
 					return QPoint(s, i);
 				}
@@ -211,7 +453,11 @@ private:
 	int _columns = 8;
 	QPoint _over = QPoint(-1, -1); // (section, index)
 	QPoint _pressed = QPoint(-1, -1);
-	Fn<void(const QString &)> _chosen;
+	QTimer _holdTimer;
+	bool _tonesShownByPress = false;
+	QPointer<EmojiTones> _tonesPopup;
+	Fn<void(const EmojiItem &)> _chosen;
+	Fn<void(const EmojiItem &, QRect)> _tones;
 
 };
 
@@ -797,8 +1043,16 @@ protected:
 			if (_items[i].icon) {
 				_items[i].icon->paintInCenter(p, rect);
 			} else {
+				// The pack's picture (the fonts' emoji without it), grey
+				// unless chosen.
 				p.setPen(st::textPrimary);
-				p.drawText(rect, Qt::AlignCenter, _items[i].glyph);
+				Ui::Emoji::PaintOne(
+					p,
+					_items[i].glyph,
+					rect,
+					st::historyEmojiCategorySize,
+					st::historyEmojiCategoryFont->f,
+					_items[i].id != _active);
 			}
 		}
 	}
@@ -862,11 +1116,34 @@ public:
 		tr::lng_history_emoji_search(tr::now)))
 	, _scroll(Ui::CreateChild<Ui::ScrollArea>(this))
 	, _grid(_scroll->setOwnedWidget(Ui::object_ptr<EmojiGrid>(_scroll)))
-	, _strip(Ui::CreateChild<IconsStrip>(this)) {
+	, _strip(Ui::CreateChild<IconsStrip>(this))
+	, _tones(Ui::CreateChild<EmojiTones>(this)) {
 		_scroll->setTopBottomShadows(false, false);
-		_grid->setChosenCallback([this](const QString &emoji) {
-			remember(emoji);
-			Q_EMIT _panel->emojiChosen(emoji);
+		_grid->setTonesPopup(_tones);
+		_grid->setChosenCallback([this](const EmojiItem &item) {
+			choose(item.code);
+		});
+		_grid->setTonesCallback([this](const EmojiItem &item, QRect cell) {
+			const auto &tones = Core::App().settings().emojiTones();
+			const auto i = tones.constFind(Ui::Emoji::Strip(item.base));
+			_tones->showFor(
+				item.base,
+				(i != tones.cend()) ? *i : -1,
+				QRect(_grid->mapTo(this, cell.topLeft()), cell.size()));
+		});
+		_tones->setChosenCallback([this](int tone) {
+			const auto base = _tones->base();
+			auto &settings = Core::App().settings();
+			auto tones = settings.emojiTones();
+			if (tone >= 0) {
+				tones.insert(Ui::Emoji::Strip(base), tone);
+			} else {
+				tones.remove(Ui::Emoji::Strip(base));
+			}
+			settings.setEmojiTones(tones);
+			const auto code = Ui::Emoji::WithTone(base, tone);
+			_grid->updateCode(base, code);
+			choose(code);
 		});
 		QObject::connect(_search, &Ui::SearchField::changed, this, [this](const QString &) {
 			rebuild();
@@ -879,10 +1156,12 @@ public:
 			}
 		});
 		QObject::connect(_scroll, &Ui::ScrollArea::scrolled, this, [this] {
+			_tones->hide();
 			const auto category = _grid->categoryAt(_scroll->scrollTop() + 20);
 			_strip->setActive((category < 0) ? u"recent"_s : QString::number(category));
 		});
 		_strip->setClickedCallback([this](const QString &id) {
+			_tones->hide();
 			if (!_search->text().isEmpty()) {
 				_search->clear();
 			}
@@ -897,6 +1176,7 @@ public:
 			items.push_back({ QString::number(i), categories[i].icon, nullptr });
 		}
 		_strip->setItems(std::move(items));
+		sortRecent();
 		rebuild();
 		// «Recent» only when there is such a section at the top.
 		const auto category = _grid->categoryAt(_scroll->scrollTop() + 20);
@@ -906,7 +1186,10 @@ public:
 	void activate() {
 		_search->setFocusFast();
 	}
+	// The panel is shown: the recent ones in their new order.
 	void refreshRecent() {
+		_tones->hide();
+		sortRecent();
 		if (_search->text().isEmpty()) {
 			rebuild();
 		}
@@ -931,44 +1214,74 @@ protected:
 		auto p = Painter(this);
 		p.setPen(st::historyPanelEmptyFg);
 		p.setFont(st::historyPanelEmptyFont);
-		p.drawText(_scroll->geometry(), Qt::AlignCenter, tr::lng_nothing_found(tr::now));
+		p.drawText(
+			_scroll->geometry(),
+			Qt::AlignCenter,
+			_searching ? tr::lng_loading(tr::now) : tr::lng_nothing_found(tr::now));
+	}
+	void keyPressEvent(QKeyEvent *e) override {
+		if (e->key() == Qt::Key_Escape && _tones->isVisible()) {
+			_tones->hide();
+		} else {
+			RpWidget::keyPressEvent(e);
+		}
 	}
 
 private:
-	void remember(const QString &emoji) {
+	void choose(const QString &code) {
+		_tones->hide();
 		auto &settings = Core::App().settings();
-		auto recent = settings.recentEmoji();
-		recent.removeAll(emoji);
-		recent.push_front(emoji);
-		while (recent.size() > kMaxRecentEmoji) {
-			recent.pop_back();
-		}
-		settings.setRecentEmoji(recent);
+		auto uses = settings.emojiUses().value_or(DefaultEmojiUses());
+		CountEmojiUse(uses, _recent, code);
+		settings.setEmojiUses(uses);
+		// Written as other apps expect it (U+FE0F where an emoji needs it).
+		Q_EMIT _panel->emojiChosen(Ui::Emoji::Qualify(code));
+	}
+	void sortRecent() {
+		auto &settings = Core::App().settings();
+		auto uses = settings.emojiUses().value_or(DefaultEmojiUses());
+		_recent = SortRecentEmoji(uses);
+		settings.setEmojiUses(uses);
 	}
 	void rebuild() {
 		auto sections = std::vector<EmojiSection>();
+		const auto &tones = Core::App().settings().emojiTones();
 		const auto query = _search->text().trimmed();
+		_searching = false;
 		if (!query.isEmpty()) {
+			const auto index = EmojiSearch(this, [this] { rebuild(); });
 			auto found = EmojiSection();
 			found.title = tr::lng_history_emoji_results(tr::now);
-			found.emoji = SearchEmoji(query);
+			found.tones = true;
+			if (index) {
+				for (const auto &base : index->search(query)) {
+					found.items.push_back({ base, EmojiWithTone(base, tones) });
+				}
+			} else {
+				_searching = true;
+			}
 			sections.push_back(std::move(found));
 		} else {
 			auto recent = EmojiSection();
 			recent.title = tr::lng_history_emoji_recent(tr::now);
-			recent.emoji = Core::App().settings().recentEmoji();
+			for (const auto &code : _recent) {
+				recent.items.push_back({ code, code });
+			}
 			sections.push_back(std::move(recent));
 			const auto &categories = EmojiCategories();
 			for (auto i = 0; i != int(categories.size()); ++i) {
 				auto section = EmojiSection();
 				section.title = EmojiCategoryTitle(i);
 				section.category = i;
-				for (const auto &item : categories[i].items) {
-					section.emoji.push_back(item.text);
+				section.tones = true;
+				section.items.reserve(categories[i].items.size());
+				for (const auto &base : categories[i].items) {
+					section.items.push_back({ base, EmojiWithTone(base, tones) });
 				}
 				sections.push_back(std::move(section));
 			}
 		}
+		_tones->hide();
 		_grid->setSections(std::move(sections));
 		_scroll->scrollToY(0);
 		update();
@@ -979,6 +1292,9 @@ private:
 	Ui::ScrollArea *_scroll = nullptr;
 	EmojiGrid *_grid = nullptr;
 	IconsStrip *_strip = nullptr;
+	EmojiTones *_tones = nullptr;
+	QStringList _recent; // in the order shown while the panel is open
+	bool _searching = false;
 
 };
 
@@ -1250,6 +1566,13 @@ void TabbedPanel::keyPressEvent(QKeyEvent *e) {
 	} else {
 		RpWidget::keyPressEvent(e);
 	}
+}
+
+void TabbedPanel::mousePressEvent(QMouseEvent *e) {
+	// A press that nothing inside took (a category tab, the space between
+	// the cells) stays here: below the panel it reached the chat, which
+	// closed the panel.
+	e->accept();
 }
 
 bool TabbedPanel::eventFilter(QObject *object, QEvent *event) {

@@ -1,5 +1,6 @@
 #include "data/data_story_types.h"
 
+#include "data/data_group_rules.h"
 #include "data/data_json.h"
 
 #include <algorithm>
@@ -83,6 +84,10 @@ Story Story::FromJson(const QJsonObject &json) {
 		: -1;
 	result.closeFriends = (String(json, "audience"_L1) == u"close_friends");
 	result.canReply = Bool(json, "can_reply"_L1);
+	result.canShare = Bool(json, "can_share"_L1);
+	result.shareCount = Has(json, "share_count"_L1)
+		? Int64(json, "share_count"_L1)
+		: -1;
 	return result;
 }
 
@@ -160,6 +165,7 @@ StoryViewersPage StoryViewersPage::FromJson(const QJsonObject &json) {
 	}
 	result.nextCursor = String(json, "next_cursor"_L1);
 	result.total = Int64(json, "total"_L1);
+	result.shares = Has(json, "shares"_L1) ? Int64(json, "shares"_L1) : -1;
 	return result;
 }
 
@@ -183,6 +189,93 @@ StorySettings StorySettings::FromJson(const QJsonObject &json) {
 		: u"everyone"_s;
 	result.hiddenCount = Int(json, "hidden_count"_L1);
 	result.closeFriendsCount = Int(json, "close_friends_count"_L1);
+	if (const auto value = json.value("allow_sharing"_L1); value.isBool()) {
+		result.allowSharing = value.toBool();
+	}
+	return result;
+}
+
+StoryShareReason StoryShareReasonFromString(const QString &reason) {
+	if (reason == u"privacy") {
+		return StoryShareReason::Privacy;
+	} else if (reason == u"not_allowed") {
+		return StoryShareReason::NotAllowed;
+	} else if (reason == u"limit") {
+		return StoryShareReason::Limit;
+	} else if (reason == u"unavailable") {
+		return StoryShareReason::Unavailable;
+	}
+	return StoryShareReason::Failed;
+}
+
+QVector<StoryShareReason> StoryShareResult::reasons() const {
+	auto result = QVector<StoryShareReason>();
+	for (const auto &entry : notSent) {
+		if (!result.contains(entry.reason)) {
+			result.push_back(entry.reason);
+		}
+	}
+	return result;
+}
+
+QStringList StoryShareResult::notSentFor(StoryShareReason reason) const {
+	auto result = QStringList();
+	for (const auto &entry : notSent) {
+		if (entry.reason == reason) {
+			result.push_back(entry.to);
+		}
+	}
+	return result;
+}
+
+StoryShareResult StoryShareResult::FromJson(const QJsonObject &json) {
+	auto result = StoryShareResult();
+	for (const auto &value : json.value("sent"_L1).toArray()) {
+		const auto entry = value.toObject();
+		auto sent = StoryShareSent();
+		sent.to = String(entry, "to"_L1);
+		sent.chat = String(entry, "chat"_L1);
+		sent.seq = Int64(entry, "seq"_L1);
+		if (!sent.to.isEmpty() || !sent.chat.isEmpty()) {
+			result.sent.push_back(std::move(sent));
+		}
+	}
+	for (const auto &value : json.value("not_sent"_L1).toArray()) {
+		const auto entry = value.toObject();
+		auto notSent = StoryShareNotSent();
+		notSent.to = String(entry, "to"_L1);
+		notSent.reason = StoryShareReasonFromString(String(entry, "reason"_L1));
+		if (!notSent.to.isEmpty()) {
+			result.notSent.push_back(std::move(notSent));
+		}
+	}
+	return result;
+}
+
+int StoryShareCap(qint64 configured) {
+	return (configured > 0 && configured <= 1000)
+		? int(configured)
+		: kStoryShareMaxRecipients;
+}
+
+QJsonObject StoryShareBody(
+		const QString &storyId,
+		const QStringList &recipients,
+		const QString &text) {
+	auto people = QStringList();
+	auto groups = QStringList();
+	for (const auto &id : recipients) {
+		if (id.isEmpty() || people.contains(id) || groups.contains(id)) {
+			continue;
+		}
+		(IsGroupId(id) ? groups : people).push_back(id);
+	}
+	auto result = QJsonObject{
+		{ u"story"_s, storyId },
+		{ u"to"_s, Array(people) },
+		{ u"groups"_s, Array(groups) },
+	};
+	Put(result, "text"_L1, text.trimmed());
 	return result;
 }
 
@@ -216,12 +309,12 @@ void SortTray(QVector<StoryTrayItem> &items) {
 	const auto group = [](const StoryTrayItem &item) {
 		return item.muted ? 2 : (item.unseen > 0) ? 0 : 1;
 	};
+	// Inside a group the server's order stays (affinity first, then the
+	// newest story; docs/stories.md §5): only moves between the groups.
 	std::stable_sort(items.begin(), items.end(), [&](
 			const StoryTrayItem &a,
 			const StoryTrayItem &b) {
-		const auto ga = group(a);
-		const auto gb = group(b);
-		return (ga != gb) ? (ga < gb) : (a.latestAt > b.latestAt);
+		return group(a) < group(b);
 	});
 }
 

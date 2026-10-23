@@ -20,8 +20,10 @@
 #include "window/window_session_controller.h"
 #include "styles/style_eli.h"
 
+#include <QtGui/QCursor>
 #include <QtGui/QKeyEvent>
 #include <QtGui/QMouseEvent>
+#include <QtWidgets/QApplication>
 
 #include <map>
 
@@ -33,6 +35,7 @@ constexpr auto kSkeletonRows = 4;
 constexpr auto kTooltipDelay = 700;
 constexpr auto kHighlightDuration = 1800;
 constexpr auto kMinuteMs = 60 * 1000;
+constexpr auto kMaxIdlePages = 5;
 
 [[nodiscard]] bool SameLetter(const QKeyEvent *e, int key, QStringView persian) {
 	if (e->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)) {
@@ -56,6 +59,11 @@ ListPage ListPage::From(const Data::PostsPage &page) {
 	for (const auto &id : page.posts) {
 		auto item = Data::FeedItem();
 		item.postId = id;
+		if (const auto actor = page.repostedBy.value(id); !actor.isEmpty()) {
+			// «↻ name reposted», as in the following feed.
+			item.reason = u"repost"_s;
+			item.actor = actor;
+		}
 		result.items.push_back(item);
 	}
 	result.next = page.nextBefore.isEmpty() ? page.nextCursor : page.nextBefore;
@@ -84,7 +92,8 @@ PostList::PostList(
 			updateRow(i);
 		}
 	}
-}) {
+})
+, _bodyTimer([this] { openPendingBody(); }) {
 	setMouseTracking(true);
 	setFocusPolicy(Qt::StrongFocus);
 
@@ -102,6 +111,7 @@ PostList::PostList(
 		auto removed = false;
 		for (auto i = _rows.begin(); i != _rows.end();) {
 			if (i->card && i->card->post().author == userId) {
+				_freshness.forget(i->id);
 				i = _rows.erase(i);
 				removed = true;
 			} else {
@@ -109,8 +119,14 @@ PostList::PostList(
 			}
 		}
 		if (removed) {
+			// As remove(): the indices of the rows moved.
+			_overRow = -1;
+			_overHit = {};
+			_pressedRow = -1;
 			rebuildIndex();
+			refreshPlaceholder();
 			relayout();
+			Q_EMIT emptyChanged(_rows.empty());
 		}
 	});
 	connect(&data.stories(), &Data::Stories::ringsChanged, this, [this] {
@@ -228,7 +244,7 @@ void PostList::load(bool reset) {
 		}
 		_loading = false;
 		_reloading = false;
-		applyPage(page, reset);
+		applyPage(page, reset, cursor);
 		Q_EMIT loadingChanged();
 	}, [=, this](const Api::Error &error) {
 		if (generation != _generation) {
@@ -270,7 +286,10 @@ void PostList::appendRow(const Data::FeedItem &item) {
 	_rows.push_back(std::move(row));
 }
 
-void PostList::applyPage(const ListPage &page, bool reset) {
+void PostList::applyPage(
+		const ListPage &page,
+		bool reset,
+		const QString &requested) {
 	const auto first = reset;
 	if (reset) {
 		_rows.clear();
@@ -296,8 +315,13 @@ void PostList::applyPage(const ListPage &page, bool reset) {
 	}
 	_freshness.noteFresh(fresh, Ui::Now());
 	_next = page.next;
+	// A page can come back short, even empty, while the server has more
+	// (posts it does not show me): go on, unless it names the same page
+	// again or nothing turned up for a while.
+	_idlePages = added ? 0 : ((reset ? 0 : _idlePages) + 1);
 	_done = _next.isEmpty()
-		|| page.items.isEmpty()
+		|| (page.items.isEmpty() && _next == requested)
+		|| (_idlePages > kMaxIdlePages)
 		|| (_descriptor.cap > 0 && int(_rows.size()) >= _descriptor.cap);
 	_loadedOnce = true;
 	_failedFirst = false;
@@ -326,6 +350,23 @@ void PostList::prepend(const QString &postId) {
 	row.card = std::make_unique<PostCard>(this, postId, optionsFor(item));
 	_rows.insert(_rows.begin(), std::move(row));
 	_freshness.noteFresh({ postId }, Ui::Now());
+	rebuildIndex();
+	refreshPlaceholder();
+	relayout();
+	Q_EMIT emptyChanged(false);
+}
+
+void PostList::insert(int index, const Data::FeedItem &item) {
+	if (_index.contains(item.postId)
+		|| !_controller->session().data().feed().post(item.postId)) {
+		return;
+	}
+	auto row = Row();
+	row.id = item.postId;
+	row.card = std::make_unique<PostCard>(this, item.postId, optionsFor(item));
+	index = std::clamp(index, 0, int(_rows.size()));
+	_rows.insert(_rows.begin() + index, std::move(row));
+	_freshness.noteFresh({ item.postId }, Ui::Now());
 	rebuildIndex();
 	refreshPlaceholder();
 	relayout();
@@ -904,7 +945,24 @@ void PostList::mouseReleaseEvent(QMouseEvent *e) {
 		Q_EMIT moreRequested(_rows[row].id);
 		return;
 	}
+	if (hit.type == HitType::Body
+		&& _rows[row].card->options().mode == CardMode::Feed) {
+		// Not yet: this may be the first click of a double click (a like).
+		_bodyPendingId = _rows[row].id;
+		_bodyTimer.callOnce(QApplication::doubleClickInterval());
+		return;
+	}
 	activate(row, hit, e->globalPosition().toPoint());
+}
+
+void PostList::openPendingBody() {
+	const auto index = indexOf(std::exchange(_bodyPendingId, QString()));
+	if (index < 0 || !_rows[index].card) {
+		return;
+	}
+	auto hit = Hit();
+	hit.type = HitType::Body;
+	activate(index, hit, QCursor::pos());
 }
 
 void PostList::mouseDoubleClickEvent(QMouseEvent *e) {
@@ -916,6 +974,9 @@ void PostList::mouseDoubleClickEvent(QMouseEvent *e) {
 		mousePressEvent(e);
 		return;
 	}
+	// The first click does not open the post.
+	_bodyTimer.cancel();
+	_bodyPendingId = QString();
 	const auto &row = _rows[_overRow];
 	const auto &post = row.card->post();
 	_burstId = row.id;
@@ -1019,16 +1080,21 @@ void PostList::activate(int rowIndex, Hit hit, QPoint globalPosition) {
 	case HitType::Media:
 		if (card.tileIsVideo(hit.index)) {
 			OpenPardeh(_controller, id);
-		} else {
-			OpenImageViewer(_controller, post, card.imageIndexOfTile(hit.index));
+		} else if (const auto image = card.imageIndexOfTile(hit.index); image >= 0) {
+			OpenImageViewer(_controller, post, image);
+		} else if (card.options().mode == CardMode::Feed) {
+			// A GIF: the post, as a click on its text.
+			OpenPost(_controller, id);
 		}
 		break;
 	case HitType::QuoteMedia:
 		if (post.quote) {
 			if (card.tileIsVideo(hit.index)) {
 				OpenPardeh(_controller, post.quote->id);
+			} else if (const auto image = card.imageIndexOfTile(hit.index); image >= 0) {
+				OpenImageViewer(_controller, *post.quote, image);
 			} else {
-				OpenImageViewer(_controller, *post.quote, card.imageIndexOfTile(hit.index));
+				OpenPost(_controller, post.quote->id);
 			}
 		}
 		break;

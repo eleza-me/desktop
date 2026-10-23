@@ -7,6 +7,8 @@
 #include "base/weak_guard.h"
 #include "data/data_types.h"
 
+#include <QtCore/QHash>
+
 namespace Data {
 
 struct PostCounts {
@@ -39,7 +41,7 @@ struct PostRendition {
 
 struct PostMedia {
 	QString id;           // fetch through Data::Media (MediaRef::PostMedia(post id, id))
-	QString kind;         // image | video | video_note | audio_clip
+	QString kind;         // image | video | video_note | audio_clip | gif (comments)
 	QString alt;
 	int width = 0;
 	int height = 0;
@@ -153,6 +155,9 @@ struct PostsPage {
 	QStringList posts;    // ids, in order
 	QString nextBefore;
 	QString nextCursor;
+	// Items the list shows as reposts (`reason: "repost"` of a profile's
+	// timeline): post id -> who reposted it.
+	QHash<QString, QString> repostedBy;
 };
 
 struct RepliesPage {
@@ -287,8 +292,10 @@ struct ReportReasons {
 	QStringList reply;
 	QStringList account;
 	QStringList conversation;
+	QStringList message;      // a message of a chat
 	QStringList group;        // a group itself
 	QStringList groupMessage; // a message of a group
+	QStringList story;
 };
 
 using FailCallback = Fn<void(const Api::Error &)>;

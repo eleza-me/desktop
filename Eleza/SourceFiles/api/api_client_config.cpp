@@ -326,6 +326,27 @@ int ClientConfig::maxPinsPerChat() const {
 	return int(integer(u"chat.pins.max_per_chat"_s, 100));
 }
 
+bool ClientConfig::selfDestructEnabled() const {
+	return boolean(u"chat.self_destruct.enabled"_s, false);
+}
+
+QVector<int> ClientConfig::selfDestructTimers() const {
+	auto list = strings(u"chat.self_destruct.timers"_s);
+	if (list.isEmpty()) {
+		list = { u"3s"_s, u"10s"_s, u"30s"_s, u"1m"_s };
+	}
+	auto result = QVector<int>();
+	for (const auto &item : std::as_const(list)) {
+		// Whole seconds up to an hour, as the server accepts them.
+		const auto seconds = ParseDuration(item);
+		if (seconds >= 1 && seconds <= 3600 && !result.contains(int(seconds))) {
+			result.push_back(int(seconds));
+		}
+	}
+	std::sort(result.begin(), result.end());
+	return result;
+}
+
 QStringList ClientConfig::muteDurations() const {
 	auto result = strings(u"chat.mute.durations"_s);
 	if (result.isEmpty()) {

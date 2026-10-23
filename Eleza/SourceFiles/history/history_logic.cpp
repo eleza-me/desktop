@@ -1,5 +1,8 @@
 #include "history/history_logic.h"
 
+#include "data/data_group_rules.h"
+#include "ui/emoji/emoji_index.h"
+
 #include <QtCore/QHash>
 
 #include <algorithm>
@@ -159,7 +162,10 @@ QDate MessageDate(const Data::Message &message) {
 }
 
 bool IsService(const Data::Message &message) {
-	return (message.kind == Data::MessageKind::System) && !message.call;
+	// Self-destructing media is a line of its own here (only the phone
+	// apps open it), as on Telegram Desktop.
+	return ((message.kind == Data::MessageKind::System) && !message.call)
+		|| message.selfDestruct.has_value();
 }
 
 bool CanAttach(const Data::Message &previous, const Data::Message &next) {
@@ -191,7 +197,7 @@ std::vector<RowFlags> ComputeRowFlags(
 			&& firstUnreadSeq > 0
 			&& message.seq >= firstUnreadSeq
 			&& !message.mine
-			&& !IsService(message)) {
+			&& (!IsService(message) || message.selfDestruct)) {
 			// Nothing to divide when everything on screen is unread.
 			flags.showUnread = (i > 0);
 			unreadShown = true;
@@ -264,6 +270,24 @@ ListDiff DiffRows(
 	return result;
 }
 
+int SurvivingAnchor(const ListDiff &diff, int anchor) {
+	const auto count = int(diff.oldToNew.size());
+	if (anchor < 0 || anchor >= count) {
+		return -1;
+	}
+	for (auto i = anchor; i >= 0; --i) {
+		if (diff.oldToNew[i] >= 0) {
+			return i;
+		}
+	}
+	for (auto i = anchor + 1; i < count; ++i) {
+		if (diff.oldToNew[i] >= 0) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 bool SameLayout(const Data::Message &a, const Data::Message &b) {
 	const auto failedA = (a.status == Data::MessageStatus::Failed);
 	const auto failedB = (b.status == Data::MessageStatus::Failed);
@@ -299,6 +323,9 @@ bool SameLayout(const Data::Message &a, const Data::Message &b) {
 			|| (a.audio->title == b.audio->title
 				&& a.audio->performer == b.audio->performer))
 		&& (a.viaBot.has_value() == b.viaBot.has_value())
+		&& (a.selfDestruct == b.selfDestruct)
+		// Its line says whether it is on its way or failed.
+		&& (!a.selfDestruct || a.status == b.status)
 		&& EntitiesEqual(a.entities, b.entities)
 		&& MediaEqual(a.media, b.media)
 		&& MarkupEqual(a.replyMarkup, b.replyMarkup)
@@ -380,6 +407,29 @@ int JumboEmojiCount(const QString &text) {
 	const auto trimmed = text.trimmed();
 	if (trimmed.isEmpty() || trimmed.size() > 48) {
 		return 0;
+	}
+	// The emoji the pack knows (keycaps and subdivision flags too), with
+	// nothing but spaces around them.
+	const auto ranges = Ui::Emoji::FindAll(trimmed, 4);
+	if (!ranges.empty()) {
+		const auto blank = [&](int from, int till) {
+			for (auto i = from; i < till; ++i) {
+				const auto ch = trimmed[i];
+				if (!ch.isSpace() && ch != QChar(0x200C)) {
+					return false;
+				}
+			}
+			return true;
+		};
+		auto position = 0;
+		auto covered = true;
+		for (const auto &range : ranges) {
+			covered = covered && blank(position, range.from);
+			position = range.till;
+		}
+		if (covered && blank(position, int(trimmed.size()))) {
+			return (ranges.size() <= 3) ? int(ranges.size()) : 0;
+		}
 	}
 	const auto codes = Codepoints(trimmed);
 	const auto size = int(codes.size());
@@ -553,7 +603,8 @@ std::vector<int> SearchMessages(
 	}
 	for (auto i = int(items.size()) - 1; i >= 0; --i) {
 		const auto &message = items[i];
-		if (IsService(message) || message.seq <= 0) {
+		if (IsService(message) || message.seq <= 0 || message.selfDestruct) {
+			// Self-destructing media is never found by its words.
 			continue;
 		}
 		auto haystack = message.text;
@@ -738,6 +789,7 @@ bool CanEdit(
 		|| message.seq <= 0
 		|| message.forwarded
 		|| message.viaBot
+		|| message.selfDestruct
 		|| message.status == Data::MessageStatus::Failed) {
 		return false;
 	}
@@ -756,6 +808,10 @@ bool CanEdit(
 }
 
 bool HasCopyableText(const Data::Message &message) {
+	if (message.selfDestruct) {
+		// Its text is the server's «only on the phone»; its caption is never sent here.
+		return false;
+	}
 	switch (message.kind) {
 	case Data::MessageKind::Text:
 	case Data::MessageKind::Unknown:
@@ -764,6 +820,7 @@ bool HasCopyableText(const Data::Message &message) {
 	case Data::MessageKind::Gif:
 	case Data::MessageKind::ForwardedPost:
 	case Data::MessageKind::StoryReply:
+	case Data::MessageKind::StoryShare:
 		return !message.text.trimmed().isEmpty();
 	default:
 		return false;
@@ -771,7 +828,7 @@ bool HasCopyableText(const Data::Message &message) {
 }
 
 bool CanForward(const Data::Message &message) {
-	if (message.seq <= 0) {
+	if (message.seq <= 0 || message.selfDestruct) {
 		return false;
 	}
 	switch (message.kind) {
@@ -780,6 +837,7 @@ bool CanForward(const Data::Message &message) {
 	case Data::MessageKind::LiveLocation:
 	case Data::MessageKind::StoryReply:
 	case Data::MessageKind::StoryReaction:
+	case Data::MessageKind::StoryShare:
 	case Data::MessageKind::Unknown:
 		return false;
 	default:
@@ -828,6 +886,58 @@ bool ConversationEnded(const QString &state) {
 		|| state == u"expired"
 		|| state == u"closed"
 		|| state == u"purged";
+}
+
+qint64 DownFirstStop(
+		const QVector<Data::Message> &items,
+		int unread,
+		qint64 lastReadSeq,
+		qint64 bottomSeq) {
+	if (unread <= 0) {
+		return 0;
+	}
+	auto counted = 0;
+	auto stop = qint64(0);
+	for (auto i = int(items.size()) - 1; i >= 0; --i) {
+		const auto &message = items[i];
+		if (message.seq <= 0 || message.mine || !message.visible()) {
+			continue;
+		} else if (message.seq <= lastReadSeq) {
+			break;
+		}
+		stop = message.seq;
+		if (++counted == unread) {
+			break;
+		}
+	}
+	return (stop > bottomSeq) ? stop : 0;
+}
+
+bool FloatingButtonsAtPhysicalRight(bool group, bool rtl) {
+	return group || !rtl;
+}
+
+qint64 NextMention(const QVector<qint64> &seqs, qint64 lastReadSeq) {
+	for (const auto seq : seqs) {
+		if (seq > lastReadSeq) {
+			return seq;
+		}
+	}
+	return 0;
+}
+
+bool SelfDestructAllowed(const Data::Chat &chat) {
+	return !chat.isGroup
+		&& !Data::IsGroupId(chat.id)
+		&& !chat.isConversation
+		&& !chat.info.conversation
+		&& !chat.anonymous
+		&& !chat.saved
+		&& !chat.info.saved
+		&& !chat.isBot
+		&& !chat.peerDeleted
+		&& !chat.peerUserId.isEmpty()
+		&& (chat.info.kind.isEmpty() || chat.info.kind == u"direct");
 }
 
 } // namespace History

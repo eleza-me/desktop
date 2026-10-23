@@ -6,6 +6,7 @@
 #include "eli/eli_post_list.h"
 #include "lang_auto.h"
 #include "main/main_session.h"
+#include "ui/ui_utility.h"
 #include "window/window_session_controller.h"
 #include "styles/style_eli.h"
 
@@ -82,20 +83,46 @@ PostsEmbed::PostsEmbed(
 		} else if (source == u"user_media") {
 			emptyTitle = tr::lng_profile_no_media_yet(tr::now);
 		}
-		descriptor.loader = [=](
-				const QString &cursor,
-				base::Guard guard,
-				Fn<void(const ListPage &)> done,
-				Data::FailCallback fail) {
-			controller->session().data().feed().userPosts(
-				user,
-				tab,
-				cursor,
-				QString(),
-				guard,
-				postsDone(done),
-				fail);
-		};
+		if (source != u"user") {
+			descriptor.loader = [=](
+					const QString &cursor,
+					base::Guard guard,
+					Fn<void(const ListPage &)> done,
+					Data::FailCallback fail) {
+				controller->session().data().feed().userPosts(
+					user,
+					tab,
+					cursor,
+					QString(),
+					guard,
+					postsDone(done),
+					fail);
+			};
+		} else {
+			// Their reposts among their posts. A server that does not know
+			// the parameter pages by `next_before`, and so do we then.
+			const auto byBefore = std::make_shared<bool>(false);
+			descriptor.loader = [=](
+					const QString &cursor,
+					base::Guard guard,
+					Fn<void(const ListPage &)> done,
+					Data::FailCallback fail) {
+				if (cursor.isEmpty()) {
+					*byBefore = false;
+				}
+				controller->session().data().feed().userTimeline(
+					user,
+					cursor,
+					*byBefore,
+					guard,
+					[=](const Data::PostsPage &page) {
+						*byBefore = page.nextCursor.isEmpty()
+							&& !page.nextBefore.isEmpty();
+						done(ListPage::From(page));
+					},
+					fail);
+			};
+		}
 	}
 	descriptor.empty = [=] {
 		auto result = Ui::EmptyPlaceholderDescriptor();
@@ -117,6 +144,33 @@ PostsEmbed::PostsEmbed(
 	connect(_list, &PostList::emptyChanged, this, [this](bool empty) {
 		Q_EMIT emptyChanged(empty);
 	});
+	if (source == u"user" && user == controller->session().userId()) {
+		// My own profile: a repost I take back leaves at once; «واگرد» on
+		// the toast (ToggleRepost) reposts it and the row comes back.
+		const auto feed = &controller->session().data().feed();
+		connect(feed, &Data::Feed::postChanged, this, [=, this](const QString &id) {
+			const auto card = _list->card(id);
+			const auto post = feed->post(id);
+			if (!post) {
+				return;
+			} else if (card
+				&& !post->my.reposted
+				&& card->options().reason == u"repost"
+				&& card->options().actor == user) {
+				_takenBack.remember(id, int(_list->ids().indexOf(id)), Ui::Now());
+				_list->remove(id);
+			} else if (!card && post->my.reposted) {
+				const auto index = _takenBack.take(id, Ui::Now());
+				if (index >= 0) {
+					auto item = Data::FeedItem();
+					item.postId = id;
+					item.reason = u"repost"_s;
+					item.actor = user;
+					_list->insert(index, item);
+				}
+			}
+		});
+	}
 }
 
 void PostsEmbed::setVisibleRange(int top, int bottom) {
