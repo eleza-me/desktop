@@ -37,6 +37,7 @@
 
 #include "api/api_error.h"
 #include "base/weak_guard.h"
+#include "data/data_group_rules.h"
 #include "data/data_types.h"
 
 #include <QtCore/QHash>
@@ -409,6 +410,38 @@ public:
 		base::Guard guard,
 		Fn<void(const QVector<qint64> &)> done);
 
+	// ---- member tags (Data::MemberTags)
+	// The server has member tags: a header listed `edit_tag` / `manage_tags`
+	// or a tag of mine, a message carried its sender's tag or role, a member
+	// row a tag. Until then a message that names neither says nothing about
+	// its sender (an older server never does).
+	[[nodiscard]] bool memberTags() const {
+		return _memberTags;
+	}
+	// The same, or the header of this group (held from an earlier run,
+	// before anything of the server arrived) says so.
+	[[nodiscard]] bool memberTagsIn(const QString &group) const;
+	// A header of a server with tags (`edit_tag`, `manage_tags`, my tag).
+	[[nodiscard]] static bool HasTagFeatures(const Group &header);
+	// What a person is known as in a group now; nullopt while nothing said.
+	// Fed by every message of the server (pages, live frames, differences),
+	// by member rows and `info` frames, and by my own changes.
+	[[nodiscard]] std::optional<MemberTags::Sender> senderTag(
+		const QString &group,
+		const QString &user) const;
+	void noteSenders(const QString &group, const QVector<Message> &messages);
+	void noteMember(const QString &group, const GroupMember &member);
+	// Sets somebody's tag (mine too); "" removes it. The answer is the
+	// member as they are now. `groups.members.tag`
+	// (PUT /v1/groups/{id}/members/{user}/tag).
+	void setTag(
+		const QString &group,
+		const QString &user,
+		const QString &tag,
+		base::Guard guard,
+		Fn<void(const GroupMember &)> done,
+		Fail fail = nullptr);
+
 	// The row of a header (used by the store itself and by the tests).
 	[[nodiscard]] static ChatInfo InfoFor(const Group &group);
 
@@ -435,6 +468,9 @@ Q_SIGNALS:
 	void messageReceived(const Data::Message &message, bool addressesMe);
 	// The feature was switched on or off.
 	void enabledChanged();
+	// The tag or the role of these people changed (senderTag): rows that
+	// show them are painted again.
+	void senderTagsChanged(const QString &group, const QStringList &users);
 
 private:
 	// What is going on with one group.
@@ -484,6 +520,14 @@ private:
 	[[nodiscard]] Chat rowFor(const Group &header, const Chat *previous) const;
 	void drop(const QString &group, const QString &status);
 
+	// ---- member tags
+	void learnFeatures(const Group &header);
+	void noteSender(
+		const QString &group,
+		const QString &user,
+		const MemberTags::Sender &sender,
+		QStringList &changed);
+
 	// ---- requests
 	void call(
 		const QString &method,
@@ -499,6 +543,8 @@ private:
 	QHash<QString, qint64> _unknownAsked; // groups not held whose frames asked for a catch-up
 	QSet<QString> _headerRequests;
 	QHash<QString, qint64> _slowModeUntil;
+	QHash<QString, QHash<QString, MemberTags::Sender>> _senderTags; // group -> user -> tag
+	bool _memberTags = false;
 	bool _started = false;
 	bool _syncing = false;
 	bool _syncAgain = false;

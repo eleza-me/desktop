@@ -220,6 +220,16 @@
     "at",
     "id"
   ],
+  "GroupCallSummary": [
+    "call",
+    "can_join",
+    "state"
+  ],
+  "GroupCallView": [
+    "call",
+    "group",
+    "state"
+  ],
   "GroupDecideFailure": [
     "reason",
     "user"
@@ -410,6 +420,9 @@
   ],
   "GroupsMembersResponse": [
     "members"
+  ],
+  "GroupsMembersTagRequest": [
+    "tag"
   ],
   "GroupsMentionsResponse": [
     "seqs"

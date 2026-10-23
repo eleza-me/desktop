@@ -5,6 +5,7 @@
 #include "history/history_list_widget.h"
 #include "window/window_routes.h"
 #include "data/data_groups.h"
+#include "groups/groups_tags.h"
 
 #include "api/api_client_config.h"
 #include "boxes/report_box.h"
@@ -20,6 +21,7 @@
 #include "ui/ui_utility.h"
 #include "ui/widgets/popup_menu.h"
 #include "window/window_session_controller.h"
+#include "styles/style_groups.h"
 #include "styles/style_history.h"
 
 #include <QtCore/QFileInfo>
@@ -357,6 +359,19 @@ void ListWidget::showContextMenu(
 		menu->addAction(tr::lng_groups_sender_profile(tr::now), [=, this] {
 			_controller->openRoute(Window::Routes::User(sender));
 		}, &st::menuIconUser);
+		// Somebody else's tag: with `manage_tags`, an ordinary member's, an
+		// admin's only for the owner (Telegram's «Add / Edit member tag»).
+		const auto known = Groups::KnownTag(_controller, _chatId, sender, &message);
+		if (Groups::MayEditTagOf(_controller, _chatId, sender, known.role)) {
+			menu->addAction(
+				known.tag.isEmpty()
+					? tr::lng_groups_tag_add_member(tr::now)
+					: tr::lng_groups_tag_edit_member(tr::now),
+				[=, this] {
+					Groups::ShowEditTagBox(_controller, _chatId, sender, known);
+				},
+				&st::groupsMenuTag);
+		}
 		if (_session->data().groups().administration() && message.seq > 0) {
 			const auto seq = message.seq;
 			menu->addAction(tr::lng_groups_report_message(tr::now), [=, this] {

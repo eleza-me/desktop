@@ -2059,6 +2059,41 @@
 "lng_groups_link_joined_none" = "Nobody who joined with this link is in the group";
 "lng_groups_link_joined_note" = "Only people who are still members are listed.";
 
+// ---- groups: member tags ----
+"lng_groups_tag_owner" = "owner";
+"lng_groups_tag_admin" = "admin";
+"lng_groups_tag_info_title_member" = "Member Tags";
+"lng_groups_tag_info_title_admin" = "Admin Tags";
+"lng_groups_tag_info_title_owner" = "Owner Tags";
+"lng_groups_tag_info_text_member" = "This grey tag {tag} is {author}'s member tag in {group}.";
+"lng_groups_tag_info_text_admin" = "This green tag {tag} is {author}'s admin tag in {group}.";
+"lng_groups_tag_info_text_owner" = "This purple tag {tag} is {author}'s owner tag in {group}.";
+"lng_groups_tag_info_preview_member" = "Member Tag";
+"lng_groups_tag_info_preview_admin" = "Admin Tag";
+"lng_groups_tag_info_preview_owner" = "Owner Tag";
+"lng_groups_tag_info_add_mine" = "Add My Tag";
+"lng_groups_tag_info_edit_mine" = "Edit My Tag";
+"lng_groups_tag_info_admins_only" = "Only admins can change tags in this group.";
+"lng_groups_tag_info_understood" = "Understood";
+"lng_groups_tag_edit" = "Edit tag";
+"lng_groups_tag_add" = "Add tag";
+"lng_groups_tag_add_member" = "Add member tag";
+"lng_groups_tag_edit_member" = "Edit member tag";
+"lng_groups_tag_placeholder" = "Tag";
+"lng_groups_tag_about_self" = "Share your role, title, or how you're known in this group. Your tag is visible to all members.";
+"lng_groups_tag_about_other" = "Add short tag next to {name}'s name.";
+"lng_groups_tag_invalid" = "Invalid tag";
+"lng_groups_perm_edit_tag" = "Edit own tag";
+"lng_groups_right_manage_tags" = "Edit member tags";
+"lng_groups_admin_tag_note" = "Shown next to the name in the group; without a tag it reads “admin”.";
+"lng_groups_log_kind_tags" = "Tag Changes";
+"lng_groups_log_tag_changed" = "{actor} changed tag for {target} from “{previous}” to “{tag}”";
+"lng_groups_log_tag_set" = "{actor} set tag for {target} to “{tag}”";
+"lng_groups_log_tag_removed" = "{actor} removed tag for {target} (was “{previous}”)";
+"lng_groups_log_own_tag_changed" = "{actor} changed own tag from “{previous}” to “{tag}”";
+"lng_groups_log_own_tag_set" = "{actor} set own tag to “{tag}”";
+"lng_groups_log_own_tag_removed" = "{actor} removed own tag (was “{previous}”)";
+
 // ---- settings: privacy and account extras ----
 "lng_settings_ls_always" = "Always show to";
 "lng_settings_ls_never" = "Never show to";

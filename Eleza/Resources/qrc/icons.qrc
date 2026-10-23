@@ -108,6 +108,8 @@
 		<file alias="star.svg">../icons/star.svg</file>
 		<file alias="sticker.svg">../icons/sticker.svg</file>
 		<file alias="sun.svg">../icons/sun.svg</file>
+		<file alias="tag.svg">../icons/tag.svg</file>
+		<file alias="tag-user.svg">../icons/tag-user.svg</file>
 		<file alias="thread.svg">../icons/thread.svg</file>
 		<file alias="timer.svg">../icons/timer.svg</file>
 		<file alias="timer_active.svg">../icons/timer_active.svg</file>

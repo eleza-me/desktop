@@ -828,6 +828,8 @@ Message Message::FromJson(const QJsonObject &json) {
 	if (auto sd = Optional<SelfDestruct>(json, "self_destruct"_L1); sd && !sd->mode.isEmpty()) {
 		result.selfDestruct = std::move(sd);
 	}
+	result.senderTag = Name(json, "sender_tag"_L1);
+	result.senderRole = String(json, "sender_role"_L1);
 	return result;
 }
 
@@ -892,6 +894,8 @@ QJsonObject Message::toJson() const {
 	if (selfDestruct) {
 		result.insert("self_destruct"_L1, selfDestruct->toJson());
 	}
+	Put(result, "sender_tag"_L1, senderTag);
+	Put(result, "sender_role"_L1, senderRole);
 	return result;
 }
 

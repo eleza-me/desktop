@@ -888,13 +888,13 @@ list and the ordinary chat screen. So there is no second list and no second chat
 
 | Where | What |
 | --- | --- |
-| `data/data_group_rules.*` | every decision as a plain function, tested one by one (`tests/core/test_group_rules.cpp`): the pts rule of a live frame, what the answer of a send means, catch-up entries, unread from a difference, service notes, composer states, the rights table the server evaluates (mirrored from its tests), invite links, mentions (where one starts, UTF-16 offsets, "does it address me") |
+| `data/data_group_rules.*` | every decision as a plain function, tested one by one (`tests/core/test_group_rules.cpp`): the pts rule of a live frame, what the answer of a send means, catch-up entries, unread from a difference, service notes, composer states, the rights table the server evaluates (mirrored from its tests), invite links, mentions (where one starts, UTF-16 offsets, "does it address me"), member tags (`MemberTags`: the badge of a sender, who may set a tag, the tag of a member row) |
 | `data/data_group_types.*` | `Group` (the header as I see it), `GroupMember`, `GroupInvite`, `GroupInvitePreview`, `GroupJoinRequest` |
 | `data/data_groups.*` | `Data::Groups`: the sync track (catch-up after every Hello, live frames, per-group difference, my own place from the user-level log) and every action. Its header explains the two counters kept per row. `tests/core/test_groups.cpp` drives it on the fake transport |
 | `data/data_chats.*`, `data_messages.*`, `data_outbox.*` | route by `Data::IsGroupId(id)`: a group's row is a `Data::Chat` with `isGroup` and `group`, its history lives in `Data::Messages`, its sends go through the outbox like any other (idempotent by client message id) |
 | `dialogs/` | group rows: the group's photo, «سارا: …» previews, notes with names, the «@» badge of an unread mention, «گروه تازه» in «پیام جدید» |
-| `history/` | the chat screen in a group: the sender's name (one of eight colours by user id) and role tag above the first bubble of a run and the picture next to the last one (`View::Delegate::elementGroup / elementSender`), notes with names (each name opens that profile: `Support::ServiceNoteLine`), two ticks on my messages up to `outbox_read_seq` (the furthest another member has read; `Data::Groups::applyReads`), the composer's states (restricted with the time left, slow mode with a countdown), «@» suggestions (`history_mentions.*`), the «@» button of unread mentions stacked above «to the end», delete for everyone by rights, pins by permission |
-| `groups/` | everything else: `groups_info.*` (the info screen, route `group/<id>`), `groups_boxes.*` (creating a group, adding members, the box of an invite link, notification level, edit, permissions, admin rights, restrictions, bans, invite links, join requests, delete, report, the menu of a member), `groups_module.cpp` (routes, the chat menu filler, debug routes) |
+| `history/` | the chat screen in a group: the sender's name (one of eight colours by user id) and member tag above the first bubble of a run and the picture next to the last one (`View::Delegate::elementGroup / elementSender`), notes with names (each name opens that profile: `Support::ServiceNoteLine`), two ticks on my messages up to `outbox_read_seq` (the furthest another member has read; `Data::Groups::applyReads`), the composer's states (restricted with the time left, slow mode with a countdown), «@» suggestions (`history_mentions.*`), the «@» button of unread mentions stacked above «to the end», delete for everyone by rights, pins by permission |
+| `groups/` | everything else: `groups_info.*` (the info screen, route `group/<id>`), `groups_boxes.*` (creating a group, adding members, the box of an invite link, notification level, edit, permissions, admin rights, restrictions, bans, invite links, join requests, delete, report, the menu of a member), `groups_tags.*` (member tags: the badge, the box a tap on it opens, the box that sets a tag), `groups_module.cpp` (routes, the chat menu filler, debug routes) |
 
 **Gates.** `Groups::enabled()` (`feature.groups`): off means no group row, no request and no
 entry point anywhere. `Groups::administration()` (the server lists `groups.max_admins`): the
@@ -903,6 +903,17 @@ mentions, reports, server drafts. What a screen offers beyond that comes from th
 `group.can("add_members")` for permissions, `group.hasRight("ban_users")` for admin rights,
 `Data::GroupRights::CanPromote / CanRestrict / CanBan(me, target)` for a member row. The
 server has the last word; `group.right_required` re-reads the header.
+
+**Member tags** (Telegram's, the backend's `docs/groups-phase2.md`). Every member may carry
+one tag; an admin's title is their tag. A message of a group carries its sender's current
+`sender_tag` / `sender_role`; `Data::Groups` keeps one map per group of what everybody is
+known as (`senderTag`), fed by every page, live message and difference, by member rows,
+`info` frames that name a member and my own changes, and says `senderTagsChanged` — the chat
+screen and the member list paint from it, so a change shows on old messages at once. A
+server without tags is recognised (`Groups::memberTags()`: nothing of a header, a message or
+a member names a tag) and then a message without the fields says nothing. The writes of
+permissions, admin rights and restrictions send `with_tags: true`: the lists are complete.
+`groups.members.tag` (`PUT /v1/groups/{id}/members/{user}/tag`) sets one.
 
 **Testing by hand.** `tests/tools/mock-groups.mjs` is a proxy in front of the usual mock
 stack that owns everything of groups (and gives people pictures):
@@ -917,7 +928,8 @@ Eleza --api=http://127.0.0.1:8103 --workdir=/tmp/wd-groups --no-single-instance 
 Its header lists the groups it starts with (one I own, one where I am restricted, one in
 slow mode, one of 240 members where I am an admin), the invite tokens for every answer of a
 preview, and the switches: `GROUPS=off` (the feature flag absent), `PHASE=1` (a server of the
-first release), `VIDEO=off`, `AVATAR_DELAY=<ms>`, `POST /control/frame` (a live frame),
+first release), `VIDEO=off`, `AVATAR_DELAY=<ms>`, `TAGS=off` (a server without member tags),
+`THIRD=1` (recent actions with the tag changes), `POST /control/frame` (a live frame),
 `GET /control/stats` (how often each picture was fetched).
 
 Debug routes (`ELEZA_DEBUG_TOOLS`): `debug/group-new`, `debug/group-add/<g>`,
@@ -925,8 +937,9 @@ Debug routes (`ELEZA_DEBUG_TOOLS`): `debug/group-new`, `debug/group-add/<g>`,
 `debug/group-links/<g>`, `debug/group-requests/<g>`, `debug/group-members/<g>/<admins|
 restricted|banned>`, `debug/group-admin/<g>/<u>`, `debug/group-restrict/<g>/<u>`,
 `debug/group-member-menu/<g>/<u>[/<role>]`, `debug/group-leave/<g>`, `debug/group-clear/<g>`,
-`debug/group-delete/<g>`, `debug/group-report/<g>`; the screens themselves are routes
-(`group/<g>`, `g/<token>`, `chat/<g>`).
+`debug/group-delete/<g>`, `debug/group-report/<g>`, `debug/group-tag-info/<g>/<u>/<role>[/<tag>]`
+(the box a tap on a tag opens), `debug/group-tag-edit/<g>/<u>/<role>[/<tag>]` («ویرایش تگ»);
+the screens themselves are routes (`group/<g>`, `g/<token>`, `chat/<g>`).
 
 ## 14. The report / block bar and self-destructing media
 

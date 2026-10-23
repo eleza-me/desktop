@@ -1141,6 +1141,31 @@ void String::drawLeftElided(
 		align);
 }
 
+std::vector<QRectF> String::rangeRects(
+		Selection range,
+		const PaintContext &geometry) const {
+	if (isEmpty() || geometry.availableWidth <= 0 || range.empty()) {
+		return {};
+	}
+	const auto d = _d.get();
+	const auto width = geometry.availableWidth;
+	d->ensureLayout(width, geometry.align, geometry.autoDirection);
+	const auto total = int(d->lines.size());
+	const auto limit = (geometry.elisionLines > 0)
+		? std::min(total, geometry.elisionLines)
+		: total;
+	const auto useElided = (geometry.elisionLines > 0)
+		&& (total > geometry.elisionLines);
+	if (useElided) {
+		d->ensureElided(limit - 1, width, geometry.align, geometry.autoDirection);
+	}
+	return d->rangeRects(
+		std::clamp(range.from, 0, length()),
+		std::clamp(range.to, 0, length()),
+		useElided ? (limit - 1) : limit,
+		useElided);
+}
+
 StateResult String::getState(
 		QPoint point,
 		const PaintContext &geometry) const {

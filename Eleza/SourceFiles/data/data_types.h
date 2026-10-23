@@ -459,6 +459,11 @@ struct Message {
 	// Self-destructing media: the bubble is drawn from this, never from the
 	// text (the server's «only on the phone» line) or an attachment.
 	std::optional<SelfDestruct> selfDestruct;
+	// Groups: the sender's tag and role ("owner" | "admin") when it was read
+	// (Data::Groups::senderTag has the latest); both "" for an ordinary
+	// member without a tag.
+	QString senderTag;
+	QString senderRole;
 
 	// ---- local
 	bool mine = false;

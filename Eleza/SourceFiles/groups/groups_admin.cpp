@@ -268,6 +268,8 @@ private:
 		: Name(controller, entry.target));
 	const auto link = Lang::Isolated(
 		Data::Json::CleanName(entry.linkName.simplified()));
+	const auto tag = Lang::Isolated(Data::MemberTags::Shown(entry.tag));
+	const auto previous = Lang::Isolated(Data::MemberTags::Shown(entry.prevTag));
 	using Form = Log::Form;
 	switch (form) {
 	case Form::Promote:
@@ -356,6 +358,53 @@ private:
 		return tr::lng_groups_log_delete_all(tr::now, lt_actor, actor, lt_target, target);
 	case Form::Transfer:
 		return tr::lng_groups_log_transfer(tr::now, lt_actor, actor, lt_target, target);
+	case Form::TagChanged:
+		return tr::lng_groups_log_tag_changed(
+			tr::now,
+			lt_actor,
+			actor,
+			lt_target,
+			target,
+			lt_previous,
+			previous,
+			lt_tag,
+			tag);
+	case Form::TagSet:
+		return tr::lng_groups_log_tag_set(
+			tr::now,
+			lt_actor,
+			actor,
+			lt_target,
+			target,
+			lt_tag,
+			tag);
+	case Form::TagRemoved:
+		return tr::lng_groups_log_tag_removed(
+			tr::now,
+			lt_actor,
+			actor,
+			lt_target,
+			target,
+			lt_previous,
+			previous);
+	case Form::OwnTagChanged:
+		return tr::lng_groups_log_own_tag_changed(
+			tr::now,
+			lt_actor,
+			actor,
+			lt_previous,
+			previous,
+			lt_tag,
+			tag);
+	case Form::OwnTagSet:
+		return tr::lng_groups_log_own_tag_set(tr::now, lt_actor, actor, lt_tag, tag);
+	case Form::OwnTagRemoved:
+		return tr::lng_groups_log_own_tag_removed(
+			tr::now,
+			lt_actor,
+			actor,
+			lt_previous,
+			previous);
 	case Form::Generic:
 		break;
 	}
@@ -368,6 +417,7 @@ private:
 	case Log::Admins: return tr::lng_groups_log_kind_admins(tr::now);
 	case Log::Settings: return tr::lng_groups_log_kind_settings(tr::now);
 	case Log::Messages: return tr::lng_groups_log_kind_messages(tr::now);
+	case Log::Tags: return tr::lng_groups_log_kind_tags(tr::now);
 	}
 	return tr::lng_groups_log_kind_links(tr::now);
 }
@@ -381,7 +431,12 @@ public:
 		const Data::GroupAdminLogEntry &entry)
 	: RpWidget(parent)
 	, _time(DateTimeText(entry.at)) {
-		_text.setText(st::groupsLogTextStyle, EntryText(controller, entry));
+		// The sentence is in the language of the interface: its direction
+		// too, whatever script a name or a tag in it starts with.
+		const auto mark = style::RightToLeft() ? QChar(0x200F) : QChar(0x200E);
+		_text.setText(
+			st::groupsLogTextStyle,
+			mark + EntryText(controller, entry));
 		_userpic = Ui::CreateChild<Support::UserpicButton>(
 			this,
 			&controller->session(),
@@ -666,21 +721,26 @@ private:
 		const auto window = controller();
 		const auto weak = QPointer<AdminLogWidget>(this);
 		const auto was = _kinds;
+		// A server without member tags has no «تغییر تگ‌ها» to filter by.
+		const auto tags = Store(window).memberTagsIn(_groupId);
 		window->show(Ui::Box([=](Ui::GenericBox *box) {
 			box->setTitle(tr::lng_groups_log_filter_actions(tr::now));
-			auto checks = std::vector<Ui::Checkbox*>();
+			auto checks = std::vector<std::pair<int, Ui::Checkbox*>>();
 			for (auto i = 0; i != Log::kCategoryCount; ++i) {
+				if (i == Log::Tags && !tags) {
+					continue;
+				}
 				// Nothing picked means every kind: show them all ticked.
 				const auto on = !Log::PickedCount(was) || (was & (1 << i));
-				checks.push_back(box->addRow(
+				checks.emplace_back(i, box->addRow(
 					Ui::object_ptr<Ui::Checkbox>(box, CategoryLabel(i), on),
 					st::boxCheckboxPadding));
 			}
 			box->addButton(tr::lng_groups_save(tr::now), [=] {
 				auto mask = 0;
-				for (auto i = 0; i != int(checks.size()); ++i) {
-					if (checks[i]->checked()) {
-						mask |= (1 << i);
+				for (const auto &[category, check] : checks) {
+					if (check->checked()) {
+						mask |= (1 << category);
 					}
 				}
 				box->closeBox();

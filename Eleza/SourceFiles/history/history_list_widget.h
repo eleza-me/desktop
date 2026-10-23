@@ -313,10 +313,13 @@ private:
 	Downloads *_downloads = nullptr;
 
 	// ---- a group
+	// The owner and the admins (with their tags) from one page of the list:
+	// what an older server says of roles (Data::Groups keeps them).
 	void loadRoles();
+	// The tags of these people changed: their bubbles are laid out again.
+	void senderTagsChanged(const QStringList &users);
 	bool _group = false;
 	std::unique_ptr<Support::UserpicPainter> _userpics; // the senders' pictures
-	QHash<QString, QString> _roles;                     // user id -> «مالک» / «مدیر» / a title
 	bool _rolesLoading = false;
 	bool _rolesAgain = false;
 

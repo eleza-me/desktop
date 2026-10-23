@@ -125,6 +125,9 @@ message UpdateFrame {
 //                                      change still arrives as "group")
 //   group_typing    GroupTypingSignal (both directions)
 //   group_admin     GroupAdminSignal  (server → client; for the admins of a group)
+//   group_call      GroupCallSignal   (server → client; the live join-bar summary of a
+//                                      group's call — participant count, recording, state —
+//                                      ephemeral, no pts, docs/group-calls.md §8.2)
 //   config          CallSignal        (server → client; {"version"}: right after Hello and on every
 //                                      change of the client-visible configuration; the app refetches
 //                                      GET /v1/client-config only when the version differs from its own)
@@ -170,6 +173,22 @@ message GroupAdminSignal {
   string kind = 2;
   uint32 join_requests = 3;
   string user = 4;
+}
+
+// GroupCallSignal: the live summary of a group's call (docs/group-calls.md
+// §8.2), delivered to the group's members so the "join" bar and the in-call
+// participant state update without polling. Ephemeral: it carries no pts, is
+// never replayed and is best-effort (a lost one is repaired by the next header
+// read or GET …/call). state "ended" clears the bar. participants and record
+// are the same values as GroupView.call.
+message GroupCallSignal {
+  string group = 1;
+  string call = 2;
+  string state = 3;         // scheduled | active | ended
+  uint32 participants = 4;
+  bool record = 5;
+  bool video = 6;
+  int64 scheduled_at = 7;   // unix seconds for a scheduled call; 0 otherwise
 }
 
 message PresenceSub { repeated string users = 1; }

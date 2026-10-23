@@ -1,7 +1,9 @@
 // The decisions of groups (data/data_group_rules.h): the pts rule, the answer
 // of a send, the catch-up, unread, service notes, the rights table (the
-// cases of the server's own acceptance tables), invite links and mentions.
+// cases of the server's own acceptance tables), invite links, mentions and
+// member tags.
 #include "data/data_group_rules.h"
+#include "data/data_types.h"
 
 #include <QtCore/QJsonDocument>
 
@@ -116,6 +118,8 @@ struct NamedAction {
 		{ "add_admins", kActAddAdmins },
 		{ "history", kActHistory },
 		{ "owner", kActOwner },
+		{ "edit_tag", kActEditOwnTag },
+		{ "manage_tags", kActManageTags },
 	};
 	auto result = QStringList();
 	for (const auto &entry : actions) {
@@ -167,6 +171,14 @@ private Q_SLOTS:
 	void adminLogForms();
 	void adminLogFilter();
 	void slowModeSteps();
+
+	void memberTagShapes();
+	void memberTagText();
+	void memberTagBadges();
+	void memberTagSenders();
+	void memberTagWhoMaySet();
+	void memberTagRows();
+	void memberTagAdminLog();
 
 };
 
@@ -498,20 +510,40 @@ void TestGroupRules::rightsNamesAndMasks() {
 	QCOMPARE(RightNames(), (QStringList{
 		u"change_info"_s, u"delete_messages"_s, u"ban_users"_s,
 		u"invite_users"_s, u"pin_messages"_s, u"add_admins"_s,
+		u"manage_tags"_s,
 	}));
 	QCOMPARE(PermissionNames(), (QStringList{
 		u"send_messages"_s, u"send_media"_s, u"send_links"_s,
 		u"add_members"_s, u"pin_messages"_s, u"change_info"_s,
+		u"edit_tag"_s,
 	}));
-	QCOMPARE(int(kDefaultPermissions), 15);
-	QCOMPARE(int(kRightsAll), 63);
-	QCOMPARE(int(kPermissionsAll), 63);
+	// What the screens list, in Telegram's order.
+	QCOMPARE(ShownRights(), (QStringList{
+		u"change_info"_s, u"delete_messages"_s, u"ban_users"_s,
+		u"invite_users"_s, u"pin_messages"_s, u"manage_tags"_s,
+		u"add_admins"_s,
+	}));
+	QCOMPARE(ShownPermissions(), (QStringList{
+		u"send_messages"_s, u"send_media"_s, u"send_links"_s,
+		u"add_members"_s, u"pin_messages"_s, u"edit_tag"_s,
+		u"change_info"_s,
+	}));
+	QCOMPARE(RightBit(u"manage_tags"_s), int(kManageTags));
+	QCOMPARE(RightBit(u"something_newer"_s), 0);
+	QCOMPARE(PermissionBit(u"edit_tag"_s), int(kEditTag));
+	QCOMPARE(PermissionBit(u"change_info"_s), int(kChangeInfoPermission));
+	// New groups (and every existing one, by the server's migration) let
+	// members set their own tag.
+	QCOMPARE(int(kDefaultPermissions), 79);
+	QCOMPARE(int(kRightsAll), 127);
+	QCOMPARE(int(kPermissionsAll), 127);
 	QCOMPARE(RightsMask({ u"ban_users"_s, u"add_admins"_s }), int(kBanUsers | kAddAdmins));
 	QCOMPARE(RightsMask({ u"ban_users"_s, u"something_newer"_s }), int(kBanUsers));
 	QCOMPARE(PermissionsMask({ u"send_messages"_s, u"pin_messages"_s }), int(kSendMessages | kPinMessages));
 	QCOMPARE(RightsList(kChangeInfo | kPinMessagesRight), (QStringList{ u"change_info"_s, u"pin_messages"_s }));
 	QCOMPARE(PermissionsList(kDefaultPermissions), (QStringList{
 		u"send_messages"_s, u"send_media"_s, u"send_links"_s, u"add_members"_s,
+		u"edit_tag"_s,
 	}));
 	// Unknown bits are never shown.
 	QVERIFY(RightsList(1 << 20).isEmpty());
@@ -521,8 +553,11 @@ void TestGroupRules::rightsNamesAndMasks() {
 void TestGroupRules::permissionsTable() {
 	using namespace GroupRights;
 	const auto all = PermissionNames();
-	const auto def = QStringList{ u"send_messages"_s, u"send_media"_s, u"send_links"_s, u"add_members"_s };
-	const auto sending = QStringList{ u"send_messages"_s, u"send_media"_s, u"send_links"_s };
+	const auto def = QStringList{
+		u"send_messages"_s, u"send_media"_s, u"send_links"_s, u"add_members"_s, u"edit_tag"_s };
+	// An admin always sends and sets their own tag.
+	const auto sending = QStringList{
+		u"send_messages"_s, u"send_media"_s, u"send_links"_s, u"edit_tag"_s };
 	const auto everyRight = RightNames();
 	struct Case {
 		const char *name;
@@ -542,10 +577,19 @@ void TestGroupRules::permissionsTable() {
 			Row(u"member"_s, u"member"_s, kRightsAll), kDefaultPermissions, def, {} },
 		{ "member may change info when the defaults say so",
 			Row(u"member"_s, u"member"_s), kDefaultPermissions | kChangeInfoPermission,
-			def + QStringList{ u"change_info"_s }, {} },
+			{ u"send_messages"_s, u"send_media"_s, u"send_links"_s, u"add_members"_s,
+				u"change_info"_s, u"edit_tag"_s }, {} },
 		{ "restricted member loses what is denied",
 			Row(u"member"_s, u"member"_s, 0, kSendMedia | kSendLinks, true), kDefaultPermissions,
-			{ u"send_messages"_s, u"add_members"_s }, {} },
+			{ u"send_messages"_s, u"add_members"_s, u"edit_tag"_s }, {} },
+		{ "a group without own tags",
+			Row(u"member"_s, u"member"_s), kDefaultPermissions & ~kEditTag,
+			{ u"send_messages"_s, u"send_media"_s, u"send_links"_s, u"add_members"_s }, {} },
+		{ "member restricted from the own tag",
+			Row(u"member"_s, u"member"_s, 0, kEditTag, true), kDefaultPermissions,
+			{ u"send_messages"_s, u"send_media"_s, u"send_links"_s, u"add_members"_s }, {} },
+		{ "admin keeps the own tag where members have none",
+			Row(u"member"_s, u"admin"_s), kDefaultPermissions & ~kEditTag, def, {} },
 		{ "an expired restriction denies nothing",
 			Row(u"member"_s, u"member"_s, 0, kPermissionsAll, false), kDefaultPermissions, def, {} },
 		{ "fully restricted member",
@@ -556,6 +600,8 @@ void TestGroupRules::permissionsTable() {
 		{ "admin rights imply the matching permissions",
 			Row(u"member"_s, u"admin"_s, kChangeInfo | kPinMessagesRight | kInviteUsers), 0,
 			all, { u"change_info"_s, u"invite_users"_s, u"pin_messages"_s } },
+		{ "admin: manage_tags is a right, not a permission",
+			Row(u"member"_s, u"admin"_s, kManageTags), 0, sending, { u"manage_tags"_s } },
 		{ "admin: delete and ban imply no member permission",
 			Row(u"member"_s, u"admin"_s, kDeleteMessages | kBanUsers), 0,
 			sending, { u"delete_messages"_s, u"ban_users"_s } },
@@ -577,8 +623,9 @@ void TestGroupRules::permissionsTable() {
 void TestGroupRules::canTable() {
 	using namespace GroupRights;
 	const auto everything = u"member,send_text,send_media,send_links,add_members,pin,change_info,"
-		"delete_messages,ban,invites,add_admins,history,owner"_s;
+		"delete_messages,ban,invites,add_admins,history,owner,edit_tag,manage_tags"_s;
 	const auto sends = u"member,send_text,send_media,send_links"_s;
+	const auto tag = u",edit_tag"_s;
 	struct Case {
 		const char *name;
 		Member member;
@@ -591,41 +638,57 @@ void TestGroupRules::canTable() {
 		{ "owner with a restriction on the row",
 			Row(u"member"_s, u"owner"_s, 0, kPermissionsAll, true), 0, everything },
 
-		{ "member, new group", Row(u"member"_s, u"member"_s), kDefaultPermissions, sends + u",add_members"_s },
+		{ "member, new group", Row(u"member"_s, u"member"_s), kDefaultPermissions,
+			sends + u",add_members"_s + tag },
 		{ "member, locked group", Row(u"member"_s, u"member"_s), 0, u"member"_s },
 		{ "member, text only", Row(u"member"_s, u"member"_s), kSendMessages, u"member,send_text"_s },
 		{ "member, media without text allowed", Row(u"member"_s, u"member"_s), kSendMedia, u"member"_s },
 		{ "member, defaults give pin and info", Row(u"member"_s, u"member"_s), kPermissionsAll,
-			sends + u",add_members,pin,change_info"_s },
+			sends + u",add_members,pin,change_info"_s + tag },
 		{ "member with rights on the row but no role",
-			Row(u"member"_s, u"member"_s, kRightsAll), kDefaultPermissions, sends + u",add_members"_s },
+			Row(u"member"_s, u"member"_s, kRightsAll), kDefaultPermissions,
+			sends + u",add_members"_s + tag },
 		{ "member restricted: no media, no links",
 			Row(u"member"_s, u"member"_s, 0, kSendMedia | kSendLinks, true), kDefaultPermissions,
-			u"member,send_text,add_members"_s },
+			u"member,send_text,add_members"_s + tag },
 		{ "member restricted: read only",
 			Row(u"member"_s, u"member"_s, 0, kPermissionsAll, true), kPermissionsAll, u"member"_s },
 		{ "member whose restriction ended",
 			Row(u"member"_s, u"member"_s, 0, kPermissionsAll, false), kDefaultPermissions,
-			sends + u",add_members"_s },
+			sends + u",add_members"_s + tag },
 		{ "member restricted from adding",
-			Row(u"member"_s, u"member"_s, 0, kAddMembers, true), kDefaultPermissions, sends },
+			Row(u"member"_s, u"member"_s, 0, kAddMembers, true), kDefaultPermissions, sends + tag },
+		{ "member restricted from the own tag",
+			Row(u"member"_s, u"member"_s, 0, kEditTag, true), kDefaultPermissions,
+			sends + u",add_members"_s },
+		{ "member of a group without own tags",
+			Row(u"member"_s, u"member"_s), kDefaultPermissions & ~kEditTag, sends + u",add_members"_s },
 
-		{ "admin without rights", Row(u"member"_s, u"admin"_s), kDefaultPermissions, sends + u",add_members"_s },
-		{ "admin without rights, locked group", Row(u"member"_s, u"admin"_s), 0, sends },
-		{ "admin: change_info", Row(u"member"_s, u"admin"_s, kChangeInfo), 0, sends + u",change_info,history"_s },
-		{ "admin: delete_messages", Row(u"member"_s, u"admin"_s, kDeleteMessages), 0, sends + u",delete_messages"_s },
-		{ "admin: ban_users", Row(u"member"_s, u"admin"_s, kBanUsers), 0, sends + u",ban"_s },
-		{ "admin: invite_users", Row(u"member"_s, u"admin"_s, kInviteUsers), 0, sends + u",add_members,invites"_s },
-		{ "admin: pin_messages", Row(u"member"_s, u"admin"_s, kPinMessagesRight), 0, sends + u",pin"_s },
-		{ "admin: add_admins", Row(u"member"_s, u"admin"_s, kAddAdmins), 0, sends + u",add_admins"_s },
+		{ "admin without rights", Row(u"member"_s, u"admin"_s), kDefaultPermissions,
+			sends + u",add_members"_s + tag },
+		{ "admin without rights, locked group", Row(u"member"_s, u"admin"_s), 0, sends + tag },
+		{ "admin: change_info", Row(u"member"_s, u"admin"_s, kChangeInfo), 0,
+			sends + u",change_info,history"_s + tag },
+		{ "admin: delete_messages", Row(u"member"_s, u"admin"_s, kDeleteMessages), 0,
+			sends + u",delete_messages"_s + tag },
+		{ "admin: ban_users", Row(u"member"_s, u"admin"_s, kBanUsers), 0, sends + u",ban"_s + tag },
+		{ "admin: invite_users", Row(u"member"_s, u"admin"_s, kInviteUsers), 0,
+			sends + u",add_members,invites"_s + tag },
+		{ "admin: pin_messages", Row(u"member"_s, u"admin"_s, kPinMessagesRight), 0,
+			sends + u",pin"_s + tag },
+		{ "admin: add_admins", Row(u"member"_s, u"admin"_s, kAddAdmins), 0,
+			sends + u",add_admins"_s + tag },
+		{ "admin: manage_tags", Row(u"member"_s, u"admin"_s, kManageTags), 0,
+			sends + tag + u",manage_tags"_s },
 		{ "admin: every right is still not the owner", Row(u"member"_s, u"admin"_s, kRightsAll), 0,
-			sends + u",add_members,pin,change_info,delete_messages,ban,invites,add_admins,history"_s },
+			sends + u",add_members,pin,change_info,delete_messages,ban,invites,add_admins,history"_s
+				+ tag + u",manage_tags"_s },
 		{ "admin: the defaults add to the rights",
 			Row(u"member"_s, u"admin"_s, kBanUsers), kPinMessages | kChangeInfoPermission,
-			sends + u",pin,change_info,ban"_s },
+			sends + u",pin,change_info,ban"_s + tag },
 		{ "admin with a restriction on the row",
 			Row(u"member"_s, u"admin"_s, 0, kPermissionsAll, true), kDefaultPermissions,
-			sends + u",add_members"_s },
+			sends + u",add_members"_s + tag },
 
 		{ "left", Row(u"left"_s, u"member"_s), kPermissionsAll, QString() },
 		{ "left, with an owner's row", Row(u"left"_s, u"owner"_s, kRightsAll), kPermissionsAll, QString() },
@@ -675,6 +738,15 @@ void TestGroupRules::canActOnTable() {
 		{ "admin bans someone removed whose row says admin", admin, goneAdminRow, kActBan, true },
 		{ "admin bans someone who never was a member", admin, stranger, kActBan, true },
 		{ "someone who left acts", gone, member, kActBan, false },
+		// Other people's tags: the right, then the target rule.
+		{ "owner tags a member", owner, member, kActManageTags, true },
+		{ "owner tags an admin", owner, admin, kActManageTags, true },
+		{ "an admin without the right tags a member", admin, member, kActManageTags, false },
+		{ "admin tags a member", otherAdmin, member, kActManageTags, true },
+		{ "admin tags another admin", otherAdmin, admin, kActManageTags, false },
+		{ "admin tags the owner", otherAdmin, owner, kActManageTags, false },
+		{ "admin tags themselves through the right", otherAdmin, otherAdmin, kActManageTags, false },
+		{ "member tags a member", member, other, kActManageTags, false },
 	};
 	for (const auto &entry : cases) {
 		QVERIFY2(CanActOn(defaults, entry.actor, entry.target, entry.action) == entry.want, entry.name);
@@ -1039,7 +1111,7 @@ void TestGroupRules::adminLogFilter() {
 		u"photo"_s, u"about"_s, u"pin"_s, u"unpin"_s, u"invite_create"_s,
 		u"invite_revoke"_s, u"join_approve"_s, u"join_decline"_s,
 		u"delete_message"_s, u"delete_messages"_s,
-		u"delete_all_messages"_s, u"transfer"_s,
+		u"delete_all_messages"_s, u"transfer"_s, u"edit_tag"_s,
 	};
 	auto seen = QStringList();
 	for (auto i = 0; i != kCategoryCount; ++i) {
@@ -1080,6 +1152,257 @@ void TestGroupRules::slowModeSteps() {
 	QCOMPARE(
 		SlowModeSteps({ u"10x"_s, u"20s"_s, u"s"_s, u"99999999"_s }),
 		(QVector<int>{ 0, 20 }));
+}
+
+// ---- member tags
+
+void TestGroupRules::memberTagShapes() {
+	// GroupMember: the tag of everybody; admin_title only for admins.
+	const auto member = GroupMember::FromJson(Parse(
+		R"({"user":"u1","role":"member","status":"member","tag":"طراح"})"));
+	QCOMPARE(member.tag, u"طراح"_s);
+	QCOMPARE(member.currentTag(), u"طراح"_s);
+	QCOMPARE(GroupMember::FromJson(member.toJson()).tag, u"طراح"_s);
+	const auto admin = GroupMember::FromJson(Parse(
+		R"({"user":"u2","role":"admin","status":"member","admin_title":"ناظر","tag":"ناظر"})"));
+	QCOMPARE(admin.currentTag(), u"ناظر"_s);
+	// An older server: the admin title is the tag.
+	const auto older = GroupMember::FromJson(Parse(
+		R"({"user":"u3","role":"admin","admin_title":"ناظر"})"));
+	QVERIFY(older.tag.isEmpty());
+	QCOMPARE(older.currentTag(), u"ناظر"_s);
+	// …but never for an ordinary member.
+	const auto stray = GroupMember::FromJson(Parse(
+		R"({"user":"u4","role":"member","admin_title":"x"})"));
+	QVERIFY(stray.currentTag().isEmpty());
+
+	// GroupView: my own tag, the new names in the lists (an old build keeps
+	// them as strings and its masks drop them).
+	const auto header = Group::FromJson(Parse(R"({"group":"j1","title":"x",
+		"role":"member","my_tag":"طراح",
+		"rights":[],"permissions":["send_messages","edit_tag"],
+		"default_permissions":["send_messages","edit_tag"]})"));
+	QCOMPARE(header.myTag, u"طراح"_s);
+	QVERIFY(header.can(u"edit_tag"));
+	QCOMPARE(Group::FromJson(header.toJson()).myTag, u"طراح"_s);
+	QCOMPARE(GroupRights::PermissionsMask(header.permissions),
+		int(GroupRights::kSendMessages | GroupRights::kEditTag));
+	QCOMPARE(GroupRights::PermissionsMask({ u"send_messages"_s, u"edit_tag"_s })
+			& ((1 << 6) - 1),
+		int(GroupRights::kSendMessages)); // what a six-name build keeps
+	QVERIFY(Group::FromJson(Parse(R"({"group":"j1","title":"x"})")).myTag.isEmpty());
+
+	// MessageView: the sender's tag and role as they were read.
+	const auto message = Message::FromJson(Parse(R"({"chat":"j1","seq":4,"id":"m4",
+		"sender":"u2","kind":"text","text":"سلام","created_at":1,
+		"sender_tag":"ناظر","sender_role":"admin"})"));
+	QCOMPARE(message.senderTag, u"ناظر"_s);
+	QCOMPARE(message.senderRole, u"admin"_s);
+	const auto stored = Message::FromStored(message.toStored());
+	QCOMPARE(stored.senderTag, u"ناظر"_s);
+	QCOMPARE(stored.senderRole, u"admin"_s);
+	const auto plain = Message::FromJson(Parse(R"({"chat":"j1","seq":5,"id":"m5",
+		"sender":"u3","kind":"text","text":"x","created_at":2})"));
+	QVERIFY(plain.senderTag.isEmpty() && plain.senderRole.isEmpty());
+	QVERIFY(!plain.toJson().contains(u"sender_tag"_s));
+
+	// An entry of the admin log: the tag now and before.
+	const auto entry = Entry(R"({"id":"a9","at":1,"actor":"u1","action":"edit_tag",
+		"target":"u2","detail":{"tag":"ناظر","prev_tag":"مدیر"}})");
+	QCOMPARE(entry.tag, u"ناظر"_s);
+	QCOMPARE(entry.prevTag, u"مدیر"_s);
+}
+
+void TestGroupRules::memberTagText() {
+	using namespace MemberTags;
+	QCOMPARE(RoleOf(u"owner"), Role::Owner);
+	QCOMPARE(RoleOf(u"admin"), Role::Admin);
+	QCOMPARE(RoleOf(u"member"), Role::Member);
+	QCOMPARE(RoleOf(u""), Role::Member);
+	QCOMPARE(RoleOf(u"left"), Role::Member);
+	QCOMPARE(WireRole(Role::Owner), u"owner"_s);
+	QCOMPARE(WireRole(Role::Member), u"member"_s);
+
+	// One line, blanks collapsed, emoji out (Telegram: RemoveEmoji(SingleLine())).
+	QCOMPARE(Shown(u"  طراح \n ارشد  "_s), u"طراح ارشد"_s);
+	QCOMPARE(Shown(u"ناظر "_s + QString::fromUtf8("🌱")), u"ناظر"_s);
+	QCOMPARE(Shown(QString::fromUtf8("🇮🇷 تیم")), u"تیم"_s);              // a flag
+	QCOMPARE(Shown(QString::fromUtf8("1️⃣ نفر")), u"نفر"_s);               // a keycap
+	QCOMPARE(Shown(kFamily + u" خانواده"_s), u"خانواده"_s);                // a joined sequence
+	QCOMPARE(Shown(QString::fromUtf8("👍🏽ok")), u"ok"_s);                  // a skin tone
+	QCOMPARE(Shown(QString::fromUtf8("❤️ x ♥")), u"x"_s);
+	QCOMPARE(Shown(QString::fromUtf8("©️ کپی")), u"کپی"_s);                // a symbol asked to be emoji
+	QCOMPARE(Shown(QString::fromUtf8("© 2026")), QString::fromUtf8("© 2026")); // …and as text
+	// The joiners of Persian words stay.
+	QCOMPARE(Shown(u"می‌خواهم"_s), u"می‌خواهم"_s);
+	QCOMPARE(Shown(u"#1 fan"_s), u"#1 fan"_s);
+	QCOMPARE(Typed(u"  طراح  "_s), u"طراح"_s);
+	QVERIFY(Typed(kGrin + kGrin).isEmpty());
+
+	QVERIFY(TypedOk(QString(16, u'x'), 16));
+	QVERIFY(!TypedOk(QString(17, u'x'), 16));
+	QVERIFY(TypedOk(QString(), 16)); // "" removes the tag
+	QVERIFY(TypedOk(u"  "_s + QString(16, u'x') + u"\n"_s, 16));
+	QVERIFY(TypedOk(QString(16, u'x') + kGrin, 16));
+	QVERIFY(TypedOk(QString::fromUcs4(U"\U00010348").repeated(16), 16)); // code points, not units
+}
+
+void TestGroupRules::memberTagBadges() {
+	using namespace MemberTags;
+	const auto owner = u"مالک"_s;
+	const auto admin = u"ادمین"_s;
+	struct Case {
+		const char *name;
+		Role role;
+		QString tag;
+		QString text;
+		bool pill;
+	};
+	const Case cases[] = {
+		{ "owner without a tag", Role::Owner, QString(), owner, true },
+		{ "owner with a tag", Role::Owner, u"بنیان‌گذار"_s, u"بنیان‌گذار"_s, true },
+		{ "admin without a tag", Role::Admin, QString(), admin, true },
+		{ "admin with a tag", Role::Admin, u"ناظر"_s, u"ناظر"_s, true },
+		{ "admin whose tag is only emoji", Role::Admin, kGrin, admin, true },
+		{ "member with a tag", Role::Member, u"طراح"_s, u"طراح"_s, false },
+		{ "member without a tag", Role::Member, QString(), QString(), false },
+		{ "member whose tag is only emoji", Role::Member, kGrin, QString(), false },
+		{ "a tag of two lines", Role::Member, u"a\nb"_s, u"a b"_s, false },
+	};
+	for (const auto &entry : cases) {
+		const auto badge = BadgeFor(entry.role, entry.tag, owner, admin);
+		QVERIFY2(badge.text == entry.text, entry.name);
+		QVERIFY2(badge.pill() == entry.pill, entry.name);
+		QVERIFY2(badge.empty() == entry.text.isEmpty(), entry.name);
+	}
+	// Only incoming messages of a group that are not service notes.
+	QVERIFY(HasBadge(true, false, false));
+	QVERIFY(!HasBadge(true, true, false));
+	QVERIFY(!HasBadge(true, false, true));
+	QVERIFY(!HasBadge(false, false, false));
+}
+
+void TestGroupRules::memberTagSenders() {
+	using namespace MemberTags;
+	// A message says who its sender is now…
+	QCOMPARE(*FromMessage(u"admin"_s, QString(), false), (Sender{ QString(), Role::Admin }));
+	QCOMPARE(*FromMessage(u"owner"_s, u"x"_s, false), (Sender{ u"x"_s, Role::Owner }));
+	QCOMPARE(*FromMessage(QString(), u"طراح"_s, false), (Sender{ u"طراح"_s, Role::Member }));
+	// …and with neither field «an ordinary member without a tag» — only
+	// from a server that has tags.
+	QVERIFY(!FromMessage(QString(), QString(), false));
+	QCOMPARE(*FromMessage(QString(), QString(), true), Sender());
+
+	QCOMPARE(
+		FromMember(u"member"_s, u"admin"_s, QString(), u"ناظر"_s),
+		(Sender{ u"ناظر"_s, Role::Admin }));
+	QCOMPARE(
+		FromMember(QString(), u"member"_s, u"طراح"_s, QString()),
+		(Sender{ u"طراح"_s, Role::Member }));
+	QCOMPARE(FromMember(u"member"_s, u"member"_s, QString(), u"x"_s), Sender());
+	// Nobody who is not in the group has a role or a tag.
+	QCOMPARE(FromMember(u"banned"_s, u"admin"_s, u"x"_s, u"x"_s), Sender());
+	QCOMPARE(FromMember(u"left"_s, u"owner"_s, u"x"_s, QString()), Sender());
+}
+
+void TestGroupRules::memberTagWhoMaySet() {
+	using namespace MemberTags;
+	// My own tag.
+	QVERIFY(CanEditOwn(u"owner"_s, false, true));
+	QVERIFY(CanEditOwn(u"admin"_s, false, true));
+	QVERIFY(CanEditOwn(u"member"_s, true, true));
+	QVERIFY(!CanEditOwn(u"member"_s, false, true));
+	QVERIFY(!CanEditOwn(u"admin"_s, true, false)); // not in the group
+	QVERIFY(!CanEditOwn(QString(), false, true));
+
+	// Somebody else's.
+	using GroupRights::Member;
+	const auto owner = Member::Of(u"u1"_s, u"owner"_s);
+	const auto tagger = Member::Of(u"u2"_s, u"admin"_s, GroupRights::kManageTags);
+	const auto plain = Member::Of(u"u3"_s, u"admin"_s, GroupRights::kBanUsers);
+	const auto member = Member::Of(u"u4"_s, u"member"_s);
+	const auto other = Member::Of(u"u5"_s, u"member"_s);
+	auto gone = Member::Of(u"u6"_s, u"member"_s);
+	gone.status = u"left"_s;
+	QVERIFY(CanEditOther(owner, member));
+	QVERIFY(CanEditOther(owner, tagger));    // an admin's: the owner's to set
+	QVERIFY(CanEditOther(tagger, member));
+	QVERIFY(!CanEditOther(tagger, plain));   // another admin's
+	QVERIFY(!CanEditOther(tagger, owner));   // the owner's: nobody's
+	QVERIFY(!CanEditOther(plain, member));   // no right
+	QVERIFY(!CanEditOther(member, other));
+	QVERIFY(!CanEditOther(owner, owner));    // the own tag is CanEditOwn's
+	QVERIFY(!CanEditOther(owner, gone));     // 409 group.target_not_member
+}
+
+void TestGroupRules::memberTagRows() {
+	using namespace MemberTags;
+	const auto owner = u"مالک"_s;
+	const auto admin = u"ادمین"_s;
+	const auto add = u"افزودن تگ"_s;
+	const auto row = [&](Role role, const QString &tag, bool self, bool canEdit) {
+		return RowTagFor(role, tag, self, canEdit, owner, admin, add);
+	};
+	QCOMPARE(row(Role::Owner, QString(), false, false),
+		(RowTag{ RowMode::Pill, owner, Role::Owner, false }));
+	QCOMPARE(row(Role::Admin, u"ناظر"_s, false, true),
+		(RowTag{ RowMode::Pill, u"ناظر"_s, Role::Admin, true }));
+	QCOMPARE(row(Role::Admin, QString(), true, true),
+		(RowTag{ RowMode::Pill, admin, Role::Admin, true }));
+	QCOMPARE(row(Role::Member, u"طراح"_s, false, false),
+		(RowTag{ RowMode::Text, u"طراح"_s, Role::Member, false }));
+	QCOMPARE(row(Role::Member, u"طراح"_s, false, true),
+		(RowTag{ RowMode::Text, u"طراح"_s, Role::Member, true }));
+	// My own row without a tag: the button, when I may set one.
+	QCOMPARE(row(Role::Member, QString(), true, true),
+		(RowTag{ RowMode::Add, add, Role::Member, true }));
+	QCOMPARE(row(Role::Member, QString(), true, false), RowTag());
+	// Somebody else without a tag: nothing (the row's menu offers it).
+	QCOMPARE(row(Role::Member, QString(), false, true), RowTag());
+	QCOMPARE(row(Role::Member, kGrin, false, false), RowTag());
+}
+
+void TestGroupRules::memberTagAdminLog() {
+	using GroupAdminLog::Form;
+	using GroupAdminLog::FormOf;
+	using GroupAdminLog::NamesTarget;
+	using namespace GroupAdminLog;
+	QCOMPARE(
+		FormOf(Entry(R"({"action":"edit_tag","actor":"u1","target":"u2","detail":{"tag":"b","prev_tag":"a"}})")),
+		Form::TagChanged);
+	QCOMPARE(
+		FormOf(Entry(R"({"action":"edit_tag","actor":"u1","target":"u2","detail":{"tag":"b"}})")),
+		Form::TagSet);
+	QCOMPARE(
+		FormOf(Entry(R"({"action":"edit_tag","actor":"u1","target":"u2","detail":{"prev_tag":"a"}})")),
+		Form::TagRemoved);
+	// The actor's own tag (the target is the actor, or left out).
+	QCOMPARE(
+		FormOf(Entry(R"({"action":"edit_tag","actor":"u1","target":"u1","detail":{"tag":"b","prev_tag":"a"}})")),
+		Form::OwnTagChanged);
+	QCOMPARE(
+		FormOf(Entry(R"({"action":"edit_tag","actor":"u1","detail":{"tag":"b"}})")),
+		Form::OwnTagSet);
+	QCOMPARE(
+		FormOf(Entry(R"({"action":"edit_tag","actor":"u1","target":"u1","detail":{"prev_tag":"a"}})")),
+		Form::OwnTagRemoved);
+	// Nothing before, nothing after: nothing to say but «a change».
+	QCOMPARE(
+		FormOf(Entry(R"({"action":"edit_tag","actor":"u1","target":"u2","detail":{"tag":"  "}})")),
+		Form::Generic);
+	QVERIFY(NamesTarget(Form::TagChanged));
+	QVERIFY(NamesTarget(Form::TagSet));
+	QVERIFY(NamesTarget(Form::TagRemoved));
+	QVERIFY(!NamesTarget(Form::OwnTagChanged));
+	QVERIFY(!NamesTarget(Form::OwnTagSet));
+	QVERIFY(!NamesTarget(Form::OwnTagRemoved));
+
+	// «تغییر تگ‌ها» in the filter.
+	QCOMPARE(Actions(Tags), QStringList{ u"edit_tag"_s });
+	QCOMPARE(ActionsParam(1 << Tags), u"edit_tag"_s);
+	QCOMPARE(
+		ActionsParam((1 << Members) | (1 << Tags)),
+		u"restrict,unrestrict,remove,ban,unban,join_approve,join_decline,edit_tag"_s);
 }
 
 QTEST_GUILESS_MAIN(TestGroupRules)
