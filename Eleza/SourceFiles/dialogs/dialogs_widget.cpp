@@ -2,9 +2,12 @@
 
 #include "data/data_chats.h"
 #include "data/data_groups.h"
+#include "data/data_notes.h"
 #include "data/data_session.h"
 #include "dialogs/dialogs_inner_widget.h"
 #include "dialogs/dialogs_menu.h"
+#include "dialogs/dialogs_notes.h"
+#include "dialogs/dialogs_notes_box.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
 #include "main/main_account.h"
@@ -20,6 +23,7 @@
 #include "ui/widgets/tab_bar.h"
 #include "ui/widgets/tooltip.h"
 #include "ui/widgets/top_bar.h"
+#include "ui/wrap/vertical_layout.h"
 #include "ui/ui_utility.h"
 #include "window/window_routes.h"
 #include "window/window_session_controller.h"
@@ -34,6 +38,11 @@ namespace {
 
 const auto kChatsSubTab = u"chats"_s;
 const auto kSubTabKey = u"dialogs.sub_tab"_s;
+const auto kNotesCollapsedKey = u"dialogs.notes_collapsed"_s;
+// The row counts as out of sight once this much of it scrolled away.
+constexpr auto kNotesAwayPart = 0.65;
+// A face clicked next to the title: its note opens once the row is back.
+constexpr auto kNotesRevealMs = 250;
 
 enum EmptyState {
 	kStateRows,
@@ -114,8 +123,12 @@ Widget::Widget(QWidget *parent, Window::SessionController *controller)
 		showFolder(Folder::Main);
 	});
 
-	_inner = _scroll->setOwnedWidget(
-		Ui::object_ptr<InnerWidget>(_scroll, controller));
+	_content = _scroll->setOwnedWidget(
+		Ui::object_ptr<Ui::VerticalLayout>(_scroll));
+	_notesRow = _content->add(
+		Ui::object_ptr<NotesRow>(_content, controller));
+	_inner = _content->add(
+		Ui::object_ptr<InnerWidget>(_content, controller));
 	connect(_inner, &InnerWidget::chatChosen, this, [this](const QString &id) {
 		openChat(id);
 	});
@@ -125,7 +138,9 @@ Widget::Widget(QWidget *parent, Window::SessionController *controller)
 	connect(_inner, &InnerWidget::scrollToRequested, this, [this](
 			int top,
 			int bottom) {
-		_scroll->scrollToY(top, bottom);
+		// (the rows start under the notes)
+		const auto shift = _inner->y();
+		_scroll->scrollToY(top + shift, bottom + shift);
 	});
 	connect(_inner, &InnerWidget::rowsChanged, this, [this] {
 		refreshState();
@@ -171,6 +186,7 @@ Widget::Widget(QWidget *parent, Window::SessionController *controller)
 		[this] { refreshActiveChat(); });
 
 	setupSubTabs();
+	setupNotes();
 	refreshTopBar();
 	refreshState();
 	refreshActiveChat();
@@ -315,6 +331,9 @@ bool Widget::handleCommand(Window::Command command) {
 	case Window::Command::Refresh:
 		if (chatsTabShown()) {
 			controller()->session().data().chats().loadInbox(this);
+			if (notesAvailable()) {
+				controller()->session().data().notes().reload();
+			}
 			return true;
 		}
 		return false;
@@ -564,6 +583,123 @@ void Widget::refreshState() {
 			widget->setVisible(i == _subTab);
 		}
 	}
+	refreshNotes();
+}
+
+void Widget::setupNotes() {
+	const auto controller = this->controller();
+	auto &notes = controller->session().data().notes();
+	_notesCollapsed = controller->session().account().settings().boolean(
+		kNotesCollapsedKey,
+		false);
+	_notesRow->setHideCallback([this] {
+		setNotesCollapsed(true);
+	});
+	_notesFaces = _bar->setLeadingWidget(
+		Ui::object_ptr<NotesFaces>(_bar, controller));
+	_notesFaces->hide();
+	Ui::InstallTooltip(_notesFaces, [] {
+		return tr::lng_notes_show(tr::now);
+	});
+	_notesFaces->setClickedCallback([this](const QString &userId) {
+		notesFaceClicked(userId);
+	});
+	connect(&notes, &Data::Notes::changed, this, [this] {
+		refreshNotesFaces();
+	});
+	connect(&notes, &Data::Notes::enabledChanged, this, [this] {
+		refreshNotes();
+	});
+	connect(_scroll, &Ui::ScrollArea::scrollTopChanged, this, [this] {
+		refreshNotesFaces();
+	});
+	connect(
+		controller,
+		&Window::SessionController::tabChanged,
+		this,
+		[this](Window::Tab tab) {
+			if (tab == Window::Tab::Chats && notesAvailable()) {
+				// Back on screen: read again (unless it was a moment ago).
+				this->controller()->session().data().notes().refresh();
+			}
+		});
+	refreshNotes();
+	if (notesAvailable()) {
+		notes.refresh();
+	}
+}
+
+bool Widget::notesAvailable() const {
+	return controller()->session().data().notes().enabled()
+		&& (_inner->folder() == Folder::Main)
+		&& chatsTabShown()
+		&& !_inner->searching();
+}
+
+void Widget::refreshNotes() {
+	if (!_notesRow) {
+		return;
+	}
+	const auto shown = notesAvailable() && !_notesCollapsed;
+	if (_notesRow->isHidden() == shown) {
+		_notesRow->setVisible(shown);
+	}
+	refreshNotesFaces();
+}
+
+void Widget::refreshNotesFaces() {
+	if (!_notesFaces) {
+		return;
+	}
+	const auto &notes = controller()->session().data().notes();
+	auto users = QStringList();
+	for (const auto &item : notes.feed().items) {
+		if (users.size() == kNotesFacesMax) {
+			break;
+		}
+		users.push_back(item.user.id);
+	}
+	if (users.isEmpty() && _notesCollapsed && notes.loaded()) {
+		// Collapsed without friends' notes: my face brings the row back.
+		users.push_back(controller()->session().userId());
+	}
+	_notesFaces->setUsers(users);
+	const auto away = _notesCollapsed
+		|| (_scroll->scrollTop()
+			> int(_notesRow->height() * kNotesAwayPart));
+	const auto shown = notesAvailable() && away && !_notesFaces->empty();
+	if (_notesFaces->isHidden() == shown) {
+		_notesFaces->setVisible(shown);
+	}
+}
+
+void Widget::setNotesCollapsed(bool collapsed) {
+	if (_notesCollapsed == collapsed) {
+		return;
+	}
+	_notesCollapsed = collapsed;
+	controller()->session().account().settings().set(
+		kNotesCollapsedKey,
+		collapsed);
+	refreshNotes();
+}
+
+void Widget::notesFaceClicked(const QString &userId) {
+	setNotesCollapsed(false);
+	_scroll->scrollToYAnimated(0);
+	const auto controller = this->controller();
+	controller->session().data().notes().refresh();
+	if (userId.isEmpty()) {
+		return;
+	}
+	// The row is on its way; the note opens over it.
+	Ui::CallDelayed(kNotesRevealMs, this, [=] {
+		if (userId == controller->session().userId()) {
+			ShowNoteComposer(controller);
+		} else {
+			ShowFriendNote(controller, userId);
+		}
+	});
 }
 
 void Widget::resizeEvent(QResizeEvent *e) {

@@ -1,9 +1,11 @@
 #include "core/core_single_instance.h"
 
 #include "base/platform_file.h"
+#include "base/random.h"
 
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDir>
+#include <QtCore/QFile>
 #include <QtCore/QStandardPaths>
 #include <QtNetwork/QLocalSocket>
 
@@ -23,13 +25,54 @@ constexpr auto kMaxMessage = 4096;
 	return result.isEmpty() ? QDir::homePath() : result;
 }
 
+// On Windows the endpoint is a named pipe, in one namespace for the whole
+// machine, and Qt cannot ask for the first instance of a name only: another
+// user who can work the name out could create it first and swallow every
+// launch. A random secret kept in the data directory (closed to other users)
+// goes into the name. Empty when it cannot be stored: the name is as before.
+[[maybe_unused]] [[nodiscard]] QByteArray InstanceSecret(const QString &workDir) {
+	constexpr auto kSize = 32; // hex characters
+	const auto path = QDir(workDir).filePath(QStringLiteral("instance.secret"));
+	const auto read = [&] {
+		auto file = QFile(path);
+		const auto secret = file.open(QIODevice::ReadOnly)
+			? file.read(kSize + 1)
+			: QByteArray();
+		return (secret.size() == kSize) ? secret : QByteArray();
+	};
+	if (const auto secret = read(); !secret.isEmpty()) {
+		return secret;
+	} else if (QFile::exists(path)) {
+		QFile::remove(path); // damaged: made anew
+	}
+	// Written aside and renamed (which never replaces a file): two first
+	// launches at once end up with the same secret.
+	const auto temp = path + u'.' + QString::fromLatin1(base::RandomBytes(4).toHex());
+	auto file = QFile(temp);
+	if (file.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
+		const auto written = file.write(base::RandomBytes(kSize / 2).toHex());
+		file.close();
+		if (written != kSize || !QFile::rename(temp, path)) {
+			QFile::remove(temp);
+		}
+	}
+	return read();
+}
+
 // Where the endpoint lives. A bare name is a socket in the shared temporary
 // directory on Unix: another user of the machine could take the (predictable)
 // name first and swallow every launch. The per-user runtime directory (0700)
 // cannot be squatted; the name itself is still per user and per data directory.
 [[nodiscard]] QString EndpointName(const QString &workDir) {
+	auto seed = (UserName() + QLatin1Char('\n') + QDir(workDir).absolutePath()).toUtf8();
+#ifdef Q_OS_WIN
+	if (const auto secret = InstanceSecret(workDir); !secret.isEmpty()) {
+		seed += '\n';
+		seed += secret;
+	}
+#endif // Q_OS_WIN
 	const auto hash = QCryptographicHash::hash(
-		(UserName() + QLatin1Char('\n') + QDir(workDir).absolutePath()).toUtf8(),
+		seed,
 		QCryptographicHash::Sha256).toHex().left(16);
 	const auto name = QStringLiteral("eleza-desktop-") + QString::fromLatin1(hash);
 #ifdef Q_OS_UNIX

@@ -77,6 +77,7 @@ Session::Session(const QUrl &url, ProofProvider proof, QObject *parent)
 Session::~Session() {
 	_closed = true;
 	_pending.clear();
+	_queuedCalls.clear();
 	if (_socket) {
 		_socket->disconnect(this);
 		_socket->abort();
@@ -304,7 +305,11 @@ void Session::onResponse(const QJsonObject &response) {
 			? _proof(BytesOf(*challenge, "nonce"_L1))
 			: QByteArray();
 		if (signature.isEmpty()) {
+			// Nothing to prove it with: the server would only wait for the
+			// proof. End the attempt as an authentication failure (a fresh
+			// token, then a new connection).
 			Q_EMIT authFailed(error);
+			close(kCloseAuth, u"proof unavailable"_s);
 			return;
 		}
 		const auto proof = Proto::Encode("Proof"_L1, QJsonObject{
@@ -326,12 +331,18 @@ void Session::onResponse(const QJsonObject &response) {
 		}
 		return;
 	}
+	if (found && pending.call) {
+		--_callsInFlight;
+	}
 	if (found && pending.done) {
 		auto result = Response();
 		result.status = ok ? Response::Status::Ok : Response::Status::Error;
 		result.body = body;
 		result.error = error;
 		pending.done(result);
+	}
+	if (found && pending.call) {
+		callFinished();
 	}
 }
 
@@ -363,10 +374,14 @@ void Session::transmit(const QByteArray &envelope) {
 	}
 }
 
-quint32 Session::addPending(Fn<void(const Response &)> done) {
+quint32 Session::addPending(Fn<void(const Response &)> done, bool call) {
 	const auto id = _nextId++;
 	auto pending = Pending();
 	pending.done = std::move(done);
+	pending.call = call;
+	if (call) {
+		++_callsInFlight;
+	}
 	pending.timer = std::make_unique<base::Timer>([=, this] {
 		drop(id);
 	});
@@ -388,16 +403,35 @@ void Session::call(
 		}
 		return;
 	}
-	const auto id = addPending(std::move(done));
+	auto queued = QueuedCall{ method, body, idempotencyKey, std::move(done) };
+	if (_callsInFlight >= kMaxCallsInFlight) {
+		_queuedCalls.push_back(std::move(queued));
+		return;
+	}
+	sendCall(std::move(queued));
+}
+
+void Session::callFinished() {
+	while (isOpen()
+		&& !_queuedCalls.empty()
+		&& _callsInFlight < kMaxCallsInFlight) {
+		auto next = std::move(_queuedCalls.front());
+		_queuedCalls.pop_front();
+		sendCall(std::move(next));
+	}
+}
+
+void Session::sendCall(QueuedCall &&call) {
+	const auto id = addPending(std::move(call.done), true);
 	auto request = QJsonObject{
 		{ u"id"_s, double(id) },
-		{ u"method"_s, method },
+		{ u"method"_s, call.method },
 	};
-	if (!body.isEmpty()) {
-		request.insert(u"body"_s, base::bytes::toBase64(body));
+	if (!call.body.isEmpty()) {
+		request.insert(u"body"_s, base::bytes::toBase64(call.body));
 	}
-	if (!idempotencyKey.isEmpty()) {
-		request.insert(u"idempotency_key"_s, idempotencyKey);
+	if (!call.idempotencyKey.isEmpty()) {
+		request.insert(u"idempotency_key"_s, call.idempotencyKey);
 	}
 	const auto envelope = Proto::Encode("Envelope"_L1, QJsonObject{ { u"req"_s, request } });
 	if (!envelope || envelope->size() > Frames::kMaxFrame) {
@@ -461,16 +495,29 @@ void Session::drop(quint32 id) {
 		pending.timer->cancel();
 		pending.timer.release()->deleteLater();
 	}
+	if (pending.call) {
+		--_callsInFlight;
+	}
 	if (pending.done) {
 		pending.done(Response());
+	}
+	if (pending.call) {
+		callFinished();
 	}
 }
 
 void Session::dropPending() {
 	const auto pending = std::exchange(_pending, {});
+	const auto queued = std::exchange(_queuedCalls, {});
+	_callsInFlight = 0;
 	for (const auto &[id, entry] : pending) {
 		if (entry.done) {
 			entry.done(Response());
+		}
+	}
+	for (const auto &call : queued) {
+		if (call.done) {
+			call.done(Response());
 		}
 	}
 }

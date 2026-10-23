@@ -605,7 +605,7 @@ void InfoWidget::rebuild() {
 	});
 	_notify->setValueText(NotifyLabel(group.notify));
 	if (third) {
-		addRow(tr::lng_groups_media_title(tr::now), &st::groupsIconMedia, [=] {
+		addRow(tr::lng_media_shared_title(tr::now), &st::groupsIconMedia, [=] {
 			window->openRoute(Window::Routes::GroupMedia(id));
 		});
 	}

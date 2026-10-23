@@ -193,7 +193,8 @@ View::DownloadState Downloads::state(const Data::Message &message) const {
 	result.path = savedPath(message);
 	if (const auto i = _failures.constFind(key); i != _failures.cend()) {
 		result.failed = true;
-		result.oversized = *i;
+		result.oversized = i->oversized;
+		result.gone = i->gone;
 	}
 	return result;
 }
@@ -281,7 +282,15 @@ void Downloads::start(
 	});
 	connect(handle, &Data::MediaHandle::failed, this, [=, this] {
 		// Kept for the bubble until the next attempt.
-		_failures.insert(messageKey, (handle->error().code == u"too_large"));
+		// Only the server saying so makes the file «unavailable»: no
+		// network, a busy server or a timeout is worth another try.
+		const auto &error = handle->error();
+		_failures.insert(messageKey, Failure{
+			.oversized = (error.code == u"too_large"),
+			.gone = (error.status == 404
+				|| error.status == 403
+				|| error.status == 410),
+		});
 		finish(key, chat, seq, QString());
 		Q_EMIT failed(chat, seq);
 	});

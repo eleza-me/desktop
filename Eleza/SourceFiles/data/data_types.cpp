@@ -79,6 +79,8 @@ Profile Profile::FromJson(const QJsonObject &json) {
 	result.birthday = Optional<Birthday>(json, "birthday"_L1);
 	result.reason = String(json, "reason"_L1);
 	result.mutualCount = Int(json, "mutual_count"_L1);
+	result.groupCount = Int(json, "group_count"_L1);
+	result.joinedRecently = Bool(json, "joined_recently"_L1);
 	return result;
 }
 
@@ -105,6 +107,8 @@ QJsonObject Profile::toJson() const {
 	}
 	Put(result, "reason"_L1, reason);
 	Put(result, "mutual_count"_L1, mutualCount);
+	Put(result, "group_count"_L1, groupCount);
+	Put(result, "joined_recently"_L1, joinedRecently);
 	return result;
 }
 
@@ -295,6 +299,7 @@ ChatInfo ChatInfo::FromJson(const QJsonObject &json) {
 	result.draft = Optional<Draft>(json, "draft"_L1);
 	result.pins = Int64s(json.value("pins"_L1));
 	result.liveShares = Int(json, "live_shares"_L1);
+	result.actionBar = String(json, "action_bar"_L1);
 	return result;
 }
 
@@ -325,6 +330,7 @@ QJsonObject ChatInfo::toJson() const {
 	}
 	Put(result, "pins"_L1, Array(pins));
 	Put(result, "live_shares"_L1, liveShares);
+	Put(result, "action_bar"_L1, actionBar);
 	return result;
 }
 
@@ -482,6 +488,32 @@ QJsonObject Quote::toJson() const {
 	return result;
 }
 
+SelfDestruct SelfDestruct::FromJson(const QJsonObject &json) {
+	auto result = SelfDestruct();
+	result.mode = String(json, "mode"_L1);
+	result.seconds = Int(json, "seconds"_L1);
+	result.state = String(json, "state"_L1);
+	result.openedAt = Int64(json, "opened_at"_L1);
+	result.destructAt = Int64(json, "destruct_at"_L1);
+	return result;
+}
+
+QJsonObject SelfDestruct::toJson() const {
+	auto result = QJsonObject();
+	result.insert("mode"_L1, mode);
+	Put(result, "seconds"_L1, seconds);
+	result.insert("state"_L1, state);
+	Put(result, "opened_at"_L1, openedAt);
+	Put(result, "destruct_at"_L1, destructAt);
+	return result;
+}
+
+QJsonObject SelfDestructInput::toJson() const {
+	return viewOnce
+		? QJsonObject{ { u"view_once"_s, true } }
+		: QJsonObject{ { u"seconds"_s, seconds } };
+}
+
 StoryRef StoryRef::FromJson(const QJsonObject &json) {
 	auto result = StoryRef();
 	result.storyId = String(json, "story_id"_L1);
@@ -490,6 +522,10 @@ StoryRef StoryRef::FromJson(const QJsonObject &json) {
 	result.kind = String(json, "kind"_L1);
 	result.expiresAt = Int64(json, "expires_at"_L1);
 	result.emoji = String(json, "emoji"_L1);
+	result.comment = String(json, "comment"_L1);
+	if (const auto available = json.value("available"_L1); available.isBool()) {
+		result.available = available.toBool();
+	}
 	return result;
 }
 
@@ -501,6 +537,10 @@ QJsonObject StoryRef::toJson() const {
 	Put(result, "kind"_L1, kind);
 	Put(result, "expires_at"_L1, expiresAt);
 	Put(result, "emoji"_L1, emoji);
+	Put(result, "comment"_L1, comment);
+	if (available) {
+		result.insert("available"_L1, *available);
+	}
 	return result;
 }
 
@@ -622,6 +662,8 @@ MessageKind MessageKindFromString(const QString &kind) {
 		return MessageKind::StoryReply;
 	} else if (kind == u"story_reaction") {
 		return MessageKind::StoryReaction;
+	} else if (kind == u"story_share") {
+		return MessageKind::StoryShare;
 	}
 	return MessageKind::Unknown;
 }
@@ -644,6 +686,7 @@ QString MessageKindToString(MessageKind kind) {
 	case MessageKind::Call: return u"call"_s;
 	case MessageKind::StoryReply: return u"story_reply"_s;
 	case MessageKind::StoryReaction: return u"story_reaction"_s;
+	case MessageKind::StoryShare: return u"story_share"_s;
 	case MessageKind::Unknown: return QString();
 	}
 	return QString();
@@ -762,6 +805,29 @@ Message Message::FromJson(const QJsonObject &json) {
 	if (auto story = Optional<StoryRef>(json, "story"_L1); story && !story->storyId.isEmpty()) {
 		result.story = std::move(story);
 	}
+	if (result.kind == MessageKind::StoryShare) {
+		// `text` is the line written for apps that do not know the kind
+		// («📖 استوری @owner», then the comment on its own line); the
+		// bubble shows the sender's comment alone. A copy cached before the
+		// comment was kept has it only in that text.
+		const auto story = json.value("story"_L1).toObject();
+		if (result.story && story.contains("comment"_L1)) {
+			result.text = result.story->comment;
+		} else {
+			const auto lineBreak = result.text.indexOf(QLatin1Char('\n'));
+			result.text = (lineBreak >= 0)
+				? result.text.mid(lineBreak + 1).trimmed()
+				: QString();
+			if (result.story) {
+				result.story->comment = result.text;
+			}
+		}
+		// Offsets into the fallback line mean nothing in the comment.
+		result.entities.clear();
+	}
+	if (auto sd = Optional<SelfDestruct>(json, "self_destruct"_L1); sd && !sd->mode.isEmpty()) {
+		result.selfDestruct = std::move(sd);
+	}
 	return result;
 }
 
@@ -823,6 +889,9 @@ QJsonObject Message::toJson() const {
 	if (story) {
 		result.insert("story"_L1, story->toJson());
 	}
+	if (selfDestruct) {
+		result.insert("self_destruct"_L1, selfDestruct->toJson());
+	}
 	return result;
 }
 
@@ -862,6 +931,14 @@ void Message::resolveLocal(const ChatInfo *info, const QString &myUserId) {
 	status = (mine && seq > 0 && seq <= peerRead)
 		? MessageStatus::Read
 		: MessageStatus::Sent;
+}
+
+QString SelfDestructScreenshotTaker(const QString &systemCode) {
+	static const auto kPrefix = u"self_destruct_screenshot:"_s;
+	if (!systemCode.startsWith(kPrefix)) {
+		return QString();
+	}
+	return systemCode.mid(kPrefix.size()).section(u':', 0, 0);
 }
 
 bool MessageLess(const Message &a, const Message &b) {

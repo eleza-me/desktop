@@ -1,6 +1,7 @@
 // Data::Stories on a fake transport: the wire shapes, the tray order and the
-// rings, seen batching, the `story` hint, optimistic reactions and mute; the
-// story reference of story_reply / story_reaction messages.
+// rings, seen batching, the `story` hint, optimistic reactions and mute,
+// sending a story to people and one story by id; the story reference of
+// story_reply / story_reaction / story_share messages.
 #include "data/data_json.h"
 #include "data/data_stories.h"
 #include "data/data_story_types.h"
@@ -96,6 +97,12 @@ private Q_SLOTS:
 	void muteMovesToTheEnd();
 	void createStoryBody();
 	void messageStoryRef();
+	void shareBodyAndAnswer();
+	void shareCountsMine();
+	void getOneStory();
+	void settingsAllowSharing();
+	void messageStoryShare();
+	void storyGoneRule();
 };
 
 void TestStories::parsesStory() {
@@ -115,6 +122,23 @@ void TestStories::parsesStory() {
 	QVERIFY(story.closeFriends);
 	QVERIFY(story.canReply);
 	QCOMPARE(story.myReaction, u"🔥"_s);
+	QVERIFY(!story.canShare);
+	QCOMPARE(story.shareCount, qint64(-1));
+	QVERIFY(!story.linksPost());
+
+	json.insert(u"can_share"_s, true);
+	json.insert(u"share_count"_s, 3);
+	json.insert(u"post"_s, QJsonObject{
+		{ u"id"_s, u"p7"_s },
+		{ u"author"_s, Card(u"u2"_s, u"علی"_s) },
+		{ u"text_excerpt"_s, u"…"_s },
+		{ u"available"_s, true },
+	});
+	const auto shared = Story::FromJson(json);
+	QVERIFY(shared.canShare);
+	QCOMPARE(shared.shareCount, qint64(3));
+	// A video made from an Eli post: «دیدن الی».
+	QVERIFY(shared.linksPost());
 
 	const auto post = Story::FromJson(StoryJson(u"st2"_s, 100, true, u"post"_s));
 	QCOMPARE(post.kind, StoryKind::Post);
@@ -159,8 +183,9 @@ void TestStories::parsesTrayAndSorts() {
 	for (const auto &item : items) {
 		order.push_back(item.user.id);
 	}
-	// Unseen by newest, then seen, muted last whatever it holds.
-	QCOMPARE(order, (QStringList{ u"d"_s, u"b"_s, u"a"_s, u"c"_s }));
+	// Unseen, then seen, muted last whatever it holds; inside a group the
+	// server's order (affinity) stays, whatever the times say.
+	QCOMPARE(order, (QStringList{ u"b"_s, u"d"_s, u"a"_s, u"c"_s }));
 }
 
 void TestStories::ringStates() {
@@ -382,6 +407,15 @@ void TestStories::createStoryBody() {
 		{ u"post_id"_s, u"p1"_s },
 		{ u"audience"_s, u"close_friends"_s },
 	}));
+	// A photo / video made from a post carries both.
+	auto both = CreateStory();
+	both.mediaId = u"f2"_s;
+	both.postId = u"p1"_s;
+	QCOMPARE(both.toJson(), (QJsonObject{
+		{ u"media_id"_s, u"f2"_s },
+		{ u"post_id"_s, u"p1"_s },
+		{ u"audience"_s, u"everyone"_s },
+	}));
 }
 
 void TestStories::messageStoryRef() {
@@ -439,6 +473,240 @@ void TestStories::messageStoryRef() {
 		{ u"story"_s, QJsonObject{ { u"owner"_s, u"u1"_s } } },
 	});
 	QVERIFY(!broken.story);
+}
+
+void TestStories::shareBodyAndAnswer() {
+	const auto body = StoryShareBody(
+		u"st1"_s,
+		{ u"u1"_s, u"j5"_s, u"u2"_s, u"u1"_s, QString(), u"j5"_s },
+		u"  ببین چه قشنگه \n"_s);
+	QCOMPARE(body, (QJsonObject{
+		{ u"story"_s, u"st1"_s },
+		{ u"to"_s, QJsonArray{ u"u1"_s, u"u2"_s } },
+		{ u"groups"_s, QJsonArray{ u"j5"_s } },
+		{ u"text"_s, u"ببین چه قشنگه"_s },
+	}));
+	// No message: no field.
+	QVERIFY(!StoryShareBody(u"st1"_s, { u"u1"_s }, u"   "_s).contains("text"_L1));
+
+	QCOMPARE(StoryShareCap(0), kStoryShareMaxRecipients);
+	QCOMPARE(StoryShareCap(-3), kStoryShareMaxRecipients);
+	QCOMPARE(StoryShareCap(20), 20);
+
+	const auto result = StoryShareResult::FromJson(QJsonObject{
+		{ u"sent"_s, QJsonArray{
+			QJsonObject{ { u"to"_s, u"u1"_s }, { u"chat"_s, u"c1"_s }, { u"seq"_s, 41 } },
+			QJsonObject{ { u"to"_s, u"j5"_s }, { u"chat"_s, u"j5"_s }, { u"seq"_s, 907 } },
+		} },
+		{ u"not_sent"_s, QJsonArray{
+			QJsonObject{ { u"to"_s, u"u2"_s }, { u"reason"_s, u"not_allowed"_s } },
+			QJsonObject{ { u"to"_s, u"u3"_s }, { u"reason"_s, u"limit"_s } },
+			QJsonObject{ { u"to"_s, u"u4"_s }, { u"reason"_s, u"not_allowed"_s } },
+			QJsonObject{ { u"to"_s, u"u5"_s }, { u"reason"_s, u"something_new"_s } },
+			QJsonObject{ { u"reason"_s, u"limit"_s } }, // nobody: dropped
+		} },
+	});
+	QCOMPARE(result.sent.size(), 2);
+	QCOMPARE(result.sent[1].chat, u"j5"_s);
+	QCOMPARE(result.sent[1].seq, qint64(907));
+	QCOMPARE(result.notSent.size(), 4);
+	QCOMPARE(result.reasons(), (QVector<StoryShareReason>{
+		StoryShareReason::NotAllowed,
+		StoryShareReason::Limit,
+		StoryShareReason::Failed,
+	}));
+	QCOMPARE(
+		result.notSentFor(StoryShareReason::NotAllowed),
+		(QStringList{ u"u2"_s, u"u4"_s }));
+	QCOMPARE(StoryShareReasonFromString(u"privacy"_s), StoryShareReason::Privacy);
+	QCOMPARE(StoryShareReasonFromString(u"unavailable"_s), StoryShareReason::Unavailable);
+}
+
+void TestStories::shareCountsMine() {
+	Harness harness;
+	harness.on(u"stories.share"_s, [](const Call &) {
+		return Reply::Ok(QJsonObject{
+			{ u"sent"_s, QJsonArray{
+				QJsonObject{ { u"to"_s, u"u1"_s }, { u"chat"_s, u"c1"_s }, { u"seq"_s, 3 } },
+				QJsonObject{ { u"to"_s, u"j1"_s }, { u"chat"_s, u"j1"_s }, { u"seq"_s, 9 } },
+			} },
+			{ u"not_sent"_s, QJsonArray() },
+		});
+	});
+	auto &stories = harness.session->stories();
+	auto json = StoryJson(u"st1"_s, 100, true);
+	json.insert(u"share_count"_s, 1);
+	json.insert(u"can_share"_s, true);
+	stories.applyUserStories(UserStories::FromJson(QJsonObject{
+		{ u"user"_s, Card(u"u_me"_s, u"من"_s) },
+		{ u"stories"_s, QJsonArray{ json } },
+	}, u"u_me"_s));
+	auto answer = std::optional<StoryShareResult>();
+	stories.share(u"st1"_s, { u"u1"_s, u"j1"_s }, QString(), base::Guard(), [&](
+			const StoryShareResult &result) {
+		answer = result;
+	});
+	QVERIFY(Test::WaitFor([&] { return answer.has_value(); }));
+	QCOMPARE(answer->sent.size(), 2);
+	QCOMPARE(stories.story(u"st1"_s)->shareCount, qint64(3));
+	const auto body = harness.bodies(u"stories.share"_s).front();
+	QCOMPARE(body.value("story"_L1).toString(), u"st1"_s);
+	QCOMPARE(Json::Strings(body.value("to"_L1)), (QStringList{ u"u1"_s }));
+	QCOMPARE(Json::Strings(body.value("groups"_L1)), (QStringList{ u"j1"_s }));
+
+	// Sharing was turned off meanwhile: the button goes.
+	harness.on(u"stories.share"_s, [](const Call &) {
+		return Reply::Fail(403, u"story.share_not_allowed"_s);
+	});
+	auto failed = QString();
+	stories.share(u"st1"_s, { u"u1"_s }, QString(), base::Guard(), nullptr, [&](
+			const Api::Error &error) {
+		failed = error.code;
+	});
+	QVERIFY(Test::WaitFor([&] { return !failed.isEmpty(); }));
+	QVERIFY(!stories.story(u"st1"_s)->canShare);
+}
+
+void TestStories::getOneStory() {
+	Harness harness;
+	harness.on(u"stories.get"_s, [](const Call &call) {
+		if (call.body.value("story"_L1).toString() == u"st_gone") {
+			return Reply::Fail(404, u"story.not_found"_s);
+		}
+		return Reply::Ok(QJsonObject{
+			{ u"user"_s, Card(u"u7"_s, u"نگار"_s) },
+			{ u"story"_s, StoryJson(u"st9"_s, 500, false) },
+		});
+	});
+	auto &stories = harness.session->stories();
+	auto owner = User();
+	auto story = Story();
+	stories.get(u"st9"_s, base::Guard(), [&](const User &user, const Story &got) {
+		owner = user;
+		story = got;
+	});
+	QVERIFY(Test::WaitFor([&] { return story.valid(); }));
+	QCOMPARE(owner.id, u"u7"_s);
+	QCOMPARE(story.owner, u"u7"_s);
+	// One story is not all of them: no list appears for the owner.
+	QVERIFY(!stories.cached(u"u7"_s));
+
+	QSignalSpy gone(&stories, &Stories::storyGone);
+	auto failed = false;
+	stories.get(u"st_gone"_s, base::Guard(), nullptr, [&](const Api::Error &error) {
+		failed = error.notFound();
+	});
+	QVERIFY(Test::WaitFor([&] { return failed; }));
+	QVERIFY(stories.isGone(u"st_gone"_s));
+	QCOMPARE(gone.count(), 1);
+	stories.markGone(u"st_gone"_s); // once
+	QCOMPARE(gone.count(), 1);
+}
+
+void TestStories::settingsAllowSharing() {
+	const auto older = StorySettings::FromJson(QJsonObject{
+		{ u"replies"_s, u"off"_s },
+	});
+	QVERIFY(!older.allowSharing.has_value());
+	const auto settings = StorySettings::FromJson(QJsonObject{
+		{ u"replies"_s, u"everyone"_s },
+		{ u"allow_sharing"_s, false },
+	});
+	QVERIFY(settings.allowSharing.has_value());
+	QVERIFY(!*settings.allowSharing);
+
+	Harness harness;
+	harness.on(u"stories.settings_update"_s, [](const Call &call) {
+		return Reply::Ok(QJsonObject{
+			{ u"replies"_s, u"everyone"_s },
+			{ u"allow_sharing"_s, call.body.value("allow_sharing"_L1).toBool(true) },
+		});
+	});
+	auto &stories = harness.session->stories();
+	auto answer = std::optional<StorySettings>();
+	stories.setAllowSharing(false, base::Guard(), [&](const StorySettings &result) {
+		answer = result;
+	});
+	QVERIFY(Test::WaitFor([&] { return answer.has_value(); }));
+	QCOMPARE(answer->allowSharing, std::optional<bool>(false));
+	const auto body = harness.bodies(u"stories.settings_update"_s).front();
+	QCOMPARE(body, (QJsonObject{ { u"allow_sharing"_s, false } }));
+}
+
+void TestStories::messageStoryShare() {
+	const auto json = QJsonObject{
+		{ u"chat"_s, u"c1"_s },
+		{ u"seq"_s, 12 },
+		{ u"sender"_s, u"u2"_s },
+		{ u"kind"_s, u"story_share"_s },
+		{ u"text"_s, u"📖 استوری @sara\nببین چه قشنگه"_s },
+		{ u"entities"_s, QJsonArray{ QJsonObject{
+			{ u"type"_s, u"mention"_s },
+			{ u"offset"_s, 10 },
+			{ u"length"_s, 5 },
+		} } },
+		{ u"story"_s, QJsonObject{
+			{ u"story_id"_s, u"st1"_s },
+			{ u"owner"_s, u"u1"_s },
+			{ u"thumb_url"_s, u"/v1/stories/st1/media?variant=thumb"_s },
+			{ u"kind"_s, u"image"_s },
+			{ u"expires_at"_s, 1792165400 },
+			{ u"comment"_s, u"ببین چه قشنگه"_s },
+			{ u"available"_s, true },
+		} },
+	};
+	const auto share = Message::FromJson(json);
+	QCOMPARE(share.kind, MessageKind::StoryShare);
+	QCOMPARE(MessageKindToString(share.kind), u"story_share"_s);
+	// The bubble's text is the comment, never the fallback line.
+	QCOMPARE(share.text, u"ببین چه قشنگه"_s);
+	QVERIFY(share.entities.isEmpty());
+	QCOMPARE(share.story->owner, u"u1"_s);
+	QCOMPARE(share.story->available, std::optional<bool>(true));
+
+	// Kept as it came through the cache.
+	auto stored = share;
+	stored.mine = false;
+	const auto back = Message::FromStored(stored.toStored());
+	QCOMPARE(back.kind, MessageKind::StoryShare);
+	QCOMPARE(back.text, u"ببین چه قشنگه"_s);
+	QCOMPARE(back.story->comment, u"ببین چه قشنگه"_s);
+	QCOMPARE(back.story->available, std::optional<bool>(true));
+
+	// Without a comment: no text at all.
+	auto bare = json;
+	auto story = bare.value("story"_L1).toObject();
+	story.remove(u"comment"_s);
+	story.remove(u"available"_s);
+	bare.insert(u"story"_s, story);
+	bare.insert(u"text"_s, u"📖 استوری @sara"_s);
+	const auto plain = Message::FromJson(bare);
+	QVERIFY(plain.text.isEmpty());
+	QVERIFY(!plain.story->available.has_value());
+	QVERIFY(Message::FromStored(plain.toStored()).text.isEmpty());
+
+	// A copy cached by a build that did not keep the comment: the comment
+	// is the fallback's second line.
+	bare.insert(u"text"_s, u"📖 استوری @sara\n  دیدی؟ "_s);
+	QCOMPARE(Message::FromJson(bare).text, u"دیدی؟"_s);
+}
+
+void TestStories::storyGoneRule() {
+	auto story = StoryRef();
+	story.storyId = u"st1"_s;
+	story.expiresAt = 1000;
+	// A minute's grace for a clock that runs ahead.
+	QVERIFY(!story.gone(1000));
+	QVERIFY(!story.gone(1000 + StoryRef::kExpirySkew - 1));
+	QVERIFY(story.gone(1000 + StoryRef::kExpirySkew));
+	// Expired whatever the message says.
+	story.available = true;
+	QVERIFY(story.gone(5000));
+	QVERIFY(!story.gone(500));
+	story.available = false;
+	QVERIFY(story.gone(500));
+	story.available = std::nullopt;
+	QVERIFY(!story.gone(500));
 }
 
 QTEST_GUILESS_MAIN(TestStories)

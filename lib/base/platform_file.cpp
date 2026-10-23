@@ -108,7 +108,14 @@ std::optional<QByteArray> ReadFile(const QString &path) {
 }
 
 bool RemoveRecursively(const QString &path) {
-	if (path.isEmpty() || !QFileInfo::exists(path)) {
+	if (path.isEmpty()) {
+		return true;
+	}
+	const auto info = QFileInfo(path);
+	if (info.isSymLink() || info.isJunction()) {
+		// The link only (a dangling one too), never what it points to.
+		return QFile::remove(path) || QDir().rmdir(path);
+	} else if (!info.exists()) {
 		return true;
 	}
 	return QDir(path).removeRecursively();

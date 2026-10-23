@@ -225,6 +225,13 @@ Preview PreviewFor(
 			lt_name,
 			senderName);
 	}
+	if (message.selfDestruct) {
+		// Its label only: no caption, no thumbnail.
+		result.kind = Preview::Kind::Media;
+		result.text = Support::MessagePreview(message);
+		result.thumbnail = false;
+		return result;
+	}
 	if (message.underReview) {
 		// A moderator holds it back: the row says so, nothing of it shows.
 		result.kind = Preview::Kind::Service;

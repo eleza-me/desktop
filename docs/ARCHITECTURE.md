@@ -26,9 +26,11 @@ lib/
   install/                plain C++, no Qt: replacing an installed copy's files with a new
                           version (journal, rollback, recovery) and the Windows Updater.exe
   crl/                    (none — Qt event loop only)
-  ui/                     lib "ElezaUi": style runtime, animations, widgets, layers, text, icons, RTL
+  ui/                     lib "ElezaUi": style runtime, animations, widgets, layers, text, icons, RTL,
+                          Telegram's emoji (ui/emoji: the pack's reader, tables, parser, picture cache)
 Eleza/
-  Resources/              fonts, icons (svg), styles/*.style, colors.palette, langs/lang.strings, qrc
+  Resources/              fonts, icons (svg), emoji (Telegram's emoji.pack, embedded uncompressed),
+                          styles/*.style, colors.palette, langs/lang.strings, qrc
   SourceFiles/
     core/                 Application, Launcher, Settings, command line, single instance
     main/                 Main::Account (device + tokens) and Main::Session (signed-in services)
@@ -39,6 +41,7 @@ Eleza/
     data/                 typed models + stores: chats, messages, users, sync (pts), outbox, media,
                           upload, feed, graph, conversations, notifications, stickers (and
                           the decoders of animated ones: data_sticker_decode.h), calls, stories,
+                          notes (data_notes.h; the text rules: data_note_types.h),
                           groups (their own sync track: data_groups.h; the decisions as plain
                           functions: data_group_rules.h)
     lang/                 lang runtime (fa / en), number + date formatting (Persian digits, Jalali)
@@ -46,7 +49,7 @@ Eleza/
                           the checker (check -> download -> verify -> unpack), install glue
     window/               MainWindow, SessionController (navigation), layout (nav rail | side | main)
     intro/                phone -> code -> password / recovery -> profile
-    dialogs/              chat list
+    dialogs/              chat list, the notes over it (dialogs_notes.h, dialogs_notes_box.h)
     history/              chat screen: list view, bubbles, composer, menus
     conversation/         anonymous talker/listener layer: topics, new/join sheets, radar
     groups/               groups beyond their chat: the info screen (members, settings), creating
@@ -57,9 +60,11 @@ Eleza/
     settings/             settings sections
     boxes/                modal boxes shared by sections (peer list, photo crop, country list, about)
     stories/              stories: the tray on top of the feed, rings around faces, the
-                          full-window viewer, posting, the viewers box, Settings → Privacy →
+                          full-window viewer, posting, «ارسال به…» (sending a story to
+                          people and groups), the viewers box, Settings → Privacy →
                           «استوری» (the data side: data/data_stories.h, data_story_types.h)
-    media/                audio/voice player, video player widget, image viewer
+    media/                the app's audio player (queue, «now playing» bar, music player), video
+                          player widget, image viewer, the shared media page of chats and groups
     calls/                voice and video calls (ELEZA_ENABLE_CALLS): the call state machine, the
                           media layer over the LiveKit library, the camera, the call bar / view /
                           incoming window
@@ -108,7 +113,8 @@ through `window/window_update.*`, the settings page `settings/settings_update.cp
 ## Threads
 
 Everything runs on the main (GUI) thread except: SQLite writes (one worker thread behind
-`Storage::Database`), image decoding / scaling (`QThreadPool`), the frames of animated stickers
+`Storage::Database`), image decoding / scaling (`QThreadPool`; the emoji pack's pictures too, one
+decoder at a time: `ui/emoji/emoji_pack.cpp`), the frames of animated stickers
 (two threads of `Support::StickerPlayer`), file hashing for uploads, and the
 audio of a call (one "Calls media" thread that owns the microphone, the loudspeaker and every
 call into the media library; `calls/calls_media_livekit.cpp`).

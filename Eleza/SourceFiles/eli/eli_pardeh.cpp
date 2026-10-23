@@ -48,6 +48,7 @@ namespace {
 constexpr auto kWheelPause = 420;
 constexpr auto kSeekStepMs = 5000;
 constexpr auto kHeartDuration = 700;
+constexpr auto kFillRetryMs = 3000;
 constexpr auto kDefaultAspect = 9. / 16.;
 
 auto Muted = false;
@@ -143,6 +144,7 @@ private:
 	QString _cursor;
 	bool _exhausted = false;
 	bool _fillLoading = false;
+	qint64 _fillFailedAt = 0; // the next page is asked again a moment later
 	bool _bootFailed = false;
 
 	Media::VideoPlayerWidget *_video = nullptr;
@@ -373,14 +375,17 @@ void Pardeh::addPost(const QString &id) {
 }
 
 void Pardeh::fill() {
-	if (_fillLoading || _exhausted) {
+	if (_fillLoading
+		|| _exhausted
+		|| (_fillFailedAt && Ui::Now() - _fillFailedAt < kFillRetryMs)) {
 		return;
 	}
 	_fillLoading = true;
 	auto &feed = session().data().feed();
 	const auto fail = [this](const Api::Error &) {
+		// Not the end: the next step to the last videos asks again.
 		_fillLoading = false;
-		_exhausted = true;
+		_fillFailedAt = Ui::Now();
 	};
 	if (!_authorId.isEmpty()) {
 		feed.userPosts(
@@ -394,6 +399,7 @@ void Pardeh::fill() {
 				for (const auto &id : page.posts) {
 					addPost(id);
 				}
+				_fillFailedAt = 0;
 				_cursor = page.nextBefore;
 				_exhausted = _cursor.isEmpty() || page.posts.isEmpty();
 				preloadNext();
@@ -409,6 +415,7 @@ void Pardeh::fill() {
 				for (const auto &item : page.items) {
 					addPost(item.postId);
 				}
+				_fillFailedAt = 0;
 				_cursor = page.nextCursor;
 				_exhausted = _cursor.isEmpty() || page.items.isEmpty();
 				preloadNext();

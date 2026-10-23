@@ -64,6 +64,16 @@ struct TextEdit {
 	int from,
 	int till);
 
+// The entities a send or an edit carries. The server takes no overlapping
+// ranges (message.entity_invalid), so the spoilers go as they are — what is
+// hidden stays hidden — and each of `others`, in their order (the mentions,
+// then the formatting an edited message came with: bold, links, code...),
+// joins where it overlaps no range taken before it; one that does is
+// dropped whole. Ranges that only touch do not overlap.
+[[nodiscard]] QVector<Data::Entity> EntitiesForSend(
+	const QVector<Data::Entity> &spoilers,
+	const QVector<Data::Entity> &others);
+
 // ---- sending
 
 struct PreparedText {

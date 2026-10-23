@@ -149,26 +149,38 @@ bool Camera::start(const QByteArray &deviceId) {
 			QCamera::Error error,
 			const QString &) {
 		if (error != QCamera::NoError && _active) {
-			stop();
-			Q_EMIT failed();
+			failLater();
 		}
 	});
 	connect(_private->camera.get(), &QCamera::activeChanged, this, [this](
 			bool active) {
 		// Stopped under us (unplugged, the system took it away).
 		if (!active && _active) {
-			stop();
-			Q_EMIT failed();
+			failLater();
 		}
 	});
 	_deviceId = chosen.id();
 	_active = true;
 	_private->camera->start();
-	if (_private->camera->error() != QCamera::NoError) {
+	// An error signal from inside start() went to failLater(): out of
+	// that signal now, so stop here and report it as the result alone.
+	if (!_private || !_active || _private->camera->error() != QCamera::NoError) {
 		stop();
 		return false;
 	}
 	return true;
+}
+
+void Camera::failLater() {
+	// Not from inside the camera's own signal: stop() destroys it.
+	_active = false;
+	const auto failing = _private.get();
+	QTimer::singleShot(0, this, [this, failing] {
+		if (_private.get() == failing && !_active) {
+			stop();
+			Q_EMIT failed();
+		}
+	});
 }
 
 void Camera::startPattern() {

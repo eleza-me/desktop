@@ -9,6 +9,7 @@
 #include "main/main_session.h"
 #include "stories/stories_boxes.h"
 #include "stories/stories_settings.h"
+#include "stories/stories_share.h"
 #include "stories/stories_viewer.h"
 #include "window/window_session_controller.h"
 
@@ -26,6 +27,7 @@ namespace {
 //   debug/story/<owner>/<story>        the viewer at one story (a chat bubble's click)
 //   debug/story-compose?file=<path>    «استوری تازه» with that file
 //   debug/story-share/<post>           «اشتراک در استوری»
+//   debug/story-send/<story>           «ارسال به…» (the sample's stories: stu10, stu20…)
 //   debug/story-viewers/<story>        «بیننده‌ها»
 //   debug/story-settings               Settings → Privacy → «استوری»
 void ApplySample(Window::SessionController *controller) {
@@ -85,10 +87,40 @@ void ApplySample(Window::SessionController *controller) {
 			story.seen = (item.unseen == 0);
 			story.closeFriends = item.closeFriends;
 			story.canReply = (item.user.id != u"u3");
+			// Close-friends stories are never sent on.
+			story.canShare = !story.closeFriends && (item.user.id != u"u4");
+			if (j == 0 && item.user.id == u"u3") {
+				// A photo made from an Eli post: «دیدن الی».
+				auto post = Data::StoryPost();
+				post.id = u"p1"_s;
+				post.author = item.user;
+				post.available = true;
+				story.post = post;
+			}
 			list.stories.push_back(story);
 		}
 		stories.applyUserStories(list);
 	}
+	// Mine: seen by 12, sent on 3 times.
+	auto mine = Data::UserStories();
+	mine.user = page.me.user;
+	auto story = Data::Story();
+	story.id = u"stme0"_s;
+	story.owner = mine.user.id;
+	auto media = Data::StoryMedia();
+	media.width = 1080;
+	media.height = 1920;
+	media.durationMs = 5000;
+	media.blurhash = u"LKO2?U%2Tw=w]~RBVZRi};RPxuwH"_s;
+	story.media = media;
+	story.createdAt = now - 600;
+	story.expiresAt = now + 3600 * 23;
+	story.seen = true;
+	story.viewerCount = 12;
+	story.shareCount = 3;
+	story.canShare = true;
+	mine.stories.push_back(story);
+	stories.applyUserStories(mine);
 }
 
 bool HandleDebugRoute(
@@ -115,6 +147,9 @@ bool HandleDebugRoute(
 		return true;
 	} else if (path.startsWith(u"debug/story-share/")) {
 		ShareToStory(controller, path.section(QLatin1Char('/'), 2, 2));
+		return true;
+	} else if (path.startsWith(u"debug/story-send/")) {
+		ShowShareBox(controller, path.section(QLatin1Char('/'), 2, 2));
 		return true;
 	} else if (path.startsWith(u"debug/story-viewers/")) {
 		ShowViewersBox(controller, path.section(QLatin1Char('/'), 2, 2));

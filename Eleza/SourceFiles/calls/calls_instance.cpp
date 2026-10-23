@@ -137,6 +137,9 @@ void Instance::callStateChanged(Call *call) {
 		Q_EMIT callUpdated();
 		return;
 	}
+	if (!call->id().isEmpty()) {
+		_endedCall = call->id();
+	}
 	if (_args.storeCall) {
 		_args.storeCall(QString());
 	}
@@ -210,7 +213,9 @@ void Instance::dismissEnded() {
 }
 
 void Instance::ring(const QString &call, const QString &from, bool video) {
-	if (call.isEmpty() || from.isEmpty()) {
+	if (call.isEmpty() || from.isEmpty() || call == _endedCall) {
+		// The last one is over here (declined, say), whatever an answer
+		// that was already on its way says.
 		return;
 	}
 	auto created = std::make_unique<Call>(callArgs(from));

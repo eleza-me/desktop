@@ -13,6 +13,7 @@
 #include "data/data_types.h"
 #include "history/history_logic.h"
 #include "history/history_themes.h"
+#include "support/chat_text.h"
 #include "ui/text/text.h"
 
 #include <QtCore/QRect>
@@ -33,6 +34,7 @@ namespace History::View {
 
 class Element;
 class Media;
+class NoteReplyView;
 
 enum class Zone {
 	None,
@@ -87,6 +89,7 @@ struct DownloadState {
 	QString path; // where the saved copy is, when there is one
 	bool failed = false; // the last attempt failed (until the next one)
 	bool oversized = false; // … because the file was larger than declared
+	bool gone = false; // … because the server says it is not there (404 / 403 / 410)
 };
 
 // What an audio row shows of the player.
@@ -97,6 +100,7 @@ struct PlaybackState {
 	double progress = 0.;
 	qint64 positionMs = 0;
 	double speed = 1.;
+	double loadProgress = 0.; // of the download while loading
 };
 
 // Who wrote an incoming message of a group.
@@ -162,12 +166,12 @@ public:
 		Q_UNUSED(userId);
 	}
 	// The words of a service message when the delegate knows more than the
-	// message says (the names of the people in a note of a group); empty:
-	// the common wording.
-	[[nodiscard]] virtual QString elementServiceText(
+	// message says (the names of the people in a note of a group, each of
+	// them opening a profile); an empty text: the common wording.
+	[[nodiscard]] virtual Support::NoteLine elementServiceText(
 			const Data::Message &message) {
 		Q_UNUSED(message);
-		return QString();
+		return Support::NoteLine();
 	}
 
 protected:
@@ -255,8 +259,11 @@ public:
 
 	// Drops what can be rebuilt (text layouts, images).
 	void unloadHeavy();
+	// Builds the texts and names again; the attachment keeps its picture.
+	void reloadTexts();
 	[[nodiscard]] bool heavyLoaded() const {
-		return _loaded;
+		// The attachment may stay while the texts are built again.
+		return _loaded || _media;
 	}
 
 	// ---- geometry for the list
@@ -334,6 +341,7 @@ private:
 	void paintDate(Painter &p) const;
 	void paintUnread(Painter &p) const;
 	void paintService(Painter &p) const;
+	[[nodiscard]] Ui::Text::PaintContext serviceGeometry() const;
 	void paintBubble(Painter &p, const ChatColors &colors) const;
 	void paintReply(Painter &p, const ChatColors &colors) const;
 	void paintPreview(Painter &p, const ChatColors &colors) const;
@@ -366,6 +374,7 @@ private:
 	std::unique_ptr<ReplyView> _reply;
 	std::unique_ptr<PreviewView> _preview;
 	std::unique_ptr<Media> _media;
+	std::unique_ptr<NoteReplyView> _noteReply; // the note this text answers
 	std::vector<ReactionChip> _reactions;
 	std::vector<KeyboardButton> _keyboard;
 	QString _metaText;
@@ -373,6 +382,8 @@ private:
 	QString _viaText;
 	QString _serviceText;
 	QString _serviceShown; // elided for the current width
+	QVector<Support::NoteName> _serviceNames; // names that open a profile
+	Ui::Text::String _serviceString; // the text with its names, when there are any
 	QString _dateText;
 	bool _group = false;       // an incoming message of a group
 	SenderInfo _sender;

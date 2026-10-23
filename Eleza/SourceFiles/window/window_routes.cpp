@@ -336,12 +336,22 @@ QString BotStart(const QString &chatId, const QString &payload) {
 	return route.toString();
 }
 
+QString ChatMedia(const QString &chatId) {
+	auto result = Make(RouteType::Chat, chatId);
+	result.query.insert(QStringLiteral("show"), QStringLiteral("media"));
+	return result.toString();
+}
+
 QString Eli() {
 	return Make(RouteType::Eli).toString();
 }
 
-QString Post(const QString &postId) {
-	return Make(RouteType::Post, postId).toString();
+QString Post(const QString &postId, const QString &rootHint) {
+	auto route = Make(RouteType::Post, postId);
+	if (!rootHint.isEmpty() && rootHint != postId) {
+		route.query.insert(QStringLiteral("root"), rootHint);
+	}
+	return route.toString();
 }
 
 QString SharedPost(const QString &slug) {

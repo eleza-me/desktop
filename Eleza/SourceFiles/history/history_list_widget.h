@@ -84,8 +84,12 @@ public:
 	[[nodiscard]] bool atBottom() const {
 		return _atBottom;
 	}
-	// The viewport does not show the end of the chat.
+	// The viewport does not show the end of the chat: the reader scrolled
+	// up (a message that comes in is no longer followed), or the window of
+	// loaded messages is further up.
 	[[nodiscard]] bool awayFromBottom() const;
+	// The newest message at the bottom edge of the viewport (0: none).
+	[[nodiscard]] qint64 bottomVisibleSeq() const;
 	void scrollByPage(bool up);
 
 	// ---- state
@@ -109,7 +113,8 @@ public:
 	[[nodiscard]] QVector<Data::Message> selectedMessages() const;
 	[[nodiscard]] bool hasTextSelection() const;
 	void clearSelection();
-	// Copies the selected text / messages. False when nothing is selected.
+	// Copies the selected text / messages, says «Copied» and clears the
+	// selection. False when nothing is selected.
 	bool copySelection();
 	// The sender's name as copied text / reply bars show it.
 	[[nodiscard]] QString senderName(const Data::Message &message);
@@ -207,7 +212,7 @@ private:
 	bool elementBotCommands() override;
 	View::SenderInfo elementSender(const Data::Message &message) override;
 	void elementPaintUserpic(Painter &p, const QRect &rect, const QString &userId) override;
-	QString elementServiceText(const Data::Message &message) override;
+	Support::NoteLine elementServiceText(const Data::Message &message) override;
 
 	// ---- rows
 	[[nodiscard]] const Data::History &history() const;
@@ -253,7 +258,6 @@ private:
 	void ensureExactNearViewport();
 	void positionInitially();
 	void showAtSeq(qint64 seq, const std::optional<Data::Quote> &quote, bool animated);
-	void invalidateAll();
 
 	// ---- input (history_list_input.cpp)
 	[[nodiscard]] MouseTarget targetAt(QPoint position) const;
@@ -269,6 +273,9 @@ private:
 	void revealSpoiler(const QString &key);
 	void openMedia(const Data::Message &message);
 	void openPhoto(const Data::Message &message);
+	// The bubble of a message on screen, in global coordinates (empty:
+	// not on screen): the viewer grows out of it and closes into it.
+	[[nodiscard]] QRect viewerOrigin(const QString &key) const;
 	// The media that shows `message` (an album's tile for its item).
 	[[nodiscard]] View::Media *mediaFor(const Data::Message &message) const;
 	void playVideo(const Data::Message &message);

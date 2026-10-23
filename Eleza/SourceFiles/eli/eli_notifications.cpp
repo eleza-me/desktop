@@ -1,17 +1,22 @@
 // Notifications (route eli/notifications): «همه / نام‌بردن‌ها / گفتگو /
 // درخواست‌ها», grouped rows with the faces of the people behind them, follow
 // back / accept / decline right in the row, the follow requests banner and its
-// page. A notification that arrives while the screen is open shows at the top
+// page. A row opens what it is about (a comment: its post at that comment),
+// the person's photo and name open their profile, a grouped follow row opens
+// «دنبال‌کنندگان تازه» with everyone it stands for; a follow back shows
+// whether I follow them already (it waits for the relationship). A notification that arrives while the screen is open shows at the top
 // at once (the unread count is pushed; the first page is read again and
 // merged). Leaving the screen marks everything read, and so does the button.
 #include "eli/eli_actions.h"
 
 #include "base/timer.h"
+#include "boxes/peer_list_box.h"
 #include "data/data_feed.h"
 #include "data/data_graph.h"
 #include "data/data_notifications.h"
 #include "data/data_session.h"
 #include "data/data_users.h"
+#include "eli/eli_logic.h"
 #include "eli/eli_post_card.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
@@ -20,6 +25,7 @@
 #include "support/media_image.h"
 #include "ui/painter.h"
 #include "ui/ui_utility.h"
+#include "ui/layers/generic_box.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/chips.h"
 #include "ui/widgets/labels.h"
@@ -45,6 +51,8 @@ enum class NotifHit {
 	None,
 	Body,
 	Face,
+	Name, // the first actor's name in the line
+
 	Primary, // follow back / accept
 	Secondary, // decline
 };
@@ -78,9 +86,16 @@ enum class NotifHit {
 	return (&KindIcon(kind) != &st::eliNotifIconOther);
 }
 
-[[nodiscard]] QString WhoText(Main::Session &session, const Data::NotificationEntry &entry) {
+struct Who {
+	QString text;
+	QString name; // the first actor's, isolated as it is in `text`
+	bool person = false; // the name opens a profile
+};
+
+[[nodiscard]] Who WhoText(Main::Session &session, const Data::NotificationEntry &entry) {
 	const auto first = entry.actors.isEmpty() ? QString() : entry.actors.front();
 	auto name = QString();
+	auto person = false;
 	if (first.isEmpty()) {
 		name = tr::lng_eli_notif_a_listener(tr::now);
 	} else {
@@ -90,6 +105,7 @@ enum class NotifHit {
 			: user.displayName.isEmpty()
 			? tr::lng_eli_notif_someone(tr::now)
 			: user.displayName;
+		person = !user.deleted;
 	}
 	// Only the name is isolated: it keeps its own direction, while «و N نفر
 	// دیگر» / "and N others" reads with the sentence (isolating the whole
@@ -97,9 +113,225 @@ enum class NotifHit {
 	name = Lang::Isolated(name);
 	const auto total = std::max(entry.actorCount, int(entry.actors.size()));
 	const auto others = std::max(total - 1, 0);
-	return (others > 0)
+	auto result = Who();
+	result.text = (others > 0)
 		? tr::lng_eli_notif_who_others(tr::now, lt_count, double(others), lt_name, name)
 		: name;
+	result.name = name;
+	result.person = person;
+	return result;
+}
+
+// ---- the follow back of a new follower
+
+// A notification does not say whether I follow them already (I may have
+// followed back elsewhere): the button waits for the relationship and never
+// offers «تو هم دنبال کن» to somebody I follow.
+enum class FollowBack {
+	Unknown, // not asked yet: no button
+	Offer, // «تو هم دنبال کن» (also when the server did not answer)
+	Following, // «دنبال می‌کنی»: a click unfollows (after a confirmation)
+	Requested, // «درخواست فرستاده شد»: a click withdraws the request
+};
+
+[[nodiscard]] FollowBack FollowBackOf(const QString &follow) {
+	if (follow == u"following") {
+		return FollowBack::Following;
+	} else if (follow == u"requested") {
+		return FollowBack::Requested;
+	}
+	return FollowBack::Offer;
+}
+
+[[nodiscard]] QString FollowBackText(FollowBack state) {
+	switch (state) {
+	case FollowBack::Following: return tr::lng_following(tr::now);
+	case FollowBack::Requested: return tr::lng_follow_requested(tr::now);
+	case FollowBack::Offer: return tr::lng_follow_back(tr::now);
+	case FollowBack::Unknown: break;
+	}
+	return QString();
+}
+
+// Follows, unfollows or withdraws by the state shown; `done` gets the new
+// state (`failed` the old one is to be shown again).
+void ToggleFollowBack(
+		Window::SessionController *controller,
+		QObject *guard,
+		const QString &userId,
+		const QString &name,
+		FollowBack shown,
+		Fn<void()> started,
+		Fn<void(const QString &follow)> done,
+		Fn<void()> failed) {
+	const auto weak = QPointer<QObject>(guard);
+	const auto apply = [=] {
+		if (!weak) {
+			return;
+		}
+		started();
+		auto &graph = controller->session().data().graph();
+		const auto answered = [=](const Data::GraphState &state) {
+			done(state.follow.isEmpty() ? u"none"_s : state.follow);
+		};
+		const auto fail = [=](const Api::Error &error) {
+			failed();
+			Support::ShowError(controller, error);
+		};
+		if (shown == FollowBack::Offer) {
+			graph.follow(userId, base::Guard(weak.data()), answered, fail);
+		} else {
+			graph.unfollow(userId, base::Guard(weak.data()), answered, fail);
+		}
+	};
+	if (shown != FollowBack::Following) {
+		apply();
+		return;
+	}
+	auto args = Ui::ConfirmBoxArgs();
+	args.text = tr::lng_search_unfollow_sure(
+		tr::now,
+		lt_name,
+		Lang::Isolated(name));
+	args.confirmText = tr::lng_unfollow(tr::now);
+	args.cancelText = tr::lng_never_mind(tr::now);
+	args.destructive = true;
+	args.confirmed = [=](std::function<void()> close) {
+		close();
+		apply();
+	};
+	controller->show(Ui::MakeConfirmBox(std::move(args)));
+}
+
+// «دنبال‌کنندگان تازه»: everyone a grouped follow row stands for (the server
+// lists the newest 20 of a row), each with a follow back; the rest is
+// counted at the end. A click on somebody opens their profile.
+class NewFollowersController final : public Boxes::PeerListController {
+public:
+	NewFollowersController(
+		Window::SessionController *controller,
+		const Data::NotificationEntry &entry)
+	: _controller(controller)
+	, _entry(entry) {
+	}
+
+	QString title() const override {
+		return tr::lng_eli_new_followers(tr::now);
+	}
+
+	void prepare() override {
+		const auto box = delegate()->peerListBox();
+		auto &data = _controller->session().data();
+		QObject::connect(
+			&data.graph(),
+			&Data::Graph::relationshipChanged,
+			box,
+			[this](const QString &userId, const Data::GraphState &state) {
+				if (_states.contains(userId) && !_busy.contains(userId)) {
+					_states[userId] = FollowBackOf(state.follow);
+					refresh(userId);
+				}
+			});
+		auto rows = QVector<Boxes::PeerListRow>();
+		for (const auto &id : _entry.actors) {
+			if (id.isEmpty() || _states.contains(id)) {
+				continue;
+			}
+			_states.insert(id, FollowBack::Unknown);
+			rows.push_back(rowFor(id));
+			if (id == _controller->session().userId()) {
+				continue;
+			}
+			data.graph().relationship(id, base::Guard(box), [=, this](
+					const Data::GraphState &state) {
+				_states[id] = FollowBackOf(state.follow);
+				refresh(id);
+			}, [=, this](const Api::Error &) {
+				_states[id] = FollowBack::Offer;
+				refresh(id);
+			});
+		}
+		const auto rest = std::max(_entry.actorCount, int(_entry.actors.size()))
+			- int(_entry.actors.size());
+		if (rest > 0) {
+			auto note = Boxes::PeerListRow();
+			note.id = u"more"_s;
+			note.note = true;
+			note.title = tr::lng_eli_notif_and_more(tr::now, lt_count, double(rest));
+			rows.push_back(note);
+		}
+		delegate()->setRows(rows);
+	}
+
+	void rowClicked(const Boxes::PeerListRow &row) override {
+		const auto controller = _controller;
+		const auto id = row.id;
+		delegate()->closeBox();
+		OpenProfile(controller, id);
+	}
+
+	void rowActionClicked(const Boxes::PeerListRow &row) override {
+		const auto id = row.id;
+		const auto shown = _states.value(id, FollowBack::Unknown);
+		if (shown == FollowBack::Unknown || _busy.contains(id)) {
+			return;
+		}
+		ToggleFollowBack(
+			_controller,
+			delegate()->peerListBox(),
+			id,
+			row.title,
+			shown,
+			[=, this] {
+				_busy.insert(id);
+				refresh(id);
+			},
+			[=, this](const QString &follow) {
+				_busy.remove(id);
+				_states[id] = FollowBackOf(follow);
+				refresh(id);
+			},
+			[=, this] {
+				_busy.remove(id);
+				refresh(id);
+			});
+	}
+
+private:
+	[[nodiscard]] Boxes::PeerListRow rowFor(const QString &id) const {
+		const auto user = _controller->session().data().users().get(id);
+		auto row = Boxes::PeerListRow::FromUser(user);
+		row.id = id;
+		row.userId = user.deleted ? QString() : id;
+		if (!user.handle.isEmpty() && !user.deleted) {
+			row.subtitle = IsolatedHandle(user.handle);
+		}
+		const auto state = _states.value(id, FollowBack::Unknown);
+		if (!user.deleted) {
+			row.action = FollowBackText(state);
+			row.actionFilled = (state == FollowBack::Offer);
+			row.actionBusy = _busy.contains(id);
+		}
+		return row;
+	}
+
+	void refresh(const QString &id) {
+		delegate()->updateRow(rowFor(id));
+	}
+
+	Window::SessionController *_controller = nullptr;
+	Data::NotificationEntry _entry;
+	QHash<QString, FollowBack> _states;
+	QSet<QString> _busy;
+
+};
+
+void ShowNewFollowers(
+		Window::SessionController *controller,
+		const Data::NotificationEntry &entry) {
+	controller->show(Ui::Box<Boxes::PeerListBox>(
+		&controller->session(),
+		std::make_unique<NewFollowersController>(controller, entry)));
 }
 
 [[nodiscard]] QString LineText(
@@ -114,7 +346,9 @@ enum class NotifHit {
 			? tr::lng_eli_notif_like_many(tr::now, lt_who, who)
 			: tr::lng_eli_notif_like(tr::now, lt_who, who);
 	} else if (kind == u"reply") {
-		return tr::lng_eli_notif_reply(tr::now, lt_who, who);
+		return Logic::AnswersComment(entry.refs)
+			? tr::lng_eli_notif_reply_comment(tr::now, lt_who, who)
+			: tr::lng_eli_notif_reply(tr::now, lt_who, who);
 	} else if (kind == u"mention") {
 		return tr::lng_eli_notif_mention(tr::now, lt_who, who);
 	} else if (kind == u"repost") {
@@ -144,8 +378,12 @@ enum class NotifHit {
 		return id.isEmpty() ? QString() : Window::Routes::Post(id);
 	};
 	const auto &kind = entry.kind;
-	if (kind == u"reply") {
-		return post(ref("reply").isEmpty() ? ref("post") : ref("reply"));
+	if (kind == u"reply" || kind == u"mention") {
+		// The post at that comment: its thread first, the comment lit up.
+		const auto target = Logic::CommentTargetOf(kind, entry.refs);
+		return target.post.isEmpty()
+			? QString()
+			: Window::Routes::Post(target.post, target.rootHint);
 	} else if (kind == u"quote") {
 		return post(ref("quote").isEmpty() ? ref("post") : ref("quote"));
 	} else if (kind == u"conversation_joined") {
@@ -188,6 +426,13 @@ public:
 				relayout();
 			}
 		});
+		connect(&data.graph(), &Data::Graph::relationshipChanged, this, [this](
+				const QString &userId,
+				const Data::GraphState &state) {
+			if (_follow.contains(userId) && !_followBusy.contains(userId)) {
+				setFollow(userId, state.follow);
+			}
+		});
 		connect(&data.feed(), &Data::Feed::postChanged, this, [this](const QString &id) {
 			auto changed = false;
 			for (auto &row : _rows) {
@@ -214,7 +459,6 @@ public:
 			row.entry = entry;
 			for (auto &was : old) {
 				if (was.entry.id == entry.id) {
-					row.followed = was.followed;
 					row.accepted = was.accepted;
 					row.declined = was.declined;
 					row.busy = was.busy;
@@ -311,8 +555,9 @@ private:
 		QString snippetPost;
 		QString primary;
 		QString secondary;
-		QString doneText;
-		bool followed = false;
+		bool primaryOutline = false;
+		int nameAt = -1; // the first actor's name in `text`
+		int nameLength = 0;
 		bool accepted = false;
 		bool declined = false;
 		bool busy = false;
@@ -324,7 +569,6 @@ private:
 		QRect snippetRect;
 		QRect primaryRect;
 		QRect secondaryRect;
-		QRect doneRect;
 		int moreFaces = 0;
 	};
 
@@ -333,15 +577,20 @@ private:
 		// The sentence reads in the interface's direction whatever script the
 		// name is in; the name keeps its own.
 		const auto who = WhoText(session, row.entry);
-		const auto line = LineText(row.entry, who, row.accepted);
+		const auto line = LineText(row.entry, who.text, row.accepted);
 		const auto time = tr::lng_eli_meta_separator(tr::now) + Lang::RelativeTime(
 			QDateTime::fromMSecsSinceEpoch(row.entry.updatedAt));
 		auto marked = Ui::Text::TextWithEntities();
 		marked.text = QChar(style::RightToLeft() ? 0x200F : 0x200E) + line + time;
-		const auto at = marked.text.indexOf(who);
+		const auto at = marked.text.indexOf(who.text);
 		if (at >= 0) {
-			marked.entities.push_back({ Ui::Text::EntityType::Bold, int(at), int(who.size()), QString() });
+			marked.entities.push_back({ Ui::Text::EntityType::Bold, int(at), int(who.text.size()), QString() });
 		}
+		// The name opens their profile, as their picture does.
+		row.nameAt = (at >= 0 && who.person)
+			? int(marked.text.indexOf(who.name, at))
+			: -1;
+		row.nameLength = (row.nameAt >= 0) ? int(who.name.size()) : 0;
 		row.text.setMarkedText(st::eliNotifTextStyle, marked);
 		row.snippetPost = QString();
 		row.snippet.clear();
@@ -364,13 +613,15 @@ private:
 		}
 		row.primary = QString();
 		row.secondary = QString();
-		row.doneText = QString();
+		row.primaryOutline = false;
 		const auto hasActor = !row.entry.actors.isEmpty();
 		if (kind == u"follow" && hasActor) {
-			if (row.followed) {
-				row.doneText = tr::lng_following(tr::now);
-			} else {
-				row.primary = tr::lng_follow(tr::now);
+			const auto actor = row.entry.actors.front();
+			const auto state = followBack(actor);
+			if (!session.data().users().get(actor).deleted
+				&& actor != session.userId()) {
+				row.primary = FollowBackText(state);
+				row.primaryOutline = (state != FollowBack::Offer);
 			}
 		} else if (kind == u"follow_request" && hasActor && !row.accepted && !row.declined) {
 			row.primary = tr::lng_eli_request_accept(tr::now);
@@ -413,7 +664,6 @@ private:
 		}
 		row.primaryRect = QRect();
 		row.secondaryRect = QRect();
-		row.doneRect = QRect();
 		if (!row.primary.isEmpty()) {
 			y += st::eliNotifButtonsTop;
 			const auto width = st::eliNotifButtonFont->width(row.primary)
@@ -429,10 +679,6 @@ private:
 					st::eliNotifButtonHeight);
 			}
 			y += st::eliNotifButtonHeight;
-		} else if (!row.doneText.isEmpty()) {
-			y += st::eliNotifButtonsTop;
-			row.doneRect = QRect(contentLeft, y, contentWidth, st::eliNotifButtonFont->height + 4);
-			y += row.doneRect.height();
 		}
 		row.height = y + padding.bottom() + 1;
 	}
@@ -502,10 +748,20 @@ private:
 			const auto rect = physical(row, row.primaryRect);
 			const auto over = (_over == index && _overHit == NotifHit::Primary);
 			p.setOpacity(row.busy ? 0.5 : 1.);
-			p.setPen(Qt::NoPen);
-			p.setBrush(over ? st::brandPressed : st::brandPrimary);
-			p.drawRoundedRect(rect, rect.height() / 2, rect.height() / 2);
-			p.setPen(st::textOnBrand);
+			if (row.primaryOutline) {
+				p.setPen(st::borderStrong);
+				p.setBrush(over ? st::stateHover->b : QBrush(Qt::NoBrush));
+				p.drawRoundedRect(
+					QRectF(rect).adjusted(0.5, 0.5, -0.5, -0.5),
+					rect.height() / 2,
+					rect.height() / 2);
+				p.setPen(st::textPrimary);
+			} else {
+				p.setPen(Qt::NoPen);
+				p.setBrush(over ? st::brandPressed : st::brandPrimary);
+				p.drawRoundedRect(rect, rect.height() / 2, rect.height() / 2);
+				p.setPen(st::textOnBrand);
+			}
 			p.setFont(st::eliNotifButtonFont);
 			p.drawTextCentered(rect, row.primary);
 			if (!row.secondaryRect.isEmpty()) {
@@ -521,14 +777,6 @@ private:
 				p.drawTextCentered(second, row.secondary);
 			}
 			p.setOpacity(1.);
-		} else if (!row.doneRect.isEmpty()) {
-			p.setPen(st::eliNotifDoneFg);
-			p.setFont(st::eliNotifButtonFont);
-			p.drawTextLeft(
-				_left + row.doneRect.x(),
-				row.top + row.doneRect.y(),
-				width(),
-				row.doneText);
 		}
 		if (!row.entry.read) {
 			const auto dot = st::eliNotifDot;
@@ -578,10 +826,84 @@ private:
 					return;
 				}
 			}
+			if (overName(row, position)) {
+				setHover(i, NotifHit::Name, 0);
+				return;
+			}
 			setHover(i, NotifHit::Body, -1);
 			return;
 		}
 		setHover(-1, NotifHit::None, -1);
+	}
+
+	[[nodiscard]] bool overName(const Row &row, QPoint position) const {
+		if (row.nameAt < 0) {
+			return false;
+		}
+		const auto rect = physical(row, row.textRect);
+		if (!rect.contains(position)) {
+			return false;
+		}
+		auto context = Ui::Text::PaintContext();
+		context.position = rect.topLeft();
+		context.availableWidth = rect.width();
+		context.elisionLines = 3;
+		const auto state = row.text.getState(position, context);
+		return state.uponSymbol
+			&& state.symbol >= row.nameAt
+			&& state.symbol < row.nameAt + row.nameLength;
+	}
+
+	// What the follow back of `userId` shows; asks the server once.
+	[[nodiscard]] FollowBack followBack(const QString &userId) {
+		const auto i = _follow.constFind(userId);
+		if (i != _follow.cend()) {
+			return *i;
+		}
+		_follow.insert(userId, FollowBack::Unknown);
+		_controller->session().data().graph().relationship(
+			userId,
+			base::Guard(this),
+			[=, this](const Data::GraphState &state) {
+				setFollow(userId, state.follow);
+			},
+			[=, this](const Api::Error &) {
+				// Unanswered: the follow back is offered, as before.
+				setFollow(userId, QString());
+			});
+		return FollowBack::Unknown;
+	}
+
+	void setFollow(const QString &userId, const QString &follow) {
+		_follow[userId] = FollowBackOf(follow);
+		auto changed = false;
+		for (auto &row : _rows) {
+			if (row.entry.kind == u"follow"
+				&& !row.entry.actors.isEmpty()
+				&& row.entry.actors.front() == userId) {
+				rebuild(row);
+				changed = true;
+			}
+		}
+		if (changed) {
+			relayout();
+		}
+	}
+
+	void setFollowBusy(const QString &userId, bool busy) {
+		if (busy) {
+			_followBusy.insert(userId);
+		} else {
+			_followBusy.remove(userId);
+		}
+		for (auto &row : _rows) {
+			if (row.entry.kind == u"follow"
+				&& !row.entry.actors.isEmpty()
+				&& row.entry.actors.front() == userId) {
+				row.busy = busy;
+			}
+		}
+		update();
 	}
 
 	[[nodiscard]] Row *find(const QString &id) {
@@ -621,12 +943,20 @@ private:
 				OpenProfile(_controller, row.entry.actors[face]);
 			}
 			break;
+		case NotifHit::Name:
+			if (!actor.isEmpty()) {
+				OpenProfile(_controller, actor);
+			}
+			break;
 		case NotifHit::Body: {
 			row.entry.read = true;
 			update();
 			const auto route = TargetRoute(row.entry);
 			if (!route.isEmpty()) {
 				_controller->openRoute(route);
+			} else if (row.entry.kind == u"follow" && row.entry.actors.size() > 1) {
+				// «سمانه و ۳ نفر دیگر دنبالت کردند»: who they all are.
+				ShowNewFollowers(_controller, row.entry);
 			} else if (!actor.isEmpty()) {
 				OpenProfile(_controller, actor);
 			}
@@ -635,23 +965,34 @@ private:
 			if (row.busy || actor.isEmpty()) {
 				break;
 			}
+			if (row.entry.kind == u"follow") {
+				const auto shown = _follow.value(actor, FollowBack::Unknown);
+				if (shown == FollowBack::Unknown) {
+					break;
+				}
+				const auto name = _controller->session().data().users().get(actor).displayName;
+				ToggleFollowBack(
+					_controller,
+					this,
+					actor,
+					name,
+					shown,
+					[=, this] { setFollowBusy(actor, true); },
+					[=, this](const QString &follow) {
+						setFollowBusy(actor, false);
+						setFollow(actor, follow);
+					},
+					[=, this] { setFollowBusy(actor, false); });
+				break;
+			}
 			row.busy = true;
 			update();
-			if (row.entry.kind == u"follow") {
-				graph.follow(actor, base::Guard(this), [=, this](const Data::GraphState &) {
-					changed(id, [](Row &row) {
-						row.busy = false;
-						row.followed = true;
-					});
-				}, fail);
-			} else {
-				graph.acceptFollowRequest(actor, base::Guard(this), [=, this](const Data::GraphState &) {
-					changed(id, [](Row &row) {
-						row.busy = false;
-						row.accepted = true;
-					});
-				}, fail);
-			}
+			graph.acceptFollowRequest(actor, base::Guard(this), [=, this](const Data::GraphState &) {
+				changed(id, [](Row &row) {
+					row.busy = false;
+					row.accepted = true;
+				});
+			}, fail);
 			break;
 		case NotifHit::Secondary:
 			if (row.busy || actor.isEmpty()) {
@@ -689,6 +1030,8 @@ private:
 	int _pressed = -1;
 	NotifHit _pressedHit = NotifHit::None;
 	int _pressedFace = -1;
+	QHash<QString, FollowBack> _follow;
+	QSet<QString> _followBusy;
 	base::Timer _minute;
 
 };
@@ -863,22 +1206,6 @@ protected:
 	}
 
 private:
-	[[nodiscard]] QString serverTab() const {
-		return (_tab == u"conversation") ? u"all"_s : _tab;
-	}
-
-	[[nodiscard]] QVector<Data::NotificationEntry> filtered(
-			QVector<Data::NotificationEntry> page) const {
-		if (_tab == u"conversation") {
-			page.erase(
-				std::remove_if(page.begin(), page.end(), [](const Data::NotificationEntry &entry) {
-					return entry.kind != u"conversation_joined";
-				}),
-				page.end());
-		}
-		return page;
-	}
-
 	void refreshChips() {
 		const auto active = _tab;
 		auto requests = _requests;
@@ -892,7 +1219,6 @@ private:
 		_chips->clearChips();
 		_chips->addChip(u"all"_s, tr::lng_all(tr::now));
 		_chips->addChip(u"mentions"_s, tr::lng_eli_mentions(tr::now));
-		_chips->addChip(u"conversation"_s, tr::lng_tab_talk(tr::now));
 		_chips->addChip(
 			u"requests"_s,
 			(requests > 0)
@@ -921,7 +1247,7 @@ private:
 		refreshTail();
 		const auto generation = _generation;
 		controller()->session().data().notifications().load(
-			serverTab(),
+			_tab,
 			_before,
 			base::Guard(this),
 			[=, this](const QVector<Data::NotificationEntry> &page) {
@@ -930,20 +1256,25 @@ private:
 				}
 				_loading = false;
 				const auto last = page.isEmpty() ? qint64(0) : page.back().updatedAt;
-				for (const auto &entry : filtered(page)) {
+				auto added = 0;
+				for (const auto &entry : page) {
 					const auto known = std::any_of(
 						_entries.cbegin(),
 						_entries.cend(),
 						[&](const Data::NotificationEntry &other) { return other.id == entry.id; });
 					if (!known) {
 						_entries.push_back(entry);
+						++added;
 					}
 				}
 				_done = page.isEmpty()
 					|| !last
-					|| (last == _before)
+					|| !added
 					|| (page.size() < kPageSize);
-				_before = last;
+				// The server keeps microseconds and lists `updated_at < before`
+				// in milliseconds: the rows of the last row's millisecond that
+				// did not fit come with the next page (known ones are skipped).
+				_before = last + 1;
 				_list->setEntries(_entries);
 				refreshTail();
 			},
@@ -964,14 +1295,14 @@ private:
 		}
 		const auto generation = _generation;
 		controller()->session().data().notifications().load(
-			serverTab(),
+			_tab,
 			0,
 			base::Guard(this),
 			[=, this](const QVector<Data::NotificationEntry> &page) {
 				if (generation != _generation) {
 					return;
 				}
-				auto merged = filtered(page);
+				auto merged = page;
 				for (const auto &entry : _entries) {
 					const auto fresh = std::any_of(
 						merged.cbegin(),

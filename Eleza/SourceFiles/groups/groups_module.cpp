@@ -7,6 +7,7 @@
 #include "groups/groups_info.h"
 #include "lang_auto.h"
 #include "main/main_session.h"
+#include "media/media_shared.h"
 #include "window/window_embeds.h"
 #include "window/window_registry.h"
 #include "window/window_session_controller.h"
@@ -171,7 +172,7 @@ void Register() {
 		}
 		controller->showMainSection(
 			(show == u"media" && groups.thirdRelease())
-				? MediaFactory(route.id)
+				? Media::SharedMediaFactory(route.id)
 				: (show == u"log" && groups.thirdRelease())
 				? AdminLogFactory(route.id)
 				: InfoFactory(route.id),

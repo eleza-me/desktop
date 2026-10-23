@@ -26,6 +26,18 @@ constexpr auto kCreateAttempts = 60;
 	return u"none"_s;
 }
 
+// `callback`, invoked only while `guard` is alive (and only when it is set).
+[[nodiscard]] Fn<void()> GuardedCall(base::Guard guard, Fn<void()> callback) {
+	if (!callback) {
+		return nullptr;
+	}
+	return [guard = std::move(guard), callback = std::move(callback)] {
+		if (guard.alive()) {
+			callback();
+		}
+	};
+}
+
 } // namespace
 
 QJsonObject CreatePost::toJson() const {
@@ -216,6 +228,18 @@ PostsPage Feed::parsePosts(const QJsonObject &json) {
 	for (const auto &id : page.posts) {
 		if (const auto found = post(id)) {
 			_session->users().request(found->author);
+		}
+	}
+	for (const auto &value : json.value("posts"_L1).toArray()) {
+		const auto object = value.toObject();
+		if (Json::String(object, "reason"_L1) != u"repost") {
+			continue;
+		}
+		const auto id = Json::String(object, "id"_L1);
+		const auto actor = Json::String(object, "actor"_L1);
+		if (!id.isEmpty() && !actor.isEmpty()) {
+			page.repostedBy.insert(id, actor);
+			_session->users().request(actor);
 		}
 	}
 	page.nextBefore = Json::String(json, "next_before"_L1);
@@ -575,17 +599,33 @@ void Feed::notInterested(const QString &id) {
 	});
 }
 
-void Feed::setReplyPolicy(const QString &id, const QString &policy) {
+void Feed::setReplyPolicy(
+		const QString &id,
+		const QString &policy,
+		base::Guard guard,
+		Fn<void()> done) {
+	const auto notify = GuardedCall(std::move(guard), std::move(done));
 	simple(Api::Put, u"/v1/posts/%1/reply-policy"_s.arg(PathSegment(id)), QJsonObject{
 		{ u"reply_policy"_s, policy },
 	}, u"post.reply_policy"_s, id, [=, this] {
 		patch(id, [&](Post &p) { p.replyPolicy = policy; });
+		if (notify) {
+			notify();
+		}
 	});
 }
 
-void Feed::setPinned(const QString &id, bool pinned) {
+void Feed::setPinned(
+		const QString &id,
+		bool pinned,
+		base::Guard guard,
+		Fn<void()> done) {
+	const auto notify = GuardedCall(std::move(guard), std::move(done));
 	const auto applied = [=, this] {
 		patch(id, [&](Post &p) { p.pinned = pinned; });
+		if (notify) {
+			notify();
+		}
 	};
 	if (pinned) {
 		simple(Api::Post, u"/v1/me/pins"_s, QJsonObject{ { u"post"_s, id } }, u"post.pin"_s, id, applied);
@@ -848,22 +888,36 @@ void Feed::topicConversations(
 		.send();
 }
 
-void Feed::followTopic(const QString &slug, bool on) {
+void Feed::followTopic(
+		const QString &slug,
+		bool on,
+		base::Guard guard,
+		Fn<void()> done,
+		Fn<void()> fail) {
 	simple(
 		on ? Api::Post : Api::Delete,
 		u"/v1/topics/%1/follow"_s.arg(PathSegment(slug)),
 		QJsonObject(),
 		u"topic.follow"_s,
-		slug);
+		slug,
+		GuardedCall(guard, std::move(done)),
+		GuardedCall(guard, std::move(fail)));
 }
 
-void Feed::hideTopic(const QString &id, bool hidden) {
+void Feed::hideTopic(
+		const QString &id,
+		bool hidden,
+		base::Guard guard,
+		Fn<void()> done,
+		Fn<void()> fail) {
 	simple(
 		hidden ? Api::Post : Api::Delete,
 		u"/v1/me/hidden-topics/"_s + PathSegment(id),
 		QJsonObject(),
 		u"topic.hide"_s,
-		id);
+		id,
+		GuardedCall(guard, std::move(done)),
+		GuardedCall(guard, std::move(fail)));
 }
 
 void Feed::trending(
@@ -914,6 +968,28 @@ void Feed::userPosts(
 		.query(u"tab"_s, tab)
 		.query(u"before"_s, before)
 		.query(u"kind"_s, kind)
+		.guard(this)
+		.done([=, this](const QJsonObject &result) {
+			const auto page = parsePosts(result);
+			if (done && guard.alive()) {
+				done(page);
+			}
+		})
+		.fail(Guarded(guard, fail))
+		.send();
+}
+
+void Feed::userTimeline(
+		const QString &userId,
+		const QString &cursor,
+		bool cursorIsBefore,
+		base::Guard guard,
+		Fn<void(const PostsPage &)> done,
+		FailCallback fail) {
+	_session->api().request(Api::Get, u"/v1/users/%1/posts"_s.arg(PathSegment(userId)))
+		.query(u"tab"_s, u"posts"_s)
+		.query(u"with_reposts"_s, u"1"_s)
+		.query(cursorIsBefore ? u"before"_s : u"cursor"_s, cursor)
 		.guard(this)
 		.done([=, this](const QJsonObject &result) {
 			const auto page = parsePosts(result);
@@ -978,8 +1054,10 @@ void Feed::reportReasons(
 			reasons.reply = Json::Strings(result.value("reply"_L1));
 			reasons.account = Json::Strings(result.value("account"_L1));
 			reasons.conversation = Json::Strings(result.value("conversation"_L1));
+			reasons.message = Json::Strings(result.value("message"_L1));
 			reasons.group = Json::Strings(result.value("group"_L1));
 			reasons.groupMessage = Json::Strings(result.value("group_message"_L1));
+			reasons.story = Json::Strings(result.value("story"_L1));
 			if (done) {
 				done(reasons);
 			}

@@ -96,6 +96,10 @@ storiesSend: IconButton(storiesButton) {
 	icon: icon {{ "send:mirror-ltr", storiesOverFg }};
 	iconOver: icon {{ "send:mirror-ltr", storiesOverFg }};
 }
+storiesShare: IconButton(storiesButton) {
+	icon: icon {{ "forward", storiesOverFg }};
+	iconOver: icon {{ "forward", storiesOverFg }};
+}
 storiesNavPrevious: IconButton(storiesButton) {
 	width: 48px;
 	height: 48px;
@@ -199,8 +203,10 @@ storiesMenuIconEye: icon {{ "eye", menuIconFg, 20px }};
 storiesMenuIconHide: icon {{ "eye-off", menuIconFg, 20px }};
 storiesMenuIconRetry: icon {{ "refresh", menuIconFg, 20px }};
 storiesMenuIconStory: icon {{ "create", menuIconFg, 20px }};
+storiesMenuIconEli: icon {{ "eli", menuIconFg, 20px }};
 storiesSettingsIconStory: icon {{ "create", textSecondary }};
 storiesSettingsIconClose: icon {{ "star", textSecondary }};
 storiesSettingsIconHidden: icon {{ "eye-off", textSecondary }};
 storiesSettingsIconReplies: icon {{ "reply", textSecondary }};
+storiesSettingsIconShare: icon {{ "forward", textSecondary }};
 storiesSettingsIconAdd: icon {{ "plus", brandText }};

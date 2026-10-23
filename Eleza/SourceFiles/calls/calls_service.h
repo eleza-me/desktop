@@ -150,6 +150,7 @@ private:
 	void showNotice(Notice notice);
 	void settingsChanged();
 	void updateIncomingWindow();
+	void dropIncomingWindow();
 	void flashTaskbar();
 
 	Main::Session *_session = nullptr;

@@ -7,6 +7,7 @@
 #pragma once
 
 #include <QtCore/QHash>
+#include <QtCore/QMap>
 #include <QtCore/QRect>
 #include <QtCore/QSet>
 #include <QtCore/QSize>
@@ -135,6 +136,7 @@ struct ReplyNode {
 	QString id;
 	QString replyTo; // empty = a reply to the root
 	bool deleted = false;
+	qint64 createdAt = 0; // ms
 };
 
 struct ReplyRow {
@@ -148,11 +150,60 @@ struct ReplyRow {
 
 // One level of nesting: everything under a top-level reply follows it depth
 // first at depth 1. Deleted replies stay only while something hangs under
-// them. `newestFirst` reverses the top-level order.
+// them. `all` comes in the server's order (most relevant first); `newestFirst`
+// orders the top-level replies by `createdAt`, newest first (equal times keep
+// the server's order). The top-level replies in
+// `first` (my own new ones, the thread of a comment that was opened) come
+// before all others in that order, whichever the sort.
 [[nodiscard]] QVector<ReplyRow> ArrangeReplies(
 	const QVector<ReplyNode> &all,
 	const QString &rootId,
-	bool newestFirst);
+	bool newestFirst,
+	const QStringList &first = {});
+
+// ---- a post opened at one of its comments
+
+// One post read on the way up from the post that was opened (first) to the
+// post at the top of its conversation (last).
+struct ClimbStep {
+	QString id;
+	bool comment = false; // it answers a post (`reply_to` is set)
+	bool deleted = false;
+};
+
+// The comments from the top-level one down to the post that was opened, to
+// put that thread first under the post: empty when the opened post is not a
+// comment or was deleted (the post and its comments alone then). The steps
+// that are no comments (the top, a part of a thread) are left out.
+[[nodiscard]] QStringList FocusPath(const QVector<ClimbStep> &climb);
+
+// The first page of comments, with the thread of the comment opened (`path`,
+// FocusPath) in front when the page does not bring all of it. The list is
+// never read ahead for it: the server lists the post author's comments first,
+// then the oldest, so the newest one — the one a notification is about — may
+// be many pages away. The page's own copies of the path are left out.
+[[nodiscard]] QStringList PinThread(
+	const QStringList &page,
+	const QStringList &path);
+
+// Where a comment notification leads (backend docs/eli-comment-media.md §8):
+// the comment to open (`refs.reply` of a reply, `refs.post` of a mention —
+// the post page climbs from it to its post) and the post its conversation
+// hangs from (`refs.root`, newer servers), read together with the comment.
+struct CommentTarget {
+	QString post;
+	QString rootHint;
+};
+
+// Empty `post` for any other kind, or without the refs to open.
+[[nodiscard]] CommentTarget CommentTargetOf(
+	const QString &kind,
+	const QMap<QString, QString> &refs);
+
+// A reply that answers one of my comments rather than my post («… به نظرت
+// پاسخ داد»): known only from servers that send `refs.root`, which then is
+// not what was answered (`refs.parent`, or `refs.post` on older items).
+[[nodiscard]] bool AnswersComment(const QMap<QString, QString> &refs);
 
 // ---- view beacons
 
@@ -216,6 +267,29 @@ public:
 
 private:
 	QHash<QString, qint64> _at;
+
+};
+
+// ---- reposts taken back
+
+// The rows of my profile that went with a repost I took back, kept for a
+// while: «واگرد» on the toast reposts it again and the row comes back to
+// where it was.
+class TakenBack final {
+public:
+	static constexpr auto kKeepMs = qint64(30) * 1000;
+
+	void remember(const QString &id, int index, qint64 now);
+	// Where the row was; -1 when it is not kept, or was kept too long. The
+	// row is forgotten either way.
+	[[nodiscard]] int take(const QString &id, qint64 now);
+
+private:
+	struct Entry {
+		int index = 0;
+		qint64 at = 0;
+	};
+	QHash<QString, Entry> _entries;
 
 };
 

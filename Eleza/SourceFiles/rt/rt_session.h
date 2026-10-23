@@ -16,6 +16,7 @@
 #include <QtCore/QUrl>
 #include <QtWebSockets/QWebSocket>
 
+#include <deque>
 #include <map>
 
 namespace Rt {
@@ -109,7 +110,9 @@ public:
 
 	// Calls an RPC method with a protobuf-encoded body. `done` always runs
 	// (unless the session is destroyed): with the answer, or with NotOpen /
-	// Dropped when the connection ends or the request times out.
+	// Dropped when the connection ends or the request times out. At most
+	// kMaxCallsInFlight are sent at once (the gateway refuses more with
+	// rate_limited); the rest wait in order for an answer to make room.
 	void call(
 		const QString &method,
 		const QByteArray &body,
@@ -131,6 +134,7 @@ public:
 	void close(int code, const QString &reason);
 
 	static constexpr auto kRequestTimeoutMs = 10000;
+	static constexpr auto kMaxCallsInFlight = 64; // v2MaxInflight of the gateway
 
 Q_SIGNALS:
 	void helloReceived(const Rt::Hello &hello);
@@ -148,6 +152,13 @@ private:
 	struct Pending {
 		Fn<void(const Response &)> done;
 		std::unique_ptr<base::Timer> timer;
+		bool call = false; // counted in _callsInFlight
+	};
+	struct QueuedCall {
+		QString method;
+		QByteArray body;
+		QString idempotencyKey;
+		Fn<void(const Response &)> done;
 	};
 
 	void start(int keyId, const QByteArray &serverKey, const AuthParams &auth);
@@ -156,7 +167,9 @@ private:
 	void onResponse(const QJsonObject &response);
 	void enqueue(const QJsonObject &envelope);
 	void transmit(const QByteArray &envelope);
-	quint32 addPending(Fn<void(const Response &)> done);
+	quint32 addPending(Fn<void(const Response &)> done, bool call = false);
+	void sendCall(QueuedCall &&call);
+	void callFinished();
 	void drop(quint32 id);
 	void dropPending();
 	void socketEnded(int code, const QString &reason);
@@ -170,6 +183,8 @@ private:
 	Frames::RecordDecoder _decoder;
 	Hello _hello;
 	std::map<quint32, Pending> _pending;
+	std::deque<QueuedCall> _queuedCalls;
+	int _callsInFlight = 0;
 	quint32 _nextId = 1;
 	qint64 _lastReceivedAt = 0;
 	bool _open = false;

@@ -422,6 +422,7 @@ void ComposeControls::setFieldText(
 	_settingText = true;
 	_spoilers = NormalizeEntities(text, entities);
 	_mentions.clear();
+	_keptEntities.clear();
 	hideMentions();
 	_text = text;
 	_field->setText(text);
@@ -438,6 +439,7 @@ void ComposeControls::fieldChanged() {
 	if (!_settingText) {
 		_spoilers = AdjustEntities(_spoilers, _text, now, _changeHint);
 		_mentions = AdjustEntities(_mentions, _text, now, _changeHint);
+		_keptEntities = AdjustEntities(_keptEntities, _text, now, _changeHint);
 	}
 	const auto was = _text;
 	_text = now;
@@ -650,13 +652,16 @@ void ComposeControls::pickMention(const Data::User &user) {
 }
 
 QVector<Data::Entity> ComposeControls::entitiesToSend() const {
-	auto result = _spoilers;
+	auto others = QVector<Data::Entity>();
+	others.reserve(_mentions.size() + _keptEntities.size());
 	for (auto entity : _mentions) {
 		// The name was only kept to notice edits.
 		entity.url = QString();
-		result.push_back(entity);
+		others.push_back(entity);
 	}
-	return result;
+	// What an edited message came with (nothing outside an edit).
+	others += _keptEntities;
+	return EntitiesForSend(_spoilers, others);
 }
 
 void ComposeControls::toggleSpoiler() {
@@ -830,6 +835,17 @@ void ComposeControls::editMessage(const Data::Message &message) {
 	_editSaving = false;
 	_previewDismissed = message.linkPreview ? QString() : u"*"_s;
 	setFieldText(message.text, SpoilersOf(message.entities));
+	// The edit replaces every entity: the mentions and the formatting the
+	// message has go along with the text.
+	for (auto entity : NormalizeEntities(message.text, message.entities)) {
+		if (entity.type == u"mention") {
+			entity.url = _text.mid(entity.offset, entity.length);
+			_mentions.push_back(std::move(entity));
+		} else if (entity.type != u"spoiler") {
+			_keptEntities.push_back(std::move(entity));
+		}
+	}
+	applySpoilerMarks();
 	setMode(Mode::Edit);
 	_field->setFocusFast();
 	_field->setCursorToEnd();
@@ -1046,7 +1062,7 @@ void ComposeControls::saveEdit() {
 	const auto config = _session->data().clientConfig();
 	const auto prepared = PrepareForSend(
 		_text,
-		_spoilers,
+		entitiesToSend(),
 		config ? config->maxEntities() : 0);
 	const auto limit = config
 		? ((_target.kind == Data::MessageKind::Text)
@@ -1064,20 +1080,26 @@ void ComposeControls::saveEdit() {
 	const auto hadPreview = _target.linkPreview
 		? _target.linkPreview->url
 		: QString();
-	const auto sameSpoilers = [&] {
-		const auto was = NormalizeEntities(_target.text, SpoilersOf(_target.entities));
+	const auto sameEntities = [&] {
+		const auto was = NormalizeEntities(_target.text, _target.entities);
 		if (was.size() != prepared.entities.size()) {
 			return false;
 		}
 		for (auto i = 0; i != int(was.size()); ++i) {
-			if (was[i].offset != prepared.entities[i].offset
-				|| was[i].length != prepared.entities[i].length) {
+			const auto &a = was[i];
+			const auto &b = prepared.entities[i];
+			if (a.type != b.type
+				|| a.offset != b.offset
+				|| a.length != b.length
+				|| a.url != b.url
+				|| a.user != b.user
+				|| a.language != b.language) {
 				return false;
 			}
 		}
 		return true;
 	}();
-	if (prepared.text == _target.text && sameSpoilers && previewUrl == hadPreview) {
+	if (prepared.text == _target.text && sameEntities && previewUrl == hadPreview) {
 		cancelMode();
 		return;
 	}
@@ -1219,6 +1241,15 @@ void ComposeControls::attachFiles(const QStringList &paths) {
 	}
 	// What is typed becomes the caption (and comes back if the box is closed).
 	const auto caption = _text.trimmed();
+	// A single photo or video of a direct chat with a person may destruct
+	// once seen.
+	const auto row = _session->data().chats().chat(_chatId);
+	const auto selfDestructTimers = (config
+		&& config->selfDestructEnabled()
+		&& row
+		&& SelfDestructAllowed(*row))
+		? config->selfDestructTimers()
+		: QVector<int>();
 	_controller->show(SendFilesBox(_session, good, caption, base::guard(this, [this](
 			const FilesToSend &files) {
 		_draft->sent();
@@ -1266,6 +1297,12 @@ void ComposeControls::attachFiles(const QStringList &paths) {
 				options.captionAbove = files.captionAbove;
 				captionLeft = false;
 			}
+			if (files.selfDestruct && files.paths.size() == 1) {
+				options.selfDestruct = files.selfDestruct;
+				options.spoiler = false;
+				options.album = QString();
+				options.captionAbove = false;
+			}
 			outbox.sendFile(_chatId, path, options);
 		}
 		if (captionLeft) {
@@ -1278,7 +1315,7 @@ void ComposeControls::attachFiles(const QStringList &paths) {
 		setFieldText(QString(), {});
 		setMode(Mode::None);
 		Q_EMIT sent();
-	})));
+	}), selfDestructTimers));
 }
 
 // ---- link preview

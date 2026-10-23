@@ -186,7 +186,8 @@ public:
 	[[nodiscard]] QString audioTrackId() const;
 
 	// The images of the post in order (the viewer), and the index of a tile
-	// among them (-1 for a video tile).
+	// among them (-1 for a video or GIF tile). Only a video tile opens the
+	// video viewer: a GIF tile is neither.
 	[[nodiscard]] int imageIndexOfTile(int tile) const;
 	[[nodiscard]] bool tileIsVideo(int tile) const;
 	[[nodiscard]] QImage tileImage(int tile) const;

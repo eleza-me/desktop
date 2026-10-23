@@ -237,18 +237,28 @@ private Q_SLOTS:
 	}
 
 	void repliesTree() {
-		const auto node = [](const char *id, const char *to, bool deleted = false) {
-			return ReplyNode{ QString::fromLatin1(id), QString::fromLatin1(to), deleted };
+		const auto node = [](
+				const char *id,
+				const char *to,
+				qint64 at,
+				bool deleted = false) {
+			return ReplyNode{
+				QString::fromLatin1(id),
+				QString::fromLatin1(to),
+				deleted,
+				at,
+			};
 		};
+		// In the server's order (most relevant first), not by time.
 		const auto all = QVector<ReplyNode>{
-			node("a", "root"),
-			node("b", "root"),
-			node("a1", "a"),
-			node("a2", "a1"), // deeper levels flatten to depth 1
-			node("c", "root", true), // deleted without children: hidden
-			node("d", "root", true), // deleted with a living child: kept
-			node("d1", "d"),
-			node("x", "unknown"), // parent not loaded: under the root
+			node("a", "root", 300),
+			node("b", "root", 500),
+			node("a1", "a", 600),
+			node("a2", "a1", 700), // deeper levels flatten to depth 1
+			node("c", "root", 800, true), // deleted without children: hidden
+			node("d", "root", 100, true), // deleted with a living child: kept
+			node("d1", "d", 900),
+			node("x", "unknown", 400), // parent not loaded: under the root
 		};
 		const auto rows = ArrangeReplies(all, QStringLiteral("root"), false);
 		auto ids = QStringList();
@@ -265,10 +275,124 @@ private Q_SLOTS:
 		QVERIFY(!rows[3].line);
 		QVERIFY(rows[4].line);
 
+		// «جدیدترین» goes by time, not by the reversed relevance order.
 		const auto newest = ArrangeReplies(all, QStringLiteral("root"), true);
-		QCOMPARE(newest.first().id, QStringLiteral("x"));
-		QCOMPARE(newest.last().id, QStringLiteral("a2"));
+		auto newestIds = QStringList();
+		for (const auto &row : newest) {
+			newestIds.push_back(row.id);
+		}
+		QCOMPARE(newestIds.join(' '), QStringLiteral("b x a a1 a2 d d1"));
 		QVERIFY(ArrangeReplies({}, QStringLiteral("root"), false).isEmpty());
+
+		// `first` leads in either order: my new reply, then a pinned thread.
+		const auto ordered = [&](bool newestFirst) {
+			const auto rows = ArrangeReplies(
+				all,
+				QStringLiteral("root"),
+				newestFirst,
+				{ QStringLiteral("x"), QStringLiteral("d") });
+			auto tops = QStringList();
+			for (const auto &row : rows) {
+				if (!row.depth) {
+					tops.push_back(row.id);
+				}
+			}
+			return tops.join(' ');
+		};
+		QCOMPARE(ordered(false), QStringLiteral("x d a b"));
+		QCOMPARE(ordered(true), QStringLiteral("x d b a"));
+		// Equal times keep the server's order.
+		auto same = all;
+		for (auto &entry : same) {
+			entry.createdAt = 1;
+		}
+		QCOMPARE(
+			ArrangeReplies(same, QStringLiteral("root"), true),
+			ArrangeReplies(same, QStringLiteral("root"), false));
+		// A nested id in `first` changes nothing: only top-level rows move.
+		const auto nested = ArrangeReplies(
+			all,
+			QStringLiteral("root"),
+			false,
+			{ QStringLiteral("a1") });
+		QCOMPARE(nested, ArrangeReplies(all, QStringLiteral("root"), false));
+	}
+
+	void focusPath() {
+		const auto step = [](const char *id, bool comment, bool deleted = false) {
+			auto result = ClimbStep();
+			result.id = QString::fromLatin1(id);
+			result.comment = comment;
+			result.deleted = deleted;
+			return result;
+		};
+		// A reply to a reply: its top-level comment first, down to it.
+		QCOMPARE(
+			FocusPath({ step("c3", true), step("c2", true), step("c1", true), step("p", false) }),
+			(QStringList{ "c1", "c2", "c3" }));
+		// A top-level comment alone.
+		QCOMPARE(FocusPath({ step("c1", true), step("p", false) }), QStringList{ "c1" });
+		// The post itself, a deleted comment, nothing read: no thread to show.
+		QVERIFY(FocusPath({ step("p", false) }).isEmpty());
+		QVERIFY(FocusPath({ step("c1", true, true), step("p", false) }).isEmpty());
+		QVERIFY(FocusPath({}).isEmpty());
+		// A comment under a part of a thread: the part (no comment) and the
+		// thread above it are not part of the path.
+		QCOMPARE(
+			FocusPath({ step("c1", true), step("part2", false), step("thread", false) }),
+			QStringList{ "c1" });
+		// A climb cut short (a parent that can't be read) keeps what it has.
+		QCOMPARE(FocusPath({ step("c2", true), step("c1", true) }), (QStringList{ "c1", "c2" }));
+	}
+
+	void pinThread() {
+		const auto page = QStringList{ "a", "b", "c" };
+		// On the page already: as the server sent it.
+		QCOMPARE(PinThread(page, { "b" }), page);
+		QCOMPARE(PinThread(page, {}), page);
+		// Not there: the thread first, the page after it without its copies.
+		QCOMPARE(PinThread(page, { "z" }), (QStringList{ "z", "a", "b", "c" }));
+		QCOMPARE(PinThread(page, { "b", "z" }), (QStringList{ "b", "z", "a", "c" }));
+		QCOMPARE(PinThread({}, { "z" }), QStringList{ "z" });
+	}
+
+	void commentTarget() {
+		using Refs = QMap<QString, QString>;
+		// A reply from a newer server: the new comment, its post as the hint.
+		auto target = CommentTargetOf(QStringLiteral("reply"), Refs{
+			{ "reply", "c2" }, { "parent", "c1" }, { "root", "p" }, { "post", "c1" } });
+		QCOMPARE(target.post, QStringLiteral("c2"));
+		QCOMPARE(target.rootHint, QStringLiteral("p"));
+		// An older item: what was answered (the page climbs from it).
+		target = CommentTargetOf(QStringLiteral("reply"), Refs{ { "post", "p" } });
+		QCOMPARE(target.post, QStringLiteral("p"));
+		QVERIFY(target.rootHint.isEmpty());
+		// Before `root`: the new comment, no hint.
+		target = CommentTargetOf(QStringLiteral("reply"), Refs{ { "reply", "c2" }, { "post", "p" } });
+		QCOMPARE(target.post, QStringLiteral("c2"));
+		QVERIFY(target.rootHint.isEmpty());
+		// A mention in a comment, and in a post (root is the post itself).
+		target = CommentTargetOf(QStringLiteral("mention"), Refs{ { "post", "c1" }, { "root", "p" } });
+		QCOMPARE(target.post, QStringLiteral("c1"));
+		QCOMPARE(target.rootHint, QStringLiteral("p"));
+		target = CommentTargetOf(QStringLiteral("mention"), Refs{ { "post", "p" }, { "root", "p" } });
+		QCOMPARE(target.post, QStringLiteral("p"));
+		QVERIFY(target.rootHint.isEmpty());
+		// Other kinds, and nothing to open.
+		QVERIFY(CommentTargetOf(QStringLiteral("like"), Refs{ { "post", "p" } }).post.isEmpty());
+		QVERIFY(CommentTargetOf(QStringLiteral("reply"), Refs()).post.isEmpty());
+	}
+
+	void answersComment() {
+		using Refs = QMap<QString, QString>;
+		QVERIFY(AnswersComment(Refs{ { "reply", "c2" }, { "parent", "c1" }, { "root", "p" } }));
+		QVERIFY(!AnswersComment(Refs{ { "reply", "c2" }, { "parent", "p" }, { "root", "p" } }));
+		// `parent` missing: the in-app item's `post` is what was answered.
+		QVERIFY(AnswersComment(Refs{ { "post", "c1" }, { "root", "p" } }));
+		QVERIFY(!AnswersComment(Refs{ { "post", "p" }, { "root", "p" } }));
+		// Without `root` (older items) nobody can tell: a reply to the post.
+		QVERIFY(!AnswersComment(Refs{ { "post", "c1" }, { "reply", "c2" } }));
+		QVERIFY(!AnswersComment(Refs{ { "root", "p" } }));
 	}
 
 	void viewTracker() {
@@ -352,6 +476,27 @@ private Q_SLOTS:
 		QVERIFY(fresh.takeStale({ QStringLiteral("p2") }, now + 250'000).isEmpty());
 		fresh.forget(QStringLiteral("p2"));
 		QVERIFY(fresh.takeStale({ QStringLiteral("p2") }, now + 900'000).isEmpty());
+	}
+
+	void repostTakenBack() {
+		using Eli::Logic::TakenBack;
+		auto taken = TakenBack();
+		auto now = qint64(5'000'000);
+		taken.remember(QStringLiteral("p1"), 3, now);
+		taken.remember(QStringLiteral("p2"), -4, now);
+		// «واگرد» soon after: the row goes back where it was, once.
+		QCOMPARE(taken.take(QStringLiteral("p1"), now + 4'000), 3);
+		QCOMPARE(taken.take(QStringLiteral("p1"), now + 4'000), -1);
+		QCOMPARE(taken.take(QStringLiteral("p2"), now + TakenBack::kKeepMs), 0);
+		// Reposted again much later, or never taken back: a new repost.
+		taken.remember(QStringLiteral("p3"), 1, now);
+		QCOMPARE(taken.take(QStringLiteral("p3"), now + TakenBack::kKeepMs + 1), -1);
+		QCOMPARE(taken.take(QStringLiteral("p4"), now), -1);
+		// Old entries do not pile up.
+		taken.remember(QStringLiteral("p5"), 2, now);
+		taken.remember(QStringLiteral("p6"), 7, now + TakenBack::kKeepMs + 1);
+		QCOMPARE(taken.take(QStringLiteral("p5"), now), -1);
+		QCOMPARE(taken.take(QStringLiteral("p6"), now + TakenBack::kKeepMs + 2), 7);
 	}
 
 };

@@ -23,15 +23,20 @@ struct FilesToSend {
 	bool spoiler = false; // photos / videos hidden until clicked
 	bool grouped = true;  // several files go as albums (History::PlanAlbumSend)
 	bool captionAbove = false; // the caption is shown above the photos / videos
+	// One photo or video that destructs once seen (only with `selfDestructTimers`).
+	std::optional<Data::SelfDestructInput> selfDestruct;
 };
 
 // Previews of the chosen files, a caption, «send as files», «hide with a
 // spoiler», «send as one album» and «caption above the media». `send` is called once, right before the box closes.
+// `selfDestructTimers` (seconds, empty: not offered): a single photo or video
+// may be sent «view once» or with one of these timers.
 [[nodiscard]] Ui::object_ptr<Ui::BoxContent> SendFilesBox(
 	Main::Session *session,
 	const QStringList &paths,
 	const QString &caption,
-	Fn<void(const FilesToSend &)> send);
+	Fn<void(const FilesToSend &)> send,
+	QVector<int> selfDestructTimers = {});
 
 // Coordinates typed by hand or pasted as a map link (a desktop has no GPS).
 [[nodiscard]] Ui::object_ptr<Ui::BoxContent> LocationBox(

@@ -1,578 +1,55 @@
 #include "history/history_emoji_data.h"
 
-#include <algorithm>
-#include <iterator>
 #include "history/history_logic.h"
 #include "lang_auto.h"
+#include "ui/emoji/emoji_index.h"
+
+#include <QtCore/QCoreApplication>
+#include <QtCore/QPointer>
+#include <QtCore/QSet>
+#include <QtCore/QThreadPool>
+
+#include <algorithm>
 
 namespace History {
 namespace {
 
-struct RawItem {
-	const char *text;
-	const char *keywords;
+// Telegram's first rows of «recent», roughly, before anything was picked.
+const char16_t *const kDefaultRecent[] = {
+	u"\U0001F602", u"\U0001F618", u"❤", u"\U0001F60D", u"\U0001F60A",
+	u"\U0001F601", u"\U0001F44D", u"☺", u"\U0001F614", u"\U0001F604",
+	u"\U0001F62D", u"\U0001F48B", u"\U0001F612", u"\U0001F633", u"\U0001F61C",
+	u"\U0001F648", u"\U0001F609", u"\U0001F603", u"\U0001F622", u"\U0001F61D",
+	u"\U0001F631", u"\U0001F621", u"\U0001F60F", u"\U0001F61E", u"\U0001F605",
+	u"\U0001F61A", u"\U0001F64A", u"\U0001F60C", u"\U0001F600", u"\U0001F60B",
+	u"\U0001F606", u"\U0001F44C",
 };
 
-constexpr RawItem kCategory0[] = {
-	{ "😀", "grin smile happy خنده لبخند شاد" },
-	{ "😃", "smile happy خنده شاد" },
-	{ "😄", "smile laugh خنده" },
-	{ "😁", "grin beam خنده نیش" },
-	{ "😆", "laugh خنده قهقهه" },
-	{ "😅", "sweat laugh خنده عرق" },
-	{ "🤣", "rofl laugh خنده قهقهه" },
-	{ "😂", "joy tears laugh خنده اشک" },
-	{ "🙂", "slight smile لبخند" },
-	{ "🙃", "upside down وارونه" },
-	{ "😉", "wink چشمک" },
-	{ "😊", "blush smile لبخند خجالت" },
-	{ "😇", "angel halo فرشته" },
-	{ "🥰", "love hearts عشق قلب" },
-	{ "😍", "heart eyes love عشق عاشق" },
-	{ "🤩", "star struck ستاره ذوق" },
-	{ "😘", "kiss بوس" },
-	{ "😗", "kiss بوس" },
-	{ "😚", "kiss بوس" },
-	{ "😋", "yum delicious خوشمزه" },
-	{ "😛", "tongue زبان" },
-	{ "😜", "wink tongue شیطون زبان" },
-	{ "🤪", "crazy zany دیوانه" },
-	{ "😝", "tongue زبان" },
-	{ "🤑", "money پول" },
-	{ "🤗", "hug بغل" },
-	{ "🤭", "oops giggle خنده یواشکی" },
-	{ "🤫", "shush quiet ساکت هیس" },
-	{ "🤔", "think hmm فکر" },
-	{ "🤐", "zipper mouth زیپ ساکت" },
-	{ "🤨", "raised eyebrow مشکوک" },
-	{ "😐", "neutral بی" "\xE2\x80\x8C" "تفاوت خنثی" },
-	{ "😑", "expressionless بی" "\xE2\x80\x8C" "حس" },
-	{ "😶", "no mouth بی" "\xE2\x80\x8C" "دهان" },
-	{ "😏", "smirk پوزخند" },
-	{ "😒", "unamused بی" "\xE2\x80\x8C" "حوصله" },
-	{ "🙄", "eye roll چشم" },
-	{ "😬", "grimace دندان" },
-	{ "😌", "relieved آرام" },
-	{ "😔", "pensive sad غمگین" },
-	{ "😪", "sleepy خواب" },
-	{ "😴", "sleep zzz خواب" },
-	{ "😷", "mask sick ماسک مریض" },
-	{ "🤒", "sick fever تب مریض" },
-	{ "🤕", "hurt bandage زخمی" },
-	{ "🤢", "nauseated حالت تهوع" },
-	{ "🤮", "vomit استفراغ" },
-	{ "🥵", "hot گرم" },
-	{ "🥶", "cold سرد" },
-	{ "😵", "dizzy گیج" },
-	{ "🤯", "mind blown منفجر مغز" },
-	{ "🤠", "cowboy کابوی" },
-	{ "🥳", "party جشن تولد" },
-	{ "😎", "cool sunglasses عینک باحال" },
-	{ "🤓", "nerd خرخون عینک" },
-	{ "😕", "confused گیج" },
-	{ "😟", "worried نگران" },
-	{ "🙁", "frown ناراحت" },
-	{ "😮", "wow open mouth تعجب" },
-	{ "😯", "hushed تعجب" },
-	{ "😲", "astonished شوکه" },
-	{ "😳", "flushed خجالت" },
-	{ "🥺", "pleading please خواهش" },
-	{ "😦", "frown ناراحت" },
-	{ "😨", "fear ترس" },
-	{ "😰", "anxious نگران عرق" },
-	{ "😥", "sad relieved ناراحت" },
-	{ "😢", "cry tear گریه اشک" },
-	{ "😭", "sob cry گریه زار" },
-	{ "😱", "scream ترس جیغ" },
-	{ "😖", "confounded کلافه" },
-	{ "😣", "persevere سختی" },
-	{ "😞", "disappointed ناامید" },
-	{ "😓", "sweat عرق" },
-	{ "😩", "weary خسته" },
-	{ "😫", "tired خسته" },
-	{ "🥱", "yawn خمیازه" },
-	{ "😤", "triumph huff حرص" },
-	{ "😡", "angry rage عصبانی" },
-	{ "😠", "angry عصبانی" },
-	{ "🤬", "cursing فحش عصبانی" },
-	{ "😈", "devil شیطان" },
-	{ "💀", "skull جمجمه مرگ" },
-	{ "💩", "poop پی" "\xE2\x80\x8C" "پی" },
-	{ "🤡", "clown دلقک" },
-	{ "👻", "ghost روح" },
-	{ "👽", "alien فضایی" },
-	{ "🤖", "robot ربات" },
+[[nodiscard]] QStringList Words(const QString &text) {
+	return NormalizeForSearch(text).split(u' ', Qt::SkipEmptyParts);
+}
+
+struct SearchState {
+	std::shared_ptr<const EmojiSearchIndex> index;
+	bool building = false;
+	std::vector<std::pair<QPointer<QObject>, Fn<void()>>> waiting;
 };
 
-constexpr RawItem kCategory1[] = {
-	{ "👋", "wave hello bye سلام خداحافظ دست" },
-	{ "🤚", "hand دست" },
-	{ "✋", "hand stop دست ایست" },
-	{ "🖖", "vulcan دست" },
-	{ "👌", "ok اوکی عالی" },
-	{ "🤌", "pinched fingers دست" },
-	{ "🤏", "pinch کم" },
-	{ "✌" "\xEF\xB8\x8F", "victory peace پیروزی صلح" },
-	{ "🤞", "fingers crossed امید" },
-	{ "🤟", "love you دوستت دارم" },
-	{ "🤘", "rock راک" },
-	{ "🤙", "call me تماس" },
-	{ "👈", "left چپ" },
-	{ "👉", "right راست" },
-	{ "👆", "up بالا" },
-	{ "👇", "down پایین" },
-	{ "☝" "\xEF\xB8\x8F", "one up بالا یک" },
-	{ "👍", "thumbs up like لایک خوب باشه" },
-	{ "👎", "thumbs down dislike بد دیسلایک" },
-	{ "✊", "fist مشت" },
-	{ "👊", "punch مشت" },
-	{ "👏", "clap applause دست زدن تشویق" },
-	{ "🙌", "raise hands hooray هورا" },
-	{ "👐", "open hands دست" },
-	{ "🤲", "palms up دعا" },
-	{ "🤝", "handshake deal دست دادن توافق" },
-	{ "🙏", "pray thanks please ممنون دعا لطفا" },
-	{ "✍" "\xEF\xB8\x8F", "write نوشتن" },
-	{ "💪", "strong muscle قوی بازو" },
-	{ "👀", "eyes look چشم نگاه" },
-	{ "👁", "eye چشم" },
-	{ "👄", "mouth lips لب دهان" },
-	{ "🧠", "brain مغز" },
-	{ "👶", "baby نوزاد بچه" },
-	{ "🧒", "child بچه" },
-	{ "👦", "boy پسر" },
-	{ "👧", "girl دختر" },
-	{ "🧑", "person آدم" },
-	{ "👨", "man مرد" },
-	{ "👩", "woman زن" },
-	{ "🧓", "older پیر" },
-	{ "👴", "old man پیرمرد" },
-	{ "👵", "old woman پیرزن" },
-	{ "🙋", "raise hand من دست" },
-	{ "🤷", "shrug نمی" "\xE2\x80\x8C" "دانم شانه" },
-	{ "🤦", "facepalm وای" },
-	{ "💁", "info دست" },
-	{ "🙅", "no نه" },
-	{ "🙆", "ok اوکی" },
-	{ "🧑" "\xE2\x80\x8D" "💻", "developer programmer برنامه" "\xE2\x80\x8C" "نویس" },
-	{ "👨" "\xE2\x80\x8D" "👩" "\xE2\x80\x8D" "👧", "family خانواده" },
-	{ "💃", "dance رقص" },
-	{ "🕺", "dance رقص" },
-	{ "🚶", "walk راه رفتن" },
-	{ "🏃", "run دویدن" },
-};
-
-constexpr RawItem kCategory2[] = {
-	{ "🐶", "dog سگ" },
-	{ "🐱", "cat گربه" },
-	{ "🐭", "mouse موش" },
-	{ "🐹", "hamster همستر" },
-	{ "🐰", "rabbit خرگوش" },
-	{ "🦊", "fox روباه" },
-	{ "🐻", "bear خرس" },
-	{ "🐼", "panda پاندا" },
-	{ "🐨", "koala کوالا" },
-	{ "🐯", "tiger ببر" },
-	{ "🦁", "lion شیر" },
-	{ "🐮", "cow گاو" },
-	{ "🐷", "pig خوک" },
-	{ "🐸", "frog قورباغه" },
-	{ "🐵", "monkey میمون" },
-	{ "🙈", "see no evil میمون نمی" "\xE2\x80\x8C" "بینم" },
-	{ "🙉", "hear no evil میمون" },
-	{ "🙊", "speak no evil میمون" },
-	{ "🐔", "chicken مرغ" },
-	{ "🐧", "penguin پنگوئن" },
-	{ "🐦", "bird پرنده" },
-	{ "🦅", "eagle عقاب" },
-	{ "🦉", "owl جغد" },
-	{ "🐺", "wolf گرگ" },
-	{ "🐴", "horse اسب" },
-	{ "🦄", "unicorn تک" "\xE2\x80\x8C" "شاخ" },
-	{ "🐝", "bee زنبور" },
-	{ "🦋", "butterfly پروانه" },
-	{ "🐌", "snail حلزون" },
-	{ "🐢", "turtle لاک" "\xE2\x80\x8C" "پشت" },
-	{ "🐍", "snake مار" },
-	{ "🐙", "octopus اختاپوس" },
-	{ "🐠", "fish ماهی" },
-	{ "🐬", "dolphin دلفین" },
-	{ "🐳", "whale نهنگ" },
-	{ "🦈", "shark کوسه" },
-	{ "🐘", "elephant فیل" },
-	{ "🐪", "camel شتر" },
-	{ "🌵", "cactus کاکتوس" },
-	{ "🌲", "tree درخت" },
-	{ "🌳", "tree درخت" },
-	{ "🌴", "palm نخل" },
-	{ "🌱", "seedling جوانه" },
-	{ "🍀", "clover luck شانس شبدر" },
-	{ "🍃", "leaves برگ" },
-	{ "🍂", "autumn leaves پاییز برگ" },
-	{ "🌷", "tulip لاله گل" },
-	{ "🌹", "rose گل رز" },
-	{ "🌺", "hibiscus گل" },
-	{ "🌸", "blossom شکوفه گل بهار" },
-	{ "🌼", "flower گل" },
-	{ "🌻", "sunflower آفتابگردان" },
-	{ "🌞", "sun خورشید" },
-	{ "🌙", "moon ماه شب" },
-	{ "⭐", "star ستاره" },
-	{ "🌟", "glowing star ستاره" },
-	{ "✨", "sparkles درخشش" },
-	{ "⚡", "lightning برق" },
-	{ "🔥", "fire hot آتش داغ" },
-	{ "🌈", "rainbow رنگین" "\xE2\x80\x8C" "کمان" },
-	{ "☀" "\xEF\xB8\x8F", "sun sunny آفتاب" },
-	{ "⛅", "cloud ابر" },
-	{ "☁" "\xEF\xB8\x8F", "cloud ابر" },
-	{ "🌧", "rain باران" },
-	{ "⛈", "storm طوفان" },
-	{ "❄" "\xEF\xB8\x8F", "snow برف" },
-	{ "☃" "\xEF\xB8\x8F", "snowman آدم" "\xE2\x80\x8C" "برفی" },
-	{ "💧", "drop قطره آب" },
-	{ "🌊", "wave موج دریا" },
-};
-
-constexpr RawItem kCategory3[] = {
-	{ "🍎", "apple سیب" },
-	{ "🍐", "pear گلابی" },
-	{ "🍊", "orange پرتقال" },
-	{ "🍋", "lemon لیمو" },
-	{ "🍌", "banana موز" },
-	{ "🍉", "watermelon هندوانه" },
-	{ "🍇", "grapes انگور" },
-	{ "🍓", "strawberry توت" "\xE2\x80\x8C" "فرنگی" },
-	{ "🍒", "cherry گیلاس" },
-	{ "🍑", "peach هلو" },
-	{ "🥭", "mango انبه" },
-	{ "🍍", "pineapple آناناس" },
-	{ "🥥", "coconut نارگیل" },
-	{ "🥝", "kiwi کیوی" },
-	{ "🍅", "tomato گوجه" },
-	{ "🥑", "avocado آووکادو" },
-	{ "🍆", "eggplant بادمجان" },
-	{ "🥒", "cucumber خیار" },
-	{ "🥕", "carrot هویج" },
-	{ "🌽", "corn ذرت" },
-	{ "🌶", "pepper فلفل" },
-	{ "🥔", "potato سیب" "\xE2\x80\x8C" "زمینی" },
-	{ "🧄", "garlic سیر" },
-	{ "🧅", "onion پیاز" },
-	{ "🍞", "bread نان" },
-	{ "🥐", "croissant کروسان" },
-	{ "🧀", "cheese پنیر" },
-	{ "🥚", "egg تخم" "\xE2\x80\x8C" "مرغ" },
-	{ "🍳", "fried egg نیمرو" },
-	{ "🥓", "bacon بیکن" },
-	{ "🍔", "burger همبرگر" },
-	{ "🍟", "fries سیب" "\xE2\x80\x8C" "زمینی سرخ" "\xE2\x80\x8C" "کرده" },
-	{ "🍕", "pizza پیتزا" },
-	{ "🌭", "hot dog هات" "\xE2\x80\x8C" "داگ" },
-	{ "🥪", "sandwich ساندویچ" },
-	{ "🌮", "taco تاکو" },
-	{ "🥗", "salad سالاد" },
-	{ "🍝", "pasta ماکارونی" },
-	{ "🍜", "noodles نودل" },
-	{ "🍲", "stew خورش" },
-	{ "🍛", "curry rice پلو" },
-	{ "🍚", "rice برنج" },
-	{ "🍣", "sushi سوشی" },
-	{ "🍤", "shrimp میگو" },
-	{ "🍦", "ice cream بستنی" },
-	{ "🍰", "cake کیک" },
-	{ "🎂", "birthday cake کیک تولد" },
-	{ "🍩", "donut دونات" },
-	{ "🍪", "cookie کلوچه" },
-	{ "🍫", "chocolate شکلات" },
-	{ "🍬", "candy آب" "\xE2\x80\x8C" "نبات" },
-	{ "🍭", "lollipop آب" "\xE2\x80\x8C" "نبات" },
-	{ "🍯", "honey عسل" },
-	{ "☕", "coffee tea قهوه چای" },
-	{ "🍵", "tea چای" },
-	{ "🥛", "milk شیر" },
-	{ "🧃", "juice آبمیوه" },
-	{ "🥤", "drink نوشابه" },
-};
-
-constexpr RawItem kCategory4[] = {
-	{ "⚽", "football soccer فوتبال" },
-	{ "🏀", "basketball بسکتبال" },
-	{ "🏐", "volleyball والیبال" },
-	{ "🎾", "tennis تنیس" },
-	{ "🏓", "ping pong پینگ" "\xE2\x80\x8C" "پنگ" },
-	{ "🏸", "badminton بدمینتون" },
-	{ "🥊", "boxing بوکس" },
-	{ "🥋", "martial arts رزمی" },
-	{ "⛳", "golf گلف" },
-	{ "🎣", "fishing ماهیگیری" },
-	{ "🎿", "ski اسکی" },
-	{ "🏂", "snowboard اسنوبورد" },
-	{ "🏋" "\xEF\xB8\x8F", "weight وزنه" },
-	{ "🤸", "cartwheel ژیمناستیک" },
-	{ "🧘", "yoga یوگا" },
-	{ "🚴", "bike دوچرخه" },
-	{ "🏆", "trophy جام قهرمان" },
-	{ "🥇", "gold medal طلا مدال" },
-	{ "🥈", "silver نقره" },
-	{ "🥉", "bronze برنز" },
-	{ "🏅", "medal مدال" },
-	{ "🎯", "target هدف دارت" },
-	{ "🎮", "game بازی" },
-	{ "🕹", "joystick بازی" },
-	{ "🎲", "dice تاس" },
-	{ "♟", "chess شطرنج" },
-	{ "🧩", "puzzle پازل" },
-	{ "🎨", "art paint نقاشی هنر" },
-	{ "🎬", "movie film فیلم سینما" },
-	{ "🎤", "microphone میکروفون" },
-	{ "🎧", "headphones هدفون" },
-	{ "🎵", "music note موسیقی نت" },
-	{ "🎶", "music notes موسیقی" },
-	{ "🎹", "piano پیانو" },
-	{ "🥁", "drum طبل" },
-	{ "🎸", "guitar گیتار" },
-	{ "🎻", "violin ویولن" },
-	{ "🎉", "party tada جشن تبریک" },
-	{ "🎊", "confetti جشن" },
-	{ "🎁", "gift هدیه کادو" },
-	{ "🎈", "balloon بادکنک" },
-};
-
-constexpr RawItem kCategory5[] = {
-	{ "🚗", "car ماشین" },
-	{ "🚕", "taxi تاکسی" },
-	{ "🚌", "bus اتوبوس" },
-	{ "🚎", "trolley اتوبوس" },
-	{ "🏎", "race car ماشین مسابقه" },
-	{ "🚓", "police پلیس" },
-	{ "🚑", "ambulance آمبولانس" },
-	{ "🚒", "fire truck آتش" "\xE2\x80\x8C" "نشانی" },
-	{ "🚚", "truck کامیون" },
-	{ "🚜", "tractor تراکتور" },
-	{ "🏍", "motorcycle موتور" },
-	{ "🚲", "bicycle دوچرخه" },
-	{ "🛴", "scooter اسکوتر" },
-	{ "🚂", "train قطار" },
-	{ "🚆", "train قطار" },
-	{ "🚇", "metro مترو" },
-	{ "✈" "\xEF\xB8\x8F", "airplane هواپیما" },
-	{ "🛫", "takeoff پرواز" },
-	{ "🚀", "rocket موشک" },
-	{ "🛸", "ufo بشقاب" "\xE2\x80\x8C" "پرنده" },
-	{ "🚁", "helicopter هلیکوپتر" },
-	{ "⛵", "sailboat قایق" },
-	{ "🚢", "ship کشتی" },
-	{ "⚓", "anchor لنگر" },
-	{ "⛽", "fuel بنزین" },
-	{ "🚦", "traffic light چراغ راهنما" },
-	{ "🗺", "map نقشه" },
-	{ "🧭", "compass قطب" "\xE2\x80\x8C" "نما" },
-	{ "🏔", "mountain کوه" },
-	{ "⛰", "mountain کوه" },
-	{ "🏕", "camping کمپ" },
-	{ "🏖", "beach ساحل" },
-	{ "🏝", "island جزیره" },
-	{ "🏠", "home house خانه" },
-	{ "🏢", "office اداره ساختمان" },
-	{ "🏥", "hospital بیمارستان" },
-	{ "🏫", "school مدرسه" },
-	{ "🕌", "mosque مسجد" },
-	{ "🌆", "city شهر غروب" },
-	{ "🌃", "night city شب شهر" },
-	{ "🌉", "bridge پل" },
-};
-
-constexpr RawItem kCategory6[] = {
-	{ "⌚", "watch ساعت" },
-	{ "📱", "phone موبایل گوشی" },
-	{ "💻", "laptop لپ" "\xE2\x80\x8C" "تاپ" },
-	{ "⌨" "\xEF\xB8\x8F", "keyboard کیبورد" },
-	{ "🖥", "desktop کامپیوتر" },
-	{ "🖨", "printer پرینتر" },
-	{ "🖱", "mouse موس" },
-	{ "📷", "camera دوربین" },
-	{ "📹", "video camera دوربین فیلم" },
-	{ "🎥", "movie camera دوربین" },
-	{ "📞", "phone تلفن" },
-	{ "☎" "\xEF\xB8\x8F", "telephone تلفن" },
-	{ "📺", "tv تلویزیون" },
-	{ "📻", "radio رادیو" },
-	{ "⏰", "alarm clock ساعت زنگ" },
-	{ "⏳", "hourglass ساعت شنی" },
-	{ "💡", "idea bulb ایده لامپ" },
-	{ "🔦", "flashlight چراغ" "\xE2\x80\x8C" "قوه" },
-	{ "🕯", "candle شمع" },
-	{ "💸", "money پول" },
-	{ "💵", "dollar دلار" },
-	{ "💳", "card کارت" },
-	{ "💎", "gem diamond الماس" },
-	{ "🔧", "wrench آچار" },
-	{ "🔨", "hammer چکش" },
-	{ "🛠", "tools ابزار" },
-	{ "🔩", "bolt پیچ" },
-	{ "⚙" "\xEF\xB8\x8F", "gear settings تنظیمات چرخ" "\xE2\x80\x8C" "دنده" },
-	{ "🔫", "pistol تفنگ" },
-	{ "💣", "bomb بمب" },
-	{ "🔪", "knife چاقو" },
-	{ "🛡", "shield سپر" },
-	{ "🔮", "crystal ball گوی" },
-	{ "💊", "pill قرص" },
-	{ "💉", "syringe سرنگ واکسن" },
-	{ "🧪", "test tube آزمایش" },
-	{ "🌡", "thermometer دماسنج" },
-	{ "🧹", "broom جارو" },
-	{ "🚪", "door در" },
-	{ "🛏", "bed تخت" },
-	{ "🛋", "sofa مبل" },
-	{ "🚿", "shower دوش" },
-	{ "🔑", "key کلید" },
-	{ "🔒", "lock قفل" },
-	{ "🔓", "unlock باز" },
-	{ "📦", "package بسته" },
-	{ "✉" "\xEF\xB8\x8F", "mail envelope نامه" },
-	{ "📧", "email ایمیل" },
-	{ "📝", "memo note یادداشت" },
-	{ "📄", "document سند" },
-	{ "📁", "folder پوشه" },
-	{ "📅", "calendar تقویم" },
-	{ "📌", "pin سنجاق" },
-	{ "📎", "paperclip گیره" },
-	{ "✂" "\xEF\xB8\x8F", "scissors قیچی" },
-	{ "🖊", "pen خودکار" },
-	{ "✏" "\xEF\xB8\x8F", "pencil مداد" },
-	{ "🔍", "search magnifier جستجو ذره" "\xE2\x80\x8C" "بین" },
-	{ "📚", "books کتاب" },
-	{ "📖", "book کتاب" },
-	{ "🔔", "bell زنگ اعلان" },
-	{ "🔕", "mute bell بی" "\xE2\x80\x8C" "صدا" },
-};
-
-constexpr RawItem kCategory7[] = {
-	{ "❤" "\xEF\xB8\x8F", "red heart love قلب عشق" },
-	{ "🧡", "orange heart قلب نارنجی" },
-	{ "💛", "yellow heart قلب زرد" },
-	{ "💚", "green heart قلب سبز" },
-	{ "💙", "blue heart قلب آبی" },
-	{ "💜", "purple heart قلب بنفش" },
-	{ "🖤", "black heart قلب سیاه" },
-	{ "🤍", "white heart قلب سفید" },
-	{ "🤎", "brown heart قلب قهوه" "\xE2\x80\x8C" "ای" },
-	{ "💔", "broken heart قلب شکسته" },
-	{ "❣" "\xEF\xB8\x8F", "heart exclamation قلب" },
-	{ "💕", "two hearts قلب" },
-	{ "💞", "revolving hearts قلب" },
-	{ "💓", "beating heart قلب تپش" },
-	{ "💗", "growing heart قلب" },
-	{ "💖", "sparkling heart قلب" },
-	{ "💘", "cupid قلب تیر" },
-	{ "💝", "heart ribbon قلب هدیه" },
-	{ "💯", "hundred صد عالی" },
-	{ "💢", "anger عصبانیت" },
-	{ "💥", "boom collision انفجار" },
-	{ "💫", "dizzy ستاره" },
-	{ "💦", "sweat drops قطره" },
-	{ "💤", "zzz sleep خواب" },
-	{ "✅", "check done تیک انجام" },
-	{ "☑" "\xEF\xB8\x8F", "check تیک" },
-	{ "✔" "\xEF\xB8\x8F", "check mark تیک" },
-	{ "❌", "cross no ضربدر نه" },
-	{ "❎", "cross ضربدر" },
-	{ "➕", "plus جمع" },
-	{ "➖", "minus منفی" },
-	{ "❓", "question سوال" },
-	{ "❗", "exclamation تعجب" },
-	{ "‼" "\xEF\xB8\x8F", "double exclamation تعجب" },
-	{ "⚠" "\xEF\xB8\x8F", "warning هشدار" },
-	{ "🚫", "prohibited ممنوع" },
-	{ "⛔", "no entry ورود ممنوع" },
-	{ "🔞", "adult ۱۸" },
-	{ "♻" "\xEF\xB8\x8F", "recycle بازیافت" },
-	{ "🔴", "red circle قرمز" },
-	{ "🟠", "orange circle نارنجی" },
-	{ "🟡", "yellow circle زرد" },
-	{ "🟢", "green circle سبز" },
-	{ "🔵", "blue circle آبی" },
-	{ "🟣", "purple circle بنفش" },
-	{ "⚫", "black circle سیاه" },
-	{ "⚪", "white circle سفید" },
-	{ "🔺", "triangle up مثلث" },
-	{ "🔻", "triangle down مثلث" },
-	{ "⬆" "\xEF\xB8\x8F", "up arrow بالا" },
-	{ "⬇" "\xEF\xB8\x8F", "down arrow پایین" },
-	{ "⬅" "\xEF\xB8\x8F", "left arrow چپ" },
-	{ "➡" "\xEF\xB8\x8F", "right arrow راست" },
-	{ "🔄", "refresh تازه" "\xE2\x80\x8C" "سازی" },
-	{ "🆗", "ok اوکی" },
-	{ "🆕", "new جدید" },
-	{ "🆓", "free رایگان" },
-	{ "™" "\xEF\xB8\x8F", "trademark" },
-	{ "©" "\xEF\xB8\x8F", "copyright" },
-};
-
-constexpr RawItem kCategory8[] = {
-	{ "🏁", "finish flag پرچم پایان" },
-	{ "🚩", "red flag پرچم قرمز" },
-	{ "🏳" "\xEF\xB8\x8F", "white flag پرچم سفید" },
-	{ "🏴", "black flag پرچم سیاه" },
-	{ "🇮🇷", "iran ایران پرچم" },
-	{ "🇦🇫", "afghanistan افغانستان" },
-	{ "🇹🇯", "tajikistan تاجیکستان" },
-	{ "🇹🇷", "turkey ترکیه" },
-	{ "🇦🇪", "uae emirates امارات" },
-	{ "🇮🇶", "iraq عراق" },
-	{ "🇩🇪", "germany آلمان" },
-	{ "🇫🇷", "france فرانسه" },
-	{ "🇬🇧", "uk britain انگلیس بریتانیا" },
-	{ "🇺🇸", "usa america آمریکا" },
-	{ "🇨🇦", "canada کانادا" },
-	{ "🇦🇺", "australia استرالیا" },
-	{ "🇮🇹", "italy ایتالیا" },
-	{ "🇪🇸", "spain اسپانیا" },
-	{ "🇳🇱", "netherlands هلند" },
-	{ "🇸🇪", "sweden سوئد" },
-	{ "🇯🇵", "japan ژاپن" },
-	{ "🇰🇷", "korea کره" },
-	{ "🇨🇳", "china چین" },
-	{ "🇮🇳", "india هند" },
-	{ "🇧🇷", "brazil برزیل" },
-	{ "🇦🇷", "argentina آرژانتین" },
-};
-
-struct RawCategory {
-	const char *icon;
-	const RawItem *items;
-	int count;
-};
-
-constexpr RawCategory kCategories[] = {
-	{ "😀", kCategory0, int(std::size(kCategory0)) },
-	{ "👋", kCategory1, int(std::size(kCategory1)) },
-	{ "🐶", kCategory2, int(std::size(kCategory2)) },
-	{ "🍎", kCategory3, int(std::size(kCategory3)) },
-	{ "⚽", kCategory4, int(std::size(kCategory4)) },
-	{ "🚗", kCategory5, int(std::size(kCategory5)) },
-	{ "💡", kCategory6, int(std::size(kCategory6)) },
-	{ "❤" "\xEF\xB8\x8F", kCategory7, int(std::size(kCategory7)) },
-	{ "🏁", kCategory8, int(std::size(kCategory8)) },
-};
+[[nodiscard]] SearchState &Search() {
+	static auto result = SearchState();
+	return result;
+}
 
 } // namespace
 
 const QVector<EmojiCategory> &EmojiCategories() {
 	static const auto result = [] {
 		auto list = QVector<EmojiCategory>();
-		for (const auto &raw : kCategories) {
-			auto category = EmojiCategory();
-			category.icon = QString::fromUtf8(raw.icon);
-			category.items.reserve(raw.count);
-			for (auto i = 0; i != raw.count; ++i) {
-				category.items.push_back({
-					QString::fromUtf8(raw.items[i].text),
-					NormalizeForSearch(QString::fromUtf8(raw.items[i].keywords)),
-				});
-			}
-			list.push_back(std::move(category));
+		for (auto i = 0; i != Ui::Emoji::kPanelCategoryCount; ++i) {
+			list.push_back({
+				Ui::Emoji::PanelCategoryIcon(i),
+				Ui::Emoji::PanelCategory(i),
+			});
 		}
 		return list;
 	}();
@@ -582,41 +59,198 @@ const QVector<EmojiCategory> &EmojiCategories() {
 QString EmojiCategoryTitle(int index) {
 	switch (index) {
 	case 0: return tr::lng_history_emoji_smileys(tr::now);
-	case 1: return tr::lng_history_emoji_people(tr::now);
-	case 2: return tr::lng_history_emoji_nature(tr::now);
-	case 3: return tr::lng_history_emoji_food(tr::now);
-	case 4: return tr::lng_history_emoji_activity(tr::now);
-	case 5: return tr::lng_history_emoji_travel(tr::now);
-	case 6: return tr::lng_history_emoji_objects(tr::now);
-	case 7: return tr::lng_history_emoji_symbols(tr::now);
-	case 8: return tr::lng_history_emoji_flags(tr::now);
+	case 1: return tr::lng_history_emoji_nature(tr::now);
+	case 2: return tr::lng_history_emoji_food(tr::now);
+	case 3: return tr::lng_history_emoji_activity(tr::now);
+	case 4: return tr::lng_history_emoji_travel(tr::now);
+	case 5: return tr::lng_history_emoji_objects(tr::now);
+	case 6: return tr::lng_history_emoji_symbols(tr::now);
+	case 7: return tr::lng_history_emoji_flags(tr::now);
 	}
 	return QString();
 }
 
-QStringList SearchEmoji(const QString &query, int limit) {
-	auto result = QStringList();
-	const auto words = NormalizeForSearch(query).split(u' ', Qt::SkipEmptyParts);
-	if (words.isEmpty()) {
-		return result;
-	}
-	for (const auto &category : EmojiCategories()) {
-		for (const auto &item : category.items) {
-			const auto all = std::all_of(
-				words.begin(),
-				words.end(),
-				[&](const QString &word) {
-					return item.keywords.contains(word) || (item.text == word);
-				});
-			if (all) {
-				result.push_back(item.text);
-				if (result.size() >= limit) {
-					return result;
-				}
+std::shared_ptr<const EmojiSearchIndex> EmojiSearchIndex::Build() {
+	auto result = std::make_shared<EmojiSearchIndex>();
+	const auto words = Ui::Emoji::SearchWords();
+	for (auto c = 0; c != Ui::Emoji::kPanelCategoryCount; ++c) {
+		for (const auto &base : Ui::Emoji::PanelCategory(c)) {
+			const auto i = words.constFind(Ui::Emoji::Strip(base));
+			if (i == words.cend() || i->isEmpty()) {
+				continue;
 			}
+			auto row = Row();
+			row.base = base;
+			auto tokens = QSet<QString>();
+			for (const auto &phrase : *i) {
+				auto list = Words(phrase);
+				for (const auto &word : list) {
+					tokens.insert(word);
+				}
+				row.phrases.push_back(std::move(list));
+			}
+			row.tokens = QStringList(tokens.begin(), tokens.end());
+			row.tokens.sort();
+			result->_rows.push_back(std::move(row));
 		}
 	}
 	return result;
+}
+
+QStringList EmojiSearchIndex::search(const QString &query, int limit) const {
+	auto result = QStringList();
+	const auto trimmed = query.trimmed();
+	if (trimmed.isEmpty() || limit <= 0) {
+		return result;
+	}
+	auto seen = QSet<QString>();
+	for (const auto &range : Ui::Emoji::FindAll(trimmed)) {
+		const auto code = trimmed.mid(range.from, range.till - range.from);
+		if (!seen.contains(Ui::Emoji::Strip(code))) {
+			seen.insert(Ui::Emoji::Strip(code));
+			result.push_back(code);
+		}
+	}
+	const auto terms = Words(trimmed);
+	if (terms.isEmpty()) {
+		return result.mid(0, limit);
+	}
+	const auto hasWord = [](const QStringList &tokens, const QString &term) {
+		return std::binary_search(tokens.begin(), tokens.end(), term);
+	};
+	const auto hasPrefix = [](const QStringList &tokens, const QString &term) {
+		// The first token not less than the term is the one it may start.
+		const auto i = std::lower_bound(tokens.begin(), tokens.end(), term);
+		return (i != tokens.end()) && i->startsWith(term);
+	};
+	auto phrase = QStringList();
+	auto whole = QStringList();
+	auto partial = QStringList();
+	for (const auto &row : _rows) {
+		const auto key = Ui::Emoji::Strip(row.base);
+		if (seen.contains(key)) {
+			continue;
+		}
+		const auto all = std::all_of(terms.begin(), terms.end(), [&](const QString &term) {
+			return hasPrefix(row.tokens, term);
+		});
+		if (!all) {
+			continue;
+		}
+		seen.insert(key);
+		const auto inPhrase = std::any_of(
+			row.phrases.begin(),
+			row.phrases.end(),
+			[&](const QStringList &words) {
+				return std::all_of(terms.begin(), terms.end(), [&](const QString &term) {
+					return words.contains(term);
+				});
+			});
+		if (inPhrase) {
+			phrase.push_back(row.base);
+		} else if (std::all_of(terms.begin(), terms.end(), [&](const QString &term) {
+				return hasWord(row.tokens, term);
+			})) {
+			whole.push_back(row.base);
+		} else {
+			partial.push_back(row.base);
+		}
+	}
+	result += phrase;
+	result += whole;
+	result += partial;
+	return result.mid(0, limit);
+}
+
+std::shared_ptr<const EmojiSearchIndex> EmojiSearch(
+		QObject *guard,
+		Fn<void()> ready) {
+	auto &state = Search();
+	if (state.index) {
+		return state.index;
+	}
+	if (ready) {
+		state.waiting.emplace_back(guard, std::move(ready));
+	}
+	if (!state.building) {
+		state.building = true;
+		QThreadPool::globalInstance()->start([] {
+			auto index = EmojiSearchIndex::Build();
+			const auto app = QCoreApplication::instance();
+			if (!app) {
+				return;
+			}
+			QMetaObject::invokeMethod(app, [index = std::move(index)] {
+				auto &state = Search();
+				state.index = index;
+				state.building = false;
+				auto waiting = std::exchange(state.waiting, {});
+				for (const auto &[guard, callback] : waiting) {
+					if (guard) {
+						callback();
+					}
+				}
+			}, Qt::QueuedConnection);
+		});
+	}
+	return nullptr;
+}
+
+QMap<QString, int> DefaultEmojiUses() {
+	auto result = QMap<QString, int>();
+	const auto count = int(std::size(kDefaultRecent));
+	for (auto i = 0; i != count; ++i) {
+		result.insert(QString::fromUtf16(kDefaultRecent[i]), count - i);
+	}
+	return result;
+}
+
+QStringList SortRecentEmoji(QMap<QString, int> &uses) {
+	auto list = std::vector<std::pair<QString, int>>();
+	list.reserve(uses.size());
+	for (auto i = uses.begin(); i != uses.end(); ++i) {
+		list.emplace_back(i.key(), i.value());
+	}
+	std::stable_sort(list.begin(), list.end(), [](const auto &a, const auto &b) {
+		return a.second > b.second;
+	});
+	auto result = QStringList();
+	for (auto i = 0; i != int(list.size()); ++i) {
+		if (i < kMaxRecentEmoji) {
+			result.push_back(list[i].first);
+		} else {
+			uses.remove(list[i].first);
+		}
+	}
+	return result;
+}
+
+void CountEmojiUse(
+		QMap<QString, int> &uses,
+		QStringList &shown,
+		const QString &emoji) {
+	if (emoji.isEmpty()) {
+		return;
+	}
+	auto i = uses.find(emoji);
+	if (i == uses.end()) {
+		if (uses.size() >= kMaxRecentEmoji && !shown.isEmpty()) {
+			uses.remove(shown.back());
+			shown.back() = emoji;
+		} else {
+			shown.push_back(emoji);
+		}
+		i = uses.insert(emoji, 0);
+	}
+	++i.value();
+}
+
+QString EmojiWithTone(const QString &base, const QMap<QString, int> &tones) {
+	if (!Ui::Emoji::TakesTone(base)) {
+		return base;
+	}
+	const auto i = tones.constFind(Ui::Emoji::Strip(base));
+	return (i != tones.cend()) ? Ui::Emoji::WithTone(base, *i) : base;
 }
 
 } // namespace History

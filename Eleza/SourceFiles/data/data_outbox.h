@@ -59,6 +59,11 @@ struct SendFileOptions {
 	bool silent = false;                // «send without sound»
 	QString album;                      // the same id on every item of an album
 	bool captionAbove = false;          // the caption is shown above the media
+	// One photo or video of a direct chat with a person that destructs once
+	// seen: never with a spoiler, an album or the caption above. Uploaded
+	// on its own (no dedup); this device keeps neither the picture nor the
+	// caption in the bubble.
+	std::optional<SelfDestructInput> selfDestruct;
 };
 
 class Outbox final : public QObject {

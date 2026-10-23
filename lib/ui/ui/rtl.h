@@ -15,7 +15,7 @@ namespace Ui {
 	return style::RightToLeft() ? Qt::RightToLeft : Qt::LeftToRight;
 }
 
-// Direction of a piece of text by its first strong character
+// Direction of a piece of text by its first strong character outside isolates
 // (falls back to the interface direction).
 [[nodiscard]] bool IsRtlText(const QString &text);
 

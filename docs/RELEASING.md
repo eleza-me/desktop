@@ -50,7 +50,11 @@ it does, in this order:
      which waits for the app to exit, swaps the files and starts `Eleza.exe`.
      If the install directory needs administrator rights (an install for all
      users under Program Files) it asks for them; the default per-user install
-     never does.
+     never does. What runs with those rights is the `Updater.exe` of the
+     install directory (which only an administrator can change), not the copy
+     among the user's files; it only swaps the files of the directory it lies
+     in, copies the new ones out of `<data dir>/updates/<version>/` and writes
+     nothing there (the copy that started it writes the result).
 
    The swap moves every old file into `<install>/_backup_<version>/` and the new
    one in, file by file, with a journal written before every move. Anything

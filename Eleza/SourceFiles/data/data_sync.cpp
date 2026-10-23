@@ -160,6 +160,7 @@ void Sync::handle(const Rt::Frame &frame) {
 		// What waited for the connection goes out now.
 		_session->outbox().retryAll();
 		_session->chats().flushDrafts();
+		_session->chats().flushActionBarDismissals();
 		// Connected (first connect, reconnect, resume — every time): what
 		// the frames of the gap would have said about my groups.
 		_session->groups().requestSync();
@@ -329,14 +330,11 @@ void Sync::applyLive(
 			});
 		}
 	} else if (kind == u"played") {
-		const auto seq = Json::Int64(d, "seq"_L1);
-		if (!chat.isEmpty() && seq > 0) {
-			messages.patchMessage(chat, Message::KeyForSeq(seq), [](Message &message) {
-				message.played = true;
-			});
-		}
+		applyPlayed(chat, Json::Int64(d, "seq"_L1));
 	} else if (kind == u"draft") {
-		if (!chat.isEmpty()) {
+		// A draft typed here that the server has not confirmed yet is newer
+		// than what it tells (the echo of an earlier save, say).
+		if (!chat.isEmpty() && !chats.hasLocalDraft(chat)) {
 			const auto draft = Json::Optional<Draft>(d, "draft"_L1);
 			chats.patch(chat, [&](Chat &c) {
 				c.draft = (draft && !draft->empty()) ? draft : std::nullopt;
@@ -369,8 +367,11 @@ void Sync::applyLive(
 			applyCleared(chat, cleared, false);
 		}
 		if (const auto hidden = Json::Int64(d, "hidden_seq"_L1)) {
-			// I deleted one message for myself on another device.
-			messages.removeMessage(chat, Message::KeyForSeq(hidden));
+			applyHidden(chat, hidden);
+		}
+		if (Json::Bool(d, "action_bar_dismissed"_L1)) {
+			// The report / block bar went on another device (×, a report).
+			chats.forgetActionBar(chat);
 		}
 	} else if (kind == u"message_pinned" || kind == u"message_unpinned") {
 		const auto seq = Json::Int64(d, "seq"_L1);
@@ -459,6 +460,56 @@ void Sync::applyCleared(const QString &chat, qint64 clearedTo, bool all) {
 	}
 }
 
+// I deleted one message for myself on another device: it leaves the
+// timeline and the cache, and the row when it was the row's preview.
+void Sync::applyHidden(const QString &chat, qint64 seq) {
+	auto &chats = _session->chats();
+	auto &messages = _session->messages();
+	messages.removeMessage(chat, Message::KeyForSeq(seq));
+	const auto row = chats.chat(chat);
+	if (!row || !row->lastMessage || row->lastMessage->seq != seq) {
+		return;
+	}
+	auto last = std::optional<Message>();
+	const auto &items = messages.history(chat).items;
+	for (auto i = items.crbegin(); i != items.crend(); ++i) {
+		if (i->seq > 0) {
+			last = *i;
+			break;
+		}
+	}
+	chats.patch(chat, [&](Chat &c) {
+		c.lastMessage = last;
+		c.lastMine = last && last->mine;
+	});
+	if (!last) {
+		// The message before it is not known here: the inbox has it.
+		reloadInboxSoon();
+	}
+}
+
+// The chat is no longer mine to see (a request I declined, a conversation
+// that ended behind masks or was purged): every item of it in a difference
+// says so, with neither a header nor a message. It goes as when it is
+// deleted here — the row, the timeline and the cache — and what waits in
+// the outbox for it would fail for good.
+void Sync::applyRemoved(const QString &chat) {
+	_session->outbox().discardChat(chat);
+	// The cache as well when there is no row.
+	_session->messages().clear(chat);
+	_session->chats().remove(chat);
+}
+
+// A voice or round message was played: by me on another device, or by
+// the peer (one of mine).
+void Sync::applyPlayed(const QString &chat, qint64 seq) {
+	if (!chat.isEmpty() && seq > 0) {
+		_session->messages().patchMessage(chat, Message::KeyForSeq(seq), [](Message &message) {
+			message.played = true;
+		});
+	}
+}
+
 void Sync::applyMessage(Message message, bool live) {
 	if (message.chat.isEmpty()) {
 		return;
@@ -492,14 +543,25 @@ void Sync::applyMessage(Message message, bool live) {
 	}
 	message.resolveLocal(info, _session->userId());
 	const auto mine = message.mine;
-	// Only a timeline that reaches the newest message takes it (anything
-	// else would show a hole between its run and this message); my own echo
-	// always replaces its pending copy.
+	// A timeline takes what lies inside its window and, when it reaches the
+	// newest message, what extends it (anything else would show a hole
+	// between its run and this message); my own echo always replaces its
+	// pending copy. The cache follows a timeline that reaches the newest
+	// message; anywhere else only a copy it holds is brought up to date (an
+	// old message edited), so it never gets an island either.
 	const auto echo = !message.clientMessageId.isEmpty()
 		&& history.indexOfKey(Message::KeyForLocal(message.clientMessageId)) >= 0;
-	const auto inWindow = history.find(message.seq) != nullptr;
-	if ((history.loaded && !history.hasMoreAfter) || echo || inWindow) {
-		messages.merge(chatId, { message }, history.loaded && !history.hasMoreAfter);
+	const auto attached = history.loaded && !history.hasMoreAfter;
+	const auto first = history.firstSeq();
+	const auto last = history.lastSeq();
+	const auto inside = (first > 0) && (message.seq >= first) && (message.seq <= last);
+	const auto extends = attached && (first == 0 || message.seq > last);
+	const auto cached = attached && (inside || extends || echo);
+	if (inside || extends || echo) {
+		messages.merge(chatId, { message }, cached);
+	}
+	if (!cached) {
+		messages.updateCached(chatId, { message });
 	}
 	if (const auto current = chats.chat(chatId)) {
 		const auto isNew = message.seq > current->lastSeq;
@@ -532,6 +594,13 @@ void Sync::applyMessage(Message message, bool live) {
 }
 
 void Sync::applyItem(const QJsonObject &item, bool live) {
+	if (Json::Bool(item, "removed"_L1)) {
+		// Whatever the kind: the chat itself is gone for me.
+		if (const auto chat = Json::String(item, "chat"_L1); !chat.isEmpty()) {
+			applyRemoved(chat);
+		}
+		return;
+	}
 	if (const auto info = item.value("chat_info"_L1).toObject();
 		!Json::String(info, "chat"_L1).isEmpty()) {
 		rememberInfo(ChatInfo::FromJson(info));
@@ -543,12 +612,8 @@ void Sync::applyItem(const QJsonObject &item, bool live) {
 		const auto view = !Json::String(wrapped, "chat"_L1).isEmpty()
 			? wrapped
 			: item.value("message"_L1).toObject();
-		const auto chat = Json::String(item, "chat"_L1);
-		const auto seq = Json::Int64(item, "seq"_L1);
 		if (!Json::String(view, "chat"_L1).isEmpty()) {
 			applyMessage(Message::FromJson(view), live && kind == u"message");
-		} else if (Json::Bool(item, "removed"_L1) && !chat.isEmpty() && seq > 0) {
-			_session->messages().removeMessage(chat, Message::KeyForSeq(seq));
 		}
 		return;
 	}
@@ -577,6 +642,32 @@ void Sync::applyItem(const QJsonObject &item, bool live) {
 	}
 	if (!data.isEmpty()) {
 		applyLive(kind, Payload(kind, data), Json::Int64(item, "pts"_L1), live);
+		return;
+	}
+	// A difference item (also a replayed one) of these kinds has no payload:
+	// the chat, the seq and the header (applied above) are all there is.
+	const auto chat = Json::String(item, "chat"_L1);
+	const auto seq = Json::Int64(item, "seq"_L1);
+	if (chat.isEmpty()) {
+		return;
+	} else if (kind == u"cleared") {
+		// The history cleared for both: the seq is the chat's last one then.
+		if (seq > 0) {
+			applyCleared(chat, seq, true);
+		}
+	} else if (kind == u"played") {
+		applyPlayed(chat, seq);
+	} else if (kind == u"member") {
+		if (seq > 0) {
+			// One message deleted for me.
+			applyHidden(chat, seq);
+		} else {
+			// Muted, archived, the report bar dismissed (the header has
+			// those), or my history cleared, which the item does not tell:
+			// the cached messages and the row are read again.
+			_session->messages().markStale(chat);
+			reloadInboxSoon();
+		}
 	}
 }
 

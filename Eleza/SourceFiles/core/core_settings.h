@@ -12,6 +12,7 @@
 #include "ui/style/style_core_palette.h"
 
 #include <QtCore/QJsonObject>
+#include <QtCore/QMap>
 #include <QtCore/QObject>
 #include <QtCore/QRect>
 #include <QtCore/QStringList>
@@ -129,6 +130,20 @@ public:
 		return _voicePlaybackSpeed;
 	}
 	void setVoicePlaybackSpeed(double speed);
+	// The music player: repeat (0 off, 1 all, 2 one), shuffle and the
+	// order (reversed: a chat's songs oldest first).
+	[[nodiscard]] int musicRepeat() const {
+		return _musicRepeat;
+	}
+	void setMusicRepeat(int mode);
+	[[nodiscard]] bool musicShuffle() const {
+		return _musicShuffle;
+	}
+	void setMusicShuffle(bool shuffle);
+	[[nodiscard]] bool musicReversed() const {
+		return _musicReversed;
+	}
+	void setMusicReversed(bool reversed);
 
 	// The composer: false = Enter sends and Shift+Enter breaks the line,
 	// true = Ctrl+Enter sends and Enter breaks the line.
@@ -149,11 +164,18 @@ public:
 	}
 	void setMediaCacheLimit(qint64 bytes);
 
-	// Emoji picked recently in the chat composer (newest first).
-	[[nodiscard]] QStringList recentEmoji() const {
-		return _recentEmoji;
+	// The emoji panel's memory (history/history_emoji_data.h): how often each
+	// emoji was picked — nullopt until the panel first wrote it (then it
+	// starts with Telegram's defaults) — and the skin tone (0…4) chosen for
+	// the emoji that take one.
+	[[nodiscard]] const std::optional<QMap<QString, int>> &emojiUses() const {
+		return _emojiUses;
 	}
-	void setRecentEmoji(const QStringList &emoji);
+	void setEmojiUses(const QMap<QString, int> &uses);
+	[[nodiscard]] const QMap<QString, int> &emojiTones() const {
+		return _emojiTones;
+	}
+	void setEmojiTones(const QMap<QString, int> &tones);
 
 	// «به‌روزرسانی خودکار»: a new version is downloaded in the background
 	// as soon as it is found (off: it is only announced).
@@ -192,10 +214,14 @@ private:
 	QString _lastDialogDirectory;
 	double _playbackVolume = 1.;
 	double _voicePlaybackSpeed = 1.;
+	int _musicRepeat = 0;
+	bool _musicShuffle = false;
+	bool _musicReversed = false;
 	bool _sendByCtrlEnter = false;
 	std::optional<bool> _systemTitleBar;
 	qint64 _mediaCacheLimit = 0;
-	QStringList _recentEmoji;
+	std::optional<QMap<QString, int>> _emojiUses;
+	QMap<QString, int> _emojiTones;
 	bool _autoUpdate = true;
 	CallSettings _calls;
 

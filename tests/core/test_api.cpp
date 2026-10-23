@@ -12,7 +12,10 @@
 #include "main/main_account.h"
 #include "main/main_session.h"
 #include "storage/storage_key_value.h"
+#include "storage/storage_secure_blob.h"
 
+#include <QtCore/QDir>
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QTemporaryDir>
 
 using Test::HttpServer;
@@ -104,6 +107,8 @@ private Q_SLOTS:
 	void refreshReissuesNonceOnce();
 	void refreshFailuresKeepOrEndTheSession();
 	void logoutWipes();
+	void logoutDoesNotWaitForARefresh();
+	void storedSessionStaysWithItsOrigin();
 	void onlyWebAddressesAreReached();
 	void oversizedJsonIsRefused();
 	void abortAuthenticatedStopsRetries();
@@ -241,6 +246,8 @@ void TestApi::problemJson() {
 void TestApi::logLinesCarryNoIds() {
 	using Api::RouteTemplate;
 	QCOMPARE(RouteTemplate(u"/v1/me"_s), u"/v1/me"_s);
+	QCOMPARE(RouteTemplate(u"/v1/me/note"_s), u"/v1/me/note"_s);
+	QCOMPARE(RouteTemplate(u"/v1/notes"_s), u"/v1/notes"_s);
 	QCOMPARE(RouteTemplate(u"/v1/auth/otp/verify"_s), u"/v1/auth/otp/verify"_s);
 	QCOMPARE(RouteTemplate(u"/v1/chats/c1/messages?before=40&limit=50"_s), u"/v1/chats/:id/messages"_s);
 	QCOMPARE(
@@ -392,6 +399,10 @@ void TestApi::offlineAndDecoding() {
 			return response;
 		} else if (request.path == "/v1/list") {
 			return HttpServer::Response::Bytes("[1,2,3]", "application/json");
+		} else if (request.path == "/v1/cut" || request.path == "/v1/cut-empty") {
+			auto response = HttpServer::Response::Bytes(R"({"ok":true,"more":"x"})", "application/json");
+			response.cutAfter = (request.path == "/v1/cut") ? 5 : 0;
+			return response;
 		}
 		return HttpServer::Response::Bytes("{not json", "application/json");
 	};
@@ -406,6 +417,16 @@ void TestApi::offlineAndDecoding() {
 	QVERIFY(empty->done);
 	QVERIFY(empty->json.isEmpty());
 	QCOMPARE(list.toArray().size(), 3);
+
+	// A 200 whose body was cut off is no answer: retryable, not a decoding
+	// error and never an empty success.
+	const auto cut = Send(client.request(Api::Get, u"/v1/cut"_s));
+	const auto cutEmpty = Send(client.request(Api::Get, u"/v1/cut-empty"_s));
+	QVERIFY(Test::WaitFor([&] { return cut->finished() && cutEmpty->finished(); }));
+	QVERIFY(cut->failed);
+	QVERIFY(cut->error.offline() && cut->error.retryable);
+	QVERIFY(cutEmpty->failed);
+	QVERIFY(cutEmpty->error.offline());
 
 	// Nothing listens there: no HTTP answer at all.
 	auto closed = QTcpServer();
@@ -517,6 +538,15 @@ void TestApi::downloadFollowsRedirectWithoutToken() {
 	QVERIFY(result->bytes.isEmpty());
 	QCOMPARE(QFileInfo(path).size(), payload.size());
 	QVERIFY(!QFileInfo::exists(path + u".part"_s));
+	// Two downloads of the same file at once do not write into one .part.
+	auto first = std::optional<Api::DownloadResult>();
+	auto second = std::optional<Api::DownloadResult>();
+	client.download(u"/v1/media"_s).toFile(path).done([&](const Api::DownloadResult &value) { first = value; }).send();
+	client.download(u"/v1/media"_s).toFile(path).done([&](const Api::DownloadResult &value) { second = value; }).send();
+	QVERIFY(Test::WaitFor([&] { return first.has_value() && second.has_value(); }));
+	QCOMPARE(QFileInfo(path).size(), payload.size());
+	QCOMPARE(base::platform::ReadFile(path).value_or(QByteArray()), payload);
+	QCOMPARE(QDir(QFileInfo(path).absolutePath()).entryList(QDir::Files), QStringList{ u"photo.bin"_s });
 
 	// An absolute URL is fetched without the token.
 	result = std::nullopt;
@@ -1121,6 +1151,124 @@ void TestApi::logoutWipes() {
 	account.logout(this, [&] { done = true; });
 	QVERIFY(Test::WaitFor([&] { return done; }));
 	QCOMPARE(server.count("/v1/auth/logout"), 1);
+}
+
+void TestApi::logoutDoesNotWaitForARefresh() {
+	auto server = HttpServer();
+	auto dead = false;
+	auto generation = 1;
+	server.handler = [&](const HttpServer::Request &request) {
+		if (request.path == "/v1/auth/otp/verify") {
+			return HttpServer::Response::Ok(TokensDocument(1, 30)); // about to expire
+		} else if (request.path == "/v1/auth/token/refresh") {
+			if (!dead) {
+				return HttpServer::Response::Ok(TokensDocument(++generation, 30));
+			}
+			auto response = HttpServer::Response();
+			response.hang = true; // a dead network
+			return response;
+		}
+		return HttpServer::Response::Ok();
+	};
+	auto account = Main::Account(accountConfig(server, u"logout-dead"_s));
+	account.start();
+	auto outcome = std::optional<Api::VerifyOutcome>();
+	account.auth().verifyCode(u"ch"_s, u"1"_s, false, this, [&](const Api::VerifyOutcome &value) { outcome = value; }, nullptr);
+	QVERIFY(Test::WaitFor([&] { return outcome.has_value(); }));
+	QVERIFY(account.signedIn());
+	Test::Settle(200);
+	dead = true;
+	const auto logouts = server.count("/v1/auth/logout");
+	auto ended = 0;
+	connect(&account, &Main::Account::sessionEnded, this, [&] { ++ended; });
+	auto timer = QElapsedTimer();
+	timer.start();
+	auto done = 0;
+	account.logout(this, [&] { ++done; });
+	QVERIFY(Test::WaitFor([&] { return done > 0; }, 9000));
+	QVERIFY(timer.elapsed() < 8000);
+	QVERIFY(!account.signedIn());
+	QCOMPARE(server.count("/v1/auth/logout"), logouts); // never got its token
+	Test::Settle(100);
+	QCOMPARE(done, 1);
+	QCOMPARE(ended, 1);
+}
+
+void TestApi::storedSessionStaysWithItsOrigin() {
+	QCOMPARE(Main::Tokens::OriginOf(u"https://API.eleza.me/"_s), u"https://api.eleza.me:443"_s);
+	QCOMPARE(Main::Tokens::OriginOf(u"http://127.0.0.1:8000/x"_s), u"http://127.0.0.1:8000"_s);
+	QVERIFY(Main::Tokens::OriginOf(u"nonsense"_s).isEmpty());
+
+	const auto handler = [](const HttpServer::Request &request) {
+		if (request.path == "/v1/auth/otp/verify") {
+			return HttpServer::Response::Ok(TokensDocument(1, 600));
+		}
+		return HttpServer::Response::Ok();
+	};
+	auto home = HttpServer();
+	home.handler = handler;
+	auto other = HttpServer();
+	other.handler = handler;
+	auto userDir = QString();
+	{
+		auto account = Main::Account(accountConfig(home, u"origin"_s));
+		account.start();
+		auto outcome = std::optional<Api::VerifyOutcome>();
+		account.auth().verifyCode(u"ch"_s, u"1"_s, false, this, [&](const Api::VerifyOutcome &value) { outcome = value; }, nullptr);
+		QVERIFY(Test::WaitFor([&] { return outcome.has_value(); }));
+		QVERIFY(account.signedIn());
+		userDir = account.session()->userDir();
+		QVERIFY(Test::WaitFor([&] { return account.session()->isReady(); }));
+	}
+	{
+		// Another server: signed out, nothing of the session is sent there,
+		// and the stored session is left alone.
+		auto config = accountConfig(home, u"origin"_s);
+		config.apiBase = other.base();
+		auto account = Main::Account(config);
+		account.start();
+		QVERIFY(!account.signedIn());
+		QVERIFY(!account.session());
+		QVERIFY(account.currentAccessToken().isEmpty());
+		auto done = false;
+		account.logout(this, [&] { done = true; });
+		QVERIFY(Test::WaitFor([&] { return done; }));
+		QTest::qWait(100);
+		for (const auto &request : other.requests) {
+			QVERIFY(!request.headers.contains("authorization"));
+		}
+		QCOMPARE(other.count("/v1/auth/token/refresh"), 0);
+		QVERIFY(QFileInfo::exists(userDir));
+	}
+	{
+		// Back on its own origin the session is still there.
+		auto account = Main::Account(accountConfig(home, u"origin"_s));
+		QVERIFY(account.signedIn());
+		QCOMPARE(account.userId(), u"u_me"_s);
+	}
+
+	// A session stored before the origin was kept belongs to the default API.
+	const auto workdir = _dir.path() + u"/origin-legacy"_s;
+	base::platform::EnsureDirectory(workdir + u"/account"_s, true);
+	QVERIFY(Storage::SecureBlob(workdir + u"/account/device.key"_s).write(Crypto::DeviceKey::Generate().privateKey()));
+	auto legacy = Main::Tokens::FromJson(TokensDocument(1, 600));
+	legacy.refresh = u"refresh-legacy"_s;
+	legacy.userId = u"u_me"_s;
+	auto json = legacy.toJson();
+	json.remove(u"origin"_s);
+	QVERIFY(Storage::SecureBlob(workdir + u"/account/session.bin"_s).write(QJsonDocument(json).toJson()));
+	{
+		auto config = accountConfig(home, u"origin-legacy"_s);
+		auto account = Main::Account(config);
+		QVERIFY(!account.signedIn());
+	}
+	{
+		auto config = accountConfig(home, u"origin-legacy"_s);
+		config.apiBase = u"https://api.eleza.me"_s;
+		auto account = Main::Account(config);
+		QVERIFY(account.signedIn()); // not started: nothing is sent anywhere
+		QCOMPARE(account.userId(), u"u_me"_s);
+	}
 }
 
 void TestApi::onlyWebAddressesAreReached() {

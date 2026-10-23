@@ -83,9 +83,20 @@ public:
 	// everything cached of their chat (in the order given); a row that is
 	// neither is left out, so the cache stays one run without islands.
 	void mergeMessages(const QVector<MessageRow> &messages);
+	// Replaces only the rows that are cached; the others are left out.
+	void replaceMessages(const QVector<MessageRow> &messages);
+	// Changes one cached row in place: `change` gets its data and returns
+	// false to leave it as it was; a message that is not cached stays out.
+	// It runs on the database's thread, in order with every other
+	// statement, and is destroyed there: it holds values, not references.
+	void changeMessage(const QString &chat, qint64 seq, Fn<bool(QJsonObject &data)> change);
 	void deleteMessage(const QString &chat, qint64 seq);
 	// Removes messages with seq < beforeSeq, or all of the chat's when nullopt.
 	void clearMessages(const QString &chat, std::optional<qint64> beforeSeq = std::nullopt);
+	// Removes the chat's messages when the newest of them is older than
+	// `firstSeq - 1`: they cannot be one run with messages that start at
+	// `firstSeq`, and the hole between would never be filled.
+	void dropDetachedMessages(const QString &chat, qint64 firstSeq);
 	// Up to `limit` newest messages with seq < beforeSeq (0: no bound), oldest first.
 	void messages(
 		const QString &chat,
@@ -138,7 +149,7 @@ private:
 	template <typename Method>
 	void post(Method &&method);
 	template <typename Result>
-	void reply(base::Guard guard, Fn<void(Result)> done, Result result);
+	void reply(base::Guard &guard, Fn<void(Result)> &done, Result result);
 
 	QString _path;
 	QThread _thread;

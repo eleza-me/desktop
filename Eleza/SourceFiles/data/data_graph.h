@@ -53,6 +53,8 @@ public:
 
 	// ---- follow requests (a private account's incoming requests)
 	void followRequests(base::Guard guard, Fn<void(const QVector<Profile> &)> done, FailCallback fail = nullptr);
+	// The same list a page at a time (`cursor` from the previous page).
+	void incomingFollowRequests(const QString &cursor, base::Guard guard, Fn<void(const GraphList &)> done, FailCallback fail = nullptr);
 	void acceptFollowRequest(const QString &userId, base::Guard guard = base::Guard(), Fn<void(const GraphState &)> done = nullptr, FailCallback fail = nullptr);
 	void declineFollowRequest(const QString &userId, base::Guard guard = base::Guard(), Fn<void(const GraphState &)> done = nullptr, FailCallback fail = nullptr);
 	// The requests I sent that wait for an answer (cancel one with unfollow()).
@@ -70,7 +72,8 @@ public:
 	void search(const QString &query, const QString &type, int offset, base::Guard guard, Fn<void(const SearchResults &)> done, FailCallback fail = nullptr);
 	void searchPeople(const QString &query, base::Guard guard, Fn<void(const QVector<Profile> &)> done);
 	void suggestions(const QString &cursor, int limit, base::Guard guard, Fn<void(const SuggestionsPage &)> done, FailCallback fail = nullptr);
-	// Hides a suggestion; a failed request is remembered and retried on the next start.
+	// Hides a suggestion (every list of them hears suggestionDismissed); a
+	// failed request is remembered and retried on the next start.
 	void dismissSuggestion(const QString &userId);
 	void retryDismissals();
 
@@ -140,6 +143,8 @@ public:
 	void requestExport(const QString &challengeId, const QString &code, const QString &deviceId, base::Guard guard, Fn<void(const QJsonObject &)> done, FailCallback fail = nullptr);
 
 Q_SIGNALS:
+	// «دیگر نشان نده» on a suggested person.
+	void suggestionDismissed(const QString &userId);
 	void settingsChanged();
 	// My relationship with a user changed through one of the calls above.
 	void relationshipChanged(const QString &userId, const Data::GraphState &state);

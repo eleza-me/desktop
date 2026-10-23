@@ -686,6 +686,21 @@ QString Widget::callableUserId() const {
 	return QString();
 }
 
+QString Widget::directChatId() const {
+	if (!_loaded || isMe() || _profile.id.isEmpty()) {
+		return QString();
+	}
+	for (const auto &chat : controller()->session().data().chats().all()) {
+		if (chat.peerUserId == _profile.id
+			&& !chat.isConversation
+			&& !chat.isGroup
+			&& !chat.saved) {
+			return chat.id;
+		}
+	}
+	return QString();
+}
+
 ViewerState Widget::viewerState() const {
 	auto result = ViewerState();
 	result.loaded = _loaded;
@@ -1079,6 +1094,13 @@ void Widget::showMenu() {
 				&st::profileMenuVideoCallIcon);
 		}
 	}
+	// «رسانه، فایل و پیوند» of our direct chat, when there is one.
+	if (const auto chatId = directChatId(); !chatId.isEmpty()) {
+		add(
+			tr::lng_media_shared_open(tr::now),
+			[=, this] { controller()->openRoute(Window::Routes::ChatMedia(chatId)); },
+			&st::profileMenuMediaIcon);
+	}
 	for (const auto entry : model.menu) {
 		switch (entry) {
 		case MenuEntry::PostNotificationsOn:
@@ -1270,6 +1292,11 @@ void Widget::toggleBlock() {
 					weak->_blocked = true;
 					weak->_profile.blockedByYou = true;
 					weak->_justUnblocked = false;
+					// A block ends my follow: one follower less.
+					weak->_profile.followers = std::max(
+						weak->_profile.followers
+							+ FollowersDelta(weak->_follow, FollowUi::None),
+						qint64(0));
 					weak->_follow = FollowUi::None;
 					weak->_profile.followState = u"none"_s;
 					weak->_profile.followsYou = false;
@@ -1327,6 +1354,10 @@ void Widget::report() {
 		if (weak) {
 			weak->_blocked = true;
 			weak->_profile.blockedByYou = true;
+			weak->_profile.followers = std::max(
+				weak->_profile.followers
+					+ FollowersDelta(weak->_follow, FollowUi::None),
+				qint64(0));
 			weak->_follow = FollowUi::None;
 			weak->apply();
 		}

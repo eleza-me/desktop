@@ -657,8 +657,11 @@ void HomeSection::newPostsArrived(int count) {
 				}
 			});
 	}
-	_pill->setData(count, QStringList());
-	resizeEvent(nullptr);
+	if (changed || !_pill->hasFaces()) {
+		// (the same count again keeps the faces it shows)
+		_pill->setData(count, QStringList());
+		resizeEvent(nullptr);
+	}
 	if (changed) {
 		_pillHiddenByScroll = false;
 	}

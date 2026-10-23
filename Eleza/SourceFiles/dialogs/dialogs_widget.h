@@ -2,7 +2,9 @@
 // into «در حال اتصال…» while the app is not online), the search field, the
 // segmented control of the sub-tabs («چت‌ها» + whatever other modules registered
 // through Window::RegisterSideSubTab) and the chat list with its folders
-// («درخواست‌ها», «بایگانی‌شده»).
+// («درخواست‌ها», «بایگانی‌شده»). Over the main list: the row of notes
+// (dialogs_notes.h), which scrolls away with it and leaves the first friends'
+// faces next to the title.
 #pragma once
 
 #include "dialogs/dialogs_logic.h"
@@ -25,11 +27,14 @@ class SearchField;
 class SkeletonList;
 class TabBar;
 class TopBar;
+class VerticalLayout;
 } // namespace Ui
 
 namespace Dialogs {
 
 class InnerWidget;
+class NotesFaces;
+class NotesRow;
 
 class Widget final : public Window::SectionWidget {
 public:
@@ -73,6 +78,12 @@ private:
 	void openChat(const QString &id);
 	bool handleKey(QKeyEvent *e);
 	void searchCancelled();
+	void setupNotes();
+	void refreshNotes();
+	void refreshNotesFaces();
+	void setNotesCollapsed(bool collapsed);
+	void notesFaceClicked(const QString &userId);
+	[[nodiscard]] bool notesAvailable() const;
 
 	Ui::TopBar *_bar = nullptr;
 	QPointer<Support::ConnectionState> _connection;
@@ -80,6 +91,10 @@ private:
 	Ui::TabBar *_tabs = nullptr;
 	Banner *_banner = nullptr;
 	Ui::ScrollArea *_scroll = nullptr;
+	Ui::VerticalLayout *_content = nullptr;
+	NotesRow *_notesRow = nullptr;
+	NotesFaces *_notesFaces = nullptr;
+	bool _notesCollapsed = false;
 	InnerWidget *_inner = nullptr;
 	QPointer<Ui::SkeletonList> _skeleton;
 	QPointer<Ui::EmptyPlaceholder> _empty;

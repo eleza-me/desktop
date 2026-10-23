@@ -273,7 +273,14 @@ void MainLayout::updateGeometries() {
 	const auto single = (width() < st::layoutSingleColumnWidth);
 	const auto railWidth = st::navRailWidth;
 	// The update banner of the single column layout pushes everything down.
-	const auto top = bannerHeight();
+	auto top = bannerHeight();
+	const auto strip = (_strip && !_strip->isHidden()) ? _strip->height() : 0;
+	if (single && strip > 0) {
+		// Over everything of the single column.
+		_strip->setGeometry(0, top, width(), strip);
+		_strip->raise();
+		top += strip;
+	}
 	const auto bodyHeight = std::max(height() - top, 0);
 	if (single) {
 		_sideRect = QRect(railWidth, top, std::max(width() - railWidth, 0), bodyHeight);
@@ -283,6 +290,17 @@ void MainLayout::updateGeometries() {
 		_sideRect = QRect(railWidth, top, sideWidth, bodyHeight);
 		const auto mainLeft = railWidth + sideWidth + st::lineWidth;
 		_mainRect = QRect(mainLeft, top, std::max(width() - mainLeft, 0), bodyHeight);
+		if (strip > 0) {
+			// On top of the main column.
+			_strip->setGeometry(style::rtlrect(
+				_mainRect.x(),
+				top,
+				_mainRect.width(),
+				strip,
+				width()));
+			_strip->raise();
+			_mainRect.setTop(top + strip);
+		}
 	}
 	_rail->setGeometryToLeft(0, top, railWidth, bodyHeight, width());
 	_updateBanner->setGeometry(0, 0, width(), st::updateBannerHeight);
@@ -567,6 +585,71 @@ void MainLayout::resizerDragged(int globalX) {
 
 void MainLayout::resizerFinished() {
 	Core::App().settings().setSideColumnWidth(_sideWidth);
+}
+
+void MainLayout::setMainStrip(QWidget *strip) {
+	if (_strip == strip) {
+		return;
+	}
+	if (_strip) {
+		_strip->removeEventFilter(this);
+		delete _strip.data();
+	}
+	_strip = strip;
+	if (strip) {
+		strip->setParent(this);
+		strip->installEventFilter(this);
+	}
+	updateGeometries();
+}
+
+bool MainLayout::eventFilter(QObject *object, QEvent *event) {
+	if (object == _strip.data()) {
+		const auto type = event->type();
+		if (type == QEvent::Show || type == QEvent::Hide) {
+			Ui::PostponeCall(this, [this] { updateGeometries(); });
+		}
+	}
+	return RpWidget::eventFilter(object, event);
+}
+
+bool MainLayout::showExistingSection(const QString &sectionKey) {
+	if (sectionKey.isEmpty()) {
+		return false;
+	}
+	auto tabs = std::vector<Tab>{ _tab };
+	for (auto i = 0; i != kTabsCount; ++i) {
+		if (Tab(i) != _tab) {
+			tabs.push_back(Tab(i));
+		}
+	}
+	for (const auto tab : tabs) {
+		auto &stack = state(tab).stack;
+		const auto i = std::find_if(stack.begin(), stack.end(), [&](
+				SectionWidget *section) {
+			return section->sectionKey() == sectionKey;
+		});
+		if (i == stack.end()) {
+			continue;
+		}
+		if (tab != _tab) {
+			showTab(tab, anim::type::instant);
+		}
+		if (*i == stack.back()) {
+			return true;
+		}
+		const auto section = *i;
+		runTransition(transitionArea(), false, anim::type::normal, [&] {
+			stack.erase(i);
+			stack.push_back(section);
+			updateGeometries();
+			updateVisibility();
+			updateBackButtons();
+		});
+		_controller->notifyMainSectionChanged();
+		return true;
+	}
+	return false;
 }
 
 void MainLayout::resizeEvent(QResizeEvent *e) {

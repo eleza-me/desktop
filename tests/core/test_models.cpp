@@ -33,6 +33,7 @@ private Q_SLOTS:
 	void stickerPacks();
 	void modelsSurviveTheRealtimeCodec();
 	void blurhash();
+	void selfDestructAndBars();
 
 };
 
@@ -743,6 +744,48 @@ void TestModels::blurhash() {
 	QVERIFY(BlurhashImage(u"LKO2?U%2Tw=w]~RBVZRi};RPxuw"_s).isNull());  // wrong length
 	QVERIFY(BlurhashImage(u"LKO2?U%2Tw=w]~RBVZRi};RPxuéH"_s).isNull()); // not base-83
 	QVERIFY(BlurhashImage(QString()).isNull());
+}
+
+void TestModels::selfDestructAndBars() {
+	// What this app is sent of self-destructing media: a text that says
+	// «only on the phone», and what it is.
+	const auto view = Test::Json(R"({"chat":"c1","seq":42,"id":"m1","sender":"u_sara","kind":"text","created_at":1792667169405,
+		"text":"این پیام فقط روی گوشی قابل دیدن است",
+		"self_destruct":{"mode":"timer","seconds":10,"state":"opened","opened_at":1792667200000,"destruct_at":1792667210000}})");
+	auto message = Message::FromJson(view);
+	QVERIFY(message.selfDestruct.has_value());
+	QCOMPARE(message.selfDestruct->mode, u"timer"_s);
+	QCOMPARE(message.selfDestruct->seconds, 10);
+	QVERIFY(message.selfDestruct->opened());
+	QVERIFY(!message.selfDestruct->viewOnce());
+	QCOMPARE(message.selfDestruct->destructAt - message.selfDestruct->openedAt, qint64(10000));
+	QVERIFY(message.visible());
+	QCOMPARE(Message::FromStored(message.toStored()).selfDestruct, message.selfDestruct);
+	const auto bytes = Rt::Proto::Encode("ChatHistoryResponse"_L1, QJsonObject{
+		{ u"body"_s, QJsonObject{ { u"messages"_s, QJsonArray{ view } } } },
+	});
+	QVERIFY(bytes.has_value());
+	const auto back = Rt::Proto::UnwrapBody(Rt::Proto::Decode("ChatHistoryResponse"_L1, *bytes).value()).toObject();
+	const auto viaWire = Json::List<Message>(back.value("messages"_L1));
+	QCOMPARE(viaWire.size(), 1);
+	QCOMPARE(viaWire[0].selfDestruct, message.selfDestruct);
+	// A view without the key is an ordinary message.
+	QVERIFY(!Message::FromJson(Test::Json(R"({"chat":"c1","seq":1,"kind":"text","text":"x"})")).selfDestruct);
+
+	QCOMPARE(SelfDestructScreenshotTaker(u"self_destruct_screenshot:u1Rc:42"_s), u"u1Rc"_s);
+	QVERIFY(SelfDestructScreenshotTaker(u"message.pinned"_s).isEmpty());
+
+	// The report / block bar and the read receipts of the headers.
+	const auto info = ChatInfo::FromJson(Test::Json(R"({"chat":"c9","kind":"direct","state":"active","action_bar":"stranger"})"));
+	QCOMPARE(info.actionBar, u"stranger"_s);
+	QCOMPARE(ChatInfo::FromJson(info.toJson()).actionBar, u"stranger"_s);
+	const auto group = Group::FromJson(Test::Json(R"({"group":"j1","title":"t","outbox_read_seq":3,"action_bar":"added_by_stranger","added_by":"u17"})"));
+	QCOMPARE(group.outboxReadSeq, qint64(3));
+	QCOMPARE(group.actionBar, u"added_by_stranger"_s);
+	QCOMPARE(group.addedBy, u"u17"_s);
+	const auto again = Group::FromJson(group.toJson());
+	QCOMPARE(again.outboxReadSeq, qint64(3));
+	QCOMPARE(again.addedBy, u"u17"_s);
 }
 
 QTEST_GUILESS_MAIN(TestModels)

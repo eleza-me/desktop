@@ -33,7 +33,8 @@ struct RowFlags {
 [[nodiscard]] QDate MessageDate(const Data::Message &message);
 [[nodiscard]] QDateTime MessageDateTime(const Data::Message &message);
 
-// A centred pill instead of a bubble.
+// A centred pill instead of a bubble (service messages, and
+// self-destructing media).
 [[nodiscard]] bool IsService(const Data::Message &message);
 
 // `next` continues the group of `previous`.
@@ -75,6 +76,12 @@ struct ListDiff {
 [[nodiscard]] ListDiff DiffRows(
 	const std::vector<RowId> &was,
 	const std::vector<RowId> &now);
+
+// The old row the reading position holds on to through `diff` when it was
+// at old row `anchor`: that row while it survives, else the nearest
+// surviving one above it (what is above stays in place), else the nearest
+// one below; -1 when no row survives.
+[[nodiscard]] int SurvivingAnchor(const ListDiff &diff, int anchor);
 
 // Whether two versions of a message look the same on screen (so the row
 // keeps its layout).
@@ -196,5 +203,30 @@ enum class FileType {
 
 // States in which nobody can write to a conversation any more.
 [[nodiscard]] bool ConversationEnded(const QString &state);
+
+// ---- self-destructing media
+
+// It may be sent here: a direct chat with a person — not a group, Saved
+// Messages, a bot, an anonymous conversation or a deleted account.
+[[nodiscard]] bool SelfDestructAllowed(const Data::Chat &chat);
+
+// ---- the floating buttons over the list («to the end», «@»)
+
+// The first stop of «to the end»: the oldest of the `unread` newest
+// messages of somebody else — the notes of a group too, the count is made
+// of them — when it is below `bottomSeq` (the last message on screen); 0:
+// straight to the end. Never at or below `lastReadSeq`.
+[[nodiscard]] qint64 DownFirstStop(
+	const QVector<Data::Message> &items,
+	int unread,
+	qint64 lastReadSeq,
+	qint64 bottomSeq);
+// The buttons float on the side of my own bubbles (the physical right in
+// both directions): in a group the other side is the column of the
+// senders' pictures. A direct chat keeps them at the end of the line.
+[[nodiscard]] bool FloatingButtonsAtPhysicalRight(bool group, bool rtl);
+// The next unread mention to go to: the first of `seqs` (oldest first)
+// above `lastReadSeq`; 0 when the list holds none any more.
+[[nodiscard]] qint64 NextMention(const QVector<qint64> &seqs, qint64 lastReadSeq);
 
 } // namespace History

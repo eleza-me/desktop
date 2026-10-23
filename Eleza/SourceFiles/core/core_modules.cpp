@@ -9,6 +9,7 @@
 #include "eli/eli_module.h"
 #include "groups/groups_module.h"
 #include "intro/intro_module.h"
+#include "media/media_module.h"
 #include "profile/profile_module.h"
 #include "search/search_module.h"
 #include "settings/settings_module.h"
@@ -27,6 +28,8 @@ void RegisterModules() {
 	Support::RegisterDebugRoutes();
 #endif // ELEZA_DEBUG_TOOLS
 	Dialogs::Register();
+	// Before the chat screen: it takes chat/<id>?show=media.
+	Media::Register();
 	History::Register();
 	Conversation::Register();
 	Groups::Register();

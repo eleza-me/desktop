@@ -1,6 +1,7 @@
 #include "history/history_view_element.h"
 
 #include "history/history_view_media.h"
+#include "history/history_view_note_reply.h"
 #include "history/history_album.h"
 #include "data/data_group_rules.h"
 #include "lang/lang_format.h"
@@ -9,6 +10,7 @@
 #include "support/chat_text.h"
 #include "support/media_image.h"
 #include "ui/effects/radial_animation.h"
+#include "ui/emoji/emoji_pack.h"
 #include "ui/image/userpic.h"
 #include "ui/painter.h"
 #include "ui/ui_utility.h"
@@ -24,20 +26,35 @@ namespace {
 
 constexpr auto kReplyTextMaxWidth = 260;
 
+// A reaction's emoji: the pack's picture, or the fonts' emoji without it.
+[[nodiscard]] int ReactionEmojiWidth(const QString &emoji) {
+	return Ui::Emoji::OneWidth(
+		emoji,
+		st::historyReactionEmojiSize,
+		st::historyReactionEmojiFont->f);
+}
+
+// How many lines a service line with names may take.
+constexpr auto kServiceLines = 3;
+
 [[nodiscard]] int PillHeight() {
 	const auto &padding = st::historyServicePadding;
 	return st::historyServiceStyle.lineHeight + padding.top() + padding.bottom();
+}
+
+void PaintPillBg(QPainter &p, const QRect &rect) {
+	auto hq = PainterHighQualityEnabler(p);
+	p.setPen(Qt::NoPen);
+	p.setBrush(ServiceBg());
+	const auto radius = std::min(rect.height() / 2., 14.);
+	p.drawRoundedRect(rect, radius, radius);
 }
 
 void PaintPill(
 		QPainter &p,
 		const QRect &rect,
 		const QString &text) {
-	auto hq = PainterHighQualityEnabler(p);
-	p.setPen(Qt::NoPen);
-	p.setBrush(ServiceBg());
-	const auto radius = std::min(rect.height() / 2., 14.);
-	p.drawRoundedRect(rect, radius, radius);
+	PaintPillBg(p, rect);
 	p.setPen(st::historyServiceFg);
 	p.setFont(st::historyServiceFont);
 	p.drawText(rect, Qt::AlignCenter, text);
@@ -292,9 +309,17 @@ void Element::unloadHeavy() {
 	_reply = nullptr;
 	_preview = nullptr;
 	_media = nullptr;
+	_noteReply = nullptr;
 	_reactions.clear();
 	_keyboard.clear();
 	_loaded = false;
+}
+
+void Element::reloadTexts() {
+	auto media = std::move(_media);
+	unloadHeavy();
+	_media = std::move(media);
+	_dirty = true;
 }
 
 void Element::createMedia() {
@@ -313,14 +338,32 @@ void Element::ensureLoaded() {
 	_service = IsService(_data);
 	_jumbo = 0;
 	_serviceText = QString();
+	_serviceNames.clear();
+	_serviceString.clear();
 	_forwardedText = QString();
 	_viaText = QString();
 	_group = false;
 	_sender = SenderInfo();
 	if (_service) {
-		_serviceText = _delegate->elementServiceText(_data);
+		auto line = _delegate->elementServiceText(_data);
+		_serviceText = std::move(line.text);
+		_serviceNames = std::move(line.names);
 		if (_serviceText.isEmpty()) {
 			_serviceText = Support::MessagePreview(_data);
+			_serviceNames.clear();
+		}
+		if (!_serviceNames.isEmpty()) {
+			// The names a weight up: a tap on one opens that profile.
+			auto marked = Ui::Text::TextWithEntities{ _serviceText, {} };
+			for (const auto &name : std::as_const(_serviceNames)) {
+				marked.entities.push_back({
+					Ui::Text::EntityType::Bold,
+					name.offset,
+					name.length,
+					QString(),
+				});
+			}
+			_serviceString.setMarkedText(st::historyServiceStyle, marked);
 		}
 		return;
 	}
@@ -337,6 +380,9 @@ void Element::ensureLoaded() {
 		return;
 	}
 	createMedia();
+	// A reply to a note shows the note above the bubble, the answer in it.
+	_noteReply = NoteReplyView::Create(_data);
+	const auto &shown = _noteReply ? _noteReply->message() : _data;
 	const auto kind = _data.kind;
 	const auto textKind = (kind == Data::MessageKind::Text)
 		|| (kind == Data::MessageKind::Unknown);
@@ -344,17 +390,18 @@ void Element::ensureLoaded() {
 		|| (kind == Data::MessageKind::Video)
 		|| (kind == Data::MessageKind::Gif)
 		|| (kind == Data::MessageKind::ForwardedPost)
-		|| (kind == Data::MessageKind::StoryReply);
+		|| (kind == Data::MessageKind::StoryReply)
+		|| (kind == Data::MessageKind::StoryShare);
 	if (kind == Data::MessageKind::Unknown && _data.text.trimmed().isEmpty()) {
 		_text.setText(st::historyTextStyle, tr::lng_history_unsupported(tr::now));
-	} else if ((textKind || captionKind) && !_data.text.isEmpty()) {
+	} else if ((textKind || captionKind) && !shown.text.isEmpty()) {
 		if (textKind
 			&& kind == Data::MessageKind::Text
 			&& _data.replyToSeq <= 0
 			&& !_data.forwarded
 			&& !_data.linkPreview
-			&& _data.entities.isEmpty()) {
-			_jumbo = JumboEmojiCount(_data.text);
+			&& shown.entities.isEmpty()) {
+			_jumbo = JumboEmojiCount(shown.text);
 		}
 		if (_jumbo) {
 			_text.setText(
@@ -363,11 +410,11 @@ void Element::ensureLoaded() {
 					: (_jumbo == 2)
 					? st::historyJumboStyle2
 					: st::historyJumboStyle3,
-				_data.text.trimmed());
+				shown.text.trimmed());
 		} else {
 			_text.setMarkedText(
 				st::historyTextStyle,
-				TextForMessage(_data, _delegate->elementBotCommands()));
+				TextForMessage(shown, _delegate->elementBotCommands()));
 			if (_text.hasSpoilers()) {
 				_text.setSpoilersRevealed(_delegate->elementRevealed(_key));
 			}
@@ -541,6 +588,9 @@ int Element::estimateHeight(int width) const {
 	case Data::MessageKind::StoryReaction:
 		result += st::historyStoryThumb.height() + 24;
 		break;
+	case Data::MessageKind::StoryShare:
+		result += st::historyStoryShareThumbMax + st::historyStoryShareUserpic + 28;
+		break;
 	case Data::MessageKind::Text:
 	case Data::MessageKind::Unknown:
 		break;
@@ -628,6 +678,13 @@ void Element::layout(int width) {
 	const auto left = outgoing()
 		? (columnLeft + column - st::historySideSkip - _bubble.width())
 		: (columnLeft + st::historySideSkip + userpics);
+	if (_noteReply) {
+		top += _noteReply->layout(
+			outgoing() ? (left + _bubble.width()) : left,
+			top,
+			maxWidth,
+			outgoing());
+	}
 	const auto shift = QPoint(left, top);
 	const auto move = [&](QRect &rect) {
 		if (!rect.isNull()) {
@@ -680,19 +737,32 @@ void Element::layoutService(int width, int top) {
 	const auto limit = std::min(
 		int(st::historyServiceMaxWidth),
 		width - 2 * st::historySideSkip) - padding.left() - padding.right();
-	const auto natural = font->width(_serviceText);
+	const auto natural = _serviceNames.isEmpty()
+		? font->width(_serviceText)
+		: _serviceString.maxWidth();
 	// The whole text is kept: a wider layout later shows more of it.
 	_serviceShown = (natural > limit && limit > 0)
 		? font->elided(_serviceText, limit)
 		: _serviceText;
-	const auto textWidth = std::min(natural, std::max(limit, 1));
+	auto textWidth = std::min(natural, std::max(limit, 1));
+	auto pillHeight = PillHeight();
+	if (!_serviceNames.isEmpty() && natural > textWidth) {
+		// A line with names (a note, self-destructing media) wraps rather
+		// than lose its end: up to three lines, as narrow as they allow.
+		textWidth = std::max(
+			_serviceString.countMaxLineWidth(textWidth, kServiceLines),
+			1);
+		pillHeight = padding.top()
+			+ _serviceString.countHeight(textWidth, kServiceLines)
+			+ padding.bottom();
+	}
 	const auto pillWidth = textWidth + padding.left() + padding.right();
 	_serviceRect = QRect(
 		(width - pillWidth) / 2,
 		top,
 		pillWidth,
-		PillHeight());
-	_height = top + PillHeight() + 1;
+		pillHeight);
+	_height = top + pillHeight + 1;
 }
 
 void Element::layoutBubble(int maxWidth) {
@@ -715,7 +785,7 @@ void Element::layoutBubble(int maxWidth) {
 		const auto &chipPadding = st::historyReactionPadding;
 		for (auto &chip : _reactions) {
 			const auto chipWidth = chipPadding.left()
-				+ st::historyReactionEmojiFont->width(chip.emoji)
+				+ ReactionEmojiWidth(chip.emoji)
 				+ (chip.count.isEmpty()
 					? 0
 					: (4 + st::historyReactionCountFont->width(chip.count)))
@@ -739,7 +809,7 @@ void Element::layoutBubble(int maxWidth) {
 		const auto &chipPadding = st::historyReactionPadding;
 		for (const auto &chip : _reactions) {
 			result += chipPadding.left()
-				+ st::historyReactionEmojiFont->width(chip.emoji)
+				+ ReactionEmojiWidth(chip.emoji)
 				+ (chip.count.isEmpty()
 					? 0
 					: (4 + st::historyReactionCountFont->width(chip.count)))
@@ -1178,6 +1248,9 @@ void Element::paint(Painter &p, const PaintContext &context) {
 		paintService(p);
 		return;
 	}
+	if (_noteReply) {
+		_noteReply->paint(p, colors);
+	}
 	if (!bubbleless()) {
 		paintBubble(p, colors);
 	}
@@ -1299,7 +1372,27 @@ void Element::paintUnread(Painter &p) const {
 }
 
 void Element::paintService(Painter &p) const {
-	PaintPill(p, _serviceRect, _serviceShown);
+	if (_serviceNames.isEmpty()) {
+		PaintPill(p, _serviceRect, _serviceShown);
+		return;
+	}
+	PaintPillBg(p, _serviceRect);
+	p.setPen(st::historyServiceFg);
+	_serviceString.draw(p, serviceGeometry());
+}
+
+Ui::Text::PaintContext Element::serviceGeometry() const {
+	const auto &padding = st::historyServicePadding;
+	auto result = Ui::Text::PaintContext();
+	result.position = QPoint(
+		_serviceRect.x() + padding.left(),
+		_serviceRect.y() + padding.top());
+	result.availableWidth = std::max(
+		_serviceRect.width() - padding.left() - padding.right(),
+		1);
+	result.align = style::al_center;
+	result.elisionLines = kServiceLines;
+	return result;
 }
 
 void Element::paintBubble(Painter &p, const ChatColors &colors) const {
@@ -1554,18 +1647,17 @@ void Element::paintReactions(
 				chip.rect.height() / 2.,
 				chip.rect.height() / 2.);
 		}
-		const auto emojiWidth = st::historyReactionEmojiFont->width(chip.emoji);
+		const auto emojiWidth = ReactionEmojiWidth(chip.emoji);
 		const auto emojiLeft = rtl
 			? (chip.rect.right() + 1 - padding.left() - emojiWidth)
 			: (chip.rect.x() + padding.left());
-		p.setFont(st::historyReactionEmojiFont);
 		p.setPen(st::textPrimary);
-		p.drawText(
-			emojiLeft,
-			chip.rect.y()
-				+ (chip.rect.height() - st::historyReactionEmojiFont->height) / 2
-				+ st::historyReactionEmojiFont->ascent,
-			chip.emoji);
+		Ui::Emoji::PaintOne(
+			p,
+			chip.emoji,
+			QRect(emojiLeft, chip.rect.y(), emojiWidth, chip.rect.height()),
+			st::historyReactionEmojiSize,
+			st::historyReactionEmojiFont->f);
 		if (!chip.count.isEmpty()) {
 			const auto countWidth = st::historyReactionCountFont->width(chip.count);
 			p.setFont(st::historyReactionCountFont);
@@ -1707,7 +1799,24 @@ HitResult Element::hitTest(QPoint point) const {
 		result.zone = Zone::Date;
 		return result;
 	} else if (_service) {
-		result.zone = _serviceRect.contains(point) ? Zone::Date : Zone::Side;
+		result.zone = _serviceRect.contains(point)
+			? (_data.selfDestruct
+				? Zone::Bubble // a message of its own: it has a menu (delete, reply)
+				: Zone::Date)
+			: Zone::Side;
+		if (result.zone != Zone::Side && !_serviceNames.isEmpty()) {
+			const auto state = _serviceString.getState(point, serviceGeometry());
+			if (state.uponSymbol) {
+				for (const auto &name : _serviceNames) {
+					if (state.symbol >= name.offset
+						&& state.symbol < name.offset + name.length) {
+						result.zone = Zone::Sender;
+						result.text = name.userId;
+						break;
+					}
+				}
+			}
+		}
 		return result;
 	} else if (!_loaded) {
 		result.zone = _bubble.contains(point) ? Zone::Bubble : Zone::Side;

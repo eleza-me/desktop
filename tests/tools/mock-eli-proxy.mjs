@@ -11,7 +11,10 @@
 //     a quote of an unavailable post, a deleted post;
 //   * a video feed (/v1/feed/video) and a sound page (/v1/sounds/s1);
 //   * a deep replies tree with two pages under p1 (folding and pagination);
-//   * «N new posts»: GET /v1/feed/following/new answers NEW_POSTS (env, default 0).
+//   * «N new posts»: GET /v1/feed/following/new answers NEW_POSTS (env, default 0);
+//   * notifications on top of the mock's: a reply to my comment on page 2 of p1's
+//     replies (refs.reply / parent / root, the post opens at it), a mention in a
+//     comment, and a grouped follow of five (three listed, one I follow already).
 //
 //   PORT=8104 node <pwa>/scripts/mock-api.mjs &
 //   PORT=8144 TARGET=http://127.0.0.1:8104 node tests/tools/mock-eli-proxy.mjs &
@@ -206,6 +209,15 @@ http.createServer((req, res) => {
 				const merged = [...items.slice(0, 3), ...extras.slice(0, 6), ...items.slice(3), ...extras.slice(6)];
 				return { ...page, items: merged, authors: { ...(page.authors || {}), ...users } };
 			});
+		}
+		if (p === '/v1/notifications' && m === 'GET' && !url.searchParams.get('before')) {
+			const tab = url.searchParams.get('tab') || 'all';
+			const ours = [
+				{ id: 'nx1', kind: 'reply', actors: ['u_sara'], actor_count: 1, refs: { reply: 'r22', parent: 'r20', root: 'p1', post: 'r20' }, tab: 'all', updated_at: now - 60_000, read: false },
+				{ id: 'nx2', kind: 'follow', actors: ['u_nika', 'u_reza', 'u_ali'], actor_count: 5, tab: 'all', updated_at: now - 120_000, read: false },
+				{ id: 'nx3', kind: 'mention', actors: ['u_nika'], actor_count: 1, refs: { post: 'r21', root: 'p1' }, tab: 'mentions', updated_at: now - 180_000, read: false },
+			].filter((n) => tab === 'all' || n.tab === tab);
+			return forward(req, res, body, (page) => ({ ...page, notifications: [...ours, ...(page.notifications || [])] }));
 		}
 		if (p === '/v1/feed/video') {
 			if (url.searchParams.get('cursor')) {
