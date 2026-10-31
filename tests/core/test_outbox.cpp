@@ -534,8 +534,8 @@ void TestOutbox::fileIsUploadedFirst() {
 				{ u"state"_s, u"pending"_s },
 				{ u"part_size"_s, 6 },
 				{ u"parts"_s, QJsonArray{
-					QJsonObject{ { u"number"_s, 1 }, { u"url"_s, base + u"/put/1"_s } },
-					QJsonObject{ { u"number"_s, 2 }, { u"url"_s, base + u"/put/2"_s } },
+					QJsonObject{ { u"n"_s, 1 }, { u"url"_s, base + u"/put/1"_s } },
+					QJsonObject{ { u"n"_s, 2 }, { u"url"_s, base + u"/put/2"_s } },
 				} },
 			});
 		} else if (request.method == "PUT") {
@@ -613,7 +613,7 @@ void TestOutbox::selfDestructGoesOnItsOwn() {
 				{ u"state"_s, u"pending"_s },
 				{ u"part_size"_s, 10 },
 				{ u"parts"_s, QJsonArray{
-					QJsonObject{ { u"number"_s, 1 }, { u"url"_s, harness.http.base() + u"/put/1"_s } },
+					QJsonObject{ { u"n"_s, 1 }, { u"url"_s, harness.http.base() + u"/put/1"_s } },
 				} },
 			});
 		} else if (request.path == "/v1/media/med9") {
@@ -708,7 +708,7 @@ void TestOutbox::dedupClaimProvesTheWholeFile() {
 				{ u"state"_s, u"uploading"_s },
 				{ u"part_size"_s, 5 },
 				{ u"parts"_s, QJsonArray{
-					QJsonObject{ { u"number"_s, 1 }, { u"url"_s, harness.http.base() + u"/put/%1"_s.arg(n) } },
+					QJsonObject{ { u"n"_s, 1 }, { u"url"_s, harness.http.base() + u"/put/%1"_s.arg(n) } },
 				} },
 				{ u"proof"_s, QJsonObject{ { u"nonce"_s, nonce }, { u"alg"_s, u"hmac-sha256"_s } } },
 			});
@@ -786,7 +786,7 @@ void TestOutbox::albumIsUploadedThenSent() {
 				{ u"state"_s, u"pending"_s },
 				{ u"part_size"_s, 8 },
 				{ u"parts"_s, QJsonArray{ QJsonObject{
-					{ u"number"_s, 1 },
+					{ u"n"_s, 1 },
 					{ u"url"_s, harness.http.base() + u"/put/%1"_s.arg(n) },
 				} } },
 			});
@@ -877,7 +877,7 @@ void TestOutbox::processedSignalEndsTheWait() {
 				{ u"state"_s, u"pending"_s },
 				{ u"part_size"_s, 10 },
 				{ u"parts"_s, QJsonArray{
-					QJsonObject{ { u"number"_s, 1 }, { u"url"_s, harness.http.base() + u"/put/%1"_s.arg(uploads) } },
+					QJsonObject{ { u"n"_s, 1 }, { u"url"_s, harness.http.base() + u"/put/%1"_s.arg(uploads) } },
 				} },
 			});
 		} else if (request.path.startsWith("/v1/media/")) {

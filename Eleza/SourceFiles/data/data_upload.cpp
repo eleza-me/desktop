@@ -406,7 +406,12 @@ void Upload::created(Id id, const QJsonObject &upload) {
 	for (const auto &item : upload.value("parts"_L1).toArray()) {
 		const auto object = item.toObject();
 		auto part = Part();
-		part.number = Json::Int(object, "number"_L1);
+		// The server names the part number "n" (media.PartURL). Read as
+		// "number" it was 0 for every part: a negative offset, so no part
+		// could be read and the upload failed.
+		part.number = Json::Has(object, "n"_L1)
+			? Json::Int(object, "n"_L1)
+			: Json::Int(object, "number"_L1);
 		part.url = QUrl(Json::String(object, "url"_L1));
 		part.offset = Json::Has(object, "offset"_L1)
 			? Json::Int64(object, "offset"_L1)
