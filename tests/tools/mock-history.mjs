@@ -624,7 +624,7 @@ function handle(req, res, raw) {
 		mediaInfo[media] = { kind: b.kind, mime: b.mime, size: b.size, name: b.filename, bytes: null, w: b.kind === 'image' ? 1000 : undefined, h: b.kind === 'image' ? 750 : undefined };
 		const partSize = 5 << 20;
 		const count = Math.max(1, Math.ceil((b.size || 1) / partSize));
-		return json(res, 200, { upload_id: upload, media_id: media, part_size: partSize, parts: Array.from({ length: count }, (_, i) => ({ number: i + 1, url: `${SELF}/_put/${upload}` })) });
+		return json(res, 200, { upload_id: upload, media_id: media, part_size: partSize, parts: Array.from({ length: count }, (_, i) => ({ n: i + 1, url: `${SELF}/_put/${upload}` })) });
 	}
 	if (p.startsWith('/v1/uploads/')) return (m === 'DELETE') ? json(res, 204, {}) : setTimeout(() => json(res, 200, { state: 'ready' }), 300);
 	if (p.startsWith('/v1/media/')) return json(res, 200, { state: 'ready' });
