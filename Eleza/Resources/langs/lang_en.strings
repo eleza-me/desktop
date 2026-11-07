@@ -422,7 +422,6 @@
 // pwa: {name} بازنشر کرد
 "lng_eli_user_reposted" = "{name} reposted";
 // pwa: چون دنبالش می‌کنی
-"lng_eli_because_follow_them" = "Because you follow them";
 // pwa: این پست حذف شده است
 "lng_eli_post_was_deleted" = "This post was deleted";
 // pwa: این پست در دسترس نیست

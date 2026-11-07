@@ -294,9 +294,9 @@ void PostCard::rebuildTexts() {
 			tr::now,
 			lt_name,
 			AuthorName(session, _options.actor));
-	} else if (_options.reason == u"follows" || _options.reason == u"follow") {
-		_contextText = tr::lng_eli_because_follow_them(tr::now);
 	}
+	// No «why you see this» line («because you follow them»): the product
+	// owner's rule. Only who reposted a post is shown.
 	_replyingText = QString();
 	if (!_options.replyingTo.isEmpty()) {
 		const auto parent = users.get(_options.replyingTo);
