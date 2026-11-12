@@ -1082,6 +1082,9 @@
 "lng_settings_audience_chat_people" = "کسانی که با آن‌ها چت دارم";
 "lng_settings_audience_chat_contacts" = "مخاطبان چت";
 "lng_settings_audience_contacts" = "مخاطبان";
+"lng_settings_audience_mutuals" = "دوستان دوطرفه";
+// A value set by a newer app that this one has no choice for.
+"lng_settings_value_custom" = "سفارشی";
 "lng_settings_notify_this_device" = "این رایانه";
 "lng_settings_notify_desktop" = "اعلان‌های دسکتاپ";
 "lng_settings_notify_sender" = "نمایش نام فرستنده";

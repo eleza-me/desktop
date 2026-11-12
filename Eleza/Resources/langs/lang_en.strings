@@ -1052,6 +1052,9 @@
 "lng_settings_audience_chat_people" = "People I chat with";
 "lng_settings_audience_chat_contacts" = "Chat contacts";
 "lng_settings_audience_contacts" = "Contacts";
+"lng_settings_audience_mutuals" = "Mutual followers";
+// A value set by a newer app that this one has no choice for.
+"lng_settings_value_custom" = "Custom";
 "lng_settings_notify_this_device" = "This computer";
 "lng_settings_notify_desktop" = "Desktop notifications";
 "lng_settings_notify_sender" = "Show the sender's name";

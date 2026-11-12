@@ -54,9 +54,13 @@ namespace {
 [[nodiscard]] Option Nobody() {
 	return { u"nobody"_s, tr::lng_settings_audience_nobody(tr::now) };
 }
+[[nodiscard]] Option Contacts() {
+	return { u"contacts"_s, tr::lng_settings_audience_contacts(tr::now) };
+}
 
+// privacy.mentions and privacy.messages (the server takes nothing else).
 [[nodiscard]] std::vector<Option> MessageAudience() {
-	return { Everyone(), Followers(), Following(), Nobody() };
+	return { Everyone(), Followers(), Nobody() };
 }
 
 // ---- privacy
@@ -96,7 +100,7 @@ private:
 		addPicker(
 			tr::lng_settings_who_mention(tr::now),
 			u"privacy.mentions"_s,
-			{ Everyone(), Followers(), Following() },
+			MessageAudience(),
 			u"everyone"_s);
 		addPicker(
 			tr::lng_settings_who_message(tr::now),
@@ -149,7 +153,15 @@ private:
 		addPicker(
 			tr::lng_settings_birthday(tr::now),
 			u"privacy.birthday_visibility"_s,
-			{ Everyone(), Followers(), Nobody() },
+			{
+				Everyone(),
+				Followers(),
+				{
+					u"mutuals"_s,
+					tr::lng_settings_audience_mutuals(tr::now),
+				},
+				Nobody(),
+			},
 			u"followers"_s);
 		addToggle(
 			tr::lng_settings_birthday_year(tr::now),
@@ -163,16 +175,14 @@ private:
 		addPicker(
 			tr::lng_settings_who_phone(tr::now),
 			u"privacy.phone_number"_s,
-			{
-				Everyone(),
-				{ u"contacts"_s, tr::lng_settings_audience_contacts(tr::now) },
-				Nobody(),
-			},
+			{ Everyone(), Contacts(), Nobody() },
 			u"contacts"_s);
-		addToggle(
+		// Who finds me when their phone contacts have my number.
+		addPicker(
 			tr::lng_settings_find_by_phone(tr::now),
 			u"privacy.find_by_phone"_s,
-			true);
+			{ Everyone(), Contacts(), Nobody() },
+			u"everyone"_s);
 
 		AddDivider(content());
 		addToggle(
