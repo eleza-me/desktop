@@ -1071,6 +1071,9 @@ void TestApi::refreshFailuresKeepOrEndTheSession() {
 	QCOMPARE(ended, (QVector<Main::SessionEndReason>{ Main::SessionEndReason::Expired }));
 	QVERIFY(QFileInfo(userDir).isDir());
 	QVERIFY(account.currentAccessToken().isEmpty());
+	// Kept for a while only, and with the key of its encrypted cache.
+	QVERIFY(QFileInfo::exists(userDir + u"/expired"_s));
+	QVERIFY(QFileInfo::exists(Main::Session::CacheKeyPath(userDir)));
 
 	// Ended on purpose elsewhere: the local data is wiped.
 	base::unixtime::setTestShiftMs(0);
@@ -1085,6 +1088,7 @@ void TestApi::refreshFailuresKeepOrEndTheSession() {
 	QVERIFY(!QFileInfo::exists(stranger));
 	QVERIFY(!account.settings().contains(u"eli.draft.someone_else"_s));
 	QVERIFY(QFileInfo(userDir).isDir());
+	QVERIFY(!QFileInfo::exists(userDir + u"/expired"_s));
 	mode = "auth.session_revoked";
 	QVERIFY(!refresh(account));
 	QCOMPARE(ended.value(1), Main::SessionEndReason::Revoked);
@@ -1098,8 +1102,36 @@ void TestApi::refreshFailuresKeepOrEndTheSession() {
 	QCOMPARE(ended.value(2), Main::SessionEndReason::Expired);
 	QCOMPARE(server.count("/v1/auth/nonce"), 1);
 	// Nothing is left on disk to sign in with.
-	auto reopened = Main::Account(accountConfig(server, u"failures"_s));
-	QVERIFY(!reopened.signedIn());
+	{
+		auto reopened = Main::Account(accountConfig(server, u"failures"_s));
+		QVERIFY(!reopened.signedIn());
+	}
+	// The cache of the expired session is there for a week, then it goes
+	// (with the settings kept for that user).
+	QVERIFY(QFileInfo(userDir).isDir());
+	account.settings().set(u"dialogs.pinned_order.u_me"_s, QJsonArray{ u"c1"_s });
+	account.settings().flush();
+	const auto expiredAt = [&](qint64 ms) {
+		return base::platform::WriteFileAtomic(
+			userDir + u"/expired"_s,
+			QJsonDocument(QJsonObject{
+				{ u"at"_s, double(ms) },
+				{ u"user"_s, u"u_me"_s },
+			}).toJson(),
+			true);
+	};
+	const auto day = qint64(24 * 60 * 60 * 1000);
+	QVERIFY(expiredAt(QDateTime::currentMSecsSinceEpoch() - 6 * day));
+	{
+		auto reopened = Main::Account(accountConfig(server, u"failures"_s));
+		QVERIFY(QFileInfo(userDir).isDir());
+	}
+	QVERIFY(expiredAt(QDateTime::currentMSecsSinceEpoch() - 8 * day));
+	{
+		auto reopened = Main::Account(accountConfig(server, u"failures"_s));
+		QVERIFY(!QFileInfo::exists(userDir));
+		QVERIFY(!reopened.settings().contains(u"dialogs.pinned_order.u_me"_s));
+	}
 }
 
 void TestApi::logoutWipes() {

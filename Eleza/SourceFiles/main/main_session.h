@@ -50,6 +50,11 @@ public:
 	[[nodiscard]] QString userDir() const {
 		return _userDir;
 	}
+	// The key the cache of `userDir` is encrypted with (a SecureBlob).
+	[[nodiscard]] static QString CacheKeyPath(const QString &userDir);
+	// Deletes a user's directory and the key of its cache (which may live
+	// outside of it, in the Secret Service).
+	static void RemoveUserDir(const QString &userDir);
 
 	[[nodiscard]] Api::Client &api() const;
 	[[nodiscard]] Rt::Client &rt() const {

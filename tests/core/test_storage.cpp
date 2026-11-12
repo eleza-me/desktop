@@ -79,6 +79,84 @@ public:
 	return result;
 }
 
+// Every byte of the database files (the file, its log).
+[[nodiscard]] QByteArray FilesOf(const QString &path) {
+	auto result = QByteArray();
+	for (const auto suffix : { "", "-wal", "-journal" }) {
+		result += FileBytes(path + QLatin1StringView(suffix));
+	}
+	return result;
+}
+
+// The `data` / `value` column of every row of every table, as stored.
+[[nodiscard]] QVector<QByteArray> StoredDocuments(const QString &path) {
+	auto result = QVector<QByteArray>();
+	{
+		auto raw = QSqlDatabase::addDatabase(u"QSQLITE"_s, u"raw"_s);
+		raw.setDatabaseName(path);
+		if (raw.open()) {
+			for (const auto &[table, column] : {
+					std::pair{ "meta", "value" },
+					std::pair{ "kv", "value" },
+					std::pair{ "chats", "data" },
+					std::pair{ "messages", "data" },
+					std::pair{ "users", "data" },
+					std::pair{ "outbox", "data" },
+					std::pair{ "drafts", "data" } }) {
+				auto query = QSqlQuery(raw);
+				if (query.exec(u"SELECT %1 FROM %2"_s.arg(
+						QLatin1StringView(column),
+						QLatin1StringView(table)))) {
+					while (query.next()) {
+						result.push_back(query.value(0).toByteArray());
+					}
+				}
+			}
+		}
+		raw.close();
+	}
+	QSqlDatabase::removeDatabase(u"raw"_s);
+	return result;
+}
+
+// One of everything, each with `secret` in it.
+void FillAll(Database &db, const QString &secret) {
+	db.setMeta(u"pts"_s, secret);
+	db.setValue(u"stickers"_s, secret);
+	db.putChats({ { u"c1"_s, Text(secret + u" (chat)"_s) } });
+	db.putMessages({ { u"c1"_s, 5, Text(secret + u" (message)"_s) } });
+	db.putUsers({ { u"u1"_s, Text(secret + u" (user)"_s) } });
+	db.putOutbox({ u"m1"_s, u"c1"_s, 1, Text(secret + u" (outbox)"_s) });
+	db.putDraft(u"c1"_s, Text(secret + u" (draft)"_s));
+	db.flushSync();
+}
+
+using Documents = QHash<QString, QJsonObject>;
+
+void CheckAll(Database &db, const QString &secret) {
+	QCOMPARE(Read<QJsonValue>([&](QObject *guard, Fn<void(QJsonValue)> done) {
+		db.meta(u"pts"_s, guard, std::move(done));
+	}).toString(), secret);
+	QCOMPARE(Read<QJsonValue>([&](QObject *guard, Fn<void(QJsonValue)> done) {
+		db.value(u"stickers"_s, guard, std::move(done));
+	}).toString(), secret);
+	QCOMPARE(Texts(Read<QVector<QJsonObject>>([&](QObject *guard, Fn<void(QVector<QJsonObject>)> done) {
+		db.chats(guard, std::move(done));
+	})), QStringList{ secret + u" (chat)"_s });
+	QCOMPARE(Texts(Read<QVector<QJsonObject>>([&](QObject *guard, Fn<void(QVector<QJsonObject>)> done) {
+		db.messages(u"c1"_s, 10, 0, guard, std::move(done));
+	})), QStringList{ secret + u" (message)"_s });
+	QCOMPARE(Read<Documents>([&](QObject *guard, Fn<void(Documents)> done) {
+		db.users({ u"u1"_s }, guard, std::move(done));
+	}).value(u"u1"_s).value(u"text"_s).toString(), secret + u" (user)"_s);
+	QCOMPARE(Texts(Read<QVector<QJsonObject>>([&](QObject *guard, Fn<void(QVector<QJsonObject>)> done) {
+		db.outbox(guard, std::move(done));
+	})), QStringList{ secret + u" (outbox)"_s });
+	QCOMPARE(Read<Documents>([&](QObject *guard, Fn<void(Documents)> done) {
+		db.drafts(guard, std::move(done));
+	}).value(u"c1"_s).value(u"text"_s).toString(), secret + u" (draft)"_s);
+}
+
 } // namespace
 
 class TestStorage final : public QObject {
@@ -100,6 +178,9 @@ private Q_SLOTS:
 	void callbacksRespectGuardAndThread();
 	void persistsAcrossReopenAndWipes();
 	void schemaVersionAndNewerFile();
+	void encryptedAtRest();
+	void plainCacheIsSealedOnce();
+	void otherKeyStartsOver();
 
 private:
 	QTemporaryDir _dir;
@@ -595,6 +676,107 @@ void TestStorage::schemaVersionAndNewerFile() {
 		QCOMPARE(failures, 0);
 	}
 	QCOMPARE(version(), Database::CurrentVersion());
+}
+
+void TestStorage::encryptedAtRest() {
+	const auto path = _dir.path() + u"/sealed/cache.db"_s;
+	const auto key = QByteArray(32, 'k');
+	const auto secret = u"the-secret-words"_s;
+	{
+		auto db = Database(path, key);
+		FillAll(db, secret);
+		CheckAll(db, secret);
+		// Changed in place and deleted: still sealed, and gone.
+		db.changeMessage(u"c1"_s, 5, [=](QJsonObject &data) {
+			data.insert(u"text"_s, secret + u" (edited)"_s);
+			return true;
+		});
+		db.putMessages({ { u"c1"_s, 6, Text(secret + u" (deleted)"_s) } });
+		db.deleteMessage(u"c1"_s, 6);
+		db.flushSync();
+		QCOMPARE(Texts(Read<QVector<QJsonObject>>([&](QObject *guard, Fn<void(QVector<QJsonObject>)> done) {
+			db.messages(u"c1"_s, 10, 0, guard, std::move(done));
+		})), QStringList{ secret + u" (edited)"_s });
+	}
+	const auto stored = StoredDocuments(path);
+	QCOMPARE(stored.size(), 8); // seven rows and the marker
+	for (const auto &document : stored) {
+		QVERIFY(document.startsWith(QByteArray("\x00\x01", 2)));
+	}
+	QVERIFY(!FilesOf(path).contains(secret.toUtf8()));
+	{
+		// The same key opens it again.
+		auto db = Database(path, key);
+		db.changeMessage(u"c1"_s, 5, [=](QJsonObject &data) {
+			data.insert(u"text"_s, secret + u" (message)"_s);
+			return true;
+		});
+		CheckAll(db, secret);
+	}
+}
+
+void TestStorage::plainCacheIsSealedOnce() {
+	const auto path = _dir.path() + u"/legacy/cache.db"_s;
+	const auto secret = u"written-before-encryption"_s;
+	{
+		// A file of a build without the encryption.
+		auto db = Database(path);
+		FillAll(db, secret);
+		auto many = QVector<Database::MessageRow>();
+		for (auto seq = 10; seq != 700; ++seq) {
+			many.push_back({ u"c2"_s, seq, Text(secret + QString::number(seq)) });
+		}
+		db.putMessages(many);
+		db.deleteMessage(u"c2"_s, 699);
+		db.flushSync();
+	}
+	QVERIFY(FilesOf(path).contains(secret.toUtf8()));
+	const auto key = QByteArray(32, 'n');
+	{
+		auto db = Database(path, key);
+		CheckAll(db, secret);
+		QCOMPARE(Read<QVector<QJsonObject>>([&](QObject *guard, Fn<void(QVector<QJsonObject>)> done) {
+			db.messages(u"c2"_s, 1000, 0, guard, std::move(done));
+		}).size(), 689);
+	}
+	for (const auto &document : StoredDocuments(path)) {
+		QVERIFY(document.startsWith(QByteArray("\x00\x01", 2)));
+	}
+	// Not in the free pages or the log either.
+	QVERIFY(!FilesOf(path).contains(secret.toUtf8()));
+	{
+		auto db = Database(path, key);
+		CheckAll(db, secret);
+	}
+}
+
+void TestStorage::otherKeyStartsOver() {
+	const auto path = _dir.path() + u"/rekeyed/cache.db"_s;
+	{
+		auto db = Database(path, QByteArray(32, 'a'));
+		FillAll(db, u"first"_s);
+	}
+	{
+		// The key is gone (another machine, a keyring that lost it): the
+		// rows cannot be read, the cache starts over and works.
+		auto db = Database(path, QByteArray(32, 'b'));
+		QVERIFY(Read<QVector<QJsonObject>>([&](QObject *guard, Fn<void(QVector<QJsonObject>)> done) {
+			db.chats(guard, std::move(done));
+		}).isEmpty());
+		FillAll(db, u"second"_s);
+		CheckAll(db, u"second"_s);
+	}
+	{
+		auto db = Database(path, QByteArray(32, 'b'));
+		CheckAll(db, u"second"_s);
+	}
+	{
+		// And the encrypted file is no plain cache either.
+		auto db = Database(path);
+		QVERIFY(Read<QVector<QJsonObject>>([&](QObject *guard, Fn<void(QVector<QJsonObject>)> done) {
+			db.chats(guard, std::move(done));
+		}).value(0).isEmpty());
+	}
 }
 
 QTEST_GUILESS_MAIN(TestStorage)

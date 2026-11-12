@@ -37,7 +37,8 @@ Eleza/
     api/                  HTTP client (request builder), errors, auth (OTP / two-step), client-config
     rt/                   realtime v2: noise, frames, dynamic protobuf codec + generated schema, client
     crypto/               OpenSSL wrappers: x25519, chacha20-poly1305, sha256/hmac/hkdf, device key
-    storage/              per-account SQLite cache + key/value, secure blob for tokens / device key
+    storage/              per-account SQLite cache (documents AES-256-GCM under the account's data key)
+                          + key/value, secure blob for tokens / device key / data key, keyring
     data/                 typed models + stores: chats, messages, users, sync (pts), outbox, media,
                           upload, feed, graph, conversations, notifications, stickers (and
                           the decoders of animated ones: data_sticker_decode.h), calls, stories,

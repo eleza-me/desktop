@@ -12,6 +12,7 @@
 
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
+#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QRegularExpression>
@@ -32,6 +33,13 @@ const auto kDeviceIdKey = u"device.id"_s;
 const auto kDefaultApiBase = u"https://api.eleza.me"_s;
 const auto kLanguageKey = u"language"_s;
 constexpr auto kLogoutWaitMs = 5000;
+// What a session that expired leaves for the same user's next sign-in
+// (messages, media, drafts) is kept this long, then deleted: the next
+// sign-in after that starts from the network.
+constexpr auto kExpiredRetention = qint64(7) * 24 * 60 * 60 * 1000;
+constexpr auto kPruneEveryMs = 60 * 60 * 1000;
+// <user dir>/expired: {"at": <unix ms>, "user": <id>}.
+const auto kExpiredMarker = u"expired"_s;
 
 // `access_expires_at` arrives as an RFC 3339 string or a number of
 // (milli)seconds; without it assume nine minutes.
@@ -114,6 +122,10 @@ Account::Account(Config config, QObject *parent)
 	_clientConfig = std::make_unique<Api::ClientConfig>(_api.get(), _settings.get());
 	_auth = std::make_unique<Api::Auth>(this);
 	loadIdentity();
+	pruneExpired();
+	const auto prune = new QTimer(this);
+	connect(prune, &QTimer::timeout, this, [this] { pruneExpired(); });
+	prune->start(kPruneEveryMs);
 }
 
 Account::~Account() {
@@ -268,7 +280,7 @@ void Account::createSession() {
 		// The session of the other origin was replaced by this sign-in; its
 		// cache must not be taken for this one's even when the ids match.
 		if (_otherOriginUser == _tokens.userId) {
-			base::platform::RemoveRecursively(userDir(_otherOriginUser));
+			Session::RemoveUserDir(userDir(_otherOriginUser));
 			_settings->removeSuffix(u'.' + _otherOriginUser);
 		}
 		_otherOriginUser = QString();
@@ -279,11 +291,42 @@ void Account::createSession() {
 		QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden);
 	for (const auto &name : stale) {
 		if (name != own) {
-			base::platform::RemoveRecursively(QDir(accountDir()).filePath(name));
+			Session::RemoveUserDir(QDir(accountDir()).filePath(name));
 			_settings->removeSuffix(u'.' + name.mid(prefix.size()));
 		}
 	}
+	// Signed in again before the retention ran out: the cache is in use.
+	QFile::remove(userDir(_tokens.userId) + u'/' + kExpiredMarker);
 	_session = std::make_unique<Session>(this, _tokens.userId);
+}
+
+void Account::pruneExpired() {
+	const auto now = QDateTime::currentMSecsSinceEpoch();
+	const auto prefix = u"user-"_s;
+	const auto dirs = QDir(accountDir()).entryList(
+		{ prefix + u'*' },
+		QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden);
+	for (const auto &name : dirs) {
+		const auto dir = QDir(accountDir()).filePath(name);
+		if (_session && _session->userDir() == dir) {
+			continue;
+		}
+		const auto marker = base::platform::ReadFile(dir + u'/' + kExpiredMarker);
+		if (!marker) {
+			continue;
+		}
+		const auto info = QJsonDocument::fromJson(*marker).object();
+		const auto at = base::SafeInt64(info.value(u"at"_s).toDouble());
+		// A clock that went back a little keeps it; nonsense does not.
+		const auto age = now - at;
+		if (at > 0 && age < kExpiredRetention && age > -kExpiredRetention) {
+			continue;
+		}
+		Session::RemoveUserDir(dir);
+		const auto user = info.value(u"user"_s).toString();
+		_settings->removeSuffix(u'.' + (user.isEmpty() ? name.mid(prefix.size()) : user));
+		_settings->flush();
+	}
 }
 
 void Account::destroySession(bool wipeData) {
@@ -297,7 +340,7 @@ void Account::destroySession(bool wipeData) {
 	session->shutdown();
 	session = nullptr;
 	if (wipeData) {
-		base::platform::RemoveRecursively(dir);
+		Session::RemoveUserDir(dir);
 	}
 }
 
@@ -316,7 +359,20 @@ void Account::endSession(SessionEndReason reason) {
 	if (_session) {
 		destroySession(wipe);
 	} else if (wipe && !userId.isEmpty()) {
-		base::platform::RemoveRecursively(userDir(userId));
+		Session::RemoveUserDir(userDir(userId));
+	}
+	if (!wipe && !userId.isEmpty() && QFileInfo(userDir(userId)).isDir()) {
+		// Kept for the next sign-in, but not for ever (pruneExpired).
+		const auto marked = base::platform::WriteFileAtomic(
+			userDir(userId) + u'/' + kExpiredMarker,
+			QJsonDocument(QJsonObject{
+				{ u"at"_s, double(QDateTime::currentMSecsSinceEpoch()) },
+				{ u"user"_s, userId },
+			}).toJson(QJsonDocument::Compact),
+			true);
+		if (!marked) {
+			qWarning("Main: could not mark the cache of the expired session.");
+		}
 	}
 	if (wipe && !userId.isEmpty()) {
 		// What the screens keep per user next to the account ("<name>.<user

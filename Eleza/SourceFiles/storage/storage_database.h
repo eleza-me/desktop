@@ -13,6 +13,13 @@
 // (`toJson()` / `FromJson()`); this layer knows nothing about their fields.
 // The cache is disposable: a file written by a newer build is dropped and
 // recreated, and logout wipes it (Database::Wipe).
+//
+// Opened with a data key (the account's, kept by Storage::SecureBlob: DPAPI
+// on Windows, the Secret Service on Linux), every document (messages, drafts,
+// the outbox, people cards, chats, sync state) is stored encrypted with
+// AES-256-GCM, and deleted rows are overwritten (secure_delete). A file of
+// another key is dropped and recreated; rows from before the encryption are
+// sealed in place at the first open.
 #pragma once
 
 #include "base/weak_guard.h"
@@ -53,6 +60,8 @@ public:
 
 	// Starts the worker; the file (and its directory) is created on first use.
 	explicit Database(const QString &path, QObject *parent = nullptr);
+	// The same with the 32-byte key the documents are encrypted with.
+	Database(const QString &path, const QByteArray &dataKey, QObject *parent = nullptr);
 	// Runs everything already queued, then closes the file.
 	~Database();
 

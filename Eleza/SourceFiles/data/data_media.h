@@ -186,6 +186,8 @@ public:
 	[[nodiscard]] static bool IsPicture(const MediaRef &ref, MediaVariant variant);
 	// Drops one item from memory and disk (the media changed or is broken).
 	void evict(const MediaRef &ref, MediaVariant variant);
+	// Every variant of a message's attachment: the message was deleted.
+	void evictAttachment(const QString &chat, qint64 seq);
 
 	void setMemoryLimit(qint64 bytes);
 	void setDiskLimit(qint64 bytes);
