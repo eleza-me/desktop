@@ -2,6 +2,7 @@
 
 #include "api/api_client.h"
 #include "core/core_application.h"
+#include "core/core_settings.h"
 #include "core/core_single_instance.h"
 
 #include <QtCore/QDir>
@@ -182,14 +183,6 @@ QString Launcher::apiUrl() const {
 }
 
 void Launcher::prepareEnvironment() {
-#ifdef ELEZA_DEBUG_TOOLS
-	// Must be set before the QApplication is created.
-	if (_commandLine.debugScale > 0.) {
-		qputenv(
-			"QT_SCALE_FACTOR",
-			QByteArray::number(_commandLine.debugScale));
-	}
-#endif // ELEZA_DEBUG_TOOLS
 	QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
 		Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
 	QCoreApplication::setOrganizationName(QStringLiteral("eleza"));
@@ -198,6 +191,36 @@ void Launcher::prepareEnvironment() {
 	QCoreApplication::setApplicationVersion(
 		QStringLiteral(ELEZA_VERSION_STRING));
 	QGuiApplication::setDesktopFileName(QStringLiteral("me.eleza.desktop"));
+
+	// The scale must be set before the QApplication is created.
+#ifdef ELEZA_DEBUG_TOOLS
+	if (_commandLine.debugScale > 0.) {
+		qputenv(
+			"QT_SCALE_FACTOR",
+			QByteArray::number(_commandLine.debugScale));
+		return;
+	}
+#endif // ELEZA_DEBUG_TOOLS
+	if (_commandLine.ephemeral()) {
+		// Screenshots do not depend on the settings of this computer.
+		return;
+	}
+	// «اندازهٔ رابط» (settings -> «ظاهر»): on top of the system's own scale
+	// (and of a QT_SCALE_FACTOR the user set). The data directory is known
+	// already: the names above are what QStandardPaths needs.
+	const auto percent = Settings::ReadUiScale(
+		QDir(computeWorkDir()).filePath(QStringLiteral("settings.json")));
+	if (percent != Settings::kUiScaleMin) {
+		_restoreScaleFactor = true;
+		_scaleFactorBefore = qEnvironmentVariableIsSet("QT_SCALE_FACTOR")
+			? std::make_optional(qgetenv("QT_SCALE_FACTOR"))
+			: std::nullopt;
+		auto ok = false;
+		const auto existing = qEnvironmentVariable("QT_SCALE_FACTOR").toDouble(&ok);
+		const auto factor = (ok && existing > 0. ? existing : 1.)
+			* percent / 100.;
+		qputenv("QT_SCALE_FACTOR", QByteArray::number(factor));
+	}
 }
 
 QString Launcher::computeWorkDir() const {
@@ -230,6 +253,14 @@ int Launcher::exec() {
 	prepareEnvironment();
 
 	auto application = QApplication(_argc, _argv);
+	if (_restoreScaleFactor) {
+		// Read by the QApplication above, not needed any more.
+		if (_scaleFactorBefore) {
+			qputenv("QT_SCALE_FACTOR", *_scaleFactorBefore);
+		} else {
+			qunsetenv("QT_SCALE_FACTOR");
+		}
+	}
 #ifdef Q_OS_WIN
 	// argv is in the ANSI code page on Windows: a --workdir or a route with
 	// characters outside of it (Persian on an English system) arrives as

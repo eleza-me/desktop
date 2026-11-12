@@ -774,7 +774,9 @@ Do
 * reuse the helpers in section 6 instead of re-implementing userpics, error texts, links,
   pickers, viewers;
 * keep the keyboard working: Enter submits, Esc goes back, focus lands where typing goes
-  (`setInnerFocus`), Tab reaches every control and screen readers can name it (section 5a).
+  (`setInnerFocus`), Tab reaches every control and screen readers can name it (section 5a);
+* let animations go through `Ui::Animations` / `Ui::AnimationsDisabled()`: «کاهش حرکت»
+  (settings → «ظاهر») turns them off with `Ui::SetAnimationsDisabled`.
 
 Don't
 

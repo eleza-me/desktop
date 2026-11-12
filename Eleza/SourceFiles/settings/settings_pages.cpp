@@ -34,6 +34,8 @@
 #include <QtGui/QClipboard>
 #include <QtGui/QGuiApplication>
 
+#include <algorithm>
+
 namespace Settings {
 namespace {
 
@@ -583,6 +585,42 @@ private:
 			Core::App().settings().sendByCtrlEnter(),
 			[](bool ctrl) { Core::App().settings().setSendByCtrlEnter(ctrl); });
 		AddFootnote(content(), tr::lng_settings_send_key_about(tr::now));
+
+		addAccessibilityOptions();
+	}
+
+	// «دسترس‌پذیری»: both are of this computer only (Core::Settings).
+	void addAccessibilityOptions() {
+		AddDivider(content());
+		AddSubsectionTitle(
+			content(),
+			tr::lng_settings_accessibility(tr::now));
+		AddToggle(
+			content(),
+			tr::lng_settings_reduce_motion(tr::now),
+			Core::App().reduceMotion(),
+			[](bool checked) { Core::App().setReduceMotion(checked); });
+		AddFootnote(content(), tr::lng_settings_reduce_motion_about(tr::now));
+
+		// QT_SCALE_FACTOR is read when the app starts: the next start.
+		AddSubsectionTitle(content(), tr::lng_settings_ui_scale(tr::now));
+		const auto current = Core::App().settings().uiScale();
+		auto scales = std::vector<int>{ 100, 110, 125, 150 };
+		if (std::find(scales.begin(), scales.end(), current) == scales.end()) {
+			scales.push_back(current);
+			std::sort(scales.begin(), scales.end());
+		}
+		auto options = std::vector<std::pair<int, QString>>();
+		for (const auto scale : scales) {
+			options.emplace_back(scale, tr::lng_settings_ui_scale_percent(
+				tr::now,
+				lt_percent,
+				Lang::Num(QString::number(scale))));
+		}
+		addRadios<int>(options, current, [](int scale) {
+			Core::App().settings().setUiScale(scale);
+		});
+		AddFootnote(content(), tr::lng_settings_ui_scale_about(tr::now));
 	}
 
 };

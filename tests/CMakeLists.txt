@@ -86,6 +86,10 @@ if (TARGET ElezaCore)
 	target_sources(test_settings_logic PRIVATE
 		"${_eleza_app_src}/settings/settings_logic.cpp")
 	target_include_directories(test_settings_logic PRIVATE "${_eleza_app_src}")
+	# The preferences file of this computer: «اندازهٔ رابط», «کاهش حرکت».
+	eleza_add_test(test_core_settings app/test_core_settings.cpp LIBS ElezaCore ElezaLang ElezaUi)
+	target_sources(test_core_settings PRIVATE "${_eleza_app_src}/core/core_settings.cpp")
+	target_include_directories(test_core_settings PRIVATE "${_eleza_app_src}")
 	# The chat screen's widget-free rules (history/history_*logic.cpp).
 	eleza_add_test(test_history_logic app/test_history_logic.cpp LIBS ElezaCore ElezaUi)
 	target_sources(test_history_logic PRIVATE "${_eleza_app_src}/history/history_logic.cpp")
