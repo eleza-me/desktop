@@ -24,6 +24,8 @@
 #include "base/weak_guard.h"
 #include "data/data_types.h"
 
+#include <QtCore/QHash>
+
 #include <map>
 
 namespace Data {
@@ -89,13 +91,25 @@ public:
 	static constexpr auto kCachedPageSize = 60;
 
 	// The chat's timeline (created empty on first use). The reference stays
-	// valid until the chat is removed.
+	// valid until the chat is removed, or let go after unhold(): look it up
+	// again rather than keep it.
 	[[nodiscard]] const History &history(const QString &chat);
 	[[nodiscard]] const Message *find(const QString &chat, qint64 seq) const;
 	// The chat has a timeline in memory (shown now or earlier in this run).
 	[[nodiscard]] bool held(const QString &chat) const;
 	// …and it reaches the newest message: live changes extend it.
 	[[nodiscard]] bool live(const QString &chat) const;
+
+	// ---- memory (the app stays open for days)
+	// A screen shows the chat: its timeline is kept whole meanwhile.
+	void hold(const QString &chat);
+	// The last such screen closed: the timeline keeps only its newest
+	// kKeepUnheld messages, and past kKeepHistories timelines the ones shown
+	// least recently go (opened again, they come from the cache). Timelines
+	// with messages still in the outbox always stay.
+	void unhold(const QString &chat);
+	static constexpr auto kKeepHistories = 20;
+	static constexpr auto kKeepUnheld = 200;
 
 	// ---- loading
 	// The newest messages the database remembers.
@@ -193,6 +207,9 @@ public:
 	// older than the window) changes in the cache alone, later, on the
 	// database's thread: `change` must hold values, not references.
 	void patchMessage(const QString &chat, const QString &key, const Fn<void(Message &)> &change);
+	// The upload progress of a message in memory: its row repaints
+	// (messageChanged), the chat is not rebuilt. Nothing is cached.
+	void setUploadProgress(const QString &chat, const QString &key, double progress);
 	void removeMessage(const QString &chat, const QString &key);
 	// Brings the cached copies of these messages up to date (an old message
 	// edited outside the window); one that is not cached stays out.
@@ -207,9 +224,6 @@ public:
 	void setInfo(const ChatInfo &info);
 	void applyPin(const QString &chat, qint64 seq, bool pinned);
 	void forget(const QString &chat);
-	// The upload progress of a message in memory: its row repaints
-	// (messageChanged), the chat is not rebuilt. Nothing is cached.
-	void setUploadProgress(const QString &chat, const QString &key, double progress);
 	// After a `too_long` difference: nothing tells what changed in the gap
 	// (an edit, a deletion or a reaction moves nothing a header shows), so
 	// every chat is stale as below — its cache goes, its timeline is read
@@ -238,6 +252,9 @@ public:
 Q_SIGNALS:
 	// The chat's items / flags changed.
 	void historyChanged(const QString &chat);
+	// One message changed where it is, as tall as it was (see
+	// setUploadProgress); historyChanged is not sent for it.
+	void messageChanged(const QString &chat, const QString &key);
 	void pinsChanged(const QString &chat);
 
 private:
@@ -252,9 +269,6 @@ private:
 		QVector<Message> messages; // oldest first
 		ChatInfo info;
 		std::optional<Group> group; // the header of a group's page
-	// One message changed where it is, as tall as it was (see
-	// setUploadProgress); historyChanged is not sent for it.
-	void messageChanged(const QString &chat, const QString &key);
 		bool hasMoreBefore = true;
 		bool hasMoreAfter = false;
 		// The oldest seq the server returned, messages that are not shown
@@ -293,8 +307,14 @@ private:
 		const QString &chat,
 		Fn<void()> onFail = nullptr);
 
+	void trimUnheld(History &history);
+	void dropUnused();
+
 	Session *_session = nullptr;
 	std::map<QString, History> _histories; // node-based: references stay valid
+	QHash<QString, int> _holds;
+	QHash<QString, quint64> _shownAt; // the order the timelines were shown in
+	quint64 _shownCounter = 0;
 
 };
 

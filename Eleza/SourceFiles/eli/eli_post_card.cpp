@@ -171,12 +171,18 @@ QString TimeLeft(qint64 endsAtSeconds) {
 
 PostCard::PostCard(CardHost *host, const QString &postId, CardOptions options)
 : _host(host)
+, _feed(&host->cardSession().data().feed())
 , _options(std::move(options)) {
 	_post.id = postId;
+	// The store keeps what a card shows (Data::Feed::hold).
+	_feed->hold(postId);
 	refresh();
 }
 
 PostCard::~PostCard() {
+	if (_feed) {
+		_feed->unhold(_post.id);
+	}
 	unloadMedia();
 }
 

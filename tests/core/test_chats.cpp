@@ -1,5 +1,6 @@
 // Data::Chats on a fake transport: which rows the list shows, what an inbox
 // reload keeps, and how unread counts follow read marks.
+#include "data/data_feed.h"
 #include "data/data_json.h"
 #include "test_harness.h"
 
@@ -123,6 +124,8 @@ private Q_SLOTS:
 	void unreadAfterRead();
 	void partialAndRemoteReads();
 	void scrolledUpCountsUnread();
+	void timelinesAreLetGo();
+	void postStoreIsBounded();
 
 };
 
@@ -522,6 +525,85 @@ void TestChats::scrolledUpCountsUnread() {
 	// Gone from the screen: «at the end» means nothing then.
 	chats.setVisibleChat(QString(), false);
 	QVERIFY(!chats.readingLive(QString()));
+}
+
+// The app stays open for days: a timeline no screen shows keeps its newest
+// messages, and only the timelines shown last stay in memory.
+void TestChats::timelinesAreLetGo() {
+	auto harness = Harness();
+	QVERIFY(harness.start());
+	auto &messages = harness.messages();
+	const auto server = [](const QString &chat, qint64 seq) {
+		auto result = Message();
+		result.chat = chat;
+		result.seq = seq;
+		result.kind = MessageKind::Text;
+		result.text = QString::number(seq);
+		result.createdAt = 1800000000000 + seq;
+		return result;
+	};
+	auto many = QVector<Message>();
+	for (auto seq = 1; seq <= 250; ++seq) {
+		many.push_back(server(u"c_long"_s, seq));
+	}
+	messages.hold(u"c_long"_s);
+	messages.merge(u"c_long"_s, many, false);
+	QCOMPARE(int(messages.history(u"c_long"_s).items.size()), 250);
+	messages.unhold(u"c_long"_s);
+	const auto &kept = messages.history(u"c_long"_s);
+	QCOMPARE(int(kept.items.size()), int(Messages::kKeepUnheld));
+	QCOMPARE(kept.firstSeq(), qint64(51));
+	QCOMPARE(kept.lastSeq(), qint64(250));
+	QVERIFY(kept.hasMoreBefore);
+
+	// A screen keeps its timeline; one with a message still on its way
+	// stays too.
+	messages.hold(u"c_open"_s);
+	messages.merge(u"c_open"_s, { server(u"c_open"_s, 1) }, false);
+	auto local = Message();
+	local.chat = u"c_pending"_s;
+	local.clientMessageId = u"cm1"_s;
+	local.mine = true;
+	local.text = u"on its way"_s;
+	messages.addLocal(local);
+	for (auto i = 0; i != 2 * Messages::kKeepHistories; ++i) {
+		const auto chat = u"c_%1"_s.arg(i);
+		messages.hold(chat);
+		messages.merge(chat, { server(chat, 1) }, false);
+		messages.unhold(chat);
+	}
+	QVERIFY(messages.held(u"c_open"_s));
+	QVERIFY(messages.held(u"c_pending"_s));
+	const auto last = u"c_%1"_s.arg(2 * Messages::kKeepHistories - 1);
+	QVERIFY(messages.held(last));
+	QVERIFY(!messages.held(u"c_0"_s));
+	QVERIFY(!messages.held(u"c_long"_s));
+	messages.unhold(u"c_open"_s);
+}
+
+// Posts seen long ago are let go; what a card shows stays.
+void TestChats::postStoreIsBounded() {
+	auto harness = Harness();
+	auto &feed = harness.session->feed();
+	const auto post = [](int i) {
+		auto result = Post();
+		result.id = u"p%1"_s.arg(i);
+		result.text = QString::number(i);
+		return result;
+	};
+	feed.merge({ post(0), post(1) });
+	feed.hold(u"p0"_s);
+	auto batch = QVector<Post>();
+	const auto total = Feed::kKeepUnheld + 1000;
+	for (auto i = 2; i != total; ++i) {
+		batch.push_back(post(i));
+	}
+	feed.merge(batch);
+	QVERIFY(feed.post(u"p0"_s) != nullptr);              // held
+	QVERIFY(feed.post(u"p1"_s) == nullptr);              // the oldest
+	QVERIFY(feed.post(u"p%1"_s.arg(total - 1)) != nullptr); // the newest
+	feed.unhold(u"p0"_s);
+	QVERIFY(feed.post(u"p0"_s) != nullptr); // let go later, not at once
 }
 
 QTEST_GUILESS_MAIN(TestChats)

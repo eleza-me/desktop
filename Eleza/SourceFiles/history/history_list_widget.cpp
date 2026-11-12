@@ -79,6 +79,10 @@ ListWidget::ListWidget(
 	setAttribute(Qt::WA_OpaquePaintEvent);
 
 	auto &data = _session->data();
+	// The timeline stays whole while this screen lives (shown or kept
+	// further back in the section stack).
+	_heldBy = &data.messages();
+	_heldBy->hold(_chatId);
 	if (_group) {
 		_userpics = std::make_unique<Support::UserpicPainter>(
 			_session,
@@ -112,10 +116,6 @@ ListWidget::ListWidget(
 				refreshRows();
 			}
 		});
-	connect(&data.chats(), &Data::Chats::chatChanged, this, [this](const QString &id) {
-		if (id != _chatId || _unreadResolved || !_started || _debugMode) {
-			return;
-		}
 	connect(
 		&data.messages(),
 		&Data::Messages::messageChanged,
@@ -125,6 +125,10 @@ ListWidget::ListWidget(
 				refreshRow(key);
 			}
 		});
+	connect(&data.chats(), &Data::Chats::chatChanged, this, [this](const QString &id) {
+		if (id != _chatId || _unreadResolved || !_started || _debugMode) {
+			return;
+		}
 		const auto chat = _session->data().chats().chat(_chatId);
 		if (!chat) {
 			return;
@@ -271,7 +275,11 @@ ListWidget::ListWidget(
 	_liveTimer.start(30 * 1000, this);
 }
 
-ListWidget::~ListWidget() = default;
+ListWidget::~ListWidget() {
+	if (_heldBy) {
+		_heldBy->unhold(_chatId);
+	}
+}
 
 // ---- View::Delegate
 
@@ -744,14 +752,6 @@ void ListWidget::refreshRows() {
 	applyRows(items());
 }
 
-void ListWidget::applyRows(const QVector<Data::Message> &timeline) {
-	// Consecutive items of an album are one row: its head stands for it.
-	const auto config = _session->data().clientConfig();
-	const auto runs = GroupAlbums(
-		timeline,
-		_group,
-		config ? config->maxAlbumItems() : 10);
-	auto grouped = QVector<Data::Message>();
 void ListWidget::refreshRow(const QString &key) {
 	const auto &timeline = history();
 	const auto at = timeline.indexOfKey(key);
@@ -792,6 +792,14 @@ void ListWidget::refreshRow(const QString &key) {
 	updateRow(index);
 }
 
+void ListWidget::applyRows(const QVector<Data::Message> &timeline) {
+	// Consecutive items of an album are one row: its head stands for it.
+	const auto config = _session->data().clientConfig();
+	const auto runs = GroupAlbums(
+		timeline,
+		_group,
+		config ? config->maxAlbumItems() : 10);
+	auto grouped = QVector<Data::Message>();
 	auto albums = std::vector<QVector<Data::Message>>();
 	if (runs.empty()) {
 		grouped = timeline;

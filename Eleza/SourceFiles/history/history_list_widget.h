@@ -310,6 +310,7 @@ private:
 
 	Window::SessionController *_controller = nullptr;
 	Main::Session *_session = nullptr;
+	QPointer<Data::Messages> _heldBy;
 	QString _chatId;
 	QPointer<Ui::ScrollArea> _scroll;
 	Downloads *_downloads = nullptr;

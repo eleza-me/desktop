@@ -9,6 +9,9 @@
 
 #include <QtCore/QUuid>
 
+#include <algorithm>
+#include <vector>
+
 namespace Data {
 namespace {
 
@@ -317,6 +320,25 @@ void Stories::loadUser(
 		.send();
 }
 
+void Stories::trimUsers() {
+	constexpr auto kSlack = 20;
+	if (int(_users.size()) <= kKeepUsers + kSlack) {
+		return;
+	}
+	auto order = std::vector<std::pair<quint64, QString>>();
+	const auto me = _session->userId();
+	for (const auto &[id, entry] : _users) {
+		if (id != me) {
+			order.emplace_back(entry.readOrder, id);
+		}
+	}
+	std::sort(order.begin(), order.end());
+	const auto excess = int(order.size()) - kKeepUsers;
+	for (auto i = 0; i < excess; ++i) {
+		_users.erase(order[i].second);
+	}
+}
+
 void Stories::applyUserStories(const UserStories &list) {
 	const auto userId = list.user.id;
 	if (userId.isEmpty()) {
@@ -325,6 +347,8 @@ void Stories::applyUserStories(const UserStories &list) {
 	auto &entry = _users[userId];
 	entry.data = list;
 	entry.fresh = true;
+	entry.readOrder = ++_readCounter;
+	trimUsers();
 	if (list.user.valid() && !list.user.displayName.isEmpty()) {
 		_session->users().seed(list.user);
 	}
