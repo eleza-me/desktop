@@ -249,7 +249,8 @@ QWidget *MainLayout::navRail() const {
 }
 
 int MainLayout::mainStackDepth() const {
-	return int(state(_tab).stack.size());
+	const auto &entry = state(_tab);
+	return int(entry.stack.size() + entry.parked.size());
 }
 
 int MainLayout::sideWidthFor(int layoutWidth) const {
@@ -369,7 +370,24 @@ void MainLayout::updateBackButtons() {
 		entry.side->setBackButtonShown(false);
 	}
 	for (auto i = 0; i != int(entry.stack.size()); ++i) {
-		entry.stack[i]->setBackButtonShown(_singleColumn || i > 0);
+		entry.stack[i]->setBackButtonShown(
+			_singleColumn || i > 0 || !entry.parked.isEmpty());
+	}
+}
+
+void MainLayout::parkOldest(TabState &entry) {
+	while (int(entry.stack.size()) > kMaxLiveSections) {
+		const auto oldest = entry.stack.front();
+		entry.stack.erase(entry.stack.begin());
+		// One that cannot be made again (no route) is simply let go.
+		if (const auto route = oldest->restoreRoute(); !route.isEmpty()) {
+			entry.parked.push_back(route);
+		}
+		oldest->hide();
+		oldest->deleteLater();
+	}
+	while (entry.parked.size() > kMaxParked) {
+		entry.parked.pop_front();
 	}
 }
 
@@ -412,6 +430,7 @@ LayoutState MainLayout::saveState() const {
 	auto result = LayoutState();
 	result.tab = _tab;
 	for (auto i = 0; i != kTabsCount; ++i) {
+		result.stacks[i] = _tabs[i].parked;
 		for (const auto section : _tabs[i].stack) {
 			const auto route = section->restoreRoute();
 			if (!route.isEmpty()) {
@@ -425,19 +444,29 @@ LayoutState MainLayout::saveState() const {
 void MainLayout::restoreState(const LayoutState &state) {
 	_restoring = true;
 	const auto restore = [&](Tab tab) {
-		const auto &routes = state.stacks[int(tab)];
-		if (routes.isEmpty()) {
+		const auto &all = state.stacks[int(tab)];
+		if (all.isEmpty()) {
 			return;
 		}
 		if (tab != _tab) {
 			showTab(tab, anim::type::instant);
 		}
-		for (const auto &route : routes) {
+		// Only the top ones are made again now (a language change rebuilds
+		// everything): the others wait, parked, until the user goes back.
+		const auto live = std::min(int(all.size()), int(kMaxLiveSections));
+		const auto parked = all.mid(0, all.size() - live);
+		for (const auto &route : all.mid(all.size() - live)) {
 			// Routes that open "where the user is" land in this tab.
 			if (_tab != tab) {
 				showTab(tab, anim::type::instant);
 			}
 			[[maybe_unused]] const auto opened = _controller->openRoute(route);
+		}
+		auto &entry = this->state(tab);
+		entry.parked = parked + entry.parked;
+		parkOldest(entry);
+		if (tab == _tab) {
+			updateBackButtons();
 		}
 	};
 	for (auto i = 0; i != kTabsCount; ++i) {
@@ -509,8 +538,10 @@ void MainLayout::showMainSection(
 				old->deleteLater();
 			}
 			stack.clear();
+			state(tab).parked.clear();
 		}
 		stack.push_back(section);
+		parkOldest(state(tab));
 		updateGeometries();
 		updateVisibility();
 		updateBackButtons();
@@ -524,6 +555,29 @@ bool MainLayout::showBack() {
 		return entry.side ? entry.side->onBackRequest() : false;
 	} else if (entry.stack.back()->onBackRequest()) {
 		return true;
+	}
+	if (entry.stack.size() == 1 && !entry.parked.isEmpty()) {
+		// What was under it was let go: it is made again from its route,
+		// put under the top one, and the usual way back shows it.
+		const auto route = entry.parked.back();
+		entry.parked.pop_back();
+		const auto tab = _tab;
+		const auto top = entry.stack.back();
+		_restoring = true;
+		[[maybe_unused]] const auto opened = _controller->openRoute(route);
+		_restoring = false;
+		auto &now = state(tab);
+		if (_tab != tab) {
+			showTab(tab, anim::type::instant);
+		}
+		if (now.stack.size() == 2 && now.stack.front() == top) {
+			std::swap(now.stack[0], now.stack[1]);
+			updateVisibility();
+		} else if (now.stack.empty() || now.stack.back() != top) {
+			// The route showed something else instead: that is where we are.
+			updateBackButtons();
+			return true;
+		}
 	}
 	runTransition(transitionArea(), true, anim::type::normal, [&] {
 		const auto top = entry.stack.back();
@@ -549,6 +603,7 @@ void MainLayout::clearMainStack(Tab tab, anim::type animated) {
 			section->deleteLater();
 		}
 		entry.stack.clear();
+		entry.parked.clear();
 		updateGeometries();
 		updateVisibility();
 		updateBackButtons();

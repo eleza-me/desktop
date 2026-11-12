@@ -73,7 +73,16 @@ private:
 		SectionFactory sideFactory; // overrides the registry
 		SectionWidget *side = nullptr;
 		std::vector<SectionWidget*> stack; // bottom to top, the top one is shown
+		// Under the bottom of `stack`: sections let go as it grew (only
+		// their routes, oldest first), made again when the user goes back.
+		QStringList parked;
 	};
+
+	// Sections kept alive per tab (each with its lists, pictures and
+	// subscriptions); deeper ones are parked, at most kMaxParked of them.
+	static constexpr auto kMaxLiveSections = 8;
+	static constexpr auto kMaxParked = 40;
+	void parkOldest(TabState &entry);
 
 	[[nodiscard]] TabState &state(Tab tab) {
 		return _tabs[int(tab)];
