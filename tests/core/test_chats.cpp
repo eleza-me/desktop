@@ -2,6 +2,7 @@
 // reload keeps, and how unread counts follow read marks.
 #include "data/data_feed.h"
 #include "data/data_json.h"
+#include "data/data_notifications.h"
 #include "test_harness.h"
 
 #include <QtTest/QSignalSpy>
@@ -124,6 +125,7 @@ private Q_SLOTS:
 	void unreadAfterRead();
 	void partialAndRemoteReads();
 	void scrolledUpCountsUnread();
+	void desktopAlertsFollowThePushRules();
 	void timelinesAreLetGo();
 	void postStoreIsBounded();
 
@@ -525,6 +527,74 @@ void TestChats::scrolledUpCountsUnread() {
 	// Gone from the screen: «at the end» means nothing then.
 	chats.setVisibleChat(QString(), false);
 	QVERIFY(!chats.readingLive(QString()));
+}
+
+// The toasts follow the server's push rules (push.go onChat).
+void TestChats::desktopAlertsFollowThePushRules() {
+	using Data::ChatAlert;
+	// 12:30 in Tehran (UTC+3:30).
+	const auto noon = QDateTime(QDate(2026, 11, 12), QTime(9, 0), Qt::UTC);
+	const auto midnight = QDateTime(QDate(2026, 11, 12), QTime(20, 0), Qt::UTC);
+	auto chat = Data::Chat();
+	chat.id = u"c1"_s;
+	chat.section = u"message"_s;
+	auto settings = QJsonObject();
+	QVERIFY(Data::ChatAlertFor(chat, settings, noon) == ChatAlert::Full);
+
+	// Requests never notify.
+	auto request = chat;
+	request.section = u"request"_s;
+	QVERIFY(Data::ChatAlertFor(request, settings, noon) == ChatAlert::None);
+	request.section = u"message"_s;
+	request.request = u"incoming"_s;
+	QVERIFY(Data::ChatAlertFor(request, settings, noon) == ChatAlert::None);
+
+	// Quiet hours, in their own time zone, across midnight.
+	settings.insert(u"quiet_hours"_s, QJsonObject{
+		{ u"enabled"_s, true },
+		{ u"start"_s, u"23:00"_s },
+		{ u"end"_s, u"07:00"_s },
+		{ u"tz"_s, u"Asia/Tehran"_s },
+	});
+	QVERIFY(Data::ChatAlertFor(chat, settings, noon) == ChatAlert::Full);
+	QVERIFY(Data::ChatAlertFor(chat, settings, midnight) == ChatAlert::None); // 23:30
+	QVERIFY(!Data::InQuietHours(QJsonObject{
+		{ u"enabled"_s, false },
+		{ u"start"_s, u"00:00"_s },
+		{ u"end"_s, u"23:59"_s },
+	}, noon));
+	QVERIFY(Data::InQuietHours(QJsonObject{
+		{ u"enabled"_s, true },
+		{ u"start"_s, u"09:00"_s },
+		{ u"end"_s, u"09:30"_s },
+		{ u"tz"_s, u"no/such_zone"_s }, // read as UTC
+	}, noon));
+	settings.remove(u"quiet_hours"_s);
+
+	// A conversation: its own two switches.
+	auto conversation = chat;
+	conversation.section = u"conversation"_s;
+	conversation.isConversation = true;
+	QVERIFY(Data::ChatAlertFor(conversation, settings, noon) == ChatAlert::Full);
+	settings.insert(u"conversations"_s, QJsonObject{ { u"enabled"_s, true }, { u"new_message"_s, false } });
+	QVERIFY(Data::ChatAlertFor(conversation, settings, noon) == ChatAlert::None);
+	QVERIFY(Data::ChatAlertFor(chat, settings, noon) == ChatAlert::Full);
+	settings.insert(u"conversations"_s, QJsonObject{ { u"enabled"_s, false }, { u"new_message"_s, true } });
+	QVERIFY(Data::ChatAlertFor(conversation, settings, noon) == ChatAlert::None);
+	settings.remove(u"conversations"_s);
+
+	// A hidden chat: anonymous unless told otherwise.
+	auto hidden = chat;
+	hidden.info.hidden = true;
+	QVERIFY(Data::ChatAlertFor(hidden, settings, noon) == ChatAlert::Anonymous);
+	settings.insert(u"hidden_chats"_s, u"none"_s);
+	QVERIFY(Data::ChatAlertFor(hidden, settings, noon) == ChatAlert::None);
+	settings.insert(u"hidden_chats"_s, u"normal"_s);
+	QVERIFY(Data::ChatAlertFor(hidden, settings, noon) == ChatAlert::Full);
+	QVERIFY(Data::ChatInfo::FromJson(QJsonObject{
+		{ u"chat"_s, u"c1"_s },
+		{ u"hidden"_s, true },
+	}).hidden);
 }
 
 // The app stays open for days: a timeline no screen shows keeps its newest

@@ -57,6 +57,7 @@ Group Group::FromJson(const QJsonObject &json) {
 	result.mutedUntil = Int64(json, "muted_until"_L1);
 	result.notify = String(json, "notify"_L1);
 	result.archived = Bool(json, "archived"_L1);
+	result.hidden = Bool(json, "hidden"_L1);
 	result.pinned = Bool(json, "pinned"_L1);
 	result.pins = Int64s(json.value("pins"_L1));
 	result.clearedBeforeSeq = Int64(json, "cleared_before_seq"_L1);
@@ -101,6 +102,7 @@ QJsonObject Group::toJson() const {
 	Put(result, "muted_until"_L1, mutedUntil);
 	Put(result, "notify"_L1, notify);
 	Put(result, "archived"_L1, archived);
+	Put(result, "hidden"_L1, hidden);
 	Put(result, "pinned"_L1, pinned);
 	Put(result, "pins"_L1, Array(pins));
 	Put(result, "cleared_before_seq"_L1, clearedBeforeSeq);

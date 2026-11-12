@@ -153,6 +153,9 @@ struct ChatInfo {
 	QString request;        // incoming | outgoing | ""
 	bool canSend = true;
 	bool peerDeleted = false;
+	// I hid it (docs/hidden-chats.md): shown in the list all the same, but
+	// a notification follows notifications.hidden_chats.
+	bool hidden = false;
 	std::optional<Conversation> conversation;
 	QString continuedInto;
 	QString theme;

@@ -43,6 +43,7 @@ struct Group {
 	qint64 mutedUntil = 0;      // unix seconds
 	QString notify;             // all | mentions | none
 	bool archived = false;
+	bool hidden = false;        // I hid it (docs/hidden-chats.md)
 	bool pinned = false;
 	QVector<qint64> pins;       // pinned message seqs, newest pin first
 	qint64 clearedBeforeSeq = 0;
