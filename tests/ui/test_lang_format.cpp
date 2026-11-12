@@ -268,6 +268,12 @@ private Q_SLOTS:
 		QCOMPARE(LastSeen(QStringLiteral("online"), 0, now), U("آنلاین"));
 		QCOMPARE(LastSeen(QStringLiteral("recently"), 0, now), U("آخرین بازدید اخیراً"));
 		QCOMPARE(LastSeen(QStringLiteral("within_week"), 0, now), U("آخرین بازدید این هفته"));
+		// What the server sends (pkg/presence): the chat header passes it as is.
+		QCOMPARE(LastSeen(QStringLiteral("last_week"), 0, now), U("آخرین بازدید این هفته"));
+		QCOMPARE(LastSeen(QStringLiteral("last_month"), 0, now), U("آخرین بازدید این ماه"));
+		QCOMPARE(LastSeen(QStringLiteral("long_ago"), 0, now), U("مدت‌ها پیش"));
+		QCOMPARE(LastSeen(QStringLiteral("offline"), 0, now), QString());
+		QCOMPARE(LastSeen(QStringLiteral("offline"), at(3600), now), U("آخرین بازدید ۲۰:۴۱"));
 		QCOMPARE(LastSeen(QString(), 0, now), QString());
 		QCOMPARE(LastSeen(QString(), at(30), now), U("آخرین بازدید همین حالا"));
 		QCOMPARE(LastSeen(QString(), at(3600), now), U("آخرین بازدید ۲۰:۴۱"));
@@ -281,6 +287,9 @@ private Q_SLOTS:
 		QCOMPARE(CompactCount(1200), U("۱٫۲ هزار"));
 		QCOMPARE(CompactCount(1250), U("۱٫۳ هزار"));
 		QCOMPARE(CompactCount(48300), U("۴۸ هزار"));
+		QCOMPARE(CompactCount(999499), U("۹۹۹ هزار"));
+		QCOMPARE(CompactCount(999500), U("۱ میلیون"));
+		QCOMPARE(CompactCount(999999), U("۱ میلیون"));
 		QCOMPARE(CompactCount(3400000), U("۳٫۴ میلیون"));
 		QCOMPARE(Duration(42), U("۰:۴۲"));
 		QCOMPARE(Duration(3723), U("۱:۰۲:۰۳"));
