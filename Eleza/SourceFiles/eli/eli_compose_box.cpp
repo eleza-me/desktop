@@ -58,6 +58,8 @@ namespace {
 constexpr auto kPollOptionLength = 60;
 constexpr auto kAltLength = 420;
 constexpr auto kMentionDelay = 250;
+// A draft is written this long after the last change.
+constexpr auto kDraftSaveDelay = 1000;
 constexpr auto kThumbSide = 320;
 
 using Kind = ComposeArgs::Kind;
@@ -657,6 +659,23 @@ public:
 			_options.front().field->setFocusFast();
 		}
 	}
+	// A kept draft's options and duration.
+	void restore(const QStringList &options, int hours) {
+		for (auto i = 0; i != int(options.size()); ++i) {
+			if (i < int(_options.size())) {
+				_options[i].field->setText(options[i]);
+			} else if (int(_options.size()) < _max) {
+				addOption(options[i]);
+			}
+		}
+		for (const auto &chip : _chips) {
+			if (chip.hours == hours) {
+				_hours = hours;
+			}
+		}
+		refreshChips();
+		resizeToWidth(width());
+	}
 
 protected:
 	int resizeGetHeight(int newWidth) override {
@@ -1120,8 +1139,10 @@ private:
 		return _controller->session();
 	}
 	[[nodiscard]] QString draftKey() const;
-	void readDraft();
+	[[nodiscard]] Logic::StoredDraft storedDraft() const;
+	void readDraft(const Data::Post *target);
 	void writeDraft();
+	void writeDraftSoon();
 	void clearDraft();
 
 	void attach(const QStringList &paths);
@@ -1177,6 +1198,7 @@ private:
 	Ui::RoundButton *_publish = nullptr;
 
 	base::Timer _mentionTimer;
+	base::Timer _draftTimer;
 	QString _mentionQuery;
 	int _mentionFrom = -1;
 	int _mentionRequest = 0;
@@ -1216,7 +1238,8 @@ ComposeBox::ComposeBox(
 			_mentions->setRows(rows);
 			updateHeight();
 		});
-}) {
+})
+, _draftTimer([this] { writeDraft(); }) {
 	const auto &config = session().account().clientConfig();
 	if (const auto value = config.postMaxTextChars(); value > 0) {
 		_limits.maxText = value;
@@ -1240,46 +1263,115 @@ ComposeBox::~ComposeBox() {
 	if (_uploadId) {
 		session().data().upload().cancel(_uploadId);
 	}
-	if (_args.kind == Kind::New && _keepDraft) {
+	// Closed without publishing or discarding (a navigation closes every
+	// layer): what was typed and attached is there when it opens again.
+	if (_keepDraft && _field) {
 		writeDraft();
 	}
 }
 
 QString ComposeBox::draftKey() const {
-	return u"eli.draft."_s + session().userId();
+	const auto target = (_args.kind == Kind::Invite)
+		? _args.conversationId
+		: _args.postId;
+	return Logic::DraftKey(LogicKind(_args.kind), session().userId(), target);
 }
 
-void ComposeBox::readDraft() {
-	const auto stored = session().account().settings().object(draftKey());
-	const auto text = stored.value("text"_L1).toString();
-	if (!text.isEmpty()) {
-		_field->setText(text);
+Logic::StoredDraft ComposeBox::storedDraft() const {
+	auto result = Logic::StoredDraft();
+	result.text = _field ? _field->text() : QString();
+	for (const auto row : _parts) {
+		result.parts.push_back(row->field()->text());
+	}
+	if (_tiles) {
+		for (const auto &item : _tiles->items()) {
+			result.media.push_back({ item.path, item.video, item.alt });
+		}
+	}
+	if (_poll) {
+		result.poll = true;
+		result.pollOptions = _poll->options();
+		result.pollHours = _poll->hours();
+	}
+	if (_policyButton) {
+		result.policy = _policy;
+	}
+	if (_args.kind == Kind::Edit) {
+		const auto post = session().data().feed().post(_args.postId);
+		result.original = post ? post->text : QString();
+	}
+	return result;
+}
+
+void ComposeBox::readDraft(const Data::Post *target) {
+	auto &settings = session().account().settings();
+	const auto stored = Logic::StoredDraft::FromJson(settings.object(draftKey()));
+	if (stored.empty()) {
+		return;
+	} else if (_args.kind == Kind::Edit
+		&& (!target || stored.original != target->text)) {
+		// The post changed since (an edit elsewhere): its text wins.
+		clearDraft();
+		return;
+	}
+	if (!stored.text.isEmpty()) {
+		_field->setText(stored.text);
 		_field->setCursorToEnd();
 	}
-	for (const auto &part : stored.value("parts"_L1).toArray()) {
-		if (int(_parts.size()) + 1 < _limits.maxThreadParts) {
-			addPart(part.toString(), false);
+	for (const auto &part : stored.parts) {
+		if (!_threadTool) {
+			break;
+		} else if (!part.trimmed().isEmpty()
+			&& int(_parts.size()) + 1 < _limits.maxThreadParts) {
+			addPart(part, false);
 		}
+	}
+	if (!stored.media.isEmpty()) {
+		auto paths = QStringList();
+		for (const auto &item : stored.media) {
+			paths.push_back(item.path);
+		}
+		attach(paths);
+		for (auto &item : _tiles->items()) {
+			for (const auto &kept : stored.media) {
+				if (kept.path == item.path) {
+					item.alt = kept.alt;
+				}
+			}
+		}
+	} else if (stored.poll && _pollTool && !_poll) {
+		togglePoll();
+		if (_poll) {
+			_poll->restore(stored.pollOptions, stored.pollHours);
+		}
+	}
+	if (_policyButton && !stored.policy.isEmpty()) {
+		for (const auto &policy : Policies()) {
+			if (policy.key == stored.policy) {
+				_policy = stored.policy;
+			}
+		}
+	}
+}
+
+void ComposeBox::writeDraftSoon() {
+	if (_keepDraft && !_busy) {
+		_draftTimer.callOnce(kDraftSaveDelay);
 	}
 }
 
 void ComposeBox::writeDraft() {
-	auto parts = QJsonArray();
-	for (const auto row : _parts) {
-		const auto text = row->field()->text();
-		if (!text.trimmed().isEmpty()) {
-			parts.push_back(text);
-		}
+	_draftTimer.cancel();
+	if (!_keepDraft) {
+		return;
 	}
-	const auto text = _field ? _field->text() : QString();
-	if (text.trimmed().isEmpty() && parts.isEmpty()) {
+	const auto draft = storedDraft();
+	if (draft.empty()
+		|| (_args.kind == Kind::Edit && draft.text == draft.original)) {
 		clearDraft();
 		return;
 	}
-	session().account().settings().set(draftKey(), QJsonObject{
-		{ u"text"_s, text },
-		{ u"parts"_s, parts },
-	});
+	session().account().settings().set(draftKey(), draft.toJson());
 }
 
 void ComposeBox::clearDraft() {
@@ -1451,11 +1543,12 @@ void ComposeBox::prepare() {
 		_field->setText(target->text);
 		_field->setCursorToEnd();
 		_policy = target->replyPolicy.isEmpty() ? u"everyone"_s : target->replyPolicy;
+		readDraft(target);
 	} else if (!_args.prefill.isEmpty()) {
 		_field->setText(_args.prefill);
 		_field->setCursorToEnd();
-	} else if (kind == Kind::New) {
-		readDraft();
+	} else {
+		readDraft(target);
 	}
 	_dirty = false;
 	if (!_args.files.isEmpty()) {
@@ -1882,6 +1975,9 @@ Logic::ComposeDraft ComposeBox::draft() const {
 }
 
 void ComposeBox::refresh() {
+	if (_dirty) {
+		writeDraftSoon();
+	}
 	const auto current = draft();
 	const auto problem = Logic::ValidateCompose(current, _limits);
 	const auto length = Logic::TextLength(current.text.trimmed());
@@ -1937,7 +2033,12 @@ void ComposeBox::tryClose() {
 		|| (_tiles->count() > 0)
 		|| !Logic::CleanThreadParts(draft().parts).isEmpty();
 	if (!_dirty || !hasContent || _args.kind == Kind::Edit) {
-		if (_args.kind != Kind::New) {
+		if (_args.kind == Kind::Edit || (_dirty && !hasContent)) {
+			// «انصراف» of an edit, or everything erased: nothing to keep.
+			_keepDraft = false;
+			clearDraft();
+		} else if (_args.kind != Kind::New) {
+			// Untouched: a kept draft stays as it was.
 			_keepDraft = false;
 		}
 		closeBox();
@@ -2000,6 +2101,7 @@ void ComposeBox::publish() {
 			[=, this](const Data::Post &) {
 				controller->showToast(tr::lng_eli_edited(tr::now));
 				_keepDraft = false;
+				clearDraft();
 				_busy = false;
 				closeBox();
 			},
