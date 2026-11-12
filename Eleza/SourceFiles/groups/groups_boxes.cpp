@@ -1669,7 +1669,7 @@ private:
 			}
 			const auto left = Support::GroupTimeLeft(member.restrictedUntil, now);
 			row.subtitle = left.isEmpty()
-				? denied.join(u"، "_s)
+				? denied.join(tr::lng_list_separator(tr::now))
 				: tr::lng_groups_member_restricted_until(tr::now, lt_time, left);
 		} else {
 			row.subtitle = MemberTag(member);

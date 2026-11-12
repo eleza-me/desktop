@@ -1939,6 +1939,8 @@
 "lng_groups_about" = "About";
 "lng_groups_administration" = "Administration";
 "lng_groups_slow_mode" = "Slow mode";
+// Between the items of a list (the permissions a restricted member lost).
+"lng_list_separator" = ", ";
 "lng_groups_member_restricted_until" = "Restricted for another {time}";
 "lng_groups_you_tag" = "You";
 "lng_groups_notify_mentioned" = "{name} mentioned you in “{group}”";

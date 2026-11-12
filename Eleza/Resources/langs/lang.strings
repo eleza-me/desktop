@@ -1969,6 +1969,8 @@
 "lng_groups_about" = "دربارهٔ گروه";
 "lng_groups_administration" = "مدیریت گروه";
 "lng_groups_slow_mode" = "حالت آهسته";
+// Between the items of a list (the permissions a restricted member lost).
+"lng_list_separator" = "، ";
 "lng_groups_member_restricted_until" = "محدود تا {time} دیگر";
 "lng_groups_you_tag" = "تو";
 "lng_groups_notify_mentioned" = "{name} در «{group}» به تو اشاره کرد";
