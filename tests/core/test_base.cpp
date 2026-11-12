@@ -10,6 +10,7 @@
 #include "base/weak_guard.h"
 
 #include <QtCore/QTemporaryDir>
+#include <QtCore/QThreadPool>
 #include <QtTest/QtTest>
 
 class TestBase final : public QObject {
@@ -24,9 +25,10 @@ private Q_SLOTS:
 	void backoffGrowsAndResets();
 	void randomAndUuid();
 	void unixtimeShift();
-	void expectedHoldsEither();
 	void unixtimeServerClock();
+	void expectedHoldsEither();
 	void atomicFiles();
+	void removalInBackground();
 	void safeIntegers();
 	void fileNamesFromStrangers();
 	void programsAreNotOpened();
@@ -173,8 +175,6 @@ void TestBase::unixtimeShift() {
 	QVERIFY(base::unixtime::nowMs() - before < 5000);
 }
 
-void TestBase::expectedHoldsEither() {
-	const auto good = base::Expected<int, QString>(5);
 void TestBase::unixtimeServerClock() {
 	using namespace base::unixtime;
 	// The server read its clock half way through a 400 ms answer.
@@ -194,11 +194,40 @@ void TestBase::unixtimeServerClock() {
 	QVERIFY(serverNowMs() - before < 5000);
 }
 
+void TestBase::expectedHoldsEither() {
+	const auto good = base::Expected<int, QString>(5);
 	QVERIFY(good);
 	QCOMPARE(*good, 5);
 	const auto bad = base::Expected<int, QString>(base::make_unexpected(u"nope"_s));
 	QVERIFY(!bad);
 	QCOMPARE(bad.error(), u"nope"_s);
+}
+
+// The name is free at once, the files go on a worker thread; what a killed
+// run left is swept later.
+void TestBase::removalInBackground() {
+	auto dir = QTemporaryDir();
+	const auto user = dir.path() + u"/user-1"_s;
+	QVERIFY(QDir().mkpath(user + u"/media/ab"_s));
+	QVERIFY(base::platform::WriteFileAtomic(user + u"/media/ab/x"_s, QByteArray(1000, 'x')));
+	QVERIFY(base::platform::RemoveRecursivelyInBackground(user, u"trash-"_s));
+	QVERIFY(!QFileInfo::exists(user));
+	QVERIFY(QDir().mkpath(user)); // a new one may take the name right away
+	QThreadPool::globalInstance()->waitForDone();
+	const auto left = [&] {
+		return QDir(dir.path()).entryList(
+			{ u"trash-*"_s },
+			QDir::Dirs | QDir::Files | QDir::NoDotAndDotDot | QDir::Hidden);
+	};
+	QVERIFY(left().isEmpty());
+	QVERIFY(QFileInfo(user).isDir());
+	QVERIFY(base::platform::RemoveRecursivelyInBackground(dir.path() + u"/none"_s, u"trash-"_s));
+
+	QVERIFY(QDir().mkpath(dir.path() + u"/trash-old/media"_s));
+	base::platform::RemoveTrashInBackground(dir.path(), u"trash-"_s);
+	QThreadPool::globalInstance()->waitForDone();
+	QVERIFY(left().isEmpty());
+	QVERIFY(QFileInfo(user).isDir());
 }
 
 void TestBase::atomicFiles() {
