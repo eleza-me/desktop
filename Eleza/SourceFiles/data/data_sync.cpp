@@ -534,10 +534,16 @@ void Sync::applyMessage(Message message, bool live) {
 					break;
 				}
 			}
+			const auto unreadGone = (row->unread > 0) && (message.seq > row->lastReadSeq);
 			chats.patch(chatId, [&](Chat &c) {
 				c.lastMessage = last;
 				c.lastMine = last && last->mine;
 			});
+			if (!last || unreadGone) {
+				// The message before it is not known here, or the one that
+				// went was counted as unread: the inbox has both right.
+				reloadInboxSoon();
+			}
 		}
 		return;
 	}

@@ -157,6 +157,8 @@ public:
 		base::Guard guard = base::Guard(),
 		Fn<void()> done = nullptr,
 		Fn<void(const Api::Error &)> fail = nullptr);
+	// Leaves the timeline at once; the cache when the server agrees, and a
+	// refusal puts it back (with the row's preview).
 	void deleteMessage(const QString &chat, qint64 seq, bool forEveryone);
 	// scope: "both" or "me".
 	void pin(const QString &chat, qint64 seq, const QString &scope = QStringLiteral("both"));
@@ -193,7 +195,8 @@ public:
 	// older than the window) changes in the cache alone, later, on the
 	// database's thread: `change` must hold values, not references.
 	void patchMessage(const QString &chat, const QString &key, const Fn<void(Message &)> &change);
-	void removeMessage(const QString &chat, const QString &key);
+	// `uncache`: out of the database as well.
+	void removeMessage(const QString &chat, const QString &key, bool uncache = true);
 	// Brings the cached copies of these messages up to date (an old message
 	// edited outside the window); one that is not cached stays out.
 	void updateCached(const QString &chat, const QVector<Message> &messages);
@@ -286,6 +289,11 @@ private:
 		const QString &action,
 		const QString &chat,
 		Fn<void()> onFail = nullptr);
+	void restoreDeleted(
+		const QString &chat,
+		const std::optional<Message> &message,
+		const std::optional<Message> &preview,
+		bool previewMine);
 
 	Session *_session = nullptr;
 	std::map<QString, History> _histories; // node-based: references stay valid

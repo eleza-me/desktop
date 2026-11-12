@@ -378,10 +378,10 @@ Message Messages::FromCache(const QJsonObject &row, qint64 peerReadSeq) {
 	return result;
 }
 
-void Messages::removeMessage(const QString &chat, const QString &key) {
+void Messages::removeMessage(const QString &chat, const QString &key, bool uncache) {
 	// Out of the cache as well, also when it is not in the window: an old
 	// message deleted while it was not shown must not come back from it.
-	if (const auto seq = SeqOfKey(key)) {
+	if (const auto seq = SeqOfKey(key); seq && uncache) {
 		if (const auto db = _session->local()) {
 			db->deleteMessage(chat, seq);
 		}
@@ -1173,8 +1173,17 @@ void Messages::editWithPreview(
 }
 
 void Messages::deleteMessage(const QString &chat, qint64 seq, bool forEveryone) {
-	removeMessage(chat, Message::KeyForSeq(seq));
+	const auto key = Message::KeyForSeq(seq);
+	// Until the server agrees it only leaves the screen: the cache keeps it,
+	// and a refusal (offline, the time for «delete for everyone» is over)
+	// puts it back.
+	const auto shown = find(chat, seq);
+	const auto removed = shown ? std::make_optional(*shown) : std::nullopt;
+	removeMessage(chat, key, false);
 	// The row's preview follows when the newest message went away.
+	auto previous = std::optional<Message>();
+	auto previousMine = false;
+	auto previewLost = false;
 	if (const auto row = _session->chats().chat(chat); row && row->lastMessage && row->lastMessage->seq == seq) {
 		const auto &items = historyRef(chat).items;
 		auto last = std::optional<Message>();
@@ -1184,19 +1193,74 @@ void Messages::deleteMessage(const QString &chat, qint64 seq, bool forEveryone) 
 				break;
 			}
 		}
+		previous = row->lastMessage;
+		previousMine = row->lastMine;
+		previewLost = !last;
 		_session->chats().patch(chat, [&](Chat &c) {
 			c.lastMessage = last;
 			c.lastMine = last && last->mine;
 		});
 	}
-	simple(IsGroupId(chat) ? u"groups.delete"_s : u"chat.delete"_s, QJsonObject{
-		{ ChatKey(chat), chat },
-		{ u"seq"_s, double(seq) },
-		{ u"scope"_s, forEveryone ? u"everyone"_s : u"me"_s },
-	}, u"message.delete"_s, chat, [=, this] {
-		// Bring it back.
-		if (historyRef(chat).loaded) {
-			loadLatest(chat);
+	const auto action = u"message.delete"_s;
+	_session->transport().rpc(IsGroupId(chat) ? u"groups.delete"_s : u"chat.delete"_s)
+		.body(QJsonObject{
+			{ ChatKey(chat), chat },
+			{ u"seq"_s, double(seq) },
+			{ u"scope"_s, forEveryone ? u"everyone"_s : u"me"_s },
+		})
+		.guard(this)
+		.done([=, this] {
+			// Now out of the cache too (and of the window, should an edit
+			// have brought it back meanwhile).
+			removeMessage(chat, key);
+			if (previewLost) {
+				// The message before it is not known here: the inbox has it.
+				_session->chats().loadInbox();
+			}
+		})
+		.fail([=, this](const Api::Error &error) {
+			if (IsGroupId(chat) && _session->groups().handleError(chat, error)) {
+				// The group is gone, and its timeline with it.
+				_session->reportFailure(action, chat, error);
+				return;
+			}
+			restoreDeleted(chat, removed, previous, previousMine);
+			_session->reportFailure(action, chat, error);
+		})
+		.send();
+}
+
+// A delete the server refused: the message returns to the window it was
+// taken from (the cache never lost it), the row to its preview.
+void Messages::restoreDeleted(
+		const QString &chat,
+		const std::optional<Message> &message,
+		const std::optional<Message> &preview,
+		bool previewMine) {
+	if (message && !find(chat, message->seq)) {
+		const auto &history = historyRef(chat);
+		const auto first = history.firstSeq();
+		const auto last = history.lastSeq();
+		const auto seq = message->seq;
+		// Only where the window has no hole for it (it may have moved).
+		const auto belongs = (first > 0)
+			? ((seq >= first || !history.hasMoreBefore)
+				&& (seq <= last || !history.hasMoreAfter))
+			: history.loaded;
+		if (belongs) {
+			merge(chat, { *message }, false);
+		}
+	}
+	if (!preview) {
+		return;
+	}
+	_session->chats().patch(chat, [&](Chat &c) {
+		// Unless something newer took the row meanwhile.
+		const auto current = c.lastMessage ? c.lastMessage->seq : 0;
+		const auto pending = c.lastMessage && c.lastMessage->local();
+		if (!pending && current < preview->seq) {
+			c.lastMessage = preview;
+			c.lastMine = previewMine;
 		}
 	});
 }

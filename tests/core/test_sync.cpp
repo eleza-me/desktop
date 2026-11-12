@@ -242,6 +242,8 @@ private Q_SLOTS:
 	void differencePlayedItem();
 	void patchesReachTheCache();
 	void tooLongDropsTheCaches();
+	void deletedLastOfUnopenedChat();
+	void refusedDeleteComesBack();
 
 };
 
@@ -1427,6 +1429,76 @@ void TestSync::tooLongDropsTheCaches() {
 	QVERIFY(Test::WaitFor([&] { return added >= 0; }));
 	QVERIFY(messages.live(u"c1"_s));
 	QCOMPARE(CachedSeqs(harness, u"c1"_s), Seqs(126, 130));
+}
+
+// The peer deleted the newest message of a chat that was never opened here:
+// the message before it is not known, the inbox is read for it.
+void TestSync::deletedLastOfUnopenedChat() {
+	auto harness = Harness();
+	QVERIFY(harness.start());
+	harness.transport.setOnline(true);
+	harness.transport.emitFrame(Hello(100));
+	QVERIFY(harness.messages().history(u"c2"_s).items.isEmpty());
+	QCOMPARE(harness.chats().chat(u"c2"_s)->lastMessage->seq, 4);
+	auto reload = QSignalSpy(&harness.sync(), &Sync::inboxReloadRequested);
+	const auto inboxLoads = harness.transport.count(u"chat.inbox"_s);
+	auto deleted = MessageJson(u"c2"_s, 4, u"u_me"_s, QString());
+	deleted.insert(u"deleted"_s, true);
+	harness.transport.emitFrame(Update(101, u"deleted"_s, deleted));
+	QVERIFY(!harness.chats().chat(u"c2"_s)->lastMessage);
+	QVERIFY(Test::WaitFor([&] { return reload.size() == 1; }, 3000));
+	QVERIFY(Test::WaitFor([&] {
+		return harness.transport.count(u"chat.inbox"_s) > inboxLoads;
+	}));
+}
+
+// Deleting is shown at once; the cache follows when the server agrees, and
+// a refusal (offline, too late for everyone) puts the message and the row's
+// preview back.
+void TestSync::refusedDeleteComesBack() {
+	auto dir = QTemporaryDir();
+	QVERIFY(dir.isValid());
+	auto harness = Harness(dir.filePath(u"cache.db"_s));
+	QVERIFY(Connect(harness, 100));
+	QCOMPARE(CachedSeqs(harness, u"c1"_s), Seqs(1, 9));
+	auto refuse = true;
+	harness.on(u"chat.delete"_s, [&](const Call &) {
+		return refuse ? Reply::Offline() : Reply::Ok();
+	});
+	auto failures = QSignalSpy(harness.session.get(), &Data::Session::actionFailed);
+	auto &messages = harness.messages();
+	auto &chats = harness.chats();
+	QCOMPARE(chats.chat(u"c1"_s)->lastMessage->seq, 9);
+	const auto text = messages.find(u"c1"_s, 9)->text;
+
+	messages.deleteMessage(u"c1"_s, 9, true);
+	QVERIFY(messages.find(u"c1"_s, 9) == nullptr);
+	QCOMPARE(chats.chat(u"c1"_s)->lastMessage->seq, 8);
+	QVERIFY(Test::WaitFor([&] { return failures.size() == 1; }));
+	QVERIFY(messages.find(u"c1"_s, 9) != nullptr);
+	QCOMPARE(messages.find(u"c1"_s, 9)->text, text);
+	QCOMPARE(chats.chat(u"c1"_s)->lastMessage->seq, 9);
+	QCOMPARE(failures[0][0].toString(), u"message.delete"_s);
+
+	// One in the middle of the window.
+	messages.deleteMessage(u"c1"_s, 5, false);
+	QVERIFY(messages.find(u"c1"_s, 5) == nullptr);
+	QVERIFY(Test::WaitFor([&] { return failures.size() == 2; }));
+	QVERIFY(messages.find(u"c1"_s, 5) != nullptr);
+	QCOMPARE(CachedSeqs(harness, u"c1"_s), Seqs(1, 9));
+	const auto &items = messages.history(u"c1"_s).items;
+	QVERIFY(std::is_sorted(items.cbegin(), items.cend(), [](const Message &a, const Message &b) {
+		return a.seq < b.seq;
+	}));
+
+	// Agreed: out of the timeline and the cache.
+	refuse = false;
+	messages.deleteMessage(u"c1"_s, 9, true);
+	Test::Settle();
+	QVERIFY(messages.find(u"c1"_s, 9) == nullptr);
+	QCOMPARE(chats.chat(u"c1"_s)->lastMessage->seq, 8);
+	QCOMPARE(CachedSeqs(harness, u"c1"_s), Seqs(1, 8));
+	QCOMPARE(failures.size(), 2);
 }
 
 QTEST_GUILESS_MAIN(TestSync)
