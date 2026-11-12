@@ -62,6 +62,8 @@ private Q_SLOTS:
 	void callbacksRespectGuardAndThread();
 	void persistsAcrossReopenAndWipes();
 	void schemaVersionAndNewerFile();
+	void damagedFileStartsOver();
+	void lockedFileIsNotDropped();
 
 private:
 	QTemporaryDir _dir;
@@ -448,6 +450,8 @@ void TestStorage::schemaVersionAndNewerFile() {
 	{
 		auto db = Database(path);
 		db.setMeta(u"pts"_s, 9);
+		db.putOutbox({ u"q1"_s, u"c1"_s, 100, Text(u"queued"_s) });
+		db.putDraft(u"c2"_s, Text(u"unsent"_s));
 		db.flushSync();
 	}
 	QVERIFY(Database::CurrentVersion() >= 1);
@@ -470,6 +474,14 @@ void TestStorage::schemaVersionAndNewerFile() {
 			db.meta(u"pts"_s, guard, std::move(done));
 		});
 		QVERIFY(pts.isUndefined());
+		// What the user wrote came over.
+		QCOMPARE(Texts(Read<QVector<QJsonObject>>([&](QObject *guard, Fn<void(QVector<QJsonObject>)> done) {
+			db.outbox(guard, std::move(done));
+		})), QStringList{ u"queued"_s });
+		const auto drafts = Read<QHash<QString, QJsonObject>>([&](QObject *guard, Fn<void(QHash<QString, QJsonObject>)> done) {
+			db.drafts(guard, std::move(done));
+		});
+		QCOMPARE(drafts.value(u"c2"_s).value(u"text"_s).toString(), u"unsent"_s);
 		db.setMeta(u"pts"_s, 10);
 		QCOMPARE(Read<QJsonValue>([&](QObject *guard, Fn<void(QJsonValue)> done) {
 			db.meta(u"pts"_s, guard, std::move(done));
@@ -477,6 +489,64 @@ void TestStorage::schemaVersionAndNewerFile() {
 		QCOMPARE(failures, 0);
 	}
 	QCOMPARE(version(), Database::CurrentVersion());
+	QVERIFY(!QFileInfo::exists(path + u".broken"_s));
+}
+
+void TestStorage::damagedFileStartsOver() {
+	const auto path = _dir.path() + u"/damaged/cache.db"_s;
+	QVERIFY(QDir().mkpath(QFileInfo(path).absolutePath()));
+	{
+		auto file = QFile(path);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(QByteArray(4096, 'x'));
+	}
+	auto db = Database(path);
+	db.setMeta(u"pts"_s, 3);
+	QCOMPARE(Read<QJsonValue>([&](QObject *guard, Fn<void(QJsonValue)> done) {
+		db.meta(u"pts"_s, guard, std::move(done));
+	}).toInt(), 3);
+	QVERIFY(!QFileInfo::exists(path + u".broken"_s));
+}
+
+// A file another process holds locked for a while (an antivirus, a backup
+// tool) is waited for and tried again, never dropped with what it holds.
+void TestStorage::lockedFileIsNotDropped() {
+	const auto path = _dir.path() + u"/locked/cache.db"_s;
+	{
+		auto db = Database(path);
+		db.setMeta(u"pts"_s, 7);
+		db.putOutbox({ u"q1"_s, u"c1"_s, 100, Text(u"queued"_s) });
+		db.flushSync();
+	}
+	auto holder = QSqlDatabase::addDatabase(u"QSQLITE"_s, u"holder"_s);
+	holder.setDatabaseName(path);
+	QVERIFY(holder.open());
+	{
+		auto query = QSqlQuery(holder);
+		QVERIFY(query.exec(u"PRAGMA locking_mode = EXCLUSIVE"_s));
+		QVERIFY(query.exec(u"BEGIN EXCLUSIVE"_s));
+		QVERIFY(query.exec(u"INSERT OR REPLACE INTO kv (key, value) VALUES ('held', 'x')"_s));
+	}
+	// Longer than one busy wait (5 s): the first try gives up.
+	QTimer::singleShot(6500, this, [&] {
+		QSqlQuery(holder).exec(u"COMMIT"_s);
+		holder.close();
+	});
+	auto db = Database(path);
+	auto pts = QJsonValue();
+	auto done = false;
+	auto guard = QObject();
+	db.meta(u"pts"_s, &guard, [&](QJsonValue value) {
+		pts = value;
+		done = true;
+	});
+	QVERIFY(QTest::qWaitFor([&] { return done; }, 30000));
+	QCOMPARE(pts.toInt(), 7);
+	QCOMPARE(Texts(Read<QVector<QJsonObject>>([&](QObject *guard, Fn<void(QVector<QJsonObject>)> done) {
+		db.outbox(guard, std::move(done));
+	})), QStringList{ u"queued"_s });
+	holder = QSqlDatabase();
+	QSqlDatabase::removeDatabase(u"holder"_s);
 }
 
 QTEST_GUILESS_MAIN(TestStorage)

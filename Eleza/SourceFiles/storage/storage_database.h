@@ -11,8 +11,10 @@
 //
 // Rows are stored as JSON documents produced by the Data:: models
 // (`toJson()` / `FromJson()`); this layer knows nothing about their fields.
-// The cache is disposable: a file written by a newer build is dropped and
-// recreated, and logout wipes it (Database::Wipe).
+// The cache is disposable: a damaged file or one written by a newer build is
+// dropped and recreated (the outbox and the drafts come over when they still
+// read), and logout wipes it (Database::Wipe). A file that only cannot be
+// opened now (locked, the disk full) is tried again, never dropped.
 #pragma once
 
 #include "base/weak_guard.h"

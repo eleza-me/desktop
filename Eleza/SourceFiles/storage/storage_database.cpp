@@ -2,8 +2,10 @@
 
 #include "base/platform_file.h"
 
+#include <iterator>
 #include <utility>
 
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
@@ -36,6 +38,20 @@ const char *const kMigrations[] = {
 constexpr auto kVersion = int(sizeof(kMigrations) / sizeof(kMigrations[0]));
 
 const char *const kTables[] = { "meta", "kv", "chats", "messages", "users", "outbox", "drafts" };
+
+// A file that could not be opened for a while (locked by an antivirus or a
+// backup tool, the disk full) is tried again: a few times at the start, then
+// now and then later. It is never dropped for that.
+constexpr int kOpenRetryDelaysMs[] = { 250, 1000, 2000 };
+constexpr auto kReopenAfterMs = qint64(30 * 1000);
+
+// SQLite's primary result codes that mean the file itself is no database
+// (any more): SQLITE_CORRUPT, SQLITE_NOTADB.
+[[nodiscard]] bool Damaged(const QSqlError &error) {
+	auto ok = false;
+	const auto code = error.nativeErrorCode().toInt(&ok) & 0xff;
+	return ok && (code == 11 || code == 26);
+}
 
 [[nodiscard]] QByteArray Serialize(const QJsonObject &object) {
 	return QJsonDocument(object).toJson(QJsonDocument::Compact);
@@ -88,7 +104,7 @@ public:
 
 	// False when the database is unusable: operations become no-ops.
 	[[nodiscard]] bool ready() {
-		if (!_opened) {
+		if (!_opened || (!_ready && _openedAt.hasExpired(kReopenAfterMs))) {
 			open();
 		}
 		return _ready;
@@ -98,6 +114,7 @@ public:
 		auto query = QSqlQuery(QSqlDatabase::database(_connection, false));
 		query.setForwardOnly(true);
 		if (!query.prepare(sql)) {
+			_lastError = query.lastError();
 			fail(query.lastError().text() + u" in "_s + sql);
 			return false;
 		}
@@ -105,6 +122,7 @@ public:
 			query.addBindValue(value);
 		}
 		if (!query.exec()) {
+			_lastError = query.lastError();
 			fail(query.lastError().text() + u" in "_s + sql);
 			return false;
 		}
@@ -160,57 +178,138 @@ public:
 	}
 
 private:
+	enum class OpenResult {
+		Ok,
+		Unavailable, // locked, no space, cannot be opened now: try again later
+		Replace,     // damaged, or written by a newer build
+	};
+
 	void open() {
 		_opened = true;
+		_openedAt.start();
 		base::platform::EnsureDirectory(QFileInfo(_path).absolutePath(), true);
-		for (auto attempt = 0; attempt != 2; ++attempt) {
-			if (tryOpen()) {
+		auto aside = QString();
+		auto retries = 0;
+		while (true) {
+			const auto result = tryOpen();
+			if (result == OpenResult::Ok) {
 				_ready = true;
+				if (!aside.isEmpty()) {
+					salvage(aside);
+					Database::Wipe(aside);
+				}
 				return;
 			}
-			// A damaged file or one written by a newer build: the cache is
-			// disposable, start over once.
-			{
-				auto db = QSqlDatabase::database(_connection, false);
-				db.close();
+			closeConnection();
+			if (result == OpenResult::Unavailable) {
+				if (retries == int(std::size(kOpenRetryDelaysMs))) {
+					break;
+				}
+				QThread::msleep(kOpenRetryDelaysMs[retries++]);
+			} else if (!aside.isEmpty()) {
+				break; // a fresh file is no better
+			} else if (aside = setAside(); aside.isEmpty()) {
+				break;
 			}
-			QSqlDatabase::removeDatabase(_connection);
+		}
+		if (!aside.isEmpty()) {
+			// Not even a new file opens: the old one goes back where it was.
 			Database::Wipe(_path);
+			moveFiles(aside, _path);
 		}
 		// Not the path: it has the name of the user's home folder in it.
 		fail(u"could not open the database file"_s);
 	}
 
-	[[nodiscard]] bool tryOpen() {
-		if (!QSqlDatabase::isDriverAvailable(u"QSQLITE"_s)) {
-			fail(u"the QSQLITE driver is not available"_s);
+	void closeConnection() {
+		{
+			auto db = QSqlDatabase::database(_connection, false);
+			db.close();
+		}
+		QSqlDatabase::removeDatabase(_connection);
+	}
+
+	// A file that cannot be used is moved out of the way (not deleted: what
+	// waits to be sent may still be read from it).
+	[[nodiscard]] QString setAside() {
+		const auto aside = _path + u".broken"_s;
+		Database::Wipe(aside);
+		return moveFiles(_path, aside) ? aside : QString();
+	}
+
+	static bool moveFiles(const QString &from, const QString &to) {
+		if (QFileInfo::exists(from) && !QFile::rename(from, to)) {
 			return false;
 		}
+		for (const auto suffix : { "-wal", "-shm", "-journal" }) {
+			const auto file = from + QLatin1StringView(suffix);
+			if (QFileInfo::exists(file)) {
+				QFile::rename(file, to + QLatin1StringView(suffix));
+			}
+		}
+		return true;
+	}
+
+	// The cache starts over, but not what the user wrote: the queued
+	// messages and the drafts come over from the old file when it still
+	// reads (a newer build's file, a file damaged elsewhere).
+	void salvage(const QString &aside) {
+		// Quietly: a file that does not read is no failure of this one.
+		const auto run = [&](const QString &sql, const QVariantList &values = {}) {
+			auto query = QSqlQuery(QSqlDatabase::database(_connection, false));
+			if (!query.prepare(sql)) {
+				return false;
+			}
+			for (const auto &value : values) {
+				query.addBindValue(value);
+			}
+			return query.exec();
+		};
+		if (!run(u"ATTACH DATABASE ? AS aside"_s, { aside })) {
+			return;
+		}
+		run(u"INSERT OR IGNORE INTO outbox (id, chat, created, data)"
+			" SELECT id, chat, created, data FROM aside.outbox ORDER BY created, position"_s);
+		run(u"INSERT OR IGNORE INTO drafts (chat, data) SELECT chat, data FROM aside.drafts"_s);
+		run(u"DETACH DATABASE aside"_s);
+	}
+
+	[[nodiscard]] OpenResult tryOpen() {
+		if (!QSqlDatabase::isDriverAvailable(u"QSQLITE"_s)) {
+			fail(u"the QSQLITE driver is not available"_s);
+			return OpenResult::Unavailable;
+		}
+		_lastError = QSqlError();
 		auto db = QSqlDatabase::addDatabase(u"QSQLITE"_s, _connection);
 		db.setDatabaseName(_path);
 		db.setConnectOptions(u"QSQLITE_BUSY_TIMEOUT=5000"_s);
 		if (!db.open()) {
 			fail(db.lastError().text());
-			return false;
+			return Damaged(db.lastError()) ? OpenResult::Replace : OpenResult::Unavailable;
 		}
 #ifndef Q_OS_WIN
 		QFile::setPermissions(_path, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
 #endif // !Q_OS_WIN
+		const auto failed = [&] {
+			return Damaged(_lastError) ? OpenResult::Replace : OpenResult::Unavailable;
+		};
 		auto query = QSqlQuery();
 		if (!exec(u"PRAGMA journal_mode = WAL"_s)
 			|| !exec(u"PRAGMA synchronous = NORMAL"_s)
-			|| !exec(u"PRAGMA user_version"_s, {}, &query)
-			|| !query.next()) {
-			return false;
+			|| !exec(u"PRAGMA user_version"_s, {}, &query)) {
+			return failed();
+		} else if (!query.next()) {
+			return OpenResult::Unavailable;
 		}
 		const auto version = query.value(0).toInt();
 		query = QSqlQuery();
 		if (version > kVersion || version < 0) {
-			return false;
+			return OpenResult::Replace;
 		}
 		for (auto i = version; i != kVersion; ++i) {
 			if (!db.transaction()) {
-				return false;
+				_lastError = db.lastError();
+				return failed();
 			}
 			auto ok = true;
 			const auto statements = QString::fromLatin1(kMigrations[i]).split(u';', Qt::SkipEmptyParts);
@@ -221,12 +320,16 @@ private:
 				}
 			}
 			ok = ok && exec(u"PRAGMA user_version = %1"_s.arg(i + 1));
-			if (!ok || !db.commit()) {
+			if (ok && !db.commit()) {
+				_lastError = db.lastError();
+				ok = false;
+			}
+			if (!ok) {
 				db.rollback();
-				return false;
+				return failed();
 			}
 		}
-		return true;
+		return OpenResult::Ok;
 	}
 
 	void fail(const QString &error) {
@@ -240,6 +343,8 @@ private:
 	Database *_owner = nullptr;
 	QString _path;
 	QString _connection;
+	QSqlError _lastError;     // of the statement that failed last
+	QElapsedTimer _openedAt;  // the last try to open the file
 	bool _opened = false;
 	bool _ready = false;
 
