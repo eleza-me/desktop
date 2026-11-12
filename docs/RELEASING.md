@@ -101,7 +101,8 @@ directory must belong to the user, be writable and not be under `/usr`.
 			"urls": [
 				"https://eleza.me/desktop/updates/Eleza-0.4.0-windows-x64.zip",
 				"https://github.com/eleza-me/desktop/releases/download/v0.4.0/Eleza-0.4.0-windows-x64.zip"
-			]
+			],
+			"files": { "Eleza.exe": "<64 hex digits>", "Updater.exe": "…", "…": "…" }
 		},
 		"linux-x86_64": { "size": 9123456, "sha256": "…", "urls": [ "…" ] }
 	}
@@ -113,6 +114,14 @@ directory must belong to the user, be writable and not be under `/usr`.
   `packaging/update-config.json`.
 * `published_at`: UTC, ending in `Z`.
 * `urls`: one to eight HTTPS addresses, tried in order.
+* `files`: the SHA-256 of every file in the package, by its path in the
+  archive (written by `make-update-manifest.py`). Under Program Files the
+  update is installed by the elevated `Updater.exe` of the installed version,
+  which verifies the signature of the manifest itself (the app keeps it next to
+  the unpacked package) and installs only exactly these files with these
+  hashes, and only for a version newer than its own
+  (`lib/install/install/install_verify.h`). A manifest without `files` cannot
+  update such a copy.
 * `update.json.sig`: the Ed25519 signature (64 bytes) of the bytes of
   `update.json`, as one line of base64. Made with
   `openssl pkeyutl -sign -rawin`; nothing may reformat the manifest after it was

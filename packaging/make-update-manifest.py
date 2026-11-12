@@ -33,6 +33,7 @@ import json
 import os
 import re
 import sys
+import zipfile
 
 VERSION = re.compile(r"^[0-9]{1,5}\.[0-9]{1,5}\.[0-9]{1,5}$")
 MAX_NOTES = 16 * 1024
@@ -63,6 +64,27 @@ def describe(path):
         for chunk in iter(lambda: stream.read(1 << 20), b""):
             digest.update(chunk)
     return os.path.getsize(path), digest.hexdigest()
+
+
+def list_files(path):
+    """The SHA-256 of every file in the package, by its path in the archive.
+    The elevated Windows updater installs only files that are listed here with
+    the same hash (lib/install/install/install_verify.h)."""
+    files = {}
+    with zipfile.ZipFile(path) as archive:
+        for info in archive.infolist():
+            if info.is_dir():
+                continue
+            if info.filename in files:
+                fail("a file twice in %s: %s" % (path, info.filename))
+            digest = hashlib.sha256()
+            with archive.open(info) as stream:
+                for chunk in iter(lambda: stream.read(1 << 20), b""):
+                    digest.update(chunk)
+            files[info.filename] = digest.hexdigest()
+    if not files:
+        fail("the package is empty: " + path)
+    return dict(sorted(files.items()))
 
 
 def main():
@@ -109,6 +131,7 @@ def main():
             "size": size,
             "sha256": sha256,
             "urls": [mirror.format(file=name, version=version) for mirror in mirrors],
+            "files": list_files(path),
         }
     if not packages:
         fail("no packages in " + arguments.packages)

@@ -3,6 +3,8 @@
 // unpack) against a local HTTP server: source and mirror fallback, resuming,
 // replayed and tampered manifests, packages that are not what was signed.
 #include "crypto/crypto_primitives.h"
+#include "install/install_swap.h"
+#include "install/install_verify.h"
 #include "test_fakes.h"
 #include "updater/updater_archive.h"
 #include "updater/updater_checker.h"
@@ -10,11 +12,15 @@
 #include "updater/updater_keys.h"
 #include "updater/updater_manifest.h"
 
+#include <QtCore/QCryptographicHash>
 #include <QtCore/QDirIterator>
 #include <QtCore/QTemporaryDir>
 #include <QtTest/QSignalSpy>
 
 #include <miniz.h>
+
+#include <cstring>
+#include <filesystem>
 
 #ifndef Q_OS_WIN
 #include <unistd.h>
@@ -351,6 +357,13 @@ private Q_SLOTS:
 
 	// ---- install
 	void detectInstall();
+
+	// ---- what the elevated Windows updater checks on its own
+	void portableHashes();
+	void portableEd25519();
+	void signedPackage();
+	void signedPackageRejects();
+	void installChecksSignedFiles();
 
 };
 
@@ -891,9 +904,23 @@ void TestUpdater::downloadsAndUnpacks() {
 	QCOMPARE(ReadBytes(ready + u"/Eleza"_s), QByteArray("#!/bin/sh\necho new\n"));
 	QCOMPARE(ReadBytes(ready + u"/lib/data.bin"_s).size(), 40003);
 	// The archive is gone, the unpacked version and the state file stay.
+	// So is the signed manifest, byte for byte, for the elevated Windows
+	// updater (install_verify.h).
 	QCOMPARE(
 		QDir(fixture.updatesDir()).entryList(QDir::AllEntries | QDir::NoDotAndDotDot),
-		QStringList({ u"0.2.0"_s, u"download"_s, u"state.json"_s }));
+		QStringList({
+			u"0.2.0"_s,
+			u"0.2.0.update.json"_s,
+			u"0.2.0.update.json.sig"_s,
+			u"download"_s,
+			u"state.json"_s,
+		}));
+	const auto manifest = ManifestJson({
+		.package = package,
+		.urls = { fixture.url("/pkg.zip") },
+	});
+	QCOMPARE(ReadBytes(ready + u".update.json"_s), manifest);
+	QCOMPARE(ReadBytes(ready + u".update.json.sig"_s), fixture.keys.sign(manifest));
 	QVERIFY(QDir(fixture.updatesDir() + u"/download"_s).isEmpty());
 	QCOMPARE(fixture.server.count("/pkg.zip"), 1);
 }
@@ -1707,6 +1734,314 @@ void TestUpdater::detectInstall() {
 	QVERIFY(!DetectInstall(u"/usr/bin/env"_s).selfUpdate);
 #endif // !Q_OS_WIN
 	QVERIFY(!DetectInstall(temp.filePath(u"missing/Eleza"_s)).selfUpdate);
+}
+
+// ---- what the elevated Windows updater checks on its own
+
+namespace {
+
+[[nodiscard]] QByteArray Bytes(const Install::Sha256Digest &digest) {
+	return QByteArray(reinterpret_cast<const char*>(digest.data()), qsizetype(digest.size()));
+}
+
+[[nodiscard]] Install::Ed25519PublicKey PublicKey(const QByteArray &bytes) {
+	auto result = Install::Ed25519PublicKey();
+	std::memcpy(result.data(), bytes.constData(), result.size());
+	return result;
+}
+
+[[nodiscard]] std::string_view View(const QByteArray &bytes) {
+	return std::string_view(bytes.constData(), std::size_t(bytes.size()));
+}
+
+// A manifest with "files" for the Windows package.
+[[nodiscard]] QByteArray SignedFilesJson(
+		const QString &version,
+		const QMap<QString, QByteArray> &files,
+		const QString &platform = u"windows-x64"_s) {
+	auto list = QJsonObject();
+	for (auto i = files.cbegin(); i != files.cend(); ++i) {
+		list.insert(i.key(), QString::fromLatin1(Crypto::Sha256(i.value()).toHex()));
+	}
+	return QJsonDocument(QJsonObject{
+		{ u"format"_s, 1 },
+		{ u"channel"_s, u"stable"_s },
+		{ u"version"_s, version },
+		{ u"published_at"_s, u"2026-10-11T10:00:00Z"_s },
+		{ u"notes"_s, QJsonObject{ { u"fa"_s, u"تازه‌ها \u2028 \"x\""_s }, { u"en"_s, u"x"_s } } },
+		{ u"packages"_s, QJsonObject{
+			{ platform, QJsonObject{
+				{ u"size"_s, 123 },
+				{ u"sha256"_s, QString(64, u'0') },
+				{ u"urls"_s, QJsonArray{ u"https://example.com/p.zip"_s } },
+				{ u"files"_s, list },
+			} },
+		} },
+	}).toJson(QJsonDocument::Indented);
+}
+
+} // namespace
+
+void TestUpdater::portableHashes() {
+	for (const auto size : { 0, 1, 3, 55, 56, 57, 63, 64, 65, 111, 112, 113, 127, 128, 129, 1000, 100003 }) {
+		const auto data = Crypto::RandomBytes(size);
+		QCOMPARE(Bytes(Install::Sha256::Of(View(data))), Crypto::Sha256(data));
+		// Fed in odd pieces.
+		auto sha256 = Install::Sha256();
+		auto sha512 = Install::Sha512();
+		for (auto i = 0; i < size; i += 7) {
+			const auto piece = std::min(7, size - i);
+			sha256.feed(data.constData() + i, std::size_t(piece));
+			sha512.feed(data.constData() + i, std::size_t(piece));
+		}
+		QCOMPARE(Bytes(sha256.finish()), Crypto::Sha256(data));
+		const auto digest = sha512.finish();
+		QCOMPARE(
+			QByteArray(reinterpret_cast<const char*>(digest.data()), 64),
+			QCryptographicHash::hash(data, QCryptographicHash::Sha512));
+	}
+	QCOMPARE(
+		Bytes(Install::Sha256::Of("abc")).toHex(),
+		QByteArray("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"));
+
+	QCOMPARE(Install::DecodeBase64(" aGVsbG8= \n"), std::optional<std::string>("hello"));
+	QCOMPARE(Install::DecodeBase64("aGk="), std::optional<std::string>("hi"));
+	QVERIFY(!Install::DecodeBase64("aGk"));
+	QVERIFY(!Install::DecodeBase64("a=Gk"));
+	QVERIFY(!Install::DecodeBase64("!!!!"));
+	QVERIFY(!Install::DecodeBase64(""));
+	QVERIFY(Install::ParseSha256Hex(std::string(64, 'A')));
+	QVERIFY(!Install::ParseSha256Hex(std::string(63, 'a')));
+	QVERIFY(!Install::ParseSha256Hex(std::string(63, 'a') + 'g'));
+}
+
+void TestUpdater::portableEd25519() {
+	// RFC 8032, 7.1, test 1 (the empty message).
+	const auto vectorKey = QByteArray::fromHex(
+		"d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a");
+	const auto vectorSignature = QByteArray::fromHex(
+		"e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b");
+	QVERIFY(Install::Ed25519Verify(PublicKey(vectorKey), "", View(vectorSignature)));
+	QVERIFY(!Install::Ed25519Verify(PublicKey(vectorKey), "x", View(vectorSignature)));
+
+	for (auto round = 0; round != 40; ++round) {
+		const auto privateKey = Crypto::Ed25519GeneratePrivate();
+		const auto key = PublicKey(Crypto::Ed25519PublicFromPrivate(privateKey));
+		const auto message = Crypto::RandomBytes(round * 37);
+		const auto signature = Crypto::Ed25519Sign(privateKey, message);
+		QVERIFY(Install::Ed25519Verify(key, View(message), View(signature)));
+		if (!message.isEmpty()) {
+			auto changed = message;
+			changed[round % changed.size()] ^= char(1 << (round % 8));
+			QVERIFY(!Install::Ed25519Verify(key, View(changed), View(signature)));
+		}
+		auto badSignature = signature;
+		badSignature[round % 64] ^= char(0x10);
+		QVERIFY(!Install::Ed25519Verify(key, View(message), View(badSignature)));
+		auto otherKey = key;
+		otherKey[round % 31] ^= 0x01;
+		QVERIFY(!Install::Ed25519Verify(otherKey, View(message), View(signature)));
+		QVERIFY(!Install::Ed25519Verify(key, View(message), View(signature.left(63))));
+
+		// The same signature with S + L (malleated): refused, as by OpenSSL.
+		static const auto L = QByteArray::fromHex(
+			"edd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010");
+		auto malleated = signature;
+		auto carry = 0;
+		for (auto i = 0; i != 32; ++i) {
+			const auto sum = int(uchar(signature[32 + i])) + int(uchar(L[i])) + carry;
+			malleated[32 + i] = char(sum & 0xff);
+			carry = sum >> 8;
+		}
+		QVERIFY(!Crypto::Ed25519Verify(Crypto::Ed25519PublicFromPrivate(privateKey), message, malleated));
+		QVERIFY(!Install::Ed25519Verify(key, View(message), View(malleated)));
+	}
+}
+
+void TestUpdater::signedPackage() {
+	const auto keys = Keys();
+	const auto other = Keys();
+	const auto manifest = SignedFilesJson(u"0.5.0"_s, {
+		{ u"Eleza.exe"_s, QByteArray("new exe") },
+		{ u"platforms/qwindows.dll"_s, QByteArray("plugin") },
+	});
+	const auto signature = keys.sign(manifest);
+	auto error = std::string();
+	const auto trusted = Install::DecodePublicKeys({
+		std::string_view(other.publicKey.toBase64().constData()),
+		"not a key",
+		std::string_view(keys.publicKey.toBase64().constData()),
+	});
+	QCOMPARE(trusted.size(), std::size_t(2));
+	const auto package = Install::ReadSignedPackage(
+		View(manifest),
+		View(signature),
+		trusted,
+		"windows-x64",
+		error);
+	QVERIFY2(package.has_value(), error.c_str());
+	QCOMPARE(package->version, std::string("0.5.0"));
+	QCOMPARE(package->files.size(), std::size_t(2));
+	QCOMPARE(
+		Bytes(package->files.at("platforms/qwindows.dll")),
+		Crypto::Sha256("plugin"));
+
+	QCOMPARE(Install::CompareVersions("0.5.0", "0.4.9"), std::optional<int>(1));
+	QCOMPARE(Install::CompareVersions("0.10.0", "0.9.0"), std::optional<int>(1));
+	QCOMPARE(Install::CompareVersions("1.2.3", "1.2.3"), std::optional<int>(0));
+	QCOMPARE(Install::CompareVersions("1.2.3", "1.3.0"), std::optional<int>(-1));
+	QVERIFY(!Install::CompareVersions("1.2", "1.2.0"));
+	QVERIFY(!Install::CompareVersions("1.2.x", "1.2.0"));
+	QVERIFY(!Install::CompareVersions("1..2", "1.2.0"));
+}
+
+void TestUpdater::signedPackageRejects() {
+	const auto keys = Keys();
+	const auto trusted = std::vector<Install::Ed25519PublicKey>{ PublicKey(keys.publicKey) };
+	const auto files = QMap<QString, QByteArray>{ { u"Eleza.exe"_s, QByteArray("x") } };
+	const auto read = [&](const QByteArray &manifest, const QByteArray &signature) {
+		auto error = std::string();
+		const auto result = Install::ReadSignedPackage(
+			View(manifest),
+			View(signature),
+			trusted,
+			"windows-x64",
+			error);
+		// A refusal always says why (one without a reason counts as a pass).
+		return result.has_value() || error.empty();
+	};
+	const auto good = SignedFilesJson(u"0.5.0"_s, files);
+	QVERIFY(read(good, keys.sign(good)));
+
+	// Not signed by the key, changed after signing, no signature at all.
+	QVERIFY(!read(good, Keys().sign(good)));
+	auto changed = good;
+	changed.replace("0.5.0", "0.6.0");
+	QVERIFY(!read(changed, keys.sign(good)));
+	QVERIFY(!read(good, QByteArray()));
+	QVERIFY(!read(good, "bm90IGEgc2lnbmF0dXJl\n"));
+
+	// Signed, but not something to install from.
+	const auto rejected = [&](const QByteArray &manifest) {
+		return !read(manifest, keys.sign(manifest));
+	};
+	QVERIFY(rejected(SignedFilesJson(u"0.5.0"_s, files, u"linux-x86_64"_s)));
+	QVERIFY(rejected(SignedFilesJson(u"0.5"_s, files)));
+	QVERIFY(rejected(SignedFilesJson(u"0.5.0"_s, {})));
+	QVERIFY(rejected(SignedFilesJson(u"0.5.0"_s, { { u"../Eleza.exe"_s, QByteArray("x") } })));
+	QVERIFY(rejected(SignedFilesJson(u"0.5.0"_s, { { u"_update_0.5.0/x"_s, QByteArray("x") } })));
+	auto format = good;
+	format.replace("\"format\": 1", "\"format\": 2");
+	QVERIFY(format != good);
+	QVERIFY(rejected(format));
+	QVERIFY(rejected(good + "x"));
+	QVERIFY(rejected("[]"));
+	QVERIFY(rejected("{\"format\": 1, \"format\": 1, \"version\": \"0.5.0\"}"));
+	QVERIFY(rejected(
+		"{\"format\":1,\"version\":\"0.5.0\",\"packages\":{\"windows-x64\":{\"files\":"
+		"{\"Eleza.exe\":\"zz\"}}}}"));
+	// The smallest that passes: what is read is only what is needed.
+	const auto minimal = QByteArray(
+		"{\"format\":1,\"version\":\"0.5.0\",\"packages\":{\"windows-x64\":{\"files\":"
+		"{\"Eleza.exe\":\"" + QByteArray(64, 'a') + "\"}}},\"n\":[1.5e3,-0,true,null,\"\\ud83d\\ude00\"]}");
+	QVERIFY(read(minimal, keys.sign(minimal)));
+	const auto lone = QByteArray(
+		"{\"format\":1,\"version\":\"0.5.0\",\"x\":\"\\ud83d\",\"packages\":{\"windows-x64\":{\"files\":"
+		"{\"Eleza.exe\":\"" + QByteArray(64, 'a') + "\"}}}}");
+	QVERIFY(rejected(lone));
+}
+
+void TestUpdater::installChecksSignedFiles() {
+	auto temp = QTemporaryDir();
+	QVERIFY(temp.isValid());
+	const auto root = Install::PathFromUtf8(temp.path().toStdString());
+	const auto write = [](const Install::Path &path, const QByteArray &bytes) {
+		std::filesystem::create_directories(path.parent_path());
+		auto file = QFile(QString::fromStdString(Install::PathToUtf8(path)));
+		return file.open(QIODevice::WriteOnly | QIODevice::Truncate)
+			&& file.write(bytes) == bytes.size();
+	};
+	const auto read = [](const Install::Path &path) {
+		auto file = QFile(QString::fromStdString(Install::PathToUtf8(path)));
+		return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+	};
+	const auto fresh = QMap<QString, QByteArray>{
+		{ u"Eleza"_s, QByteArray("new exe") },
+		{ u"eleza-files.list"_s, QByteArray("Eleza\nlib/data.bin\neleza-files.list\n") },
+		{ u"lib/data.bin"_s, QByteArray(5000, 'd') },
+	};
+	const auto keys = Keys();
+	const auto manifest = SignedFilesJson(u"0.2.0"_s, fresh);
+	auto error = std::string();
+	const auto package = Install::ReadSignedPackage(
+		View(manifest),
+		View(keys.sign(manifest)),
+		{ PublicKey(keys.publicKey) },
+		"windows-x64",
+		error);
+	QVERIFY2(package.has_value(), error.c_str());
+
+	// One attempt: the installed copy, a staged tree (changed by `tamper`),
+	// the swap with the check of the elevated updater.
+	auto attempt = 0;
+	const auto run = [&](Fn<void(const Install::Path &staged)> tamper) {
+		const auto base = root / std::to_string(++attempt);
+		const auto install = base / "app";
+		const auto staged = base / "updates" / "0.2.0";
+		write(install / "Eleza", "old exe");
+		write(install / "eleza-files.list", "Eleza\neleza-files.list\n");
+		for (auto i = fresh.cbegin(); i != fresh.cend(); ++i) {
+			write(staged / i.key().toStdString(), i.value());
+		}
+		if (tamper) {
+			tamper(staged);
+		}
+		auto ops = Install::FileOps();
+		auto request = Install::Request();
+		request.installDir = install;
+		request.stagedDir = staged;
+		request.version = "0.2.0";
+		request.lastFile = "Eleza";
+		request.verify = [&](
+				const Install::Path &incoming,
+				const std::vector<std::string> &files,
+				std::string &error) {
+			return Install::VerifyFiles(ops, incoming, files, *package, error);
+		};
+		const auto result = Install::Apply(request, ops);
+		// Refused: the old version is untouched and nothing is left behind.
+		if (result.status != Install::Status::Installed) {
+			[&] {
+				QCOMPARE(read(install / "Eleza"), QByteArray("old exe"));
+				QVERIFY(!std::filesystem::exists(install / "lib"));
+				QVERIFY(!std::filesystem::exists(install / "_update_0.2.0"));
+				QVERIFY(!std::filesystem::exists(install / Install::kJournalName));
+			}();
+		} else {
+			[&] {
+				QCOMPARE(read(install / "Eleza"), QByteArray("new exe"));
+				QCOMPARE(read(install / "lib" / "data.bin"), QByteArray(5000, 'd'));
+			}();
+		}
+		return result.status;
+	};
+	QCOMPARE(run(nullptr), Install::Status::Installed);
+	// Another executable put into the staging directory.
+	QCOMPARE(run([&](const Install::Path &staged) {
+		write(staged / "Eleza", "evil exe");
+	}), Install::Status::Unchanged);
+	// A file the manifest does not list (a DLL to be loaded by the app).
+	QCOMPARE(run([&](const Install::Path &staged) {
+		write(staged / "version.dll", "evil");
+	}), Install::Status::Unchanged);
+	// A listed file is missing.
+	QCOMPARE(run([&](const Install::Path &staged) {
+		std::filesystem::remove(staged / "lib" / "data.bin");
+	}), Install::Status::Unchanged);
+	// The same bytes under another name.
+	QCOMPARE(run([&](const Install::Path &staged) {
+		std::filesystem::rename(staged / "lib" / "data.bin", staged / "lib" / "other.bin");
+	}), Install::Status::Unchanged);
 }
 
 QTEST_GUILESS_MAIN(TestUpdater)
