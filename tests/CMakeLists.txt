@@ -36,6 +36,8 @@ eleza_add_test(test_lang_codegen ui/test_lang_codegen.cpp LIBS codegen_lang_lib)
 eleza_add_test(test_lang_format ui/test_lang_format.cpp LIBS ElezaLang)
 eleza_add_test(test_ui_text ui/test_ui_text.cpp LIBS ElezaUi Qt6::Gui GUI)
 eleza_add_test(test_ui_style ui/test_ui_style.cpp LIBS ElezaUi Qt6::Gui GUI)
+# Tab stops, Space / Enter and what screen readers see (ui/accessibility.h).
+eleza_add_test(test_ui_accessibility ui/test_ui_accessibility.cpp LIBS ElezaUi Qt6::Gui GUI)
 # Telegram's emoji: the pack reader against the real pack, the parser, the tables.
 eleza_add_test(test_emoji ui/test_emoji.cpp LIBS ElezaUi Qt6::Gui GUI)
 target_compile_definitions(test_emoji PRIVATE

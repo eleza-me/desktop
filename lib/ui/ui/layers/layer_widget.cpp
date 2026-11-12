@@ -1,5 +1,6 @@
 #include "ui/layers/layer_widget.h"
 
+#include "ui/accessibility.h"
 #include "ui/layers/box_content.h"
 #include "ui/layers/box_layer_widget.h"
 #include "ui/painter.h"
@@ -11,6 +12,11 @@
 #include <algorithm>
 
 namespace Ui {
+
+bool LayerWidget::focusNextPrevChild(bool next) {
+	Accessibility::FocusNextInRegions({ this }, next);
+	return true;
+}
 
 LayerStackWidget::LayerStackWidget(QWidget *parent) : RpWidget(parent) {
 	hide();

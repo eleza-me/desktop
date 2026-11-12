@@ -130,6 +130,7 @@ Cover::Cover(QWidget *parent, Window::SessionController *controller)
 	_follow->setClickedCallback([this] { Q_EMIT followClicked(); });
 	_message->setClickedCallback([this] { Q_EMIT messageClicked(); });
 	_more->setClickedCallback([this] { Q_EMIT moreClicked(); });
+	_more->setAccessibleName(tr::lng_more(tr::now));
 	_edit->setClickedCallback([this] { Q_EMIT editClicked(); });
 	_share->setClickedCallback([this] { Q_EMIT shareClicked(); });
 	_requests->setClickedCallback([this] { Q_EMIT requestsClicked(); });

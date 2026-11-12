@@ -595,6 +595,16 @@ public:
 		resize(width(), st::settingsAboutHeight);
 	}
 
+	QString accessibilityName() const override {
+		return tr::lng_settings_app_name(tr::now);
+	}
+	QString accessibilityValue() const override {
+		return tr::lng_boxes_about_version(
+			tr::now,
+			lt_version,
+			Lang::Num(QString::fromLatin1(ELEZA_VERSION_STRING)));
+	}
+
 protected:
 	void paintEvent(QPaintEvent *e) override {
 		Q_UNUSED(e);

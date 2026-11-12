@@ -54,6 +54,10 @@ motionFast: 150ms;
 motion: 260ms;
 motionSlow: 380ms;
 
+// ---- keyboard focus (ui/accessibility.h)
+focusRingFg: borderFocus;
+focusRingWidth: 2px;
+
 // ---- shared structs
 RippleAnimation {
 	color: color;

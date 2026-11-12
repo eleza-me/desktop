@@ -5,6 +5,8 @@
 #include "ui/widgets/misc_widgets.h"
 #include "styles/style_window.h"
 
+#include <QtGui/QFocusEvent>
+#include <QtGui/QKeyEvent>
 #include <QtGui/QMouseEvent>
 
 namespace Window {
@@ -14,6 +16,8 @@ NavRail::NavRail(QWidget *parent) : RpWidget(parent) {
 		_items[i].tab = Tab(i);
 	}
 	setMouseTracking(true);
+	Ui::Accessibility::SetTabStop(this);
+	setAccessibleName(tr::lng_a11y_navigation(tr::now));
 	resize(st::navRailWidth, height());
 }
 
@@ -50,6 +54,10 @@ void NavRail::setActive(Tab tab) {
 	if (_active == tab) {
 		return;
 	}
+	auto selected = QAccessible::State();
+	selected.selected = true;
+	Ui::Accessibility::StateChanged(this, selected, int(_active));
+	Ui::Accessibility::StateChanged(this, selected, int(tab));
 	_previousActive = int(_active);
 	_active = tab;
 	_activeAnimation.start(
@@ -67,7 +75,96 @@ void NavRail::setBadge(Tab tab, int count, bool muted) {
 		item.badge = count;
 		item.badgeMuted = muted;
 		update(item.rect);
+		Ui::Accessibility::NameChanged(this, int(tab));
 	}
+}
+
+int NavRail::accessibilityItemsCount() const {
+	return kTabsCount;
+}
+
+Ui::Accessibility::Item NavRail::accessibilityItem(int index) const {
+	const auto &item = _items[index];
+	return {
+		.name = label(item.tab),
+		.description = (item.badge > 0)
+			? tr::lng_unread_messages(tr::now, lt_count, item.badge)
+			: QString(),
+		.role = QAccessible::PageTab,
+		.rect = item.rect,
+		.selected = (item.tab == _active),
+	};
+}
+
+void NavRail::accessibilityItemPress(int index) {
+	if (index >= 0 && index < kTabsCount) {
+		emit tabChosen(_items[index].tab);
+	}
+}
+
+int NavRail::accessibilityFocusedItem() const {
+	return _keyboardIndex;
+}
+
+QRect NavRail::pillRect(const Item &item) const {
+	const auto pill = st::navRailPillSize;
+	return QRect(
+		item.rect.x() + (item.rect.width() - pill.width()) / 2,
+		item.rect.y() + st::navRailPillTop,
+		pill.width(),
+		pill.height());
+}
+
+void NavRail::setKeyboardIndex(int index) {
+	index = std::clamp(index, 0, kTabsCount - 1);
+	if (_keyboardIndex != index) {
+		_keyboardIndex = index;
+		update();
+	}
+	Ui::Accessibility::ItemFocused(this, index);
+}
+
+void NavRail::focusInEvent(QFocusEvent *e) {
+	Ui::Accessibility::TabStopFocusIn(this, e->reason(), _keyboardFocus);
+	if (_keyboardIndex < 0) {
+		_keyboardIndex = int(_active);
+	}
+	if (_keyboardFocus) {
+		setKeyboardIndex(_keyboardIndex);
+	}
+	update();
+	RpWidget::focusInEvent(e);
+}
+
+void NavRail::focusOutEvent(QFocusEvent *e) {
+	update();
+	RpWidget::focusOutEvent(e);
+}
+
+void NavRail::keyPressEvent(QKeyEvent *e) {
+	const auto modifiers = e->modifiers()
+		& (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier);
+	if (!_keyboardFocus || modifiers) {
+		RpWidget::keyPressEvent(e);
+		return;
+	}
+	switch (e->key()) {
+	case Qt::Key_Up: setKeyboardIndex(_keyboardIndex - 1); break;
+	case Qt::Key_Down: setKeyboardIndex(_keyboardIndex + 1); break;
+	case Qt::Key_Home: setKeyboardIndex(0); break;
+	case Qt::Key_End: setKeyboardIndex(kTabsCount - 1); break;
+	case Qt::Key_Space:
+	case Qt::Key_Return:
+	case Qt::Key_Enter:
+		if (!e->isAutoRepeat() && _keyboardIndex >= 0) {
+			emit tabChosen(_items[_keyboardIndex].tab);
+		}
+		break;
+	default:
+		RpWidget::keyPressEvent(e);
+		return;
+	}
+	e->accept();
 }
 
 void NavRail::layoutItems() {
@@ -173,11 +270,7 @@ void NavRail::paintEvent(QPaintEvent *e) {
 		auto &item = _items[i];
 		const auto active = (item.tab == _active);
 		const auto over = (i == _over);
-		const auto pillRect = QRect(
-			item.rect.x() + (item.rect.width() - pill.width()) / 2,
-			item.rect.y() + st::navRailPillTop,
-			pill.width(),
-			pill.height());
+		const auto pillRect = this->pillRect(item);
 		const auto activeRatio = active
 			? progress
 			: (i == _previousActive)
@@ -260,6 +353,15 @@ void NavRail::paintEvent(QPaintEvent *e) {
 				: (pillRect.x() + pillRect.width() - 14);
 			Ui::PaintDot(p, QPoint(x, pillRect.y() + 6), 8, st::brandPrimary);
 		}
+	}
+	if (_keyboardFocus && hasFocus() && _keyboardIndex >= 0) {
+		// Around the pill and the label of the keyboard's tab.
+		const auto &item = _items[_keyboardIndex];
+		Ui::Accessibility::PaintFocusRing(
+			p,
+			QRectF(item.rect.marginsRemoved(
+				QMargins(st::spaceXs, 0, st::spaceXs, 0))),
+			st::radiusMd);
 	}
 }
 

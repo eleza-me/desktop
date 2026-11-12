@@ -2,6 +2,7 @@
 
 #include "ui/painter.h"
 
+#include <QtGui/QFocusEvent>
 #include <QtGui/QKeyEvent>
 #include <QtGui/QMouseEvent>
 
@@ -13,6 +14,7 @@ TabBar::TabBar(QWidget *parent, const style::TabBar &st)
 : RpWidget(parent)
 , _st(st) {
 	setMouseTracking(true);
+	Accessibility::SetTabStop(this);
 	resize(width(), _st.height);
 }
 
@@ -30,6 +32,31 @@ void TabBar::setTabs(const QStringList &tabs) {
 	_indicatorAnimation.stop();
 	layoutTabs(width());
 	update();
+	Accessibility::ItemsChanged(this);
+}
+
+Accessibility::Item TabBar::accessibilityItem(int index) const {
+	if (index < 0 || index >= count()) {
+		return {};
+	}
+	return {
+		.name = _tabs[index].text,
+		.description = QString(),
+		.role = QAccessible::PageTab,
+		.rect = tabRect(index),
+		.selected = (index == _active),
+	};
+}
+
+void TabBar::accessibilityItemPress(int index) {
+	choose(index);
+}
+
+void TabBar::choose(int index) {
+	if (index >= 0 && index < count() && index != _active) {
+		setActive(index);
+		emit activeChanged(_active);
+	}
 }
 
 void TabBar::setActive(int index, anim::type animated) {
@@ -43,7 +70,14 @@ void TabBar::setActive(int index, anim::type animated) {
 		_indicatorWidthFrom,
 		was.second,
 		progress);
+	auto selected = QAccessible::State();
+	selected.selected = true;
+	Accessibility::StateChanged(this, selected, _active);
 	_active = index;
+	Accessibility::StateChanged(this, selected, _active);
+	if (hasFocus()) {
+		Accessibility::ItemFocused(this, _active);
+	}
 	if (animated == anim::type::normal) {
 		_indicatorAnimation.start(
 			[this] { update(); },
@@ -188,14 +222,30 @@ void TabBar::keyPressEvent(QKeyEvent *e) {
 	const auto forward = style::RightToLeft() ? Qt::Key_Left : Qt::Key_Right;
 	const auto backward = style::RightToLeft() ? Qt::Key_Right : Qt::Key_Left;
 	if (e->key() == forward && _active + 1 < count()) {
-		setActive(_active + 1);
-		emit activeChanged(_active);
+		choose(_active + 1);
 	} else if (e->key() == backward && _active > 0) {
-		setActive(_active - 1);
-		emit activeChanged(_active);
+		choose(_active - 1);
+	} else if (e->key() == Qt::Key_Home && count() > 0) {
+		choose(0);
+	} else if (e->key() == Qt::Key_End && count() > 0) {
+		choose(count() - 1);
 	} else {
 		RpWidget::keyPressEvent(e);
 	}
+}
+
+void TabBar::focusInEvent(QFocusEvent *e) {
+	Accessibility::TabStopFocusIn(this, e->reason(), _keyboardFocus);
+	if (_keyboardFocus) {
+		Accessibility::ItemFocused(this, _active);
+	}
+	update();
+	RpWidget::focusInEvent(e);
+}
+
+void TabBar::focusOutEvent(QFocusEvent *e) {
+	update();
+	RpWidget::focusOutEvent(e);
 }
 
 void TabBar::paintEvent(QPaintEvent *e) {
@@ -272,6 +322,13 @@ void TabBar::paintEvent(QPaintEvent *e) {
 			_st.indicatorHeight),
 		radius,
 		radius);
+	if (_keyboardFocus && hasFocus() && _active >= 0 && _active < count()) {
+		Accessibility::PaintFocusRing(
+			p,
+			QRectF(tabRect(_active).marginsRemoved(
+				QMargins(0, _st.rippleSkip, 0, _st.rippleSkip))),
+			_st.rippleRadius);
+	}
 }
 
 } // namespace Ui

@@ -1625,6 +1625,15 @@
 "lng_title_close" = "بستن";
 "lng_title_use_system" = "استفاده از نوار عنوان سیستم";
 "lng_title_use_system_about" = "پس از اجرای دوبارهٔ برنامه اعمال می‌شود.";
+// ---- accessibility ----
+// What screen readers say of painted items.
+"lng_a11y_separator" = "، ";
+"lng_a11y_navigation" = "ناوبری";
+"lng_a11y_story_unseen" = "استوری دیده‌نشده";
+"lng_a11y_story_muted" = "پنهان‌شده";
+"lng_a11y_previous" = "قبلی";
+"lng_a11y_next" = "بعدی";
+"lng_a11y_playlist" = "فهرست پخش";
 // ---- update ----
 "lng_update_title" = "به‌روزرسانی";
 "lng_update_button" = "به‌روزرسانی الزا";

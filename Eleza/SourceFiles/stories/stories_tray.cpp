@@ -19,6 +19,8 @@
 
 #include <QtCore/QDateTime>
 #include <QtGui/QContextMenuEvent>
+#include <QtGui/QFocusEvent>
+#include <QtGui/QKeyEvent>
 #include <QtGui/QMouseEvent>
 #include <QtGui/QWheelEvent>
 
@@ -47,11 +49,17 @@ Tray::Tray(QWidget *parent, Window::SessionController *controller)
 	[this](const QString &) { update(); },
 	this)) {
 	setMouseTracking(true);
+	Ui::Accessibility::SetTabStop(this);
+	setAccessibleName(tr::lng_stories_tray_label(tr::now));
 	auto &stories = controller->session().data().stories();
 	connect(&stories, &Data::Stories::trayChanged, this, [this] {
 		updateVisibility();
 		setScroll(_scroll);
+		if (_keyboardIndex >= count()) {
+			_keyboardIndex = count() - 1;
+		}
 		update();
+		Ui::Accessibility::ItemsChanged(this);
 	});
 	connect(&stories, &Data::Stories::postingChanged, this, [this] {
 		update();
@@ -196,6 +204,138 @@ Tray::Hit Tray::hitAt(QPoint point) const {
 	return {};
 }
 
+QString Tray::nameAt(int index) const {
+	const auto &stories = _controller->session().data().stories();
+	if (index == 0) {
+		const auto &posting = stories.posting();
+		return posting.active
+			? tr::lng_stories_posting(tr::now)
+			: posting.failed
+			? tr::lng_stories_post_failed(tr::now)
+			: tr::lng_stories_yours(tr::now);
+	}
+	const auto &tray = stories.tray();
+	if (index < 0 || index > tray.size()) {
+		return QString();
+	}
+	const auto &entry = tray[index - 1];
+	const auto card = _controller->session().data().users().peek(entry.user.id);
+	return ShortName(card.valid() ? card : entry.user);
+}
+
+int Tray::accessibilityItemsCount() const {
+	return isHidden() ? 0 : count();
+}
+
+Ui::Accessibility::Item Tray::accessibilityItem(int index) const {
+	auto result = Ui::Accessibility::Item{
+		.name = nameAt(index),
+		.description = QString(),
+		.role = QAccessible::ListItem,
+		.rect = itemRect(index).intersected(rect()),
+	};
+	const auto &stories = _controller->session().data().stories();
+	if (index > 0 && index <= stories.tray().size()) {
+		const auto &entry = stories.tray()[index - 1];
+		const auto ring = Data::RingStateOf(entry).ring();
+		result.description = entry.muted
+			? tr::lng_a11y_story_muted(tr::now)
+			: (ring == Data::StoryRing::Unseen
+				|| ring == Data::StoryRing::CloseFriends)
+			? tr::lng_a11y_story_unseen(tr::now)
+			: QString();
+	}
+	return result;
+}
+
+void Tray::accessibilityItemPress(int index) {
+	if (index >= 0 && index < count()) {
+		activate({ Part::Item, index });
+	}
+}
+
+int Tray::accessibilityFocusedItem() const {
+	return _keyboardIndex;
+}
+
+void Tray::setKeyboardIndex(int index) {
+	const auto total = count();
+	if (total <= 0) {
+		return;
+	}
+	index = std::clamp(index, 0, total - 1);
+	_keyboardIndex = index;
+	// Keep the circle on screen (the strip scrolls in logical order).
+	const auto left = st::storiesTrayPadding.left()
+		+ index * st::storiesTrayItemWidth;
+	const auto right = left + st::storiesTrayItemWidth;
+	if (left < _scroll) {
+		setScroll(left - st::storiesTrayPadding.left());
+	} else if (right > _scroll + width()) {
+		setScroll(right + st::storiesTrayPadding.right() - width());
+	}
+	update();
+	Ui::Accessibility::ItemFocused(this, index);
+}
+
+void Tray::focusInEvent(QFocusEvent *e) {
+	Ui::Accessibility::TabStopFocusIn(this, e->reason(), _keyboardFocus);
+	if (_keyboardIndex < 0 || _keyboardIndex >= count()) {
+		// The first circle on screen.
+		_keyboardIndex = std::clamp(
+			(_scroll + st::storiesTrayItemWidth / 2)
+				/ st::storiesTrayItemWidth,
+			0,
+			std::max(count() - 1, 0));
+	}
+	if (_keyboardFocus) {
+		setKeyboardIndex(_keyboardIndex);
+	}
+	update();
+	RpWidget::focusInEvent(e);
+}
+
+void Tray::focusOutEvent(QFocusEvent *e) {
+	update();
+	RpWidget::focusOutEvent(e);
+}
+
+void Tray::keyPressEvent(QKeyEvent *e) {
+	const auto modifiers = e->modifiers()
+		& (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier);
+	if (!_keyboardFocus || modifiers || _keyboardIndex < 0) {
+		RpWidget::keyPressEvent(e);
+		return;
+	}
+	// The arrows go the way they point on screen.
+	const auto forward = style::RightToLeft() ? Qt::Key_Left : Qt::Key_Right;
+	const auto back = style::RightToLeft() ? Qt::Key_Right : Qt::Key_Left;
+	const auto key = e->key();
+	if (key == forward) {
+		setKeyboardIndex(_keyboardIndex + 1);
+	} else if (key == back) {
+		setKeyboardIndex(_keyboardIndex - 1);
+	} else if (key == Qt::Key_Home) {
+		setKeyboardIndex(0);
+	} else if (key == Qt::Key_End) {
+		setKeyboardIndex(count() - 1);
+	} else if (key == Qt::Key_Space
+		|| key == Qt::Key_Return
+		|| key == Qt::Key_Enter) {
+		if (!e->isAutoRepeat()) {
+			activate({ Part::Item, _keyboardIndex });
+		}
+	} else if (key == Qt::Key_Menu
+		|| (key == Qt::Key_F10 && (e->modifiers() & Qt::ShiftModifier))) {
+		const auto rect = userpicRect(_keyboardIndex);
+		showMenu(_keyboardIndex, mapToGlobal(rect.center()));
+	} else {
+		RpWidget::keyPressEvent(e);
+		return;
+	}
+	e->accept();
+}
+
 void Tray::paintEvent(QPaintEvent *e) {
 	Q_UNUSED(e);
 	auto p = Painter(this);
@@ -214,7 +354,6 @@ void Tray::paintEvent(QPaintEvent *e) {
 			p.drawRoundedRect(item.adjusted(2, 2, -2, -2), 12, 12);
 		}
 		const auto userpic = userpicRect(i);
-		const auto userId = userIdAt(i);
 		auto name = QString();
 		auto nameFg = st::storiesTrayNameFg->c;
 		auto alpha = 1.;
@@ -251,8 +390,7 @@ void Tray::paintEvent(QPaintEvent *e) {
 			p.setOpacity(alpha);
 			PaintRing(p, userpic, state.ring());
 			_userpics->paint(p, userpic, entry.user);
-			const auto card = _controller->session().data().users().peek(userId);
-			name = ShortName(card.valid() ? card : entry.user);
+			name = nameAt(i);
 			const auto unseen = (state.ring() == Data::StoryRing::Unseen)
 				|| (state.ring() == Data::StoryRing::CloseFriends);
 			nameFg = unseen ? st::storiesTrayNameFg->c : st::storiesTrayNameFgSeen->c;
@@ -287,6 +425,12 @@ void Tray::paintEvent(QPaintEvent *e) {
 		paintArrow(true);
 	}
 	p.fillRect(QRect(0, height() - 1, width(), 1), st::storiesTrayLineFg);
+	if (_keyboardFocus && hasFocus() && _keyboardIndex >= 0) {
+		Ui::Accessibility::PaintFocusRing(
+			p,
+			QRectF(itemRect(_keyboardIndex).adjusted(2, 2, -2, -2)),
+			12.);
+	}
 }
 
 void Tray::mouseMoveEvent(QMouseEvent *e) {

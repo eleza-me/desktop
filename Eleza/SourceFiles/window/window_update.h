@@ -41,6 +41,8 @@ public:
 		_offerChanged = std::move(callback);
 	}
 
+	QString accessibilityName() const override;
+
 protected:
 	void paintEvent(QPaintEvent *e) override;
 	QImage prepareRippleMask() const override;
@@ -64,6 +66,13 @@ public:
 	}
 	void setOfferChangedCallback(std::function<void()> callback) {
 		_offerChanged = std::move(callback);
+	}
+
+	QString accessibilityName() const override {
+		return _action;
+	}
+	QString accessibilityValue() const override {
+		return _text;
 	}
 
 protected:

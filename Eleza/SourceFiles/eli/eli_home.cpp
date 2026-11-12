@@ -63,6 +63,10 @@ public:
 		resize(width(), st::eliEntryHeight);
 	}
 
+	QString accessibilityName() const override {
+		return tr::lng_eli_whats_new(tr::now);
+	}
+
 protected:
 	int resizeGetHeight(int newWidth) override {
 		const auto width = std::min(newWidth, int(st::eliCardMaxWidth));
@@ -159,6 +163,10 @@ public:
 		hide();
 	}
 
+	QString accessibilityName() const override {
+		return _text;
+	}
+
 	void setData(int count, const QStringList &authors) {
 		_count = count;
 		_authors = authors;
@@ -166,6 +174,7 @@ public:
 			tr::now,
 			lt_count,
 			double(std::min(count, kMaxPillCount)));
+		accessibilityNameChanged();
 		const auto faces = int(_authors.size());
 		_facesWidth = faces
 			? (st::eliPillFace + (faces - 1) * (st::eliPillFace - st::eliPillFaceOverlap))

@@ -43,6 +43,14 @@ public:
 			[this] { update(); });
 	}
 
+	QString accessibilityName() const override {
+		return _session->data().users().me().displayName;
+	}
+	QString accessibilityValue() const override {
+		const auto &handle = _session->data().users().me().handle;
+		return handle.isEmpty() ? QString() : (QLatin1Char('@') + handle);
+	}
+
 protected:
 	int resizeGetHeight(int newWidth) override {
 		_userpic->moveToLeft(

@@ -171,6 +171,10 @@ Bar::Bar(QWidget *parent, Controller *controller)
 	});
 	_playlist->setClickedCallback([this] { togglePanel(); });
 	_close->setClickedCallback([] { Player().stop(); });
+	_previous->setAccessibleName(tr::lng_a11y_previous(tr::now));
+	_next->setAccessibleName(tr::lng_a11y_next(tr::now));
+	_playlist->setAccessibleName(tr::lng_a11y_playlist(tr::now));
+	_close->setAccessibleName(tr::lng_close(tr::now));
 	connect(&player, &AudioPlayer::stateChanged, this, [this] { refresh(); });
 	connect(&player, &AudioPlayer::trackChanged, this, [this] { refresh(); });
 	connect(&player, &AudioPlayer::queueChanged, this, [this] { refresh(); });
@@ -196,6 +200,9 @@ void Bar::refresh() {
 	_play->setIconOverride(
 		playing ? &st::playerBarPauseIcon : nullptr,
 		playing ? &st::playerBarPauseIconOver : nullptr);
+	_play->setAccessibleName(playing
+		? tr::lng_stories_pause(tr::now)
+		: tr::lng_stories_play(tr::now));
 	// A song goes round its queue; a voice only on to the next one.
 	const auto queue = player.queueSize() > 1;
 	_previous->setVisible(queue || !track.voice);

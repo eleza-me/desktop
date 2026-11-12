@@ -5,6 +5,7 @@
 #include "lang/lang_countries.h"
 #include "lang_auto.h"
 #include "main/main_account.h"
+#include "ui/accessibility.h"
 #include "ui/layers/box_content.h"
 #include "ui/painter.h"
 #include "ui/ui_utility.h"
@@ -412,6 +413,12 @@ void Widget::focusInEvent(QFocusEvent *e) {
 	if (_step && _step->isVisible()) {
 		_step->setInnerFocus();
 	}
+}
+
+bool Widget::focusNextPrevChild(bool next) {
+	return Ui::Accessibility::FocusNextInRegions(
+		Ui::Accessibility::ColumnsInReadingOrder(this),
+		next) || RpWidget::focusNextPrevChild(next);
 }
 
 void Widget::keyPressEvent(QKeyEvent *e) {

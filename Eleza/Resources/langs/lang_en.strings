@@ -1595,6 +1595,15 @@
 "lng_title_close" = "Close";
 "lng_title_use_system" = "Use system title bar";
 "lng_title_use_system_about" = "Takes effect after the app is restarted.";
+// ---- accessibility ----
+// What screen readers say of painted items.
+"lng_a11y_separator" = ", ";
+"lng_a11y_navigation" = "Navigation";
+"lng_a11y_story_unseen" = "Unseen story";
+"lng_a11y_story_muted" = "Hidden";
+"lng_a11y_previous" = "Previous";
+"lng_a11y_next" = "Next";
+"lng_a11y_playlist" = "Playlist";
 // ---- update ----
 "lng_update_title" = "Updates";
 "lng_update_button" = "Update Eleza";

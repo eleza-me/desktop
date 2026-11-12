@@ -2,6 +2,7 @@
 
 #include "ui/widgets/buttons.h"
 #include "ui/painter.h"
+#include "ui/ui_phrases.h"
 
 #include <QtGui/QMouseEvent>
 
@@ -15,6 +16,7 @@ TopBar::TopBar(QWidget *parent, const style::TopBar &st)
 , _back(new IconButton(this, st.back)) {
 	_back->hide();
 	_back->setClickedCallback([this] { emit backRequested(); });
+	_back->setAccessibleName(CurrentPhrases().back);
 	setMouseTracking(true);
 	resize(width(), _st.height);
 }

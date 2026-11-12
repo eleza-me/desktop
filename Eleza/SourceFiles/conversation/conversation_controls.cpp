@@ -119,7 +119,19 @@ public:
 		if (_selected != selected) {
 			_selected = selected;
 			update();
+			accessibilityCheckedChanged();
 		}
+	}
+
+	// One of two: «با نام خودم» / «ناشناس».
+	QAccessible::Role accessibilityRole() const override {
+		return QAccessible::RadioButton;
+	}
+	QString accessibilityName() const override {
+		return _text;
+	}
+	std::optional<bool> accessibilityChecked() const override {
+		return _selected;
 	}
 
 protected:
@@ -261,6 +273,7 @@ void ExpiryHeader::scheduleTick() {
 void ExpiryHeader::setMoreCallback(std::function<void(QWidget *anchor)> callback) {
 	if (!_more) {
 		_more = new Ui::IconButton(this, st::smallIconButton);
+		_more->setAccessibleName(tr::lng_more(tr::now));
 		_more->show();
 		_more->moveToRight(0, (height() - _more->height()) / 2, width());
 	}

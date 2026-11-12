@@ -439,6 +439,58 @@ void PostList::rebuildIndex() {
 	for (auto i = 0; i != int(_rows.size()); ++i) {
 		_index.insert(_rows[i].id, i);
 	}
+	Ui::Accessibility::ItemsChanged(this);
+}
+
+Ui::Accessibility::Item PostList::accessibilityItem(int index) const {
+	if (index < 0 || index >= int(_rows.size())) {
+		return {};
+	}
+	const auto &row = _rows[index];
+	if (!row.card) {
+		// «نمایش پاسخ‌های بیشتر»
+		return {
+			.name = row.moreText,
+			.description = QString(),
+			.role = QAccessible::Button,
+			.rect = cardRect(index),
+		};
+	}
+	const auto &post = row.card->post();
+	// The words a screen reader starts with; the rest is on the post's page.
+	constexpr auto kTextLimit = 600;
+	auto text = post.text.simplified();
+	if (text.size() > kTextLimit) {
+		text = text.left(kTextLimit) + QChar(0x2026);
+	}
+	auto parts = QStringList();
+	if (!text.isEmpty()) {
+		parts.push_back(text);
+	}
+	if (post.createdAt > 0) {
+		parts.push_back(PostTime(post.createdAt));
+	}
+	return {
+		.name = AuthorName(cardSession(), post.author),
+		.description = parts.join(tr::lng_a11y_separator(tr::now)),
+		.role = QAccessible::ListItem,
+		.rect = cardRect(index),
+		.selected = !_activeId.isEmpty() && (row.id == _activeId),
+	};
+}
+
+void PostList::accessibilityItemPress(int index) {
+	if (index < 0 || index >= int(_rows.size())) {
+		return;
+	} else if (!_rows[index].card) {
+		Q_EMIT moreRequested(_rows[index].id);
+		return;
+	}
+	// As Enter on the keyboard's post.
+	select(index);
+	if (_rows[index].card->options().mode == CardMode::Feed) {
+		OpenPost(_controller, _rows[index].id);
+	}
 }
 
 int PostList::indexOf(const QString &postId) const {
@@ -1192,6 +1244,7 @@ void PostList::select(int index) {
 	updateRow(was);
 	updateRow(index);
 	Q_EMIT scrollToRequested(_rows[index].top, _rows[index].top + _rows[index].height);
+	Ui::Accessibility::ItemFocused(this, index);
 }
 
 QString PostList::selectedId() const {

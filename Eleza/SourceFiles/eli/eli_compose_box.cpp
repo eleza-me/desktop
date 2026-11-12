@@ -731,6 +731,7 @@ private:
 			text);
 		option.field->setMaxLength(kPollOptionLength);
 		option.remove = new Ui::IconButton(this, st::eliComposePollRemove);
+		option.remove->setAccessibleName(tr::lng_delete(tr::now));
 		const auto field = option.field;
 		connect(field, &Ui::InputField::changed, this, [this] {
 			if (changed) {
@@ -806,6 +807,7 @@ public:
 		text))
 	, _remove(new Ui::IconButton(this, st::eliComposePollRemove)) {
 		Q_UNUSED(maxLength);
+		_remove->setAccessibleName(tr::lng_delete(tr::now));
 		_field->setSubmitSettings(Ui::InputField::SubmitSettings::CtrlEnter);
 		new Highlighter(_field->rawTextEdit()->document());
 		connect(_field, &Ui::RpWidget::heightChanged, this, [this] {

@@ -1,6 +1,7 @@
 #include "window/window_main_layout.h"
 
 #include "core/core_application.h"
+#include "ui/accessibility.h"
 #include "ui/painter.h"
 #include "ui/ui_utility.h"
 #include "window/window_nav_rail.h"
@@ -195,6 +196,12 @@ MainLayout::MainLayout(QWidget *parent, SessionController *controller)
 
 MainLayout::~MainLayout() {
 	_controller->setLayout(nullptr);
+}
+
+bool MainLayout::focusNextPrevChild(bool next) {
+	return Ui::Accessibility::FocusNextInRegions(
+		Ui::Accessibility::ColumnsInReadingOrder(this),
+		next) || RpWidget::focusNextPrevChild(next);
 }
 
 void MainLayout::ensureSide(Tab tab) {

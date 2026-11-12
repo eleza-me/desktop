@@ -49,6 +49,10 @@ public:
 		resize(width(), st::conversationComposeHeight);
 	}
 
+	QString accessibilityName() const override {
+		return tr::lng_conv_what_do_want_talk_about(tr::now);
+	}
+
 protected:
 	void paintEvent(QPaintEvent *e) override {
 		Q_UNUSED(e);
@@ -586,6 +590,27 @@ void TopicsList::activate(int index) {
 
 bool TopicsList::isLoaderRow(int index) const {
 	return index >= int(_cards.size());
+}
+
+QString TopicsList::rowAccessibilityName(int index) const {
+	return (index < int(_cards.size()))
+		? _cards[index].topic.toString()
+		: QString();
+}
+
+QString TopicsList::rowAccessibilityDescription(int index) const {
+	if (index >= int(_cards.size())) {
+		return QString();
+	}
+	const auto &card = _cards[index];
+	auto parts = QStringList();
+	if (!card.speakerName.isEmpty()) {
+		parts.push_back(card.speakerName);
+	}
+	if (!card.category.isEmpty()) {
+		parts.push_back(card.category);
+	}
+	return parts.join(tr::lng_a11y_separator(tr::now));
 }
 
 int TopicsList::rowsCount() const {
