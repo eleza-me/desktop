@@ -63,6 +63,24 @@
   "ChatPinsResponse": [
     "pins"
   ],
+  "ChatPollCloseResponse": [
+    "poll"
+  ],
+  "ChatPollGetResponse": [
+    "poll"
+  ],
+  "ChatPollUnvoteResponse": [
+    "poll"
+  ],
+  "ChatPollVoteRequest": [
+    "options"
+  ],
+  "ChatPollVoteResponse": [
+    "poll"
+  ],
+  "ChatPollVotersResponse": [
+    "voters"
+  ],
   "ChatSelfDestructConsumedResponse": [
     "chat",
     "self_destruct",
@@ -147,6 +165,7 @@
     "conversations",
     "eli",
     "general",
+    "hidden_chats",
     "quiet_hours"
   ],
   "DocNotificationsContacts": [
@@ -164,6 +183,7 @@
     "new_followers",
     "replies_mentions",
     "reposts_quotes",
+    "shelf_posts",
     "subscribed_posts"
   ],
   "DocNotificationsGeneral": [
@@ -172,12 +192,14 @@
     "vibrate"
   ],
   "DocPrivacy": [
+    "allow_video_downloads",
     "birthday_show_year",
     "birthday_visibility",
     "calls",
     "conversation_join",
     "conversation_masked_join_allowed",
     "find_by_phone",
+    "forwards",
     "group_add",
     "last_seen",
     "mentions",
@@ -196,6 +218,24 @@
     "text",
     "updated_at"
   ],
+  "EarlyMessageSignal": [
+    "chat"
+  ],
+  "EmojiAvatar": [
+    "colors",
+    "kind"
+  ],
+  "EmojiAvatarIn": [
+    "colors",
+    "kind"
+  ],
+  "EmojiAvatarSticker": [
+    "height",
+    "id",
+    "pack",
+    "url",
+    "width"
+  ],
   "Entity": [
     "length",
     "offset",
@@ -213,6 +253,10 @@
   "ForwardIn": [
     "chat",
     "seq"
+  ],
+  "ForwardOriginView": [
+    "date",
+    "name"
   ],
   "GroupAdminLogEntry": [
     "action",
@@ -288,6 +332,10 @@
     "pinned_by",
     "seq"
   ],
+  "GroupPollData": [
+    "group",
+    "seq"
+  ],
   "GroupReactionData": [
     "group",
     "seq"
@@ -311,6 +359,7 @@
   "GroupSelfSettings": [
     "archived",
     "cleared_before_seq",
+    "hidden",
     "muted",
     "notify",
     "pinned"
@@ -427,8 +476,29 @@
   "GroupsMentionsResponse": [
     "seqs"
   ],
+  "GroupsOnlineResponse": [
+    "online"
+  ],
   "GroupsPinsResponse": [
     "pins"
+  ],
+  "GroupsPollCloseResponse": [
+    "poll"
+  ],
+  "GroupsPollGetResponse": [
+    "poll"
+  ],
+  "GroupsPollUnvoteResponse": [
+    "poll"
+  ],
+  "GroupsPollVoteRequest": [
+    "options"
+  ],
+  "GroupsPollVoteResponse": [
+    "poll"
+  ],
+  "GroupsPollVotersResponse": [
+    "voters"
   ],
   "GroupsReactionsResponse": [
     "reactions"
@@ -524,6 +594,7 @@
     "archived",
     "chat",
     "cleared_before_seq",
+    "hidden",
     "hidden_seq",
     "muted"
   ],
@@ -560,6 +631,12 @@
     "ref",
     "role"
   ],
+  "PendingMessageView": [
+    "created_at_unix_ms",
+    "kind",
+    "pending_id",
+    "sender"
+  ],
   "PinData": [
     "chat",
     "pinned",
@@ -575,6 +652,32 @@
     "chat",
     "played",
     "seq"
+  ],
+  "PollData": [
+    "chat",
+    "seq"
+  ],
+  "PollInput": [
+    "options",
+    "question"
+  ],
+  "PollOptionView": [
+    "text",
+    "voters"
+  ],
+  "PollView": [
+    "anonymous",
+    "closed",
+    "closed_at_unix",
+    "multiple",
+    "options",
+    "question",
+    "quiz",
+    "total_voters"
+  ],
+  "PollVoter": [
+    "user",
+    "voted_at_unix"
   ],
   "PresenceOut": [
     "status",
@@ -638,6 +741,11 @@
     "mode",
     "state"
   ],
+  "ShelfCardView": [
+    "name",
+    "owner_id",
+    "palette"
+  ],
   "StickerView": [
     "height",
     "id",
@@ -694,6 +802,35 @@
     "not_sent",
     "sent"
   ],
+  "StoriesStickerAnswerRequest": [
+    "text"
+  ],
+  "StoriesStickerAnswerResponse": [
+    "burned",
+    "can_respond",
+    "id",
+    "placement",
+    "type"
+  ],
+  "StoriesStickerResponsesResponse": [
+    "responses",
+    "sticker",
+    "total"
+  ],
+  "StoriesStickerSliderResponse": [
+    "burned",
+    "can_respond",
+    "id",
+    "placement",
+    "type"
+  ],
+  "StoriesStickerVoteResponse": [
+    "burned",
+    "can_respond",
+    "id",
+    "placement",
+    "type"
+  ],
   "StoriesTrayResponse": [
     "items",
     "me"
@@ -743,6 +880,79 @@
     "chat",
     "seq",
     "to"
+  ],
+  "StoryShelfOut": [
+    "available",
+    "id",
+    "name",
+    "owner_id",
+    "palette",
+    "post_count"
+  ],
+  "StoryStickerHashtag": [
+    "tag"
+  ],
+  "StoryStickerIn": [
+    "placement",
+    "type"
+  ],
+  "StoryStickerLinkIn": [
+    "url"
+  ],
+  "StoryStickerLinkOut": [
+    "label"
+  ],
+  "StoryStickerMentionIn": [
+    "user"
+  ],
+  "StoryStickerOut": [
+    "burned",
+    "can_respond",
+    "id",
+    "placement",
+    "type"
+  ],
+  "StoryStickerPlacement": [
+    "height",
+    "rotation",
+    "width",
+    "x",
+    "y"
+  ],
+  "StoryStickerPollIn": [
+    "options"
+  ],
+  "StoryStickerPollOption": [
+    "text"
+  ],
+  "StoryStickerPollOut": [
+    "options",
+    "question",
+    "style"
+  ],
+  "StoryStickerQuestion": [
+    "prompt"
+  ],
+  "StoryStickerQuestionOut": [
+    "my_answer_count",
+    "prompt",
+    "style"
+  ],
+  "StoryStickerResponseOut": [
+    "at",
+    "user"
+  ],
+  "StoryStickerSliderIn": [
+    "emoji"
+  ],
+  "StoryStickerSliderOut": [
+    "direction",
+    "emoji",
+    "prompt",
+    "style"
+  ],
+  "StoryStickerStyle": [
+    "color"
   ],
   "StoryUser": [
     "display_name",

@@ -56,6 +56,7 @@ constexpr auto kMaxIncomingMessage = quint64(Noise::kMaxMessage) + 1024;
 	result.retryable = error.value("retryable"_L1).toBool();
 	result.retryAfter = base::SafeInt(error.value("retry_after_s"_L1).toDouble());
 	result.httpStatus = base::SafeInt(error.value("http_status"_L1).toDouble());
+	result.meta = error.value("meta"_L1).toObject();
 	return result;
 }
 
