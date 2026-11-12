@@ -878,15 +878,8 @@ void Widget::refreshPresence() {
 		_inner->cover()->setPresence(QString(), false);
 		return;
 	}
-	const auto status = (presence->status == u"last_week")
-		? u"within_week"_s
-		: (presence->status == u"last_month")
-		? u"within_month"_s
-		: (presence->status == u"offline")
-		? QString()
-		: presence->status;
 	_inner->cover()->setPresence(
-		Lang::LastSeen(status, presence->lastSeenAt),
+		Lang::LastSeen(presence->status, presence->lastSeenAt),
 		presence->online());
 }
 

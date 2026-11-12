@@ -188,6 +188,9 @@ private:
 	void setHover(int row, Hit hit);
 	void activate(int row, Hit hit, QPoint globalPosition);
 	void openPendingBody();
+	// Opening a post hides this list (one column, or the list is in the
+	// main column the post opens in).
+	[[nodiscard]] bool postReplacesList() const;
 	void select(int index);
 	void rangeChanged();
 	void checkViews();
@@ -248,8 +251,10 @@ private:
 	QSet<QString> _halfVisible;
 	base::Timer _viewTimer;
 	base::Timer _minuteTimer;
-	// A click on a post's text opens it after the double click interval,
-	// unless a second click (a like) came first.
+	// A click on a post's text opens it at once when the post shows beside
+	// the list; when it takes the list's place, after the double click
+	// interval, unless a second click (a like) came first.
+	QString _bodyClickId;
 	QString _bodyPendingId;
 	base::Timer _bodyTimer;
 

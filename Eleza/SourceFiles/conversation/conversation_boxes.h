@@ -18,6 +18,10 @@ namespace Ui {
 class PopupMenu;
 } // namespace Ui
 
+namespace Main {
+class Session;
+} // namespace Main
+
 namespace Window {
 class SessionController;
 } // namespace Window
@@ -46,6 +50,13 @@ Q_SIGNALS:
 void ShowNewConversationBox(
 	Window::SessionController *controller,
 	const QString &prefill = QString());
+// «مدت پیش‌فرض گفتگو»: the lifetime a new conversation starts with (a
+// duration like "24h"; empty: the longest one). A preference of this computer
+// for this user, as on iOS: the synced settings document has no such key.
+[[nodiscard]] QString DefaultDurationPreference(Main::Session *session);
+void SetDefaultDurationPreference(
+	Main::Session *session,
+	const QString &duration);
 void ShowJoinBox(Window::SessionController *controller, const QString &id);
 void ShowReportBox(Window::SessionController *controller, const QString &id);
 // «دعوت در الی»: publishes a post that invites people to the topic.
