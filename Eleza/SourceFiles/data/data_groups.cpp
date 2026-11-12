@@ -66,6 +66,7 @@ void TakePersonal(Group &to, const Group &from) {
 	to.mutedUntil = from.mutedUntil;
 	to.notify = from.notify;
 	to.archived = from.archived;
+	to.hidden = from.hidden;
 	to.pinned = from.pinned;
 	to.clearedBeforeSeq = std::max(to.clearedBeforeSeq, from.clearedBeforeSeq);
 	to.joinRequests = from.joinRequests;
@@ -1373,6 +1374,9 @@ void Groups::applyUser(const QJsonObject &d) {
 				c.group->archived = c.archived;
 				c.group->pinned = c.pinned;
 				c.group->notify = Json::String(s, "notify"_L1);
+				if (Json::Has(s, "hidden"_L1)) {
+					c.group->hidden = Json::Bool(s, "hidden"_L1);
+				}
 				c.group->clearedBeforeSeq = std::max(c.group->clearedBeforeSeq, cleared);
 			}
 			if (grew && c.lastMessage && c.lastMessage->seq > 0 && c.lastMessage->seq <= cleared) {

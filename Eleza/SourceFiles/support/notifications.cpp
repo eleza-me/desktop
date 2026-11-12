@@ -4,6 +4,7 @@
 
 #include "core/core_application.h"
 #include "data/data_chats.h"
+#include "data/data_graph.h"
 #include "data/data_groups.h"
 #include "data/data_session.h"
 #include "data/data_sync.h"
@@ -45,6 +46,38 @@ constexpr auto kMaxQueued = 20;
 		|| (chat.mutedUntil > QDateTime::currentSecsSinceEpoch());
 }
 
+// A chat I hid (on a phone) under the account's `notifications.hidden_chats`
+// (docs/hidden-chats.md §3 of the backend): what the phones' pushes do,
+// the toast does. Nullopt: as usual ("normal"); a null key: no toast.
+[[nodiscard]] std::optional<NotificationData> HiddenChatNotification(
+		Main::Session *session,
+		const Data::Chat &chat) {
+	if (!chat.hidden()) {
+		return std::nullopt;
+	}
+	auto &graph = session->data().graph();
+	if (!graph.settingsLoaded()) {
+		// Read once; until then the default.
+		graph.loadSettings(false, base::Guard(), nullptr, [](const Api::Error &) {});
+	}
+	const auto mode = graph.settings()
+		.value(u"notifications"_s).toObject()
+		.value(u"hidden_chats"_s).toString(u"anonymous"_s);
+	if (mode == u"normal") {
+		return std::nullopt;
+	}
+	auto result = NotificationData();
+	if (mode == u"none") {
+		return result;
+	}
+	// One toast for all of them, naming nothing and opening nothing.
+	result.key = u"hidden"_s;
+	result.title = tr::lng_app_name(tr::now);
+	result.text = tr::lng_support_notify_new_message(tr::now);
+	result.anonymous = true;
+	return result;
+}
+
 } // namespace
 
 std::optional<NotificationData> NotificationFor(
@@ -69,6 +102,8 @@ std::optional<NotificationData> NotificationFor(
 	const auto chat = data.chats().chat(message.chat);
 	if (chat && (chat->saved || chat->archived || MutedNow(*chat))) {
 		return std::nullopt;
+	} else if (const auto hidden = chat ? HiddenChatNotification(session, *chat) : std::nullopt) {
+		return hidden->key.isEmpty() ? std::nullopt : hidden;
 	}
 	const auto &settings = Core::App().settings().notifications();
 	auto result = NotificationData();
@@ -113,6 +148,8 @@ std::optional<NotificationData> GroupNotificationFor(
 	const auto chat = data.chats().chat(message.chat);
 	if (!chat || !chat->isGroup || chat->archived) {
 		return std::nullopt;
+	} else if (const auto hidden = HiddenChatNotification(session, *chat)) {
+		return hidden->key.isEmpty() ? std::nullopt : hidden;
 	}
 	const auto &settings = Core::App().settings().notifications();
 	auto result = NotificationData();
