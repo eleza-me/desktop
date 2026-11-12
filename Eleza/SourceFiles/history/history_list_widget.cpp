@@ -5,6 +5,7 @@
 #include "groups/groups_tags.h"
 
 #include "api/api_client_config.h"
+#include "base/unixtime.h"
 #include "data/data_chats.h"
 #include "data/data_feed.h"
 #include "data/data_session.h"
@@ -678,7 +679,7 @@ void ListWidget::scrollByPage(bool up) {
 std::optional<Data::Message> ListWidget::lastEditable() const {
 	const auto config = _session->data().clientConfig();
 	const auto window = config ? config->editWindow() : qint64(0);
-	const auto now = QDateTime::currentMSecsSinceEpoch();
+	const auto now = base::unixtime::serverNowMs();
 	for (auto i = int(_rows.size()) - 1; i >= 0; --i) {
 		const auto element = _rows[i].element.get();
 		const auto &message = element->data();

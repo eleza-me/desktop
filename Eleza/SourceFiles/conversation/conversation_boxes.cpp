@@ -1,5 +1,6 @@
 #include "conversation/conversation_boxes.h"
 
+#include "base/unixtime.h"
 #include "boxes/report_box.h"
 #include "conversation/conversation_card.h"
 #include "conversation/conversation_controls.h"
@@ -621,7 +622,7 @@ void JoinBox::loaded(const Data::Conversation &conversation) {
 		const auto waiting = (conversation.myRole != u"listener")
 			&& (PhaseOf(
 				conversation,
-				QDateTime::currentMSecsSinceEpoch()) == RadarPhase::Waiting);
+				base::unixtime::serverNowMs()) == RadarPhase::Waiting);
 		// The box dies here: only locals below.
 		closeBox();
 		if (waiting) {
@@ -713,7 +714,7 @@ void JoinBox::showReady() {
 			_content,
 			conversation.expiresAt
 				? conversation.expiresAt
-				: (QDateTime::currentSecsSinceEpoch()),
+				: (base::unixtime::serverNow()),
 			data().conversations().categoryTitle(conversation.category)),
 		RowMargins(labelSkip));
 	header->setMoreCallback([this](QWidget *anchor) {
@@ -1094,7 +1095,7 @@ void OpenConversation(
 			|| (conversation.myRole == u"speaker");
 		if (speaker && PhaseOf(
 				conversation,
-				QDateTime::currentMSecsSinceEpoch()) == RadarPhase::Waiting) {
+				base::unixtime::serverNowMs()) == RadarPhase::Waiting) {
 			controller->showMainSection(
 				RadarFactory(id, conversation),
 				{ .tab = Window::Tab::Chats });

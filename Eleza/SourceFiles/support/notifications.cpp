@@ -1,5 +1,6 @@
 #include "support/notifications.h"
 
+#include "base/unixtime.h"
 #include "data/data_calls.h"
 
 #include "core/core_application.h"
@@ -42,7 +43,7 @@ constexpr auto kMaxQueued = 20;
 	}
 	// mutedUntil is unix seconds; 0 = until switched off.
 	return (chat.mutedUntil <= 0)
-		|| (chat.mutedUntil > QDateTime::currentSecsSinceEpoch());
+		|| (chat.mutedUntil > base::unixtime::serverNow());
 }
 
 } // namespace

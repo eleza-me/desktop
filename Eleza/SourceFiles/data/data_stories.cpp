@@ -20,7 +20,7 @@ constexpr auto kCreateRetryMs = 1000;
 }
 
 [[nodiscard]] qint64 NowSeconds() {
-	return base::unixtime::nowMs() / 1000;
+	return base::unixtime::serverNow();
 }
 
 } // namespace

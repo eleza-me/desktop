@@ -388,7 +388,9 @@ void Outbox::show(const OutboxItem &item) {
 	if (const auto period = Json::Int64(item.body, "live_period"_L1)) {
 		auto live = LiveInfo();
 		live.period = period;
-		live.until = item.createdAt / 1000 + period;
+		// createdAt is this machine's clock; `until` is read against the
+		// server's (base::unixtime::serverNow).
+		live.until = (item.createdAt + base::unixtime::serverOffsetMs()) / 1000 + period;
 		message.live = live;
 	}
 	const auto hasMedia = !item.filePath.isEmpty()

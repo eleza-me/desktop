@@ -19,7 +19,7 @@ const auto kFlag = u"feature.notes"_s;
 const auto kMaxCharsKey = u"notes.max_chars"_s;
 
 [[nodiscard]] qint64 NowSeconds() {
-	return base::unixtime::nowMs() / 1000;
+	return base::unixtime::serverNow();
 }
 
 [[nodiscard]] qint64 Monotonic() {

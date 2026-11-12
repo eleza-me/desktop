@@ -25,6 +25,7 @@ private Q_SLOTS:
 	void randomAndUuid();
 	void unixtimeShift();
 	void expectedHoldsEither();
+	void unixtimeServerClock();
 	void atomicFiles();
 	void safeIntegers();
 	void fileNamesFromStrangers();
@@ -174,6 +175,25 @@ void TestBase::unixtimeShift() {
 
 void TestBase::expectedHoldsEither() {
 	const auto good = base::Expected<int, QString>(5);
+void TestBase::unixtimeServerClock() {
+	using namespace base::unixtime;
+	// The server read its clock half way through a 400 ms answer.
+	QCOMPARE(OffsetFromHello(10'000, 13'800, 400).value(), TimeMs(-3'600));
+	QCOMPARE(OffsetFromHello(20'000, 10'000, 0).value(), TimeMs(10'000));
+	QVERIFY(!OffsetFromHello(0, 10'000, 100));
+	QVERIFY(!OffsetFromHello(10'000, 10'000, -1));
+	QVERIFY(!OffsetFromHello(10'000, 10'000, 60'000));
+
+	QCOMPARE(serverOffsetMs(), TimeMs(0));
+	const auto before = nowMs();
+	setServerOffsetMs(-3600 * 1000);
+	QVERIFY(before - serverNowMs() >= 3599 * 1000);
+	QVERIFY(before / 1000 - serverNow() >= 3599);
+	QVERIFY(nowMs() - before < 5000);
+	setServerOffsetMs(0);
+	QVERIFY(serverNowMs() - before < 5000);
+}
+
 	QVERIFY(good);
 	QCOMPARE(*good, 5);
 	const auto bad = base::Expected<int, QString>(base::make_unexpected(u"nope"_s));

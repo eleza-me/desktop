@@ -1,5 +1,6 @@
 #include "conversation/conversation_topics.h"
 
+#include "base/unixtime.h"
 #include "conversation/conversation_boxes.h"
 #include "conversation/conversation_time.h"
 #include "data/data_chats.h"
@@ -38,7 +39,7 @@ constexpr auto kSkeletonCards = 3;
 const auto kAllChip = u"*"_s;
 
 [[nodiscard]] qint64 NowMs() {
-	return QDateTime::currentMSecsSinceEpoch();
+	return base::unixtime::serverNowMs();
 }
 
 // «امروز از چه می‌خواهی حرف بزنی؟» — looks like a field, opens the box.

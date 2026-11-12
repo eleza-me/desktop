@@ -1,5 +1,6 @@
 #include "groups/groups_boxes.h"
 
+#include "base/unixtime.h"
 #include "groups/groups_admin.h"
 #include "groups/groups_tags.h"
 
@@ -1196,7 +1197,7 @@ void ShowRestrictBox(
 				0,
 				int(lengths.size()) - 1)].first;
 			const auto until = seconds
-				? (QDateTime::currentSecsSinceEpoch() + seconds)
+				? (base::unixtime::serverNow() + seconds)
 				: qint64(0);
 			*saving = true;
 			submit->setLoading(true);
@@ -1661,7 +1662,7 @@ private:
 		if (row.title.isEmpty()) {
 			row.title = Support::MemberName(session(), member.user);
 		}
-		const auto now = QDateTime::currentMSecsSinceEpoch();
+		const auto now = base::unixtime::serverNowMs();
 		if (member.restricted()) {
 			auto denied = QStringList();
 			for (const auto &name : member.denied) {

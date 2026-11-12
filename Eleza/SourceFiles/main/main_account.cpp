@@ -53,7 +53,7 @@ constexpr auto kLogoutWaitMs = 5000;
 			return normalize(number);
 		}
 	}
-	return base::unixtime::now() + 9 * 60;
+	return base::unixtime::serverNow() + 9 * 60;
 }
 
 } // namespace
@@ -361,7 +361,8 @@ bool Account::stale(int marginSeconds) const {
 	if (_tokens.access.isEmpty() || !_tokens.accessExpiresAt) {
 		return true;
 	}
-	return (_tokens.accessExpiresAt - base::unixtime::now()) < marginSeconds;
+	// The expiry is the server's clock.
+	return (_tokens.accessExpiresAt - base::unixtime::serverNow()) < marginSeconds;
 }
 
 void Account::accessToken(Fn<void(QString)> done) {

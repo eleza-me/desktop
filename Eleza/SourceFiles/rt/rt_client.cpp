@@ -421,6 +421,9 @@ void Client::resumeAfterPause() {
 
 void Client::onHello(const Hello &hello) {
 	_hello = hello;
+	if (hello.clockOffsetMs) {
+		base::unixtime::setServerOffsetMs(*hello.clockOffsetMs);
+	}
 	_authFailures = 0;
 	_backoff.reset();
 	if (hello.pingInterval > 0) {
