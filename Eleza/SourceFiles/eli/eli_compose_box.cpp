@@ -9,6 +9,7 @@
 
 #include "api/api_client_config.h"
 #include "data/data_feed.h"
+#include "data/data_graph.h"
 #include "data/data_image_decode.h"
 #include "data/data_session.h"
 #include "data/data_upload.h"
@@ -1132,6 +1133,7 @@ private:
 	void removePart(PartRow *row);
 	void splitIntoThread();
 	void showPolicyMenu();
+	void applyReplyDefault();
 	void editAlt(int index);
 	void checkMention();
 	void insertMention(const Data::Profile &profile);
@@ -1152,6 +1154,8 @@ private:
 	ComposeArgs _args;
 	Logic::ComposeLimits _limits;
 	QString _policy = u"everyone"_s;
+	// Chosen in the menu: the user's default no longer replaces it.
+	bool _policyChosen = false;
 	// One key per post: a retry of the same body reuses it (the server
 	// answers with the post it made), a body changed since gets a new one.
 	QString _idempotencyKey;
@@ -1460,6 +1464,9 @@ void ComposeBox::prepare() {
 	_dirty = false;
 	if (!_args.files.isEmpty()) {
 		attach(_args.files);
+	}
+	if (_policyButton) {
+		applyReplyDefault();
 	}
 	refresh();
 	connect(_content, &Ui::RpWidget::heightChanged, this, [this] {
@@ -1807,6 +1814,36 @@ void ComposeBox::splitIntoThread() {
 	updateHeight();
 }
 
+// A new post starts with the user's «who can reply» (privacy.reply_default):
+// the server does not apply it, every client does.
+void ComposeBox::applyReplyDefault() {
+	const auto apply = [this] {
+		if (_policyChosen) {
+			return false;
+		}
+		const auto value = session().data().graph().settingValue(
+			u"privacy.reply_default"_s).toString();
+		for (const auto &policy : Policies()) {
+			if (policy.key == value) {
+				_policy = value;
+				return true;
+			}
+		}
+		return false;
+	};
+	auto &graph = session().data().graph();
+	if (graph.settingsLoaded()) {
+		apply();
+		return;
+	}
+	graph.loadSettings(false, base::Guard(this), [=, this](const QJsonObject &) {
+		if (apply()) {
+			refresh();
+		}
+	}, [](const Api::Error &) {
+	});
+}
+
 void ComposeBox::showPolicyMenu() {
 	const auto menu = new Ui::PopupMenu(this);
 	for (const auto &policy : Policies()) {
@@ -1816,6 +1853,7 @@ void ComposeBox::showPolicyMenu() {
 		const auto key = policy.key;
 		item.callback = [=, this] {
 			_policy = key;
+			_policyChosen = true;
 			refresh();
 		};
 		menu->addItem(std::move(item));
