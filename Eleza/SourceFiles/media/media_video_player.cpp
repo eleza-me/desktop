@@ -1,13 +1,16 @@
 #include "media/media_video_player.h"
 
 #include "core/core_application.h"
+#include "data/data_media_stream.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
 #include "media/media_audio_player.h"
 #include "ui/painter.h"
 #include "styles/style_media.h"
 
+#include <QtCore/QLibraryInfo>
 #include <QtCore/QUrl>
+#include <QtCore/QVersionNumber>
 #include <QtGui/QKeyEvent>
 #include <QtGui/QMouseEvent>
 #include <QtGui/QScreen>
@@ -21,6 +24,9 @@ namespace {
 
 constexpr auto kSeekStep = 5000;
 constexpr auto kControlsFade = 160;
+// A seek into a file that is still arriving stops this far before the end
+// of what is there (bytes and time are proportional only roughly).
+constexpr auto kStreamSeekMargin = qint64(3000);
 
 [[nodiscard]] QRect FitRect(QSize content, QRect outer) {
 	if (content.isEmpty() || outer.isEmpty()) {
@@ -38,7 +44,8 @@ void PaintBar(
 		QPainter &p,
 		const QRect &rect,
 		double value,
-		bool knob) {
+		bool knob,
+		double available = 1.) {
 	const auto line = QRectF(
 		rect.x(),
 		rect.y() + (rect.height() - st::videoSeekHeight) / 2.,
@@ -47,7 +54,23 @@ void PaintBar(
 	const auto radius = line.height() / 2.;
 	p.setPen(Qt::NoPen);
 	p.setBrush(st::videoSeekBg);
-	p.drawRoundedRect(line, radius, radius);
+	if (available < 1.) {
+		// What has not arrived yet is fainter.
+		const auto opacity = p.opacity();
+		p.setOpacity(opacity * 0.45);
+		p.drawRoundedRect(line, radius, radius);
+		p.setOpacity(opacity);
+		p.drawRoundedRect(
+			QRectF(
+				line.x(),
+				line.y(),
+				line.width() * std::clamp(available, 0., 1.),
+				line.height()),
+			radius,
+			radius);
+	} else {
+		p.drawRoundedRect(line, radius, radius);
+	}
 	const auto filled = line.width() * std::clamp(value, 0., 1.);
 	p.setBrush(st::videoSeekFg);
 	p.drawRoundedRect(
@@ -96,6 +119,19 @@ void PaintFullscreenIcon(QPainter &p, const QRect &rect, bool exit) {
 
 } // namespace
 
+bool ProgressivePlayback() {
+	// The FFmpeg playback engine of Qt 6.5+ (the version that runs, not the
+	// one we were built with): the default backend there unless another
+	// one is asked for. Qt 6.4's experimental FFmpeg backend seeks on the
+	// main thread while its reader waits for bytes that come through it.
+	static const auto result = [] {
+		const auto backend = qEnvironmentVariable("QT_MEDIA_BACKEND");
+		return (QLibraryInfo::version() >= QVersionNumber(6, 5))
+			&& (backend.isEmpty() || backend == u"ffmpeg");
+	}();
+	return result;
+}
+
 VideoPlayerWidget::VideoPlayerWidget(QWidget *parent) : RpWidget(parent) {
 	setMouseTracking(true);
 	setFocusPolicy(Qt::StrongFocus);
@@ -108,9 +144,14 @@ VideoPlayerWidget::VideoPlayerWidget(QWidget *parent) : RpWidget(parent) {
 }
 
 VideoPlayerWidget::~VideoPlayerWidget() {
+	if (_stream) {
+		// A player thread waiting for bytes would keep the player from stopping.
+		_stream->abort();
+	}
 	if (_player) {
 		_player->stop();
 		_player->setVideoSink(nullptr);
+		_player->setSource(QUrl());
 	}
 }
 
@@ -172,10 +213,20 @@ void VideoPlayerWidget::ensurePlayer() {
 		&QMediaPlayer::mediaStatusChanged,
 		this,
 		[this](QMediaPlayer::MediaStatus status) {
-			if (status == QMediaPlayer::EndOfMedia) {
+			const auto arriving = _stream && !_stream->complete();
+			if (arriving
+				&& (status == QMediaPlayer::EndOfMedia
+					|| status == QMediaPlayer::InvalidMedia)) {
+				// Not the end: the end of what has arrived.
+				streamStalled();
+			} else if (status == QMediaPlayer::EndOfMedia) {
 				_ended = true;
 				showControls();
 				emit finished();
+			} else if ((status == QMediaPlayer::LoadedMedia
+					|| status == QMediaPlayer::BufferedMedia)
+				&& _pendingSeek >= 0) {
+				_player->setPosition(std::exchange(_pendingSeek, -1));
 			} else if (status == QMediaPlayer::InvalidMedia) {
 				_failed = true;
 				update();
@@ -188,6 +239,9 @@ void VideoPlayerWidget::ensurePlayer() {
 		this,
 		[this](QMediaPlayer::Error error, const QString &text) {
 			if (error == QMediaPlayer::NoError) {
+				return;
+			} else if (_stream && !_stream->complete() && !_stream->failed()) {
+				streamStalled();
 				return;
 			}
 			// The text may name the file or its address.
@@ -204,9 +258,11 @@ void VideoPlayerWidget::ensurePlayer() {
 }
 
 void VideoPlayerWidget::setSource(const QString &filePath) {
-	if (_source == filePath) {
+	if (_source == filePath && !_stream) {
 		return;
 	}
+	dropStream();
+	_resumeAt = _pendingSeek = -1;
 	_source = filePath;
 	_failed = false;
 	_ended = false;
@@ -218,6 +274,134 @@ void VideoPlayerWidget::setSource(const QString &filePath) {
 	update();
 }
 
+void VideoPlayerWidget::setStream(Data::MediaHandlePtr handle) {
+	if (!handle) {
+		return;
+	} else if (handle->isReady()) {
+		setSource(handle->filePath());
+		return;
+	}
+	dropStream();
+	_source = QString();
+	_resumeAt = _pendingSeek = -1;
+	_failed = false;
+	_ended = false;
+	_frame = QImage();
+	openStream(std::move(handle));
+	if (_player) {
+		_player->stop();
+		setPlayerSource();
+	}
+	update();
+}
+
+void VideoPlayerWidget::openStream(Data::MediaHandlePtr handle) {
+	_streamHandle = handle;
+	_stream = std::make_unique<Data::MediaStream>(handle);
+	_stream->open(QIODevice::ReadOnly);
+	const auto raw = handle.get();
+	QObject::connect(raw, &Data::MediaHandle::partialChanged, this, [this] {
+		if (_resumeAt >= 0 && _stream && _stream->available() >= _rebufferAt) {
+			reopenStream();
+		} else if (_controlsVisible || _controlsOpacity.animating()) {
+			update(controlsLayout().panel);
+		}
+	});
+	QObject::connect(raw, &Data::MediaHandle::ready, this, [this, raw] {
+		streamCompleted(raw->filePath());
+	});
+	QObject::connect(raw, &Data::MediaHandle::failed, this, [this] {
+		if (_stream) {
+			dropStream();
+			_failed = true;
+			update();
+			emit failed();
+		}
+	});
+}
+
+void VideoPlayerWidget::reopenStream() {
+	// Enough more has arrived: on from where the player ran out.
+	const auto handle = _streamHandle;
+	const auto at = std::exchange(_resumeAt, -1);
+	dropStream();
+	if (!handle) {
+		return;
+	}
+	openStream(handle);
+	ensurePlayer();
+	_pendingSeek = (at > 0) ? at : -1;
+	setPlayerSource();
+	play();
+}
+
+bool VideoPlayerWidget::hasSource() const {
+	return _stream || !_source.isEmpty();
+}
+
+void VideoPlayerWidget::setPlayerSource() {
+	if (_stream) {
+		// The name only tells the backend what kind of file it is.
+		_player->setSourceDevice(_stream.get(), QUrl(QStringLiteral("video.mp4")));
+	} else {
+		_player->setSource(QUrl::fromLocalFile(_source));
+	}
+}
+
+void VideoPlayerWidget::dropStream() {
+	if (!_stream) {
+		return;
+	}
+	_stream->abort();
+	if (_player) {
+		_player->stop();
+		_player->setSource(QUrl());
+	}
+	if (_streamHandle) {
+		QObject::disconnect(_streamHandle.get(), nullptr, this, nullptr);
+	}
+	// Later: the player may still hold it until its source change is done.
+	_stream.release()->deleteLater();
+	_streamHandle = nullptr;
+}
+
+void VideoPlayerWidget::streamStalled() {
+	if (_resumeAt >= 0 || !_player) {
+		return;
+	}
+	// Picked up from here once a few more seconds of it have arrived (or
+	// the whole file).
+	_resumeAt = std::max(_player->position(), qint64(0));
+	_rebufferAt = _stream->available()
+		+ Data::MediaStream::RebufferBytes(_stream->size(), durationMs());
+	showControls();
+}
+
+void VideoPlayerWidget::streamCompleted(const QString &path) {
+	_source = path;
+	if (_resumeAt < 0) {
+		// Still playing: the stream reads the finished file from now on.
+		return;
+	}
+	const auto at = std::exchange(_resumeAt, -1);
+	dropStream();
+	_failed = false;
+	_ended = false;
+	ensurePlayer();
+	_pendingSeek = (at > 0) ? at : -1;
+	_player->setSource(QUrl::fromLocalFile(_source));
+	play();
+}
+
+qint64 VideoPlayerWidget::playablePosition(qint64 position) const {
+	if (!_stream || _stream->complete()) {
+		return position;
+	}
+	const auto duration = durationMs();
+	const auto limit = qint64(duration * _stream->availableShare()) - kStreamSeekMargin;
+	return std::min(position, std::max({ limit, positionMs(), qint64(0) }));
+}
+
 void VideoPlayerWidget::setPoster(const QImage &poster) {
 	_poster = poster;
 	if (_frame.isNull()) {
@@ -226,12 +410,13 @@ void VideoPlayerWidget::setPoster(const QImage &poster) {
 }
 
 void VideoPlayerWidget::play() {
-	if (_source.isEmpty() || _failed) {
+	if (!hasSource() || _failed || _resumeAt >= 0) {
+		// (Waiting for the rest of the file: it goes on by itself.)
 		return;
 	}
 	ensurePlayer();
-	if (_player->source().isEmpty()) {
-		_player->setSource(QUrl::fromLocalFile(_source));
+	if (_player->source().isEmpty() && !_player->sourceDevice()) {
+		setPlayerSource();
 	}
 	if (_ended) {
 		_ended = false;
@@ -272,8 +457,14 @@ void VideoPlayerWidget::stop() {
 void VideoPlayerWidget::seek(double progress) {
 	const auto duration = durationMs();
 	if (_player && duration > 0) {
-		_ended = false;
-		_player->setPosition(qint64(std::clamp(progress, 0., 1.) * duration));
+		const auto position = playablePosition(
+			qint64(std::clamp(progress, 0., 1.) * duration));
+		if (_resumeAt >= 0) {
+			_resumeAt = position;
+		} else {
+			_ended = false;
+			_player->setPosition(position);
+		}
 		update();
 	}
 }
@@ -281,11 +472,17 @@ void VideoPlayerWidget::seek(double progress) {
 void VideoPlayerWidget::seekBy(qint64 deltaMs) {
 	const auto duration = durationMs();
 	if (_player && duration > 0) {
-		_ended = false;
-		_player->setPosition(std::clamp(
-			_player->position() + deltaMs,
+		const auto from = (_resumeAt >= 0) ? _resumeAt : _player->position();
+		const auto position = playablePosition(std::clamp(
+			from + deltaMs,
 			qint64(0),
 			duration));
+		if (_resumeAt >= 0) {
+			_resumeAt = position;
+		} else {
+			_ended = false;
+			_player->setPosition(position);
+		}
 		showControls();
 	}
 }
@@ -607,7 +804,8 @@ void VideoPlayerWidget::paintControls(QPainter &p) {
 		p,
 		layout.seek,
 		progress,
-		(_over == Part::Seek) || (_pressed == Part::Seek));
+		(_over == Part::Seek) || (_pressed == Part::Seek),
+		(_stream && !_stream->complete()) ? _stream->availableShare() : 1.);
 
 	if (!layout.time.isEmpty()) {
 		p.setFont(st::videoTimeFont);
@@ -680,8 +878,10 @@ void VideoPlayerWidget::mouseReleaseEvent(QMouseEvent *e) {
 		const auto progress = std::exchange(_seekingProgress, -1.);
 		if (progress >= 0.) {
 			ensurePlayer();
-			if (_player->source().isEmpty() && !_source.isEmpty()) {
-				_player->setSource(QUrl::fromLocalFile(_source));
+			if (_player->source().isEmpty()
+				&& !_player->sourceDevice()
+				&& hasSource()) {
+				setPlayerSource();
 			}
 			seek(progress);
 		}

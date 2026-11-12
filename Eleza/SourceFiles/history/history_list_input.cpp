@@ -777,6 +777,11 @@ void ListWidget::openPhoto(const Data::Message &message) {
 						guard,
 						[=](const QString &path) { done(path); });
 				};
+				item.videoDownload = [=] {
+					return downloads
+						? downloads->handle(other, Data::MediaVariant::Mp4)
+						: nullptr;
+				};
 			} else {
 				continue;
 			}
@@ -846,6 +851,11 @@ void ListWidget::openPhoto(const Data::Message &message) {
 					Data::MediaVariant::Mp4,
 					guard,
 					[=](const QString &path) { done(path); });
+			};
+			item.videoDownload = [=] {
+				return downloads
+					? downloads->handle(other, Data::MediaVariant::Mp4)
+					: nullptr;
 			};
 		} else {
 			auto options = Support::ImageOptions();

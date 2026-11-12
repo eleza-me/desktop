@@ -41,6 +41,11 @@ public:
 		QObject *guard,
 		Fn<void(const QString &path)> done);
 	void cancel(const Data::Message &message);
+	// The download of a variant that fetch() / save() started and that is
+	// still going on (null otherwise): a player can start from it.
+	[[nodiscard]] Data::MediaHandlePtr handle(
+		const Data::Message &message,
+		Data::MediaVariant variant) const;
 
 	// The variant that holds the bytes of a message's file.
 	[[nodiscard]] static Data::MediaVariant FileVariant(
