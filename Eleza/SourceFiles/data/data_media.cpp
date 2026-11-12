@@ -339,6 +339,25 @@ void Media::evict(const MediaRef &ref, MediaVariant variant) {
 	}
 }
 
+void Media::evictAttachment(const QString &chat, qint64 seq) {
+	const auto ref = MediaRef::Attachment(chat, seq);
+	if (!ref.valid()) {
+		return;
+	}
+	for (const auto variant : {
+			MediaVariant::Thumb,
+			MediaVariant::Feed,
+			MediaVariant::Full,
+			MediaVariant::Poster,
+			MediaVariant::Mp4,
+			MediaVariant::Audio,
+			MediaVariant::File,
+			MediaVariant::Cover,
+		}) {
+		evict(ref, variant);
+	}
+}
+
 MediaHandlePtr Media::request(const MediaRef &ref, MediaVariant variant) {
 	return request(ref, variant, Options());
 }

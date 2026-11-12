@@ -408,6 +408,18 @@ bool FileOps::appendLine(const Path &file, const std::string &line) {
 
 bool FileOps::readText(const Path &file, std::string &text, std::size_t limit) {
 	text.clear();
+	return readChunks(file, [&](const char *data, std::size_t size) {
+		if (text.size() + size > limit) {
+			return false;
+		}
+		text.append(data, size);
+		return true;
+	});
+}
+
+bool FileOps::readChunks(
+		const Path &file,
+		const std::function<bool(const char *data, std::size_t size)> &chunk) {
 #ifdef _WIN32
 	const auto handle = Handle(CreateFileW(
 		file.c_str(),
@@ -427,10 +439,9 @@ bool FileOps::readText(const Path &file, std::string &text, std::size_t limit) {
 			return false;
 		} else if (read == 0) {
 			return true;
-		} else if (text.size() + read > limit) {
+		} else if (!chunk(buffer, std::size_t(read))) {
 			return false;
 		}
-		text.append(buffer, read);
 	}
 #else // _WIN32
 	const auto descriptor = Descriptor(::open(
@@ -452,10 +463,9 @@ bool FileOps::readText(const Path &file, std::string &text, std::size_t limit) {
 			return false;
 		} else if (read == 0) {
 			return true;
-		} else if (text.size() + std::size_t(read) > limit) {
+		} else if (!chunk(buffer, std::size_t(read))) {
 			return false;
 		}
-		text.append(buffer, std::size_t(read));
 	}
 #endif // !_WIN32
 }

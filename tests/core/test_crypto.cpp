@@ -22,6 +22,7 @@ private Q_SLOTS:
 	void noiseHkdf();
 	void x25519Rfc7748();
 	void chachaPolyRfc8439();
+	void aesGcm();
 	void ed25519Rfc8032();
 	void deviceProof();
 	void randomBytes();
@@ -112,6 +113,36 @@ void TestCrypto::chachaPolyRfc8439() {
 	QVERIFY(opened.has_value());
 	QVERIFY(opened->isEmpty() && !opened->isNull());
 	QVERIFY(Crypto::ChaChaPolyEncrypt(key.left(31), nonce, aad, plaintext).isEmpty());
+}
+
+void TestCrypto::aesGcm() {
+	// The GCM specification (McGrew, Viega), test cases 13 and 14.
+	const auto key = QByteArray(32, char(0));
+	const auto nonce = QByteArray(12, char(0));
+	QCOMPARE(
+		Crypto::AesGcmEncrypt(key, nonce, QByteArray(), QByteArray()).toHex(),
+		QByteArray("530f8afbc74536b9a963b4f1c4cb738b"));
+	QCOMPARE(
+		Crypto::AesGcmEncrypt(key, nonce, QByteArray(), QByteArray(16, char(0))).toHex(),
+		QByteArray("cea7403d4d606b6e074ec5d3baf39d18d0d1c8a799996bf0265b98b5d48ab919"));
+
+	const auto random = Crypto::RandomBytes(32);
+	const auto iv = Crypto::RandomBytes(12);
+	const auto text = QByteArray("{\"text\":\"سلام\"}");
+	const auto sealed = Crypto::AesGcmEncrypt(random, iv, "messages", text);
+	QCOMPARE(sealed.size(), text.size() + Crypto::kTagSize);
+	QCOMPARE(Crypto::AesGcmDecrypt(random, iv, "messages", sealed).value(), text);
+	QVERIFY(!Crypto::AesGcmDecrypt(random, iv, "drafts", sealed));
+	auto changed = sealed;
+	changed[0] = char(changed[0] ^ 1);
+	QVERIFY(!Crypto::AesGcmDecrypt(random, iv, "messages", changed));
+	QVERIFY(!Crypto::AesGcmDecrypt(Crypto::RandomBytes(32), iv, "messages", sealed));
+	QVERIFY(!Crypto::AesGcmDecrypt(random, iv, "messages", sealed.left(15)));
+	QVERIFY(Crypto::AesGcmEncrypt(random.left(16), iv, QByteArray(), text).isEmpty());
+	// Not the same as ChaCha20-Poly1305 under the same key.
+	QVERIFY(Crypto::ChaChaPolyEncrypt(random, iv, "messages", text) != sealed);
+	QCOMPARE(Crypto::ChaChaPolyDecrypt(random, iv, "messages",
+		Crypto::ChaChaPolyEncrypt(random, iv, "messages", text)).value(), text);
 }
 
 void TestCrypto::ed25519Rfc8032() {

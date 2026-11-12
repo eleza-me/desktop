@@ -2,14 +2,17 @@
 
 #include "api/api_client.h"
 #include "api/api_client_config.h"
+#include "base/bytes.h"
 #include "base/platform_file.h"
 #include "base/random.h"
+#include "crypto/crypto_primitives.h"
 #include "data/data_outbox.h"
 #include "data/data_session.h"
 #include "main/main_account.h"
 #include "rt/rt_methods.h"
 #include "storage/storage_database.h"
 #include "storage/storage_key_value.h"
+#include "storage/storage_secure_blob.h"
 
 namespace Main {
 namespace {
@@ -35,6 +38,20 @@ namespace {
 		|| error.code == u"response.too_large"
 		|| error.code == u"rt.method_unknown"
 		|| error.code == u"rt.body_invalid";
+}
+
+// The key of the user's cache; a new one when there is none (or it cannot be
+// read: the cache sealed with the old one is then started over).
+[[nodiscard]] QByteArray CacheKey(const QString &userDir) {
+	const auto blob = Storage::SecureBlob(Session::CacheKeyPath(userDir));
+	if (auto stored = blob.read(); stored && stored->size() == Crypto::kKeySize) {
+		return *stored;
+	}
+	auto key = Crypto::RandomBytes(Crypto::kKeySize);
+	if (!blob.write(key)) {
+		qWarning("Main: could not store the key of the cache; it is started over at the next run.");
+	}
+	return key;
 }
 
 } // namespace
@@ -203,7 +220,11 @@ Session::Session(Account *account, const QString &userId)
 , _userId(userId)
 , _userDir(account->userDir(userId)) {
 	base::platform::EnsureDirectory(_userDir, true);
-	_database = std::make_unique<Storage::Database>(_userDir + u"/cache.db"_s);
+	{
+		auto key = CacheKey(_userDir);
+		_database = std::make_unique<Storage::Database>(_userDir + u"/cache.db"_s, key);
+		base::bytes::wipe(key);
+	}
 	_rtDelegate = std::make_unique<RtDelegate>(account);
 	_rt = std::make_unique<Rt::Client>(&account->api(), &account->settings(), _rtDelegate.get());
 	_transport = std::make_unique<Transport>(&account->api(), _rt.get());
@@ -231,6 +252,18 @@ Session::Session(Account *account, const QString &userId)
 			_rt->start();
 		}
 	});
+}
+
+QString Session::CacheKeyPath(const QString &userDir) {
+	return userDir + u"/cache.key"_s;
+}
+
+void Session::RemoveUserDir(const QString &userDir, const QString &trashPrefix) {
+	// The key first (its blob is inside the directory; on Linux its secret is
+	// in the keyring): without it nothing left of the cache can be read.
+	Storage::SecureBlob(CacheKeyPath(userDir)).remove();
+	// Renamed at once, removed on a worker thread (gigabytes of media).
+	base::platform::RemoveRecursivelyInBackground(userDir, trashPrefix);
 }
 
 Session::~Session() {

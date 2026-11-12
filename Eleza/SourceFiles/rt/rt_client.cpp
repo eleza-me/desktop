@@ -316,7 +316,8 @@ void Client::sessionClosed(Session *session, int code) {
 	};
 	// The socket opened but closed before `hello`: a wrong static key after a
 	// server redeploy ends the handshake like this. Re-read /v2/keys so the
-	// next attempt uses the current key.
+	// next attempt uses the current key (against production it can only pick
+	// another built-in key, see rt_keys.h).
 	const auto handshakeFailed = !_connected
 		&& session->handshakeSent()
 		&& finalCode != kCloseKeyRotation;

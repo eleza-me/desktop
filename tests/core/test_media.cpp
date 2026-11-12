@@ -73,6 +73,7 @@ private Q_SLOTS:
 	void memoryOnly();
 	void failureAndRetry();
 	void evict();
+	void deletedMessageLeavesNoMedia();
 	void releasedHandleStopsTheDownload();
 	void urlsCarryNoToken();
 	void diskLimit();
@@ -604,6 +605,36 @@ void TestMedia::evict() {
 	handle = media.request(ref, MediaVariant::Thumb);
 	QVERIFY(Loaded(handle));
 	QCOMPARE(harness.http.count("/v1/users/u_ali/avatar"), 2);
+}
+
+void TestMedia::deletedMessageLeavesNoMedia() {
+	auto dir = QTemporaryDir();
+	auto options = Harness::Options();
+	options.cacheDir = dir.filePath(u"media"_s);
+	auto harness = Harness(options);
+	auto &media = harness.session->media();
+	const auto put = [&](const MediaRef &ref, MediaVariant variant) {
+		const auto path = media.filePathFor(ref, variant);
+		QDir().mkpath(QFileInfo(path).absolutePath());
+		auto file = QFile(path);
+		return file.open(QIODevice::WriteOnly) && file.write("bytes") == 5;
+	};
+	const auto deleted = MediaRef::Attachment(u"c1"_s, 3);
+	const auto hidden = MediaRef::Attachment(u"g1"_s, 4);
+	const auto kept = MediaRef::Attachment(u"c1"_s, 5);
+	for (const auto variant : { MediaVariant::Thumb, MediaVariant::Full, MediaVariant::File, MediaVariant::Mp4 }) {
+		QVERIFY(put(deleted, variant));
+		QVERIFY(put(hidden, variant));
+	}
+	QVERIFY(put(kept, MediaVariant::Thumb));
+	QCOMPARE(FilesIn(options.cacheDir), 9);
+
+	// Deleted (here, by the other side, on another device): its files go.
+	harness.messages().removeMessage(u"c1"_s, Data::Message::KeyForSeq(3));
+	QCOMPARE(FilesIn(options.cacheDir), 5);
+	harness.messages().dropMessages(u"g1"_s, { 4 }, true);
+	QCOMPARE(FilesIn(options.cacheDir), 1);
+	QVERIFY(QFile::exists(media.filePathFor(kept, MediaVariant::Thumb)));
 }
 
 void TestMedia::releasedHandleStopsTheDownload() {

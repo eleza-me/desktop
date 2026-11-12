@@ -11,7 +11,9 @@
 #include "crypto/crypto_device_key.h"
 #include "main/main_account.h"
 #include "main/main_session.h"
+#include "rt/rt_keys.h"
 #include "storage/storage_key_value.h"
+#include "storage/storage_keyring.h"
 #include "storage/storage_secure_blob.h"
 
 #include <QtCore/QDir>
@@ -89,6 +91,7 @@ class TestApi final : public QObject {
 	Q_OBJECT
 
 private Q_SLOTS:
+	void initTestCase();
 	void headersAndQuery();
 	void idempotencyKeys();
 	void problemJson();
@@ -113,6 +116,7 @@ private Q_SLOTS:
 	void oversizedJsonIsRefused();
 	void abortAuthenticatedStopsRetries();
 	void errorBodiesAreBounded();
+	void noiseKeysArePinned();
 
 private:
 	[[nodiscard]] Main::Account::Config accountConfig(const HttpServer &server, const QString &name) {
@@ -127,6 +131,11 @@ private:
 	QTemporaryDir _dir;
 
 };
+
+void TestApi::initTestCase() {
+	// Never the keyring of whoever runs the tests.
+	Storage::Keyring::SetDefaultForTests(nullptr);
+}
 
 void TestApi::headersAndQuery() {
 	auto server = HttpServer();
@@ -1062,6 +1071,9 @@ void TestApi::refreshFailuresKeepOrEndTheSession() {
 	QCOMPARE(ended, (QVector<Main::SessionEndReason>{ Main::SessionEndReason::Expired }));
 	QVERIFY(QFileInfo(userDir).isDir());
 	QVERIFY(account.currentAccessToken().isEmpty());
+	// Kept for a while only, and with the key of its encrypted cache.
+	QVERIFY(QFileInfo::exists(userDir + u"/expired"_s));
+	QVERIFY(QFileInfo::exists(Main::Session::CacheKeyPath(userDir)));
 
 	// Ended on purpose elsewhere: the local data is wiped.
 	base::unixtime::setTestShiftMs(0);
@@ -1076,6 +1088,7 @@ void TestApi::refreshFailuresKeepOrEndTheSession() {
 	QVERIFY(!QFileInfo::exists(stranger));
 	QVERIFY(!account.settings().contains(u"eli.draft.someone_else"_s));
 	QVERIFY(QFileInfo(userDir).isDir());
+	QVERIFY(!QFileInfo::exists(userDir + u"/expired"_s));
 	mode = "auth.session_revoked";
 	QVERIFY(!refresh(account));
 	QCOMPARE(ended.value(1), Main::SessionEndReason::Revoked);
@@ -1089,8 +1102,36 @@ void TestApi::refreshFailuresKeepOrEndTheSession() {
 	QCOMPARE(ended.value(2), Main::SessionEndReason::Expired);
 	QCOMPARE(server.count("/v1/auth/nonce"), 1);
 	// Nothing is left on disk to sign in with.
-	auto reopened = Main::Account(accountConfig(server, u"failures"_s));
-	QVERIFY(!reopened.signedIn());
+	{
+		auto reopened = Main::Account(accountConfig(server, u"failures"_s));
+		QVERIFY(!reopened.signedIn());
+	}
+	// The cache of the expired session is there for a week, then it goes
+	// (with the settings kept for that user).
+	QVERIFY(QFileInfo(userDir).isDir());
+	account.settings().set(u"dialogs.pinned_order.u_me"_s, QJsonArray{ u"c1"_s });
+	account.settings().flush();
+	const auto expiredAt = [&](qint64 ms) {
+		return base::platform::WriteFileAtomic(
+			userDir + u"/expired"_s,
+			QJsonDocument(QJsonObject{
+				{ u"at"_s, double(ms) },
+				{ u"user"_s, u"u_me"_s },
+			}).toJson(),
+			true);
+	};
+	const auto day = qint64(24 * 60 * 60 * 1000);
+	QVERIFY(expiredAt(QDateTime::currentMSecsSinceEpoch() - 6 * day));
+	{
+		auto reopened = Main::Account(accountConfig(server, u"failures"_s));
+		QVERIFY(QFileInfo(userDir).isDir());
+	}
+	QVERIFY(expiredAt(QDateTime::currentMSecsSinceEpoch() - 8 * day));
+	{
+		auto reopened = Main::Account(accountConfig(server, u"failures"_s));
+		QVERIFY(!QFileInfo::exists(userDir));
+		QVERIFY(!reopened.settings().contains(u"dialogs.pinned_order.u_me"_s));
+	}
 }
 
 void TestApi::logoutWipes() {
@@ -1466,6 +1507,61 @@ void TestApi::errorBodiesAreBounded() {
 	QVERIFY(Test::WaitFor([&] { return errors.size() == 3; }, 20000));
 	QCOMPARE(errors[2].status, 403);
 	QCOMPARE(errors[2].code, u"upload.part"_s);
+}
+
+void TestApi::noiseKeysArePinned() {
+	const auto bakedHex = u"6ac378aa14d587c46de508bd15d493c2124f6a6525e73a79481d39ba98ac650d"_s;
+	const auto baked = base::bytes::fromHex(bakedHex);
+	const auto rogue = QString(64, u'a');
+	const auto listing = [](QVector<std::pair<int, QString>> keys, int preferred) {
+		auto list = QJsonArray();
+		for (const auto &[id, hex] : keys) {
+			list.push_back(QJsonObject{ { u"id"_s, id }, { u"pub"_s, hex } });
+		}
+		return QJsonObject{ { u"keys"_s, list }, { u"preferred"_s, preferred } };
+	};
+	QVERIFY(Rt::Keys::IsPinnedBase(u"https://api.eleza.me"_s));
+	QVERIFY(Rt::Keys::IsPinnedBase(u"https://API.eleza.me/"_s));
+	QVERIFY(!Rt::Keys::IsPinnedBase(u"http://api.eleza.me"_s));
+	QVERIFY(!Rt::Keys::IsPinnedBase(u"https://api.eleza.me:8443"_s));
+	QVERIFY(!Rt::Keys::IsPinnedBase(u"https://api.eleza.me.example.com"_s));
+	QVERIFY(!Rt::Keys::IsPinnedBase(u"http://127.0.0.1:8000"_s));
+
+	auto dir = QTemporaryDir();
+	QVERIFY(dir.isValid());
+	auto cache = Storage::KeyValue(dir.filePath(u"settings.json"_s));
+	// What an older build cached from the network: no key material is taken.
+	cache.set(u"rt.keys"_s, listing({ { 1, rogue }, { 7, rogue } }, 7));
+	auto production = Api::Client(u"https://api.eleza.me"_s, u"1.0.0"_s);
+	auto keys = Rt::Keys(&production, &cache);
+	QVERIFY(keys.pinned());
+	QVERIFY(!keys.stale());
+	QCOMPARE(keys.preferredId(), 1);
+	QCOMPARE(keys.preferredKey(), baked);
+
+	// A fetched listing (after a failed handshake, a 4006) with keys of its
+	// own, also under the baked id, changes nothing.
+	QVERIFY(!keys.apply(listing({ { 1, rogue }, { 2, rogue } }, 2), false));
+	QCOMPARE(keys.preferredId(), 1);
+	QCOMPARE(keys.preferredKey(), baked);
+	QVERIFY(!keys.apply(listing({ { 9, rogue } }, 9), false));
+	QCOMPARE(keys.preferredKey(), baked);
+	// It may choose among the baked keys.
+	QVERIFY(keys.apply(listing({ { 1, bakedHex }, { 2, rogue } }, 2), false));
+	QCOMPARE(keys.preferredId(), 1);
+	QCOMPARE(keys.preferredKey(), baked);
+	QVERIFY(!keys.stale());
+
+	// Another API host (a local stack, a test peer): its listing is all there is.
+	auto local = Api::Client(u"http://127.0.0.1:8000"_s, u"1.0.0"_s);
+	auto other = Rt::Keys(&local, nullptr);
+	QVERIFY(!other.pinned());
+	QVERIFY(!other.hasKeys());
+	QVERIFY(other.stale());
+	QVERIFY(other.apply(listing({ { 7, rogue } }, 7), false));
+	QCOMPARE(other.preferredId(), 7);
+	QCOMPARE(other.preferredKey(), base::bytes::fromHex(rogue));
+	QVERIFY(!other.stale());
 }
 
 QTEST_GUILESS_MAIN(TestApi)

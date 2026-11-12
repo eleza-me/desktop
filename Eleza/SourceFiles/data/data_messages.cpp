@@ -4,6 +4,7 @@
 #include "data/data_group_rules.h"
 #include "data/data_groups.h"
 #include "data/data_json.h"
+#include "data/data_media.h"
 #include "data/data_session.h"
 #include "data/data_transport.h"
 #include "data/data_users.h"
@@ -478,6 +479,8 @@ void Messages::removeMessage(const QString &chat, const QString &key, bool uncac
 		if (const auto db = _session->local()) {
 			db->deleteMessage(chat, seq);
 		}
+		// Its photo / video / voice / file in the disk cache too.
+		_session->media().evictAttachment(chat, seq);
 	}
 	const auto i = existing(chat);
 	if (!i) {
@@ -622,6 +625,9 @@ void Messages::dropMessages(const QString &chat, const QVector<qint64> &seqs, bo
 		for (const auto seq : seqs) {
 			db->deleteMessage(chat, seq);
 		}
+	}
+	for (const auto seq : seqs) {
+		_session->media().evictAttachment(chat, seq);
 	}
 }
 
