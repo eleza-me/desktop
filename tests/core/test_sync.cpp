@@ -230,6 +230,7 @@ private Q_SLOTS:
 	void acksEverySixteen();
 	void updateKinds();
 	void messageForUnloadedTimeline();
+	void firstMessageOfANewChatIsAnnounced();
 	void transientFrames();
 	void ptsSurvivesRestart();
 	void fallbackOnlyWhileDisconnected();
@@ -739,6 +740,64 @@ void TestSync::messageForUnloadedTimeline() {
 	Test::Settle(100);
 	QCOMPARE(reload.size(), 1);
 	QCOMPARE(harness.transport.count(u"chat.inbox"_s), inboxLoads + 3); // the three sections
+}
+
+// The first message of a chat new here (no row, no header in the update):
+// announced once the inbox brings the row, unless read meanwhile.
+void TestSync::firstMessageOfANewChatIsAnnounced() {
+	auto harness = Harness();
+	auto sections = QSet<QString>();
+	auto readTo = qint64(0);
+	harness.on(u"chat.inbox"_s, [&](const Call &call) {
+		const auto section = call.body.value("section"_L1).toString();
+		if (section == u"message") {
+			auto inbox = Test::Fixture("inbox_message.json");
+			if (sections.contains(section)) {
+				auto chats = inbox.value("chats"_L1).toArray();
+				chats.push_back(QJsonObject{
+					{ u"chat"_s, u"c_new"_s },
+					{ u"section"_s, u"message"_s },
+					{ u"state"_s, u"active"_s },
+					{ u"last_seq"_s, 2 },
+					{ u"unread"_s, 2 - readTo },
+					{ u"last_message"_s, MessageJson(u"c_new"_s, 2, u"u_x"_s, u"there"_s) },
+					{ u"chat_info"_s, QJsonObject{
+						{ u"chat"_s, u"c_new"_s },
+						{ u"kind"_s, u"direct"_s },
+						{ u"state"_s, u"active"_s },
+						{ u"participants"_s, QJsonArray{
+							QJsonObject{ { u"ref"_s, u"u_me"_s }, { u"user_id"_s, u"u_me"_s }, { u"me"_s, true } },
+							QJsonObject{ { u"ref"_s, u"u_x"_s }, { u"user_id"_s, u"u_x"_s } },
+						} },
+						{ u"last_seq"_s, 2 },
+						{ u"last_read_seq"_s, readTo },
+					} },
+				});
+				inbox.insert(u"chats"_s, chats);
+			}
+			sections.insert(section);
+			return Reply::Ok(inbox);
+		}
+		return Reply::Ok(QJsonObject{ { u"chats"_s, QJsonArray() } });
+	});
+	QVERIFY(harness.start());
+	harness.transport.setOnline(true);
+	harness.transport.emitFrame(Hello(100));
+	auto received = QSignalSpy(&harness.sync(), &Sync::messageReceived);
+	harness.transport.emitFrame(Update(101, u"message"_s, MessageJson(u"c_new"_s, 1, u"u_x"_s, u"hi"_s)));
+	harness.transport.emitFrame(Update(102, u"message"_s, MessageJson(u"c_new"_s, 2, u"u_x"_s, u"there"_s)));
+	QCOMPARE(received.size(), 0);
+	QVERIFY(Test::WaitFor([&] { return harness.chats().chat(u"c_new"_s) != nullptr; }, 3000));
+	QVERIFY(Test::WaitFor([&] { return received.size() == 1; }, 3000));
+	QCOMPARE(received[0][0].value<Data::Message>().seq, 2);
+	QCOMPARE(received[0][0].value<Data::Message>().chat, u"c_new"_s);
+	Test::Settle(100);
+	QCOMPARE(received.size(), 1);
+
+	// Another inbox read: nothing more to announce.
+	harness.chats().loadInbox();
+	Test::Settle(200);
+	QCOMPARE(received.size(), 1);
 }
 
 void TestSync::transientFrames() {
