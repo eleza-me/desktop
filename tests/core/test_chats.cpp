@@ -604,6 +604,8 @@ void TestChats::leftOutCardIsNotFinal() {
 		QCOMPARE(users.peek(u"u_b"_s).displayName, u"B"_s);
 		QVERIFY(!users.peek(u"u_b"_s).deleted);
 	}
+}
+
 // The toasts follow the server's push rules (push.go onChat).
 void TestChats::desktopAlertsFollowThePushRules() {
 	using Data::ChatAlert;

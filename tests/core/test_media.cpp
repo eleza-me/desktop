@@ -870,6 +870,8 @@ void TestMedia::uploadProgressIsThrottled() {
 		reports += other.due(qint64(i) * 20, total, 5000 + i * 2) ? 1 : 0;
 	}
 	QVERIFY2(reports >= 10 && reports <= 13, qPrintable(QString::number(reports)));
+}
+
 void TestMedia::streamReadsWhatHasArrived() {
 	auto dir = QTemporaryDir();
 	const auto part = dir.filePath(u"video.mp4.part"_s);
