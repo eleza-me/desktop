@@ -411,6 +411,23 @@ void Messages::updateCached(const QString &chat, const QVector<Message> &message
 	}
 	db->replaceMessages(rows);
 }
+void Messages::setUploadProgress(const QString &chat, const QString &key, double progress) {
+	const auto i = existing(chat);
+	const auto index = i ? i->indexOfKey(key) : -1;
+	if (index < 0) {
+		return;
+	}
+	auto &message = i->items[index];
+	const auto was = message.uploadProgress;
+	message.uploadProgress = progress;
+	if ((was >= 0.) != (progress >= 0.)) {
+		// Starting or ending an upload changes the bubble's lines.
+		Q_EMIT historyChanged(chat);
+	} else if (was != progress) {
+		Q_EMIT messageChanged(chat, key);
+	}
+}
+
 
 void Messages::clear(const QString &chat, std::optional<qint64> beforeSeq) {
 	if (const auto i = existing(chat)) {

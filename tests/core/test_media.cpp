@@ -79,6 +79,7 @@ private Q_SLOTS:
 	void picturesOutliveTheSharedCache();
 	void picturesComeFromDiskAtOnce();
 	void picturesAreOnlyPictures();
+	void uploadProgressIsThrottled();
 
 };
 
@@ -806,6 +807,30 @@ void TestMedia::picturesAreOnlyPictures() {
 	const auto handle = media.request(ref, MediaVariant::Thumb);
 	QVERIFY(Loaded(handle));
 	QVERIFY(media.picture(ref, MediaVariant::Thumb).isNull());
+}
+
+// Ten reports a second at most, and only a change of 1 %; the first, the
+// last and the forced ones always pass.
+void TestMedia::uploadProgressIsThrottled() {
+	auto throttle = Data::ProgressThrottle();
+	const auto total = qint64(10'000);
+	QVERIFY(throttle.due(0, total, 1000));
+	QVERIFY(!throttle.due(0, total, 2000));       // nothing new
+	QVERIFY(!throttle.due(50, total, 2000));      // less than 1 %
+	QVERIFY(!throttle.due(500, total, 1050));     // too soon
+	QVERIFY(throttle.due(500, total, 1100));
+	QVERIFY(!throttle.due(600, total, 1150));
+	QVERIFY(throttle.due(600, total, 1150, true)); // a part is done
+	QVERIFY(throttle.due(total, total, 1151));    // the end
+	QVERIFY(!throttle.due(total, total, 5000));
+
+	// Hundreds of chunks over a second: about ten reports.
+	auto other = Data::ProgressThrottle();
+	auto reports = 0;
+	for (auto i = 0; i <= 500; ++i) {
+		reports += other.due(qint64(i) * 20, total, 5000 + i * 2) ? 1 : 0;
+	}
+	QVERIFY2(reports >= 10 && reports <= 13, qPrintable(QString::number(reports)));
 }
 
 QTEST_GUILESS_MAIN(TestMedia)

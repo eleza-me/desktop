@@ -207,6 +207,9 @@ public:
 	void setInfo(const ChatInfo &info);
 	void applyPin(const QString &chat, qint64 seq, bool pinned);
 	void forget(const QString &chat);
+	// The upload progress of a message in memory: its row repaints
+	// (messageChanged), the chat is not rebuilt. Nothing is cached.
+	void setUploadProgress(const QString &chat, const QString &key, double progress);
 	// After a `too_long` difference: nothing tells what changed in the gap
 	// (an edit, a deletion or a reaction moves nothing a header shows), so
 	// every chat is stale as below — its cache goes, its timeline is read
@@ -249,6 +252,9 @@ private:
 		QVector<Message> messages; // oldest first
 		ChatInfo info;
 		std::optional<Group> group; // the header of a group's page
+	// One message changed where it is, as tall as it was (see
+	// setUploadProgress); historyChanged is not sent for it.
+	void messageChanged(const QString &chat, const QString &key);
 		bool hasMoreBefore = true;
 		bool hasMoreAfter = false;
 		// The oldest seq the server returned, messages that are not shown

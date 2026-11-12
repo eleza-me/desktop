@@ -219,6 +219,8 @@ private:
 	[[nodiscard]] const QVector<Data::Message> &items() const;
 	void refreshRows();
 	void applyRows(const QVector<Data::Message> &items);
+	// One message changed in place (Data::Messages::messageChanged).
+	void refreshRow(const QString &key);
 	void rebuildIndex();
 	[[nodiscard]] int indexOfKey(const QString &key) const;
 	[[nodiscard]] int indexOfSeq(qint64 seq) const;

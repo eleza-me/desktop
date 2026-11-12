@@ -116,6 +116,15 @@ ListWidget::ListWidget(
 		if (id != _chatId || _unreadResolved || !_started || _debugMode) {
 			return;
 		}
+	connect(
+		&data.messages(),
+		&Data::Messages::messageChanged,
+		this,
+		[this](const QString &chat, const QString &key) {
+			if (chat == _chatId && !_debugMode && _started) {
+				refreshRow(key);
+			}
+		});
 		const auto chat = _session->data().chats().chat(_chatId);
 		if (!chat) {
 			return;
@@ -743,6 +752,46 @@ void ListWidget::applyRows(const QVector<Data::Message> &timeline) {
 		_group,
 		config ? config->maxAlbumItems() : 10);
 	auto grouped = QVector<Data::Message>();
+void ListWidget::refreshRow(const QString &key) {
+	const auto &timeline = history();
+	const auto at = timeline.indexOfKey(key);
+	const auto index = indexOfKey(key);
+	if (at < 0 || index < 0) {
+		refreshRows();
+		return;
+	}
+	const auto &message = timeline.items[at];
+	const auto element = _rows[index].element.get();
+	auto changed = false;
+	if (element->isAlbum()) {
+		auto album = element->album();
+		auto found = false;
+		for (auto &item : album) {
+			if (item.key() == key) {
+				item = message;
+				found = true;
+			}
+		}
+		if (!found) {
+			refreshRows();
+			return;
+		}
+		changed = element->setData(AlbumHeadMessage(album), album);
+	} else if (element->key() == key) {
+		changed = element->setData(message);
+	} else {
+		refreshRows();
+		return;
+	}
+	if (changed) {
+		// Not a change in place after all: measured again with the rest.
+		_rows[index].exact = false;
+		refreshRows();
+		return;
+	}
+	updateRow(index);
+}
+
 	auto albums = std::vector<QVector<Data::Message>>();
 	if (runs.empty()) {
 		grouped = timeline;

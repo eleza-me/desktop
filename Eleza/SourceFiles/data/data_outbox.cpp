@@ -680,9 +680,11 @@ void Outbox::uploadFile(const QString &clientMessageId) {
 		}
 	};
 	callbacks.progress = [=, this](qint64 sent, qint64 total) {
-		_session->messages().patchMessage(chat, key, [&](Message &message) {
-			message.uploadProgress = total ? (double(sent) / double(total)) : 0.;
-		});
+		// Repaints the bubble alone, not the whole chat.
+		_session->messages().setUploadProgress(
+			chat,
+			key,
+			total ? (double(sent) / double(total)) : 0.);
 	};
 	callbacks.done = [=, this](const UploadResult &result) {
 		_uploads.remove(clientMessageId);
