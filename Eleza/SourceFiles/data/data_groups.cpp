@@ -546,7 +546,9 @@ void Groups::applyMessageFrame(const QString &group, const QJsonObject &data, bo
 	noteSenders(group, { message });
 	const auto mine = message.mine;
 	const auto isNew = message.seq > row->lastSeq;
-	const auto visible = message.visible();
+	// One I discarded while it was on its way is being deleted: not shown.
+	const auto visible = message.visible()
+		&& !(mine && _session->outbox().discarded(message));
 	// On screen with its newest message in view: read as it comes.
 	const auto onScreen = chats.readingLive(group);
 	const auto service = (message.kind == MessageKind::System);

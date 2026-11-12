@@ -549,6 +549,9 @@ void Sync::applyMessage(Message message, bool live) {
 	}
 	message.resolveLocal(info, _session->userId());
 	const auto mine = message.mine;
+	if (mine && _session->outbox().discarded(message)) {
+		return; // discarded here while it was on its way: being deleted
+	}
 	// A timeline takes what lies inside its window and, when it reaches the
 	// newest message, what extends it (anything else would show a hole
 	// between its run and this message); my own echo always replaces its

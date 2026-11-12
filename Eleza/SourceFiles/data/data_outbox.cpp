@@ -1,5 +1,6 @@
 #include "data/data_outbox.h"
 
+#include "base/platform_file.h"
 #include "base/random.h"
 #include "base/unixtime.h"
 #include "data/data_chats.h"
@@ -11,10 +12,46 @@
 #include "data/data_transport.h"
 #include "storage/storage_database.h"
 
+#include <QtCore/QDir>
+#include <QtCore/QFileInfo>
+
 #include <algorithm>
 #include <cmath>
 
 namespace Data {
+namespace {
+
+// No answer at all: offline, the connection dropped the request, a timeout.
+// Not a local failure with status 0 (a file that cannot be read, a request
+// that was cancelled): those are not retried forever.
+[[nodiscard]] bool NoAnswer(const Api::Error &error) {
+	return (error.status == 0) && error.retryable;
+}
+
+// Failed for a reason that may be gone when the connection comes up again.
+// Also the codes older versions stored for a message that got no answer.
+[[nodiscard]] bool RetryOnConnect(const Api::Error &error) {
+	return error.transient() && (error.status != 0 || error.retryable);
+}
+[[nodiscard]] bool StoredRetryOnConnect(const OutboxItem &item) {
+	return item.failed
+		&& (item.errorCode == u"offline"
+			|| item.errorCode == u"rt.dropped"
+			|| item.errorCode == u"rt.not_open");
+}
+
+[[nodiscard]] bool Inside(const QString &path, const QString &directory) {
+	if (path.isEmpty() || directory.isEmpty()) {
+		return false;
+	}
+	const auto file = QFileInfo(path).canonicalFilePath();
+	const auto root = QDir(directory).canonicalPath();
+	return !file.isEmpty()
+		&& !root.isEmpty()
+		&& file.startsWith(root + u'/');
+}
+
+} // namespace
 
 Outbox::Outbox(Session *session)
 : QObject(session)
@@ -26,8 +63,15 @@ Outbox::~Outbox() {
 	qDeleteAll(_retryTimers);
 }
 
+void Outbox::setFilesDirectory(const QString &path) {
+	_filesDirectory = path;
+}
+
 void Outbox::start(base::Guard guard, Fn<void()> ready) {
 	const auto begin = [=, this] {
+		if (!_started) {
+			removeStrayFiles();
+		}
 		_started = true;
 		auto chats = QStringList();
 		for (const auto &id : _order) {
@@ -55,6 +99,10 @@ void Outbox::start(base::Guard guard, Fn<void()> ready) {
 			if (item.clientMessageId.isEmpty() || _items.contains(item.clientMessageId)) {
 				continue;
 			}
+			auto &state = _states[item.clientMessageId];
+			state.sentOnce = Json::Bool(row, "sent_once"_L1);
+			state.retryOnConnect = Json::Bool(row, "retry_on_connect"_L1)
+				|| StoredRetryOnConnect(item);
 			_order.push_back(item.clientMessageId);
 			_items.insert(item.clientMessageId, std::move(item));
 		}
@@ -147,10 +195,17 @@ QString Outbox::sendFile(const QString &chat, const QString &filePath, const Fil
 	}
 	const auto kind = options.kind.value_or(probe.kind);
 	const auto messageKind = Upload::MessageKindFor(kind);
+	const auto selfDestruct = options.selfDestruct
+		&& options.selfDestruct->valid()
+		&& (messageKind == u"photo" || messageKind == u"video");
 	auto item = OutboxItem();
 	item.chat = chat;
 	item.kind = messageKind;
-	item.filePath = filePath;
+	// Known now: a copy of the file is kept under it.
+	item.clientMessageId = (options.album.isEmpty() || selfDestruct)
+		? base::RandomUuid()
+		: AlbumClientMessageId(options.album);
+	item.filePath = adoptFile(item.clientMessageId, filePath);
 	item.fileName = options.fileName.isEmpty() ? probe.fileName : options.fileName;
 	item.mime = probe.mime;
 	item.fileSize = probe.size;
@@ -161,9 +216,6 @@ QString Outbox::sendFile(const QString &chat, const QString &filePath, const Fil
 	Json::Put(item.body, "text"_L1, options.caption);
 	Json::Put(item.body, "entities"_L1, Json::Array(options.entities));
 	Json::Put(item.body, "reply_to_seq"_L1, options.replyToSeq);
-	const auto selfDestruct = options.selfDestruct
-		&& options.selfDestruct->valid()
-		&& (messageKind == u"photo" || messageKind == u"video");
 	if (selfDestruct) {
 		item.body.insert("self_destruct"_L1, options.selfDestruct->toJson());
 		Json::Put(item.body, "silent"_L1, options.silent);
@@ -172,7 +224,6 @@ QString Outbox::sendFile(const QString &chat, const QString &filePath, const Fil
 	Json::Put(item.body, "media_spoiler"_L1, options.spoiler);
 	if (!options.album.isEmpty()) {
 		item.body.insert("album"_L1, options.album.toLower());
-		item.clientMessageId = AlbumClientMessageId(options.album);
 	}
 	// Only a caption of a photo / video may sit above it.
 	const auto visual = (messageKind == u"photo")
@@ -356,7 +407,80 @@ QString Outbox::enqueue(OutboxItem item) {
 
 void Outbox::persist(const OutboxItem &item) {
 	if (const auto db = _session->local()) {
-		db->putOutbox({ item.clientMessageId, item.chat, item.createdAt, item.toJson() });
+		auto json = item.toJson();
+		const auto state = _states.value(item.clientMessageId);
+		Json::Put(json, "sent_once"_L1, state.sentOnce);
+		Json::Put(json, "retry_on_connect"_L1, state.retryOnConnect && item.failed);
+		db->putOutbox({ item.clientMessageId, item.chat, item.createdAt, std::move(json) });
+	}
+}
+
+// ---- files
+
+QString Outbox::ownFolder(const QString &clientMessageId) const {
+	return (_filesDirectory.isEmpty() || clientMessageId.isEmpty())
+		? QString()
+		: QDir(_filesDirectory).filePath(clientMessageId);
+}
+
+// A recording, a pasted picture or a shared file waits in the temporary
+// directory, which the next start clears: the queue sends a copy of its own.
+// A file the user picked stays where it is (it may be large, and it is theirs).
+QString Outbox::adoptFile(const QString &clientMessageId, const QString &path) const {
+	const auto folder = ownFolder(clientMessageId);
+	if (folder.isEmpty() || !Inside(path, base::platform::PrivateTempDirectory())) {
+		return path;
+	}
+	if (!base::platform::EnsureDirectory(folder, true)) {
+		return path;
+	}
+	const auto copy = QDir(folder).filePath(QFileInfo(path).fileName());
+	if (!QFile::copy(path, copy)) {
+		qWarning("Data: could not keep a queued file, it is sent from the temporary directory.");
+		base::platform::RemoveRecursively(folder);
+		return path;
+	}
+	return copy;
+}
+
+void Outbox::removeOwnFile(const QString &clientMessageId) {
+	const auto folder = ownFolder(clientMessageId);
+	if (!folder.isEmpty() && QFileInfo::exists(folder)) {
+		base::platform::RemoveRecursively(folder);
+	}
+}
+
+// Sent: the queue's copy goes back to the temporary directory (cleared at
+// the next start), so the bubble still plays / shows it without a download.
+QString Outbox::keepSentFile(const OutboxItem &item, const QString &localPath) const {
+	const auto folder = ownFolder(item.clientMessageId);
+	if (folder.isEmpty() || !Inside(item.filePath, folder)) {
+		return localPath;
+	} else if (item.body.contains("self_destruct"_L1)) {
+		return QString(); // this device keeps nothing of it
+	}
+	const auto temp = base::platform::PrivateTempDirectory();
+	const auto directory = QDir(temp).filePath(u"eleza-sent"_s);
+	if (temp.isEmpty() || !base::platform::EnsureDirectory(directory, true)) {
+		return QString();
+	}
+	const auto target = QDir(directory).filePath(
+		item.clientMessageId + u'-' + QFileInfo(item.filePath).fileName());
+	QFile::remove(target);
+	return QFile::rename(item.filePath, target) ? target : QString();
+}
+
+// Copies no item refers to any more (an item removed while its file was
+// open, a crash between the copy and the queue's row).
+void Outbox::removeStrayFiles() {
+	if (_filesDirectory.isEmpty() || !QFileInfo(_filesDirectory).isDir()) {
+		return;
+	}
+	const auto folders = QDir(_filesDirectory).entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+	for (const auto &name : folders) {
+		if (!_items.contains(name)) {
+			base::platform::RemoveRecursively(QDir(_filesDirectory).filePath(name));
+		}
 	}
 }
 
@@ -471,6 +595,9 @@ void Outbox::retry(const QString &clientMessageId) {
 	i->errorCode = QString();
 	i->errorText = QString();
 	i->attempts = 0;
+	auto &state = _states[clientMessageId];
+	state.retryOnConnect = false;
+	state.unanswered = 0;
 	_albumUploadFailed.remove(clientMessageId);
 	persist(*i);
 	setStatus(*i, MessageStatus::Queued);
@@ -490,7 +617,7 @@ void Outbox::discard(const QString &clientMessageId) {
 		_session->upload().abandon(item.uploadId);
 	}
 	delete _retryTimers.take(clientMessageId);
-	_sending.remove(clientMessageId);
+	forget(item);
 	_albumUploadFailed.remove(clientMessageId);
 	_items.erase(i);
 	_order.removeAll(clientMessageId);
@@ -500,8 +627,43 @@ void Outbox::discard(const QString &clientMessageId) {
 	if (const auto db = _session->local()) {
 		db->deleteOutbox(clientMessageId);
 	}
+	removeOwnFile(clientMessageId);
 	_session->messages().removeMessage(item.chat, Message::KeyForLocal(clientMessageId));
 	pumpChat(item.chat);
+}
+
+// The server may have the message already (the request is out, or one got
+// no answer): it cannot be stopped, so it is deleted for everyone when it
+// shows up — the answer or its echo, whichever comes first.
+void Outbox::forget(const OutboxItem &item) {
+	const auto id = item.clientMessageId;
+	const auto out = _sending.remove(id);
+	if (out || _states.value(id).sentOnce) {
+		_recalls.insert(id, Recall{ item.chat, 0 });
+	}
+	_states.remove(id);
+}
+
+void Outbox::recall(const QString &clientMessageId, qint64 seq) {
+	const auto i = _recalls.find(clientMessageId);
+	if (i == _recalls.end() || i->seq > 0 || seq <= 0) {
+		return;
+	}
+	i->seq = seq;
+	// Stays in _recalls: an echo that comes later is not shown either.
+	_session->messages().deleteMessage(i->chat, seq, true);
+}
+
+bool Outbox::discarded(const Message &message) {
+	if (!message.mine || message.clientMessageId.isEmpty()) {
+		return false;
+	}
+	const auto i = _recalls.constFind(message.clientMessageId);
+	if (i == _recalls.cend() || i->chat != message.chat) {
+		return false;
+	}
+	recall(message.clientMessageId, message.seq);
+	return true;
 }
 
 // The chat is gone (a group I am no longer in): what waited for it never goes.
@@ -520,12 +682,14 @@ void Outbox::discardChat(const QString &chat) {
 		}
 		delete _retryTimers.take(id);
 		_sending.remove(id);
+		_states.remove(id);
 		_albumUploadFailed.remove(id);
 		_items.erase(i);
 		_order.removeAll(id);
 		if (const auto db = _session->local()) {
 			db->deleteOutbox(id);
 		}
+		removeOwnFile(id);
 	}
 	_running.remove(chat);
 }
@@ -533,6 +697,24 @@ void Outbox::discardChat(const QString &chat) {
 void Outbox::retryAll() {
 	if (!_started) {
 		return;
+	}
+	// What failed for a reason the connection coming up may have ended goes
+	// again, in its place in the queue.
+	for (const auto &id : std::as_const(_order)) {
+		const auto i = _items.find(id);
+		if (i == _items.end() || !i->failed || !_states.value(id).retryOnConnect) {
+			continue;
+		}
+		i->failed = false;
+		i->errorCode = QString();
+		i->errorText = QString();
+		i->attempts = 0;
+		auto &state = _states[id];
+		state.retryOnConnect = false;
+		state.unanswered = 0;
+		_albumUploadFailed.remove(id);
+		persist(*i);
+		setStatus(*i, MessageStatus::Queued);
 	}
 	auto chats = QStringList();
 	for (const auto &id : _order) {
@@ -727,6 +909,10 @@ void Outbox::send(const QString &clientMessageId) {
 	body.insert(group ? "group"_L1 : "chat"_L1, i->chat);
 	body.insert("client_message_id"_L1, clientMessageId);
 	_sending.insert(clientMessageId);
+	if (auto &state = _states[clientMessageId]; !state.sentOnce) {
+		state.sentOnce = true;
+		persist(*i);
+	}
 	// Over the connection or HTTP: the same id either way, so the server
 	// answers a repeat with `duplicate` instead of a second message.
 	_session->transport().rpc(group ? u"groups.send"_s : u"chat.send"_s)
@@ -744,12 +930,20 @@ void Outbox::send(const QString &clientMessageId) {
 
 void Outbox::succeeded(const QString &clientMessageId, const QJsonObject &result) {
 	_sending.remove(clientMessageId);
+	const auto seq = Json::Int64(result, "seq"_L1);
 	const auto i = _items.find(clientMessageId);
 	if (i == _items.end()) {
+		// Discarded while it was on its way: it went all the same.
+		if (const auto recalled = _recalls.constFind(clientMessageId); recalled != _recalls.cend()) {
+			if (IsGroupId(recalled->chat) && seq > 0) {
+				// Its pts is still a change of the group.
+				_session->groups().sent(recalled->chat, Message(), result, false);
+			}
+			recall(clientMessageId, seq);
+		}
 		return;
 	}
 	const auto item = *i;
-	const auto seq = Json::Int64(result, "seq"_L1);
 	// Sent: the echo update (same client message id) replaces the local
 	// bubble; until it lands, show the local one as sent with its seq.
 	const auto &history = _session->messages().history(item.chat);
@@ -767,6 +961,7 @@ void Outbox::succeeded(const QString &clientMessageId, const QJsonObject &result
 			message.live->until = until;
 		}
 		message.attachment = message.selfDestruct ? QString() : item.mediaId;
+		message.localPath = keepSentFile(item, message.localPath);
 		message.status = MessageStatus::Sent;
 		message.uploadProgress = -1.;
 		// merge() swaps the pending copy for this one (same client message id).
@@ -789,18 +984,20 @@ void Outbox::succeeded(const QString &clientMessageId, const QJsonObject &result
 		_session->groups().sent(item.chat, found ? *found : Message(), result, cached);
 	}
 	_items.erase(i);
+	_states.remove(clientMessageId);
 	_order.removeAll(clientMessageId);
 	_running.remove(item.chat);
 	if (const auto db = _session->local()) {
 		db->deleteOutbox(clientMessageId);
 	}
+	removeOwnFile(clientMessageId);
 	Q_EMIT sent(item.chat, clientMessageId, seq);
 	// The next one of this chat becomes «sending».
 	pumpChat(item.chat);
 }
 
 void Outbox::errored(const QString &clientMessageId, const Api::Error &error) {
-	_sending.remove(clientMessageId);
+	const auto wasSending = _sending.remove(clientMessageId);
 	auto i = _items.find(clientMessageId);
 	if (i == _items.end()) {
 		return;
@@ -822,16 +1019,33 @@ void Outbox::errored(const QString &clientMessageId, const Api::Error &error) {
 	if (_running.value(chat) == clientMessageId) {
 		_running.remove(chat);
 	}
-	if (!slowMode) {
-		++i->attempts;
+	auto &state = _states[clientMessageId];
+	const auto noAnswer = NoAnswer(error);
+	if (noAnswer) {
+		// Offline or dropped on the way: not an attempt. The message waits
+		// for the network however long it takes, and keeps its place.
+		++state.unanswered;
+	} else {
+		state.unanswered = 0;
+		if (!slowMode) {
+			++i->attempts;
+		}
+		if (wasSending && !error.transient()) {
+			// Refused: the server does not have it (a repeat of one it has
+			// is answered as a duplicate).
+			state.sentOnce = false;
+		}
 	}
-	if (slowMode || (error.transient() && i->attempts < kMaxAttempts)) {
-		persist(*i);
+	if (slowMode || noAnswer || (error.transient() && i->attempts < kMaxAttempts)) {
+		if (!noAnswer) {
+			persist(*i); // the attempts
+		}
 		// Slow mode names the wait: the message stays queued and goes with
 		// the same id when it is over.
+		const auto steps = noAnswer ? state.unanswered : i->attempts;
 		const auto delay = slowMode
 			? int(std::clamp(error.retryAfter.value_or(5.), 1., 3600.) * 1000) + 250
-			: int(std::min(30., std::pow(2., i->attempts)) * 1000);
+			: int(std::min(30., std::pow(2., std::min(steps, 5))) * 1000);
 		const auto timer = new base::Timer([=, this] {
 			if (const auto own = _retryTimers.take(clientMessageId)) {
 				own->deleteLater();
@@ -847,6 +1061,7 @@ void Outbox::errored(const QString &clientMessageId, const Api::Error &error) {
 	i->failed = true;
 	i->errorCode = error.code;
 	i->errorText = error.message;
+	state.retryOnConnect = RetryOnConnect(error);
 	persist(*i);
 	setStatus(*i, MessageStatus::Failed);
 	Q_EMIT failed(chat, clientMessageId, error);

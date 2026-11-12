@@ -4,6 +4,7 @@
 #include "api/api_client_config.h"
 #include "base/platform_file.h"
 #include "base/random.h"
+#include "data/data_outbox.h"
 #include "data/data_session.h"
 #include "main/main_account.h"
 #include "rt/rt_methods.h"
@@ -216,6 +217,7 @@ Session::Session(Account *account, const QString &userId)
 	config.clientConfig = &account->clientConfig();
 	config.cacheDir = _userDir + u"/media"_s;
 	_data = std::make_unique<Data::Session>(std::move(config));
+	_data->outbox().setFilesDirectory(_userDir + u"/outbox"_s);
 
 	account->clientConfig().load();
 	_data->start([this] {
