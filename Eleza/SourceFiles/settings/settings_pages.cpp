@@ -4,6 +4,8 @@
 
 #include "api/api_client_config.h"
 #include "boxes/about_box.h"
+#include "conversation/conversation_boxes.h"
+#include "conversation/conversation_time.h"
 #include "core/core_application.h"
 #include "data/data_chats.h"
 #include "data/data_graph.h"
@@ -393,21 +395,10 @@ private:
 		AddDivider(content());
 		AddSubsectionTitle(content(), tr::lng_tab_talk(tr::now));
 		auto &config = session.account().clientConfig();
-		auto durations = std::vector<Option>();
-		const auto list = config.conversationDurations();
-		for (const auto &duration : list) {
-			durations.push_back({ duration, DurationTitle(duration) });
-		}
-		if (!durations.empty()) {
-			auto fallback = config.conversationDefaultDuration();
-			if (!list.contains(fallback)) {
-				fallback = list.back();
-			}
-			addPicker(
-				tr::lng_settings_default_duration(tr::now),
-				u"messages.default_expiry"_s,
-				durations,
-				fallback);
+		const auto list = Conversation::SortedDurations(
+			config.conversationDurations());
+		if (!list.isEmpty()) {
+			addDefaultDuration(list);
 		}
 		addToggle(
 			tr::lng_settings_masked_join(tr::now),
@@ -433,6 +424,41 @@ private:
 				{ u"never"_s, tr::lng_settings_autoplay_never(tr::now) },
 			},
 			u"always"_s);
+	}
+
+	// «مدت پیش‌فرض گفتگو» is kept on this computer (the synced document has
+	// no such key, iOS keeps it on the phone too): what the box of a new
+	// conversation starts with.
+	void addDefaultDuration(const QStringList &sorted) {
+		const auto session = &controller()->session();
+		auto options = std::vector<Option>();
+		for (const auto &duration : sorted) {
+			options.push_back({ duration, DurationTitle(duration) });
+		}
+		const auto current = [=] {
+			return Conversation::DefaultDuration(
+				sorted,
+				Conversation::DefaultDurationPreference(session),
+				QString());
+		};
+		const auto title = tr::lng_settings_default_duration(tr::now);
+		const auto button = AddButton(content(), title);
+		const auto refresh = [=] {
+			button->setValueText(DurationTitle(current()));
+		};
+		refresh();
+		const auto window = controller();
+		button->setClickedCallback([=] {
+			ShowPickerBox(
+				window,
+				title,
+				options,
+				current(),
+				Guarded(button, [=](const QString &value) {
+					Conversation::SetDefaultDurationPreference(session, value);
+					refresh();
+				}));
+		});
 	}
 
 };
