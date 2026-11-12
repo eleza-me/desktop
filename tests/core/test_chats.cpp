@@ -1,8 +1,10 @@
 // Data::Chats on a fake transport: which rows the list shows, what an inbox
 // reload keeps, and how unread counts follow read marks.
 #include "data/data_json.h"
+#include "data/data_users.h"
 #include "test_harness.h"
 
+#include <QtCore/QTemporaryDir>
 #include <QtTest/QSignalSpy>
 
 using namespace Data;
@@ -123,6 +125,7 @@ private Q_SLOTS:
 	void unreadAfterRead();
 	void partialAndRemoteReads();
 	void scrolledUpCountsUnread();
+	void leftOutCardIsNotFinal();
 
 };
 
@@ -522,6 +525,80 @@ void TestChats::scrolledUpCountsUnread() {
 	// Gone from the screen: «at the end» means nothing then.
 	chats.setVisibleChat(QString(), false);
 	QVERIFY(!chats.readingLive(QString()));
+}
+
+// Somebody `users.cards` leaves out (unknown, suspended, blocking me) is a
+// placeholder for this run only: never stored, asked for again next time
+// (they may be back). Older versions stored such placeholders: those rows
+// are asked for again too.
+void TestChats::leftOutCardIsNotFinal() {
+	auto dir = QTemporaryDir();
+	QVERIFY(dir.isValid());
+	const auto path = dir.filePath(u"cache.db"_s);
+	const auto asked = [](const Harness &harness, const QString &id) {
+		auto result = 0;
+		for (const auto &body : harness.bodies(u"users.cards"_s)) {
+			if (body.value("ids"_L1).toString().split(u',').contains(id)) {
+				++result;
+			}
+		}
+		return result;
+	};
+	const auto ensure = [](Harness &harness, const QStringList &ids) {
+		auto done = false;
+		harness.session->users().ensure(ids, base::Guard(), [&] { done = true; });
+		return Test::WaitFor([&] { return done; });
+	};
+	{
+		auto harness = Harness(path);
+		QVERIFY(harness.start());
+		harness.database->putUsers({
+			{ u"u_old"_s, QJsonObject{ { u"id"_s, u"u_old"_s }, { u"deleted"_s, true } } },
+			{ u"u_gone"_s, QJsonObject{
+				{ u"id"_s, u"u_gone"_s },
+				{ u"display_name"_s, u"حساب حذف‌شده"_s },
+				{ u"deleted"_s, true },
+			} },
+		});
+		harness.on(u"users.cards"_s, [](const Call &) {
+			return Reply::Ok(QJsonObject{ { u"users"_s, QJsonArray{
+				QJsonObject{ { u"id"_s, u"u_a"_s }, { u"display_name"_s, u"A"_s } },
+			} } });
+		});
+		QVERIFY(ensure(harness, { u"u_a"_s, u"u_b"_s, u"u_old"_s, u"u_gone"_s }));
+		auto &users = harness.session->users();
+		QCOMPARE(users.peek(u"u_a"_s).displayName, u"A"_s);
+		QVERIFY(users.peek(u"u_b"_s).deleted);
+		QVERIFY(users.peek(u"u_old"_s).deleted);
+		// The server's card of a deleted account is one.
+		QCOMPARE(users.peek(u"u_gone"_s).displayName, u"حساب حذف‌شده"_s);
+		QCOMPARE(asked(harness, u"u_gone"_s), 0);
+		// The stored placeholder was asked for again.
+		QCOMPARE(asked(harness, u"u_old"_s), 1);
+		QCOMPARE(asked(harness, u"u_b"_s), 1);
+		// In this run the placeholder answers.
+		QVERIFY(ensure(harness, { u"u_b"_s }));
+		(void)users.get(u"u_b"_s);
+		Test::Settle(60);
+		QCOMPARE(asked(harness, u"u_b"_s), 1);
+	}
+	{
+		// The next run: u_b is back.
+		auto harness = Harness(path);
+		QVERIFY(harness.start());
+		harness.on(u"users.cards"_s, [](const Call &) {
+			return Reply::Ok(QJsonObject{ { u"users"_s, QJsonArray{
+				QJsonObject{ { u"id"_s, u"u_b"_s }, { u"display_name"_s, u"B"_s } },
+			} } });
+		});
+		QVERIFY(ensure(harness, { u"u_a"_s, u"u_b"_s }));
+		auto &users = harness.session->users();
+		QCOMPARE(users.peek(u"u_a"_s).displayName, u"A"_s); // from the database
+		QCOMPARE(asked(harness, u"u_a"_s), 0);
+		QCOMPARE(asked(harness, u"u_b"_s), 1);
+		QCOMPARE(users.peek(u"u_b"_s).displayName, u"B"_s);
+		QVERIFY(!users.peek(u"u_b"_s).deleted);
+	}
 }
 
 QTEST_GUILESS_MAIN(TestChats)

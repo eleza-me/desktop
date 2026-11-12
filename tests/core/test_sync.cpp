@@ -1274,6 +1274,9 @@ void TestSync::patchesReachTheCache() {
 	QVERIFY(CacheC1(path));
 	auto harness = Harness(path);
 	QVERIFY(harness.start());
+	// The rows from the server first (the fixtures' people are no cards the
+	// fake server knows: they are asked for in every run).
+	QVERIFY(Test::WaitFor([&] { return harness.chats().inboxLoadedOnce(); }));
 	harness.transport.setOnline(true);
 	harness.transport.emitFrame(Hello(100));
 	auto &messages = harness.messages();
