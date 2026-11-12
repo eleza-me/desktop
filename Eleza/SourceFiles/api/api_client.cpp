@@ -128,6 +128,14 @@ struct Client::Download {
 	bool retriedAuth = false;
 	bool tooLarge = false;
 	bool writeFailed = false;
+	// ---- to a file
+	QString partPath;
+	bool stablePart = false; // <path>.part of a resumable download
+	qint64 offset = 0;       // what the part held when this request went out
+	QByteArray tag;          // its entity tag, sent as If-Range
+	qint64 total = -1;       // the size of the whole file, once known
+	bool fresh = false;      // no range any more (the server did not continue it)
+	bool restart = false;    // this answer does not continue the part
 };
 
 namespace {
@@ -135,6 +143,102 @@ namespace {
 // Next to the target, and never shared by two downloads of the same file.
 [[nodiscard]] QString PartPath(const QString &filePath, RequestId id) {
 	return filePath + u'.' + QString::number(id) + u".part"_s;
+}
+
+[[nodiscard]] QString StablePartPath(const QString &filePath) {
+	return filePath + u".part"_s;
+}
+
+[[nodiscard]] QString TagPath(const QString &partPath) {
+	return partPath + u".tag"_s;
+}
+
+// A strong entity tag (`"…"`); a weak one (W/"…") never makes a range
+// conditional (RFC 9110 §13.1.5), so it is no use for resuming.
+[[nodiscard]] QByteArray StrongTag(const QByteArray &value) {
+	const auto tag = value.trimmed();
+	if (tag.size() < 2 || tag.size() > 256 || !tag.startsWith('"') || !tag.endsWith('"')) {
+		return QByteArray();
+	}
+	for (const auto c : tag) {
+		if (uchar(c) < 0x21 || uchar(c) > 0x7e) {
+			return QByteArray();
+		}
+	}
+	return tag;
+}
+
+[[nodiscard]] QByteArray ReadTag(const QString &path) {
+	auto file = QFile(path);
+	return file.open(QIODevice::ReadOnly) ? StrongTag(file.read(512)) : QByteArray();
+}
+
+void WriteTag(const QString &path, const QByteArray &tag) {
+	if (tag.isEmpty()) {
+		QFile::remove(path);
+		return;
+	}
+	auto file = QFile(path);
+	if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)
+		|| file.write(tag) != tag.size()
+		|| !file.flush()) {
+		file.close();
+		QFile::remove(path);
+	}
+}
+
+struct ContentRange {
+	qint64 first = -1; // -1: `bytes */<total>`
+	qint64 last = -1;
+	qint64 total = -1; // -1: `/*`
+};
+
+// `bytes <first>-<last>/<total>`, `bytes */<total>`, `bytes <first>-<last>/*`.
+[[nodiscard]] std::optional<ContentRange> ParseContentRange(const QByteArray &value) {
+	const auto trimmed = value.trimmed();
+	if (!trimmed.startsWith("bytes ")) {
+		return std::nullopt;
+	}
+	const auto spec = trimmed.mid(6).trimmed();
+	const auto slash = spec.indexOf('/');
+	if (slash <= 0) {
+		return std::nullopt;
+	}
+	const auto number = [](const QByteArray &text) -> qint64 {
+		if (text.isEmpty() || text.size() > 18) {
+			return -1;
+		}
+		for (const auto c : text) {
+			if (c < '0' || c > '9') {
+				return -1;
+			}
+		}
+		return text.toLongLong();
+	};
+	auto result = ContentRange();
+	const auto total = spec.mid(slash + 1);
+	if (total != "*") {
+		result.total = number(total);
+		if (result.total < 0) {
+			return std::nullopt;
+		}
+	}
+	const auto range = spec.left(slash);
+	if (range == "*") {
+		return (result.total >= 0) ? std::make_optional(result) : std::nullopt;
+	}
+	const auto dash = range.indexOf('-');
+	if (dash <= 0) {
+		return std::nullopt;
+	}
+	result.first = number(range.left(dash));
+	result.last = number(range.mid(dash + 1));
+	if (result.first < 0
+		|| result.last < result.first
+		|| (result.total >= 0 && result.last >= result.total)) {
+		return std::nullopt;
+	}
+	return result;
 }
 
 } // namespace
@@ -281,6 +385,11 @@ DownloadBuilder &DownloadBuilder::toFile(const QString &path) {
 	return *this;
 }
 
+DownloadBuilder &DownloadBuilder::resumable() {
+	_spec.resumable = true;
+	return *this;
+}
+
 DownloadBuilder &DownloadBuilder::maxBytes(qint64 bytes) {
 	_spec.maxBytes = bytes;
 	return *this;
@@ -303,6 +412,17 @@ DownloadBuilder &DownloadBuilder::guard(base::Guard guard) {
 
 DownloadBuilder &DownloadBuilder::progress(Fn<void(qint64, qint64)> callback) {
 	_spec.progress = std::move(callback);
+	return *this;
+}
+
+DownloadBuilder &DownloadBuilder::written(
+		Fn<void(const QString &partPath, qint64 written, qint64 total)> callback) {
+	_spec.written = std::move(callback);
+	return *this;
+}
+
+DownloadBuilder &DownloadBuilder::finishing(Fn<void()> callback) {
+	_spec.finishing = std::move(callback);
 	return *this;
 }
 
@@ -544,9 +664,8 @@ void Client::cancel(RequestId id) {
 			download->reply->abort();
 			download->reply->deleteLater();
 		}
-		if (download->file) {
-			download->file->remove();
-		}
+		// A resumable part stays for the next download of the file.
+		releasePart(download.get(), download->spec.resumable);
 	} else if (const auto k = _uploads.find(id); k != end(_uploads)) {
 		const auto upload = std::move(k->second);
 		_uploads.erase(k);
@@ -823,6 +942,17 @@ RequestId Client::start(DownloadSpec &&spec) {
 	download->current = download->spec.target.startsWith(u'/')
 		? url(download->spec.target)
 		: QUrl(download->spec.target);
+	if (!download->spec.filePath.isEmpty()) {
+		const auto stable = StablePartPath(download->spec.filePath);
+		if (download->spec.resumable && !_partsInUse.contains(stable)) {
+			download->partPath = stable;
+			download->stablePart = true;
+			_partsInUse.insert(stable);
+		} else {
+			// Not resumable, or the file is being downloaded already.
+			download->partPath = PartPath(download->spec.filePath, id);
+		}
+	}
 	const auto authenticated = download->spec.authenticated;
 	_downloads.emplace(id, std::move(download));
 	withToken(id, authenticated, [=, this](QString token) {
@@ -836,6 +966,23 @@ RequestId Client::start(DownloadSpec &&spec) {
 	return id;
 }
 
+void Client::releasePart(Download *download, bool keep) {
+	download->file = nullptr;
+	if (download->partPath.isEmpty()) {
+		return;
+	}
+	const auto part = std::exchange(download->partPath, QString());
+	if (download->stablePart) {
+		_partsInUse.remove(part);
+		// Only what a later request can continue: bytes and their tag.
+		if (keep && QFileInfo(part).size() > 0 && QFileInfo::exists(TagPath(part))) {
+			return;
+		}
+		QFile::remove(TagPath(part));
+	}
+	QFile::remove(part);
+}
+
 void Client::performDownload(RequestId id) {
 	const auto i = _downloads.find(id);
 	if (i == end(_downloads)) {
@@ -843,6 +990,7 @@ void Client::performDownload(RequestId id) {
 	}
 	const auto download = i->second.get();
 	if (!download->spec.guard.alive()) {
+		releasePart(download, download->spec.resumable);
 		_downloads.erase(i);
 		return;
 	}
@@ -852,9 +1000,26 @@ void Client::performDownload(RequestId id) {
 	download->received = 0;
 	download->tooLarge = false;
 	download->writeFailed = false;
-	if (download->file) {
-		download->file->remove();
-		download->file = nullptr;
+	download->restart = false;
+	download->file = nullptr;
+	download->offset = 0;
+	download->tag.clear();
+	download->total = -1;
+	if (!download->partPath.isEmpty()) {
+		if (!download->stablePart) {
+			QFile::remove(download->partPath);
+		} else {
+			// What an earlier download left: continued only with its tag.
+			const auto size = QFileInfo(download->partPath).size();
+			const auto tag = ReadTag(TagPath(download->partPath));
+			if (!download->fresh && size > 0 && !tag.isEmpty()) {
+				download->offset = size;
+				download->tag = tag;
+			} else if (size > 0 || QFileInfo::exists(TagPath(download->partPath))) {
+				QFile::remove(download->partPath);
+				QFile::remove(TagPath(download->partPath));
+			}
+		}
 	}
 	if (!acceptableRemote(download->current)) {
 		// Asynchronous like every other outcome.
@@ -870,6 +1035,11 @@ void Client::performDownload(RequestId id) {
 		if (download->spec.authenticated && !download->token.isEmpty()) {
 			request.setRawHeader("Authorization"_ba, "Bearer "_ba + download->token.toLatin1());
 		}
+	}
+	if (download->offset > 0) {
+		// On every hop: the API's 302 ignores it, the storage answers it.
+		request.setRawHeader("Range"_ba, "bytes="_ba + QByteArray::number(download->offset) + '-');
+		request.setRawHeader("If-Range"_ba, download->tag);
 	}
 	request.setTransferTimeout(download->spec.timeoutMs);
 	const auto reply = _manager.get(request);
@@ -895,35 +1065,71 @@ void Client::performDownload(RequestId id) {
 				reply->abort();
 			}
 			return;
+		} else if (download->restart) {
+			reply->readAll();
+			return;
+		}
+		const auto toFile = !download->spec.filePath.isEmpty();
+		if (toFile && !download->file) {
+			// The first bytes of the body: does it continue the part?
+			auto append = false;
+			if (status == 206) {
+				const auto range = ParseContentRange(reply->rawHeader("Content-Range"_ba));
+				const auto tag = reply->rawHeader("ETag"_ba).trimmed();
+				const auto continues = range
+					&& range->first == download->offset
+					&& (range->total < 0 || range->last + 1 == range->total)
+					&& (download->offset == 0 || tag.isEmpty() || tag == download->tag);
+				if (!continues) {
+					download->restart = true;
+					reply->abort();
+					return;
+				}
+				download->total = range->total;
+				append = (download->offset > 0);
+			} else {
+				// The whole body: what the part held (if anything) is dropped.
+				download->offset = 0;
+				const auto length = reply->header(QNetworkRequest::ContentLengthHeader);
+				download->total = length.isValid() ? length.toLongLong() : -1;
+			}
+			base::platform::EnsureDirectory(QFileInfo(download->spec.filePath).absolutePath());
+			download->file = std::make_unique<QFile>(download->partPath);
+			// Unbuffered: what was written is on disk for a reader of the part.
+			const auto mode = QIODevice::WriteOnly
+				| QIODevice::Unbuffered
+				| (append ? QIODevice::Append : QIODevice::Truncate);
+			if (!download->file->open(mode)) {
+				download->file = nullptr;
+				download->writeFailed = true;
+				reply->abort();
+				return;
+			}
+			if (download->stablePart && !append) {
+				WriteTag(TagPath(download->partPath), StrongTag(reply->rawHeader("ETag"_ba)));
+			}
 		}
 		const auto chunk = reply->readAll();
 		download->received += chunk.size();
 		const auto limit = (download->spec.maxBytes > 0)
 			? download->spec.maxBytes
 			: kMaxDownloadDefault;
-		if (download->received > limit) {
+		if (download->offset + download->received > limit) {
 			download->tooLarge = true;
 			reply->abort();
 			return;
 		}
-		if (download->spec.filePath.isEmpty()) {
+		if (!toFile) {
 			download->bytes.append(chunk);
-		} else {
-			if (!download->file) {
-				base::platform::EnsureDirectory(QFileInfo(download->spec.filePath).absolutePath());
-				download->file = std::make_unique<QFile>(PartPath(download->spec.filePath, id));
-				if (!download->file->open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-					download->file = nullptr;
-					download->writeFailed = true;
-					reply->abort();
-					return;
-				}
-			}
-			if (download->file->write(chunk) != chunk.size()) {
-				// A full disk: never reported as a finished (truncated) file.
-				download->writeFailed = true;
-				reply->abort();
-			}
+		} else if (download->file->write(chunk) != chunk.size()) {
+			// A full disk: never reported as a finished (truncated) file.
+			download->writeFailed = true;
+			reply->abort();
+		} else if (download->spec.written && download->spec.guard.alive()) {
+			download->spec.written(
+				download->partPath,
+				download->offset + download->received,
+				download->total);
 		}
 	});
 	connect(reply, &QNetworkReply::downloadProgress, this, [=, this](qint64 received, qint64 total) {
@@ -931,10 +1137,16 @@ void Client::performDownload(RequestId id) {
 		if (i == end(_downloads) || i->second->reply != reply) {
 			return;
 		}
+		const auto download = i->second.get();
 		const auto status = StatusOf(reply);
-		const auto &spec = i->second->spec;
-		if (status >= 200 && status < 300 && spec.progress && spec.guard.alive()) {
-			spec.progress(received, total);
+		const auto &spec = download->spec;
+		if (status >= 200 && status < 300
+			&& !download->restart
+			&& spec.progress
+			&& spec.guard.alive()) {
+			// Of the whole file, the part continued included.
+			const auto offset = (status == 206) ? download->offset : 0;
+			spec.progress(offset + received, (total > 0) ? (offset + total) : total);
 		}
 	});
 	connect(reply, &QNetworkReply::finished, this, [=, this] {
@@ -956,7 +1168,22 @@ void Client::downloadFinished(RequestId id) {
 	reply->deleteLater();
 
 	const auto status = StatusOf(reply);
-	if (download->tooLarge) {
+	const auto startOver = [&] {
+		// Once: then without a range, the part dropped.
+		if (download->fresh) {
+			failDownload(id, Error::Local(status, u"range"_s, u"the file was not continued"_s));
+			return;
+		}
+		download->fresh = true;
+		download->file = nullptr;
+		QFile::remove(download->partPath);
+		QFile::remove(TagPath(download->partPath));
+		performDownload(id);
+	};
+	if (download->restart) {
+		startOver();
+		return;
+	} else if (download->tooLarge) {
 		failDownload(id, Error::Local(413, u"too_large"_s, u"the file is larger than allowed"_s));
 		return;
 	} else if (download->writeFailed) {
@@ -981,8 +1208,21 @@ void Client::downloadFinished(RequestId id) {
 		performDownload(id);
 		return;
 	}
-	if (status == 0 || reply->error() != QNetworkReply::NoError) {
-		if (status == 0) {
+	// 416 to a range from the end of the part: it was the whole file.
+	auto complete = false;
+	if (status == 416 && download->offset > 0) {
+		const auto range = ParseContentRange(reply->rawHeader("Content-Range"_ba));
+		if (range && range->first < 0 && range->total == download->offset) {
+			complete = true;
+		} else {
+			startOver();
+			return;
+		}
+	}
+	if (!complete && (status == 0 || reply->error() != QNetworkReply::NoError)) {
+		if (status == 0 || (status >= 200 && status < 300)) {
+			// No answer, or a body that broke off (a dropped connection, a
+			// timeout): the transfer failed, not the request.
 			failDownload(id, Error::Offline(reply->errorString()));
 			return;
 		}
@@ -1023,36 +1263,53 @@ void Client::downloadFinished(RequestId id) {
 		failDownload(id, error);
 		return;
 	}
-	if (status < 200 || status >= 300) {
+	if (!complete && (status < 200 || status >= 300)) {
 		failDownload(id, Error::Local(status, u"http"_s, ReasonOf(reply)));
+		return;
+	}
+	if (!complete && status != 206) {
+		download->offset = 0; // a whole body (an empty one too) replaced the part
+	} else if (!complete && !download->file && !download->spec.filePath.isEmpty()) {
+		startOver(); // a 206 without a body continues nothing
 		return;
 	}
 	auto result = DownloadResult();
 	result.contentType = reply->header(QNetworkRequest::ContentTypeHeader).toString();
-	result.size = download->received;
+	result.size = complete ? download->offset : (download->offset + download->received);
 	if (!download->spec.filePath.isEmpty()) {
-		if (!download->file) {
+		if (!download->file && !complete) {
 			// An empty body: still produce the (empty) file.
-			download->file = std::make_unique<QFile>(PartPath(download->spec.filePath, id));
 			base::platform::EnsureDirectory(QFileInfo(download->spec.filePath).absolutePath());
+			download->file = std::make_unique<QFile>(download->partPath);
 			if (!download->file->open(QIODevice::WriteOnly | QIODevice::Truncate)) {
 				download->file = nullptr;
 				failDownload(id, Error::Local(0, u"file"_s, u"could not write the file"_s));
 				return;
 			}
 		}
-		const auto flushed = download->file->flush();
-		download->file->close();
-		if (!flushed || download->file->error() != QFileDevice::NoError) {
-			failDownload(id, Error::Local(0, u"file"_s, u"could not write the file"_s));
-			return;
+		if (download->file) {
+			const auto flushed = download->file->flush();
+			download->file->close();
+			const auto failed = !flushed || download->file->error() != QFileDevice::NoError;
+			download->file = nullptr;
+			if (failed) {
+				failDownload(id, Error::Local(0, u"file"_s, u"could not write the file"_s));
+				return;
+			}
+		}
+		if (download->spec.finishing && download->spec.guard.alive()) {
+			download->spec.finishing();
 		}
 		QFile::remove(download->spec.filePath);
-		if (!download->file->rename(download->spec.filePath)) {
+		if (!QFile::rename(download->partPath, download->spec.filePath)) {
 			failDownload(id, Error::Local(0, u"file"_s, u"could not write the file"_s));
 			return;
 		}
-		download->file = nullptr;
+		if (download->stablePart) {
+			QFile::remove(TagPath(download->partPath));
+			_partsInUse.remove(download->partPath);
+		}
+		download->partPath.clear();
 		result.filePath = download->spec.filePath;
 	} else {
 		result.bytes = std::move(download->bytes);
@@ -1071,9 +1328,14 @@ void Client::failDownload(RequestId id, const Error &error) {
 	}
 	const auto download = std::move(i->second);
 	_downloads.erase(i);
-	if (download->file) {
-		download->file->remove();
-	}
+	// Kept for the next attempt when only the transfer failed; not when
+	// what arrived was wrong (too large, unwritable, the wrong file).
+	const auto keep = download->spec.resumable
+		&& error.transient()
+		&& error.code != u"file"
+		&& error.code != u"too_large"
+		&& error.code != u"range";
+	releasePart(download.get(), keep);
 	if (download->spec.fail && download->spec.guard.alive()) {
 		download->spec.fail(error);
 	}

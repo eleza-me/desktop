@@ -118,6 +118,20 @@ public:
 	[[nodiscard]] const Api::Error &error() const {
 		return _error;
 	}
+	// While the file is being downloaded into the disk cache: where its
+	// first partialBytes() are on disk already, for playing it as it comes
+	// (Data::MediaStream). Empty before the first bytes and once it is
+	// Ready or Failed.
+	[[nodiscard]] const QString &partialPath() const {
+		return _partialPath;
+	}
+	[[nodiscard]] qint64 partialBytes() const {
+		return _partialBytes;
+	}
+	// The size of the whole file once the download knows it (-1: unknown).
+	[[nodiscard]] qint64 totalBytes() const {
+		return _totalBytes;
+	}
 	[[nodiscard]] const MediaRef &ref() const {
 		return _ref;
 	}
@@ -129,6 +143,11 @@ Q_SIGNALS:
 	void ready();
 	void failed();
 	void progressChanged();
+	// More of the file is in partialPath().
+	void partialChanged();
+	// The part is complete and becomes filePath() right after this (whoever
+	// reads it closes it now: Windows renames no open file); ready() follows.
+	void finishing();
 
 private:
 	friend class Media;
@@ -143,6 +162,9 @@ private:
 	QByteArray _bytes;
 	double _progress = 0.;
 	Api::Error _error;
+	QString _partialPath;
+	qint64 _partialBytes = 0;
+	qint64 _totalBytes = -1;
 
 };
 
