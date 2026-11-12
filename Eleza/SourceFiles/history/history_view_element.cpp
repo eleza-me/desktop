@@ -441,7 +441,7 @@ void Element::ensureLoaded() {
 		}
 		auto text = QString();
 		if (_data.quote && !_data.quote->text.isEmpty()) {
-			text = _data.quote->text;
+			text = Support::QuotePreview(*_data.quote, target);
 			_reply->quote = true;
 		} else if (target) {
 			text = Support::MessagePreview(*target);
