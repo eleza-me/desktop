@@ -1423,6 +1423,11 @@ ViewerItem List::viewerItem(const Data::Message &message) {
 				guard,
 				[=](const QString &path) { done(path); });
 		};
+		item.videoDownload = [=] {
+			return downloads
+				? downloads->handle(message, Data::MediaVariant::Mp4)
+				: nullptr;
+		};
 	} else {
 		auto options = Support::ImageOptions();
 		options.original = true;

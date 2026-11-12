@@ -370,6 +370,9 @@ void Sync::applyLive(
 				c.archived = Json::Bool(d, "archived"_L1);
 				c.info.archived = c.archived;
 			}
+			if (Json::Has(d, "hidden"_L1)) {
+				c.info.hidden = Json::Bool(d, "hidden"_L1);
+			}
 		});
 		if (const auto cleared = Json::Int64(d, "cleared_before_seq"_L1)) {
 			applyCleared(chat, cleared, false);

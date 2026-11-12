@@ -586,6 +586,17 @@ Api::Error Client::ToApiError(const Response &response) {
 	if (response.error.retryAfter > 0) {
 		error.retryAfter = double(response.error.retryAfter);
 	}
+	// The same problem document the HTTP route answers, as far as the
+	// connection carries it, so a screen reads `meta` the same way on both.
+	auto problem = QJsonObject{
+		{ u"status"_s, error.status },
+		{ u"code"_s, error.code },
+		{ u"title"_s, response.error.title },
+	};
+	if (!response.error.meta.isEmpty()) {
+		problem.insert(u"meta"_s, response.error.meta);
+	}
+	error.body = problem;
 	return error;
 }
 

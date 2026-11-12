@@ -286,10 +286,10 @@ ChatInfo ChatInfo::FromJson(const QJsonObject &json) {
 	result.muted = Bool(json, "muted"_L1);
 	result.mutedUntil = Int64(json, "muted_until"_L1);
 	result.archived = Bool(json, "archived"_L1);
+	result.hidden = Bool(json, "hidden"_L1);
 	result.request = String(json, "request"_L1);
 	result.canSend = Bool(json, "can_send"_L1, true);
 	result.peerDeleted = Bool(json, "peer_deleted"_L1);
-	result.hidden = Bool(json, "hidden"_L1);
 	if (const auto conversation = json.value("conversation"_L1).toObject();
 		!String(conversation, "id"_L1).isEmpty()) {
 		result.conversation = Conversation::FromJson(conversation);
@@ -317,6 +317,7 @@ QJsonObject ChatInfo::toJson() const {
 	Put(result, "muted"_L1, muted);
 	Put(result, "muted_until"_L1, mutedUntil);
 	Put(result, "archived"_L1, archived);
+	Put(result, "hidden"_L1, hidden);
 	Put(result, "request"_L1, request);
 	result.insert("can_send"_L1, canSend);
 	Put(result, "peer_deleted"_L1, peerDeleted);

@@ -51,16 +51,22 @@ constexpr auto kMaxQueued = 20;
 // What the server would push for a message in `chat` (requests, quiet
 // hours, the conversations' switches, hidden chats).
 [[nodiscard]] Data::ChatAlert AlertFor(Main::Session *session, const Data::Chat &chat) {
-	const auto settings = session->data().graph().settingValue(
-		u"notifications"_s).toObject();
+	auto &graph = session->data().graph();
+	if (!graph.settingsLoaded()) {
+		// Read once; until then the server's defaults.
+		graph.loadSettings(false, base::Guard(), nullptr, [](const Api::Error &) {});
+	}
+	const auto settings = graph.settingValue(u"notifications"_s).toObject();
 	return Data::ChatAlertFor(
 		chat,
 		settings,
 		QDateTime::fromMSecsSinceEpoch(base::unixtime::serverNowMs(), Qt::UTC));
 }
 
-// A hidden chat's toast: nothing of who or what (and no chat to open).
+// A hidden chat's toast (notifications.hidden_chats = anonymous): nothing of
+// who or what, no chat to open, and one toast for all of them.
 void MakeAnonymous(NotificationData &data) {
+	data.key = u"hidden"_s;
 	data.title = tr::lng_app_name(tr::now);
 	data.text = tr::lng_support_notify_new_message(tr::now);
 	data.anonymous = true;

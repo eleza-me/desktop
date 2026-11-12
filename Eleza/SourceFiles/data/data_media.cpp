@@ -13,6 +13,7 @@
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QPointer>
+#include <QtCore/QSet>
 #include <QtCore/QThread>
 #include <QtCore/QUrl>
 
@@ -40,6 +41,11 @@ constexpr auto kMaxFileBytes = qint64(4) << 30;
 // What a download may bring over the size its metadata declares.
 constexpr auto kDeclaredSizeMargin = qint64(64) << 10;
 constexpr auto kDeclaredSizeRatio = 20; // + 1/20: 5%
+// A download that broke off leaves its part for the next one to continue
+// (Api::DownloadBuilder::resumable): kept this long after it was last
+// written. A part of a download that could not be resumed, an hour.
+constexpr auto kKeepResumableMs = qint64(3) * 24 * 3600 * 1000;
+constexpr auto kKeepPartMs = qint64(3600) * 1000;
 
 [[nodiscard]] Api::Error LargerThanDeclared() {
 	return Api::Error::Local(
@@ -69,6 +75,39 @@ struct DiskEntry {
 	qint64 size = 0;
 	qint64 used = 0;
 };
+
+// A download's state, not a cached file: <file>.part (a resumable one),
+// <file>.part.tag (the entity tag of what it holds), <file>.<n>.part.
+[[nodiscard]] bool IsTransferFile(const QString &path) {
+	return path.endsWith(u".part") || path.endsWith(u".part.tag");
+}
+
+// Removes what interrupted downloads left behind once it is old enough not
+// to be one going on now (or, for a resumable part, to be continued).
+void RemoveStaleTransfers(const QVector<DiskEntry> &entries, qint64 now) {
+	auto parts = QHash<QString, qint64>();
+	for (const auto &entry : entries) {
+		if (entry.path.endsWith(u".part")) {
+			parts.insert(entry.path, entry.used);
+		}
+	}
+	for (const auto &entry : entries) {
+		if (entry.path.endsWith(u".part.tag")) {
+			const auto part = entry.path.chopped(4);
+			const auto i = parts.constFind(part);
+			const auto used = (i != parts.cend()) ? *i : entry.used;
+			const auto keep = (i != parts.cend()) ? kKeepResumableMs : kKeepPartMs;
+			if (used < now - keep) {
+				QFile::remove(entry.path);
+				QFile::remove(part);
+			}
+		} else if (entry.path.endsWith(u".part")
+			&& !QFileInfo::exists(entry.path + u".tag"_s)
+			&& entry.used < now - kKeepPartMs) {
+			QFile::remove(entry.path);
+		}
+	}
+}
 
 [[nodiscard]] QVector<DiskEntry> ListDisk(const QString &directory) {
 	auto result = QVector<DiskEntry>();
@@ -475,7 +514,8 @@ void Media::download(const std::shared_ptr<Job> &job) {
 		builder.unauthenticated();
 	}
 	if (!job->filePath.isEmpty()) {
-		builder.toFile(job->filePath);
+		// A download that breaks off is continued by the next request.
+		builder.toFile(job->filePath).resumable();
 	}
 	// An endless or absurd body ends the download instead of filling the
 	// disk (or, without a disk cache, the memory); so does one that brings
@@ -490,6 +530,22 @@ void Media::download(const std::shared_ptr<Job> &job) {
 			if (handle && total > 0) {
 				handle->_progress = double(received) / double(total);
 				Q_EMIT handle->progressChanged();
+			}
+		})
+		.written([=](const QString &partPath, qint64 written, qint64 total) {
+			const auto job = weak.lock();
+			const auto handle = job ? job->handle.lock() : nullptr;
+			if (handle) {
+				handle->_partialPath = partPath;
+				handle->_partialBytes = written;
+				handle->_totalBytes = total;
+				Q_EMIT handle->partialChanged();
+			}
+		})
+		.finishing([=] {
+			const auto job = weak.lock();
+			if (const auto handle = job ? job->handle.lock() : nullptr) {
+				Q_EMIT handle->finishing();
 			}
 		})
 		.done([=, this](const Api::DownloadResult &result) {
@@ -553,6 +609,7 @@ void Media::finish(
 		_memory.insert(job->key, new QImage(image), CacheCost(image));
 	}
 	if (const auto handle = job->handle.lock()) {
+		handle->_partialPath = QString();
 		handle->_image = image;
 		handle->_filePath = job->filePath;
 		if (job->filePath.isEmpty()) {
@@ -567,6 +624,7 @@ void Media::finish(
 void Media::fail(const std::shared_ptr<Job> &job, const Api::Error &error) {
 	_jobs.remove(job->key);
 	if (const auto handle = job->handle.lock()) {
+		handle->_partialPath = QString();
 		handle->_error = error;
 		handle->_state = MediaHandle::State::Failed;
 		// A failed handle is not handed out again: the next request retries.
@@ -579,13 +637,10 @@ void Media::scanDisk() {
 	const auto directory = _directory;
 	_pool.start([=, this] {
 		auto total = qint64(0);
-		for (const auto &entry : ListDisk(directory)) {
-			if (entry.path.endsWith(u".part")) {
-				// Left over from an interrupted download (not one that just began).
-				if (entry.used < QDateTime::currentMSecsSinceEpoch() - 3600 * 1000) {
-					QFile::remove(entry.path);
-				}
-			} else {
+		const auto entries = ListDisk(directory);
+		RemoveStaleTransfers(entries, QDateTime::currentMSecsSinceEpoch());
+		for (const auto &entry : entries) {
+			if (!IsTransferFile(entry.path)) {
 				total += entry.size;
 			}
 		}
@@ -621,13 +676,15 @@ void Media::prune() {
 		});
 		auto total = qint64(0);
 		for (const auto &entry : entries) {
-			total += entry.size;
+			if (!IsTransferFile(entry.path)) {
+				total += entry.size;
+			}
 		}
 		for (const auto &entry : entries) {
 			if (total <= target) {
 				break;
-			} else if (entry.path.endsWith(u".part")) {
-				continue; // a download in progress
+			} else if (IsTransferFile(entry.path)) {
+				continue; // a download in progress, or one to be continued
 			} else if (QFile::remove(entry.path)) {
 				total -= entry.size;
 			}
@@ -647,8 +704,21 @@ void Media::clearDisk() {
 	}
 	const auto directory = _directory;
 	_pool.start([=, this] {
-		for (const auto &entry : ListDisk(directory)) {
-			if (!entry.path.endsWith(u".part")) {
+		// Parts that are not being written right now go too (what is
+		// downloading this minute keeps its part).
+		const auto now = QDateTime::currentMSecsSinceEpoch();
+		const auto entries = ListDisk(directory);
+		auto writing = QSet<QString>();
+		for (const auto &entry : entries) {
+			if (entry.path.endsWith(u".part") && entry.used >= now - 60 * 1000) {
+				writing.insert(entry.path);
+			}
+		}
+		for (const auto &entry : entries) {
+			const auto part = entry.path.endsWith(u".part.tag")
+				? entry.path.chopped(4)
+				: entry.path;
+			if (!writing.contains(part)) {
 				QFile::remove(entry.path);
 			}
 		}

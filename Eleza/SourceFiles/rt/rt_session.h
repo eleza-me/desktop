@@ -58,6 +58,8 @@ struct ErrorInfo {
 	bool retryable = false;
 	int retryAfter = 0; // seconds
 	int httpStatus = 0;
+	// The problem document's meta (string values, e.g. chat.peer_flood's until).
+	QJsonObject meta;
 };
 
 struct Response {

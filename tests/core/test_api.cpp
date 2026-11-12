@@ -102,6 +102,8 @@ private Q_SLOTS:
 	void offlineAndDecoding();
 	void guardAndCancel();
 	void downloadFollowsRedirectWithoutToken();
+	void downloadResumes();
+	void downloadResumeStartsOverWhenItMust();
 	void uploadSendsSlice();
 	void clientConfig();
 	void signInBindsDeviceKey();
@@ -577,6 +579,262 @@ void TestApi::downloadFollowsRedirectWithoutToken() {
 	QVERIFY(Test::WaitFor([&] { return errors.size() == 3; }));
 	QCOMPARE(errors[2].code, u"too_large"_s);
 	QVERIFY(!QFileInfo::exists(limited) && !QFileInfo::exists(limited + u".part"_s));
+}
+
+namespace {
+
+// The private media edge (backend ADR-0042 / ADR-0044): one object with a
+// strong ETag, single ranges, If-Range, 416 past the end; a body can be cut
+// off after some bytes.
+struct Edge {
+	HttpServer server;
+	QByteArray object;
+	QByteArray tag = "\"v1\"";
+	bool ranges = true;
+	bool tags = true;
+	int cutAfter = -1;        // the next answer breaks off after this many bytes
+	qint64 wrongStart = -1;   // the next 206 claims to start here instead
+
+	Edge() {
+		server.handler = [this](const HttpServer::Request &request) {
+			auto response = HttpServer::Response::Bytes(object, "video/mp4");
+			if (tags) {
+				response.headers.push_back({ "ETag", tag });
+			}
+			response.headers.push_back({ "Accept-Ranges", "bytes" });
+			const auto range = request.header("Range");
+			const auto condition = request.header("If-Range");
+			const auto size = qint64(object.size());
+			if (ranges
+				&& range.startsWith("bytes=")
+				&& range.endsWith('-')
+				&& (condition.isEmpty() || condition == tag)) {
+				const auto from = range.mid(6).chopped(1).toLongLong();
+				if (from >= size) {
+					response.status = 416;
+					response.body.clear();
+					response.headers.push_back({ "Content-Range", "bytes */" + QByteArray::number(size) });
+				} else {
+					response.status = 206;
+					response.body = object.mid(from);
+					const auto claimed = (wrongStart >= 0) ? std::exchange(wrongStart, -1) : from;
+					response.headers.push_back({
+						"Content-Range",
+						"bytes " + QByteArray::number(claimed) + '-' + QByteArray::number(size - 1)
+							+ '/' + QByteArray::number(size),
+					});
+				}
+			}
+			response.cutAfter = std::exchange(cutAfter, -1);
+			return response;
+		};
+	}
+};
+
+struct Fetch {
+	std::optional<Api::DownloadResult> result;
+	std::optional<Api::Error> error;
+	qint64 progress = 0;
+	qint64 total = 0;
+	qint64 written = 0;
+	QString partPath;
+	int finishing = 0;
+
+	[[nodiscard]] bool finished() const {
+		return result.has_value() || error.has_value();
+	}
+};
+
+std::shared_ptr<Fetch> Download(Api::Client &client, const QString &target, const QString &path, bool resumable = true) {
+	const auto fetch = std::make_shared<Fetch>();
+	auto builder = client.download(target).toFile(path);
+	if (resumable) {
+		builder.resumable();
+	}
+	builder
+		.progress([=](qint64 received, qint64 total) {
+			fetch->progress = received;
+			fetch->total = total;
+		})
+		.written([=](const QString &partPath, qint64 written, qint64) {
+			fetch->partPath = partPath;
+			fetch->written = written;
+		})
+		.finishing([=] { ++fetch->finishing; })
+		.done([=](const Api::DownloadResult &result) { fetch->result = result; })
+		.fail([=](const Api::Error &error) { fetch->error = error; })
+		.send();
+	return fetch;
+}
+
+[[nodiscard]] QByteArray Pattern(int size, int seed) {
+	auto result = QByteArray(size, Qt::Uninitialized);
+	for (auto i = 0; i != size; ++i) {
+		result[i] = char((i * 31 + seed) & 0xff);
+	}
+	return result;
+}
+
+} // namespace
+
+void TestApi::downloadResumes() {
+	auto edge = Edge();
+	edge.object = Pattern(400000, 1);
+	auto api = HttpServer();
+	api.handler = [&](const HttpServer::Request &) {
+		// The attachment route: a 302 to the signed URL, whatever the range.
+		return HttpServer::Response::Redirect((edge.server.base() + u"/v1/m/1/mp4?s=x"_s).toLatin1());
+	};
+	auto client = Api::Client(api.base(), u"1"_s);
+	const auto path = _dir.path() + u"/resume/video.mp4"_s;
+	const auto part = path + u".part"_s;
+	const auto tag = part + u".tag"_s;
+
+	// Cut off at 150000: the part and its tag stay.
+	edge.cutAfter = 150000;
+	auto first = Download(client, u"/v1/media"_s, path);
+	QVERIFY(Test::WaitFor([&] { return first->finished(); }));
+	QVERIFY(first->error.has_value());
+	QVERIFY(first->error->transient());
+	QCOMPARE(first->partPath, part);
+	QCOMPARE(QFileInfo(part).size(), qint64(150000));
+	QCOMPARE(base::platform::ReadFile(tag).value_or(QByteArray()), QByteArray("\"v1\""));
+	QVERIFY(!QFileInfo::exists(path));
+	QCOMPARE(first->written, qint64(150000));
+	QCOMPARE(first->finishing, 0);
+
+	// The next download asks for the rest, on every hop, and appends it.
+	auto second = Download(client, u"/v1/media"_s, path);
+	QVERIFY(Test::WaitFor([&] { return second->finished(); }));
+	QVERIFY(second->result.has_value());
+	QCOMPARE(api.requests.back().header("Range"), QByteArray("bytes=150000-"));
+	QCOMPARE(edge.server.requests.back().header("Range"), QByteArray("bytes=150000-"));
+	QCOMPARE(edge.server.requests.back().header("If-Range"), QByteArray("\"v1\""));
+	QCOMPARE(second->result->filePath, path);
+	QCOMPARE(second->result->size, qint64(edge.object.size()));
+	QCOMPARE(base::platform::ReadFile(path).value_or(QByteArray()), edge.object);
+	QCOMPARE(second->progress, qint64(edge.object.size()));
+	QCOMPARE(second->total, qint64(edge.object.size()));
+	QCOMPARE(second->written, qint64(edge.object.size()));
+	QCOMPARE(second->finishing, 1);
+	QVERIFY(!QFileInfo::exists(part));
+	QVERIFY(!QFileInfo::exists(tag));
+
+	// Cancelled halfway (the row scrolled away): kept for the next time too.
+	QFile::remove(path);
+	edge.cutAfter = -1;
+	auto hangs = true;
+	const auto previous = edge.server.handler;
+	edge.server.handler = [&](const HttpServer::Request &request) {
+		auto response = previous(request);
+		if (hangs) {
+			response.cutAfter = 50000;
+		}
+		return response;
+	};
+	auto third = Download(client, u"/v1/media"_s, path);
+	QVERIFY(Test::WaitFor([&] { return third->finished(); }));
+	QCOMPARE(QFileInfo(part).size(), qint64(50000));
+	hangs = false;
+	const auto id = client.download(u"/v1/media"_s).toFile(path).resumable().send();
+	client.cancel(id);
+	QVERIFY(QFileInfo::exists(part));
+	auto fourth = Download(client, u"/v1/media"_s, path);
+	QVERIFY(Test::WaitFor([&] { return fourth->finished(); }));
+	QVERIFY(fourth->result.has_value());
+	QCOMPARE(base::platform::ReadFile(path).value_or(QByteArray()), edge.object);
+
+	// A part that is the whole file already: 416, and it is the file.
+	QFile::remove(path);
+	QVERIFY(base::platform::EnsureDirectory(QFileInfo(part).absolutePath()));
+	{
+		auto file = QFile(part);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(edge.object);
+		auto marker = QFile(tag);
+		QVERIFY(marker.open(QIODevice::WriteOnly));
+		marker.write("\"v1\"");
+	}
+	auto complete = Download(client, u"/v1/media"_s, path);
+	QVERIFY(Test::WaitFor([&] { return complete->finished(); }));
+	QVERIFY(complete->result.has_value());
+	QCOMPARE(complete->result->size, qint64(edge.object.size()));
+	QCOMPARE(base::platform::ReadFile(path).value_or(QByteArray()), edge.object);
+	QVERIFY(!QFileInfo::exists(part) && !QFileInfo::exists(tag));
+
+	// Without resumable() a part never outlives its download.
+	QFile::remove(path);
+	edge.cutAfter = 1000;
+	auto once = Download(client, u"/v1/media"_s, path, false);
+	QVERIFY(Test::WaitFor([&] { return once->finished(); }));
+	QVERIFY(once->error.has_value());
+	QCOMPARE(QDir(QFileInfo(path).absolutePath()).entryList(QDir::Files), QStringList());
+}
+
+void TestApi::downloadResumeStartsOverWhenItMust() {
+	auto edge = Edge();
+	edge.object = Pattern(200000, 2);
+	auto client = Api::Client(edge.server.base(), u"1"_s);
+	const auto path = _dir.path() + u"/restart/file.bin"_s;
+	const auto part = path + u".part"_s;
+	const auto interrupt = [&] {
+		edge.cutAfter = 70000;
+		auto fetch = Download(client, u"/v1/m/1/file"_s, path);
+		QVERIFY(Test::WaitFor([&] { return fetch->finished(); }));
+		QCOMPARE(QFileInfo(part).size(), qint64(70000));
+	};
+	const auto finish = [&] {
+		auto fetch = Download(client, u"/v1/m/1/file"_s, path);
+		QVERIFY(Test::WaitFor([&] { return fetch->finished(); }));
+		QVERIFY(fetch->result.has_value());
+		QCOMPARE(base::platform::ReadFile(path).value_or(QByteArray()), edge.object);
+		QCOMPARE(fetch->result->size, qint64(edge.object.size()));
+		QVERIFY(!QFileInfo::exists(part) && !QFileInfo::exists(part + u".tag"_s));
+		QFile::remove(path);
+	};
+
+	// The object changed meanwhile: If-Range does not match, 200, a new file.
+	interrupt();
+	edge.object = Pattern(180000, 3);
+	edge.tag = "\"v2\"";
+	finish();
+
+	// A server without ranges answers 200: written from the start.
+	interrupt();
+	edge.ranges = false;
+	finish();
+	QVERIFY(edge.server.requests.back().header("Range").startsWith("bytes="));
+	edge.ranges = true;
+
+	// A 206 that does not continue the part: dropped, asked again without
+	// a range.
+	interrupt();
+	const auto before = edge.server.requests.size();
+	edge.wrongStart = 0;
+	finish();
+	QCOMPARE(edge.server.requests.size(), before + 2);
+	QVERIFY(edge.server.requests.back().header("Range").isEmpty());
+
+	// No entity tag: nothing to check a resume against, so nothing is kept.
+	edge.tags = false;
+	edge.cutAfter = 70000;
+	auto untagged = Download(client, u"/v1/m/1/file"_s, path);
+	QVERIFY(Test::WaitFor([&] { return untagged->finished(); }));
+	QVERIFY(untagged->error.has_value());
+	QVERIFY(!QFileInfo::exists(part));
+	finish();
+	QVERIFY(edge.server.requests.back().header("Range").isEmpty());
+
+	// Two at once: the second gets a part of its own and is not resumable.
+	edge.tags = true;
+	auto a = Download(client, u"/v1/m/1/file"_s, path);
+	auto b = Download(client, u"/v1/m/1/file"_s, path);
+	QVERIFY(Test::WaitFor([&] { return a->finished() && b->finished(); }));
+	QVERIFY(a->result.has_value() && b->result.has_value());
+	QCOMPARE(a->partPath, part);
+	QVERIFY(b->partPath != part && b->partPath.endsWith(u".part"_s));
+	QCOMPARE(base::platform::ReadFile(path).value_or(QByteArray()), edge.object);
+	QCOMPARE(QDir(QFileInfo(path).absolutePath()).entryList(QDir::Files), QStringList{ u"file.bin"_s });
 }
 
 void TestApi::uploadSendsSlice() {

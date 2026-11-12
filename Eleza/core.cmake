@@ -60,6 +60,8 @@ set(_eleza_core_files
 	data/data_json.h
 	data/data_media.cpp
 	data/data_media.h
+	data/data_media_stream.cpp
+	data/data_media_stream.h
 	data/data_messages.cpp
 	data/data_messages.h
 	data/data_note_types.cpp
