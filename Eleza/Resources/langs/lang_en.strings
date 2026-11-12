@@ -58,8 +58,9 @@
 "lng_intro_username_taken" = "That username is taken";
 // pwa: ✓ این شناسه آزاد است
 "lng_intro_username_available" = "✓ This username is available";
-// pwa: فقط حروف انگلیسی کوچک، عدد، نقطه و _ (۳ تا ۲۴ حرف)
-"lng_intro_username_rules" = "Lowercase letters, digits, dot and _ only (3–24)";
+"lng_intro_username_rules" = "Lowercase English letters, digits, dot and _ only";
+"lng_intro_username_letter_first" = "The username must start with an English letter";
+"lng_intro_username_dots" = "No dot at the start or the end, and no two dots in a row";
 
 // ---- Main: tabs, settings entry, sign out
 // pwa: پیام
@@ -381,8 +382,10 @@
 "lng_intro_code_has_expired_request_new" = "The code has expired. Request a new one.";
 // pwa: این حساب ایمیل بازیابی ندارد
 "lng_intro_account_has_no_recovery_e" = "This account has no recovery e-mail";
-// pwa: شناسه باید دست‌کم ۳ حرف انگلیسی باشد
-"lng_intro_username_needs_at_least_3" = "The username needs at least 3 letters";
+"lng_intro_username_too_short#one" = "The username needs at least {count} character";
+"lng_intro_username_too_short#other" = "The username needs at least {count} characters";
+"lng_intro_username_too_long#one" = "A username has at most {count} character";
+"lng_intro_username_too_long#other" = "A username has at most {count} characters";
 // pwa: در حال بررسی شناسه…
 "lng_intro_checking_username" = "Checking the username…";
 // pwa: بررسی شناسه ممکن نشد؛ هنگام ادامه دوباره بررسی می‌شود

@@ -67,8 +67,9 @@
 "lng_intro_username_taken" = "این شناسه قبلاً گرفته شده";
 // pwa: ✓ این شناسه آزاد است
 "lng_intro_username_available" = "✓ این شناسه آزاد است";
-// pwa: فقط حروف انگلیسی کوچک، عدد، نقطه و _ (۳ تا ۲۴ حرف)
-"lng_intro_username_rules" = "فقط حروف انگلیسی کوچک، عدد، نقطه و _ (۳ تا ۲۴ حرف)";
+"lng_intro_username_rules" = "فقط حروف انگلیسی کوچک، عدد، نقطه و _";
+"lng_intro_username_letter_first" = "شناسه باید با یک حرف انگلیسی شروع شود";
+"lng_intro_username_dots" = "نقطه نباید در ابتدا یا انتهای شناسه یا پشت سر هم بیاید";
 
 // ---- Main: tabs, settings entry, sign out
 // pwa: پیام
@@ -390,8 +391,10 @@
 "lng_intro_code_has_expired_request_new" = "کد منقضی شده است؛ دوباره درخواست کنید";
 // pwa: این حساب ایمیل بازیابی ندارد
 "lng_intro_account_has_no_recovery_e" = "این حساب ایمیل بازیابی ندارد";
-// pwa: شناسه باید دست‌کم ۳ حرف انگلیسی باشد
-"lng_intro_username_needs_at_least_3" = "شناسه باید دست‌کم ۳ حرف انگلیسی باشد";
+"lng_intro_username_too_short#one" = "شناسه باید دست‌کم {count} نویسه باشد";
+"lng_intro_username_too_short#other" = "شناسه باید دست‌کم {count} نویسه باشد";
+"lng_intro_username_too_long#one" = "شناسه حداکثر {count} نویسه است";
+"lng_intro_username_too_long#other" = "شناسه حداکثر {count} نویسه است";
 // pwa: در حال بررسی شناسه…
 "lng_intro_checking_username" = "در حال بررسی شناسه…";
 // pwa: بررسی شناسه ممکن نشد؛ هنگام ادامه دوباره بررسی می‌شود
