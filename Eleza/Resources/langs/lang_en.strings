@@ -1083,7 +1083,8 @@
 "lng_settings_read_receipts_about" = "When off, others don't see that you read their messages, and you don't see theirs.";
 "lng_settings_default_duration" = "Default conversation length";
 "lng_settings_masked_join" = "Allow anonymous listeners";
-"lng_settings_media" = "Media";
+"lng_settings_media" = "Media on your phone";
+"lng_settings_media_phone_about" = "These sync with your account and only change what the phone app does, not this computer.";
 "lng_settings_autodownload_wifi" = "Auto-download media on Wi-Fi only";
 "lng_settings_autoplay_notes" = "Autoplay video messages";
 "lng_settings_autoplay_videos" = "Autoplay videos in Eli";

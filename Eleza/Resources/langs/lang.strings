@@ -1113,7 +1113,8 @@
 "lng_settings_read_receipts_about" = "اگر خاموش باشد، دیگران نمی‌بینند پیامشان را خوانده‌ای و تو هم رسید آن‌ها را نمی‌بینی.";
 "lng_settings_default_duration" = "مدت پیش‌فرض گفتگو";
 "lng_settings_masked_join" = "اجازهٔ پیوستن ناشناس";
-"lng_settings_media" = "رسانه";
+"lng_settings_media" = "رسانه روی گوشی";
+"lng_settings_media_phone_about" = "این‌ها با حسابت همگام می‌شوند و فقط رفتار برنامهٔ گوشی را عوض می‌کنند، نه این رایانه را.";
 "lng_settings_autodownload_wifi" = "دانلود خودکار رسانه فقط با وای‌فای";
 "lng_settings_autoplay_notes" = "پخش خودکار ویدیو دایره‌ای";
 "lng_settings_autoplay_videos" = "پخش خودکار ویدیوهای الی";

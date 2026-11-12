@@ -406,6 +406,7 @@ private:
 			true);
 
 		AddDivider(content());
+		// Synced settings the phone apps follow; nothing here reads them.
 		AddSubsectionTitle(content(), tr::lng_settings_media(tr::now));
 		addToggle(
 			tr::lng_settings_autodownload_wifi(tr::now),
@@ -424,6 +425,7 @@ private:
 				{ u"never"_s, tr::lng_settings_autoplay_never(tr::now) },
 			},
 			u"always"_s);
+		AddFootnote(content(), tr::lng_settings_media_phone_about(tr::now));
 	}
 
 	// «مدت پیش‌فرض گفتگو» is kept on this computer (the synced document has
