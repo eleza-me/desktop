@@ -17,6 +17,7 @@
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/tooltip.h"
 #include "window/window_routes.h"
+#include "window/window_section_widget.h"
 #include "window/window_session_controller.h"
 #include "styles/style_eli.h"
 
@@ -935,6 +936,7 @@ void PostList::mouseReleaseEvent(QMouseEvent *e) {
 	if (e->button() != Qt::LeftButton) {
 		return;
 	}
+	_bodyClickId = QString();
 	const auto row = std::exchange(_pressedRow, -1);
 	const auto hit = std::exchange(_pressedHit, {});
 	updateRow(row);
@@ -947,12 +949,27 @@ void PostList::mouseReleaseEvent(QMouseEvent *e) {
 	}
 	if (hit.type == HitType::Body
 		&& _rows[row].card->options().mode == CardMode::Feed) {
-		// Not yet: this may be the first click of a double click (a like).
-		_bodyPendingId = _rows[row].id;
-		_bodyTimer.callOnce(QApplication::doubleClickInterval());
-		return;
+		// This may be the first click of a double click (a like).
+		_bodyClickId = _rows[row].id;
+		if (postReplacesList()) {
+			// Not yet: the second click must not land on the post that
+			// takes the list's place.
+			_bodyPendingId = _rows[row].id;
+			_bodyTimer.callOnce(QApplication::doubleClickInterval());
+			return;
+		}
+		// The post opens beside the list: at once, a second click still
+		// reaches this list and likes it.
 	}
 	activate(row, hit, e->globalPosition().toPoint());
+}
+
+bool PostList::postReplacesList() const {
+	if (_controller->isSingleColumn()) {
+		return true;
+	}
+	const auto main = _controller->mainSection();
+	return main && main->isAncestorOf(this);
 }
 
 void PostList::openPendingBody() {
@@ -967,10 +984,14 @@ void PostList::openPendingBody() {
 
 void PostList::mouseDoubleClickEvent(QMouseEvent *e) {
 	updateHover(e->pos());
+	// Only the second click on the text of the post clicked first likes it
+	// (not one that lands on a list just opened under the mouse).
+	const auto first = std::exchange(_bodyClickId, QString());
 	if (e->button() != Qt::LeftButton
 		|| _overRow < 0
 		|| !_rows[_overRow].card
-		|| _overHit.type != HitType::Body) {
+		|| _overHit.type != HitType::Body
+		|| _rows[_overRow].id != first) {
 		mousePressEvent(e);
 		return;
 	}
