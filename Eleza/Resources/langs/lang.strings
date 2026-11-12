@@ -1468,6 +1468,9 @@
 "lng_eli_notif_post" = "{who} پست تازه‌ای گذاشت";
 "lng_eli_notif_joined" = "{who} به گفتگویت پیوست و می‌شنود";
 "lng_eli_notif_now_follows" = "{who} حالا دنبالت می‌کند";
+"lng_eli_notif_new_login" = "ورود از دستگاه جدید به حسابت";
+"lng_eli_notif_two_step_recovered" = "تأیید دومرحله‌ای با ایمیل بازیابی خاموش شد و دستگاهی وارد حسابت شد";
+"lng_eli_notif_new_login_hint" = "اگر تو نبودی، در «دستگاه‌ها» آن را بیرون کن.";
 "lng_eli_notif_failed" = "اعلان‌ها بارگذاری نشد";
 "lng_eli_notif_mark_read" = "علامت‌زدن همه به‌عنوان خوانده‌شده";
 "lng_eli_notif_marked" = "همه خوانده شد";
