@@ -11,6 +11,7 @@
 #include "crypto/crypto_device_key.h"
 #include "main/main_account.h"
 #include "main/main_session.h"
+#include "rt/rt_keys.h"
 #include "storage/storage_key_value.h"
 #include "storage/storage_secure_blob.h"
 
@@ -113,6 +114,7 @@ private Q_SLOTS:
 	void oversizedJsonIsRefused();
 	void abortAuthenticatedStopsRetries();
 	void errorBodiesAreBounded();
+	void noiseKeysArePinned();
 
 private:
 	[[nodiscard]] Main::Account::Config accountConfig(const HttpServer &server, const QString &name) {
@@ -1466,6 +1468,61 @@ void TestApi::errorBodiesAreBounded() {
 	QVERIFY(Test::WaitFor([&] { return errors.size() == 3; }, 20000));
 	QCOMPARE(errors[2].status, 403);
 	QCOMPARE(errors[2].code, u"upload.part"_s);
+}
+
+void TestApi::noiseKeysArePinned() {
+	const auto bakedHex = u"6ac378aa14d587c46de508bd15d493c2124f6a6525e73a79481d39ba98ac650d"_s;
+	const auto baked = base::bytes::fromHex(bakedHex);
+	const auto rogue = QString(64, u'a');
+	const auto listing = [](QVector<std::pair<int, QString>> keys, int preferred) {
+		auto list = QJsonArray();
+		for (const auto &[id, hex] : keys) {
+			list.push_back(QJsonObject{ { u"id"_s, id }, { u"pub"_s, hex } });
+		}
+		return QJsonObject{ { u"keys"_s, list }, { u"preferred"_s, preferred } };
+	};
+	QVERIFY(Rt::Keys::IsPinnedBase(u"https://api.eleza.me"_s));
+	QVERIFY(Rt::Keys::IsPinnedBase(u"https://API.eleza.me/"_s));
+	QVERIFY(!Rt::Keys::IsPinnedBase(u"http://api.eleza.me"_s));
+	QVERIFY(!Rt::Keys::IsPinnedBase(u"https://api.eleza.me:8443"_s));
+	QVERIFY(!Rt::Keys::IsPinnedBase(u"https://api.eleza.me.example.com"_s));
+	QVERIFY(!Rt::Keys::IsPinnedBase(u"http://127.0.0.1:8000"_s));
+
+	auto dir = QTemporaryDir();
+	QVERIFY(dir.isValid());
+	auto cache = Storage::KeyValue(dir.filePath(u"settings.json"_s));
+	// What an older build cached from the network: no key material is taken.
+	cache.set(u"rt.keys"_s, listing({ { 1, rogue }, { 7, rogue } }, 7));
+	auto production = Api::Client(u"https://api.eleza.me"_s, u"1.0.0"_s);
+	auto keys = Rt::Keys(&production, &cache);
+	QVERIFY(keys.pinned());
+	QVERIFY(!keys.stale());
+	QCOMPARE(keys.preferredId(), 1);
+	QCOMPARE(keys.preferredKey(), baked);
+
+	// A fetched listing (after a failed handshake, a 4006) with keys of its
+	// own, also under the baked id, changes nothing.
+	QVERIFY(!keys.apply(listing({ { 1, rogue }, { 2, rogue } }, 2), false));
+	QCOMPARE(keys.preferredId(), 1);
+	QCOMPARE(keys.preferredKey(), baked);
+	QVERIFY(!keys.apply(listing({ { 9, rogue } }, 9), false));
+	QCOMPARE(keys.preferredKey(), baked);
+	// It may choose among the baked keys.
+	QVERIFY(keys.apply(listing({ { 1, bakedHex }, { 2, rogue } }, 2), false));
+	QCOMPARE(keys.preferredId(), 1);
+	QCOMPARE(keys.preferredKey(), baked);
+	QVERIFY(!keys.stale());
+
+	// Another API host (a local stack, a test peer): its listing is all there is.
+	auto local = Api::Client(u"http://127.0.0.1:8000"_s, u"1.0.0"_s);
+	auto other = Rt::Keys(&local, nullptr);
+	QVERIFY(!other.pinned());
+	QVERIFY(!other.hasKeys());
+	QVERIFY(other.stale());
+	QVERIFY(other.apply(listing({ { 7, rogue } }, 7), false));
+	QCOMPARE(other.preferredId(), 7);
+	QCOMPARE(other.preferredKey(), base::bytes::fromHex(rogue));
+	QVERIFY(!other.stale());
 }
 
 QTEST_GUILESS_MAIN(TestApi)
