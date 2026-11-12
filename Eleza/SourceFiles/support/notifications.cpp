@@ -1,10 +1,13 @@
 #include "support/notifications.h"
 
+#include "base/unixtime.h"
 #include "data/data_calls.h"
 
 #include "core/core_application.h"
 #include "data/data_chats.h"
+#include "data/data_graph.h"
 #include "data/data_groups.h"
+#include "data/data_notifications.h"
 #include "data/data_session.h"
 #include "data/data_sync.h"
 #include "data/data_users.h"
@@ -42,7 +45,27 @@ constexpr auto kMaxQueued = 20;
 	}
 	// mutedUntil is unix seconds; 0 = until switched off.
 	return (chat.mutedUntil <= 0)
-		|| (chat.mutedUntil > QDateTime::currentSecsSinceEpoch());
+		|| (chat.mutedUntil > base::unixtime::serverNow());
+}
+
+// What the server would push for a message in `chat` (requests, quiet
+// hours, the conversations' switches, hidden chats).
+[[nodiscard]] Data::ChatAlert AlertFor(Main::Session *session, const Data::Chat &chat) {
+	const auto settings = session->data().graph().settingValue(
+		u"notifications"_s).toObject();
+	return Data::ChatAlertFor(
+		chat,
+		settings,
+		QDateTime::fromMSecsSinceEpoch(base::unixtime::serverNowMs(), Qt::UTC));
+}
+
+// A hidden chat's toast: nothing of who or what (and no chat to open).
+void MakeAnonymous(NotificationData &data) {
+	data.title = tr::lng_app_name(tr::now);
+	data.text = tr::lng_support_notify_new_message(tr::now);
+	data.anonymous = true;
+	data.userId = QString();
+	data.route = QString();
 }
 
 } // namespace
@@ -70,6 +93,10 @@ std::optional<NotificationData> NotificationFor(
 	if (chat && (chat->saved || chat->archived || MutedNow(*chat))) {
 		return std::nullopt;
 	}
+	const auto alert = chat ? AlertFor(session, *chat) : Data::ChatAlert::Full;
+	if (alert == Data::ChatAlert::None) {
+		return std::nullopt;
+	}
 	const auto &settings = Core::App().settings().notifications();
 	auto result = NotificationData();
 	result.key = message.chat;
@@ -95,6 +122,9 @@ std::optional<NotificationData> NotificationFor(
 		: settings.showPreview
 		? MessagePreview(message)
 		: tr::lng_support_notify_new_message(tr::now);
+	if (alert == Data::ChatAlert::Anonymous) {
+		MakeAnonymous(result);
+	}
 	return result;
 }
 
@@ -112,6 +142,10 @@ std::optional<NotificationData> GroupNotificationFor(
 	auto &data = session->data();
 	const auto chat = data.chats().chat(message.chat);
 	if (!chat || !chat->isGroup || chat->archived) {
+		return std::nullopt;
+	}
+	const auto alert = AlertFor(session, *chat);
+	if (alert == Data::ChatAlert::None) {
 		return std::nullopt;
 	}
 	const auto &settings = Core::App().settings().notifications();
@@ -132,6 +166,9 @@ std::optional<NotificationData> GroupNotificationFor(
 	result.text = settings.showPreview
 		? MessagePreview(session, message)
 		: tr::lng_support_notify_new_message(tr::now);
+	if (alert == Data::ChatAlert::Anonymous) {
+		MakeAnonymous(result);
+	}
 	return result;
 }
 

@@ -3,6 +3,7 @@
 #include "data/data_group_rules.h"
 
 #include "api/api_client_config.h"
+#include "base/unixtime.h"
 #include "boxes/peer_list_box.h"
 #include "core/core_application.h"
 #include "core/core_settings.h"
@@ -973,7 +974,7 @@ void ShowDeleteMessagesBox(
 	const auto chat = session->data().chats().chat(chatId);
 	const auto config = session->data().clientConfig();
 	const auto window = config ? config->deleteForEveryoneWindow() : qint64(0);
-	const auto now = QDateTime::currentMSecsSinceEpoch();
+	const auto now = base::unixtime::serverNowMs();
 	const auto group = chat && chat->isGroup;
 	const auto direct = chat && !chat->isConversation && !chat->saved && !group;
 	const auto conversation = chat && chat->isConversation;

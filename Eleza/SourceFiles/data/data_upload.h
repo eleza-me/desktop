@@ -28,6 +28,22 @@ namespace Data {
 
 class Session;
 
+// Qt reports upload progress for every chunk written to the socket (hundreds
+// a second, from three parts at once); each report repaints a chat. Passes
+// at most ten a second, and only a change of at least 1 %, besides the
+// first, the last and the forced ones (a part done or failed).
+class ProgressThrottle final {
+public:
+	static constexpr auto kMinGapMs = qint64(100);
+
+	[[nodiscard]] bool due(qint64 sent, qint64 total, qint64 nowMs, bool force = false);
+
+private:
+	qint64 _sent = -1;
+	qint64 _at = 0;
+
+};
+
 enum class UploadKind {
 	Image,
 	Video,
@@ -143,6 +159,7 @@ private:
 		int readyAttempt = 0;
 		QVector<Api::RequestId> requests;
 		std::shared_ptr<std::atomic<bool>> cancelled;
+		ProgressThrottle progress;
 	};
 
 	[[nodiscard]] Job *job(Id id);
@@ -154,7 +171,7 @@ private:
 	void transfer(Id id);
 	void pumpParts(Id id);
 	void startPart(Id id, int index);
-	void reportProgress(Id id);
+	void reportProgress(Id id, bool force = false);
 	void complete(Id id);
 	void waitUntilReady(Id id);
 	void finish(Id id);

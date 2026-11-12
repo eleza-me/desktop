@@ -1,5 +1,6 @@
 #include "eli/eli_post_card.h"
 
+#include "base/unixtime.h"
 #include "data/data_blurhash.h"
 #include "data/data_feed.h"
 #include "data/data_session.h"
@@ -155,7 +156,7 @@ QString PostTime(qint64 createdAtMs) {
 
 QString TimeLeft(qint64 endsAtSeconds) {
 	const auto left = std::max(
-		endsAtSeconds - QDateTime::currentSecsSinceEpoch(),
+		endsAtSeconds - base::unixtime::serverNow(),
 		qint64(0));
 	if (left < 3600) {
 		return tr::lng_conv_minutes_left(
@@ -170,12 +171,18 @@ QString TimeLeft(qint64 endsAtSeconds) {
 
 PostCard::PostCard(CardHost *host, const QString &postId, CardOptions options)
 : _host(host)
+, _feed(&host->cardSession().data().feed())
 , _options(std::move(options)) {
 	_post.id = postId;
+	// The store keeps what a card shows (Data::Feed::hold).
+	_feed->hold(postId);
 	refresh();
 }
 
 PostCard::~PostCard() {
+	if (_feed) {
+		_feed->unhold(_post.id);
+	}
 	unloadMedia();
 }
 
@@ -351,7 +358,7 @@ void PostCard::rebuildTexts() {
 	} else if (_post.type == u"poll" && _post.poll) {
 		_block = Block::Poll;
 		const auto &poll = *_post.poll;
-		const auto now = QDateTime::currentSecsSinceEpoch();
+		const auto now = base::unixtime::serverNow();
 		_pollClosed = poll.closed || (poll.endsAt > 0 && poll.endsAt <= now);
 		_pollResults = (poll.myVote >= 0) || _pollClosed;
 		auto votes = poll.votes;

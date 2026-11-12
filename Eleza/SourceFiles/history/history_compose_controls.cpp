@@ -1825,7 +1825,9 @@ void ComposeControls::paintBar(Painter &p, QRect rect) {
 		text = Support::MessagePreview(_target);
 	} else if (_mode == Mode::Reply) {
 		title = tr::lng_chat_reply(tr::now, lt_name, name(_target));
-		text = _quote ? _quote->text.simplified() : Support::MessagePreview(_target);
+		text = _quote
+			? Support::QuotePreview(*_quote, &_target).simplified()
+			: Support::MessagePreview(_target);
 	} else {
 		const auto count = int(_forwards.size());
 		title = tr::lng_history_forward_count(tr::now, lt_count, count);

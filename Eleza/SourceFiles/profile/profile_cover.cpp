@@ -1,5 +1,6 @@
 #include "profile/profile_cover.h"
 
+#include "base/unixtime.h"
 #include "data/data_session.h"
 #include "data/data_stories.h"
 #include "lang/lang_format.h"
@@ -522,7 +523,7 @@ void ConversationCard::setConversation(
 }
 
 bool ConversationCard::expired() const {
-	return _expiresAt * 1000 <= QDateTime::currentMSecsSinceEpoch();
+	return _expiresAt * 1000 <= base::unixtime::serverNowMs();
 }
 
 void ConversationCard::refreshTime() {
@@ -530,7 +531,7 @@ void ConversationCard::refreshTime() {
 	const auto ended = expired();
 	_time = ended
 		? QString()
-		: RemainingText(_expiresAt, QDateTime::currentMSecsSinceEpoch());
+		: RemainingText(_expiresAt, base::unixtime::serverNowMs());
 	setAttribute(Qt::WA_TransparentForMouseEvents, ended);
 	if (ended) {
 		_timer.cancel();

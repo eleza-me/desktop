@@ -5,6 +5,7 @@
 #include "groups/groups_tags.h"
 
 #include "api/api_client_config.h"
+#include "base/unixtime.h"
 #include "data/data_chats.h"
 #include "data/data_feed.h"
 #include "data/data_session.h"
@@ -78,6 +79,10 @@ ListWidget::ListWidget(
 	setAttribute(Qt::WA_OpaquePaintEvent);
 
 	auto &data = _session->data();
+	// The timeline stays whole while this screen lives (shown or kept
+	// further back in the section stack).
+	_heldBy = &data.messages();
+	_heldBy->hold(_chatId);
 	if (_group) {
 		_userpics = std::make_unique<Support::UserpicPainter>(
 			_session,
@@ -109,6 +114,15 @@ ListWidget::ListWidget(
 		[this](const QString &chat) {
 			if (chat == _chatId && !_debugMode && _started) {
 				refreshRows();
+			}
+		});
+	connect(
+		&data.messages(),
+		&Data::Messages::messageChanged,
+		this,
+		[this](const QString &chat, const QString &key) {
+			if (chat == _chatId && !_debugMode && _started) {
+				refreshRow(key);
 			}
 		});
 	connect(&data.chats(), &Data::Chats::chatChanged, this, [this](const QString &id) {
@@ -261,7 +275,11 @@ ListWidget::ListWidget(
 	_liveTimer.start(30 * 1000, this);
 }
 
-ListWidget::~ListWidget() = default;
+ListWidget::~ListWidget() {
+	if (_heldBy) {
+		_heldBy->unhold(_chatId);
+	}
+}
 
 // ---- View::Delegate
 
@@ -678,7 +696,7 @@ void ListWidget::scrollByPage(bool up) {
 std::optional<Data::Message> ListWidget::lastEditable() const {
 	const auto config = _session->data().clientConfig();
 	const auto window = config ? config->editWindow() : qint64(0);
-	const auto now = QDateTime::currentMSecsSinceEpoch();
+	const auto now = base::unixtime::serverNowMs();
 	for (auto i = int(_rows.size()) - 1; i >= 0; --i) {
 		const auto element = _rows[i].element.get();
 		const auto &message = element->data();
@@ -732,6 +750,46 @@ const QVector<Data::Message> &ListWidget::items() const {
 
 void ListWidget::refreshRows() {
 	applyRows(items());
+}
+
+void ListWidget::refreshRow(const QString &key) {
+	const auto &timeline = history();
+	const auto at = timeline.indexOfKey(key);
+	const auto index = indexOfKey(key);
+	if (at < 0 || index < 0) {
+		refreshRows();
+		return;
+	}
+	const auto &message = timeline.items[at];
+	const auto element = _rows[index].element.get();
+	auto changed = false;
+	if (element->isAlbum()) {
+		auto album = element->album();
+		auto found = false;
+		for (auto &item : album) {
+			if (item.key() == key) {
+				item = message;
+				found = true;
+			}
+		}
+		if (!found) {
+			refreshRows();
+			return;
+		}
+		changed = element->setData(AlbumHeadMessage(album), album);
+	} else if (element->key() == key) {
+		changed = element->setData(message);
+	} else {
+		refreshRows();
+		return;
+	}
+	if (changed) {
+		// Not a change in place after all: measured again with the rest.
+		_rows[index].exact = false;
+		refreshRows();
+		return;
+	}
+	updateRow(index);
 }
 
 void ListWidget::applyRows(const QVector<Data::Message> &timeline) {

@@ -1,5 +1,6 @@
 #include "conversation/conversation_controls.h"
 
+#include "base/unixtime.h"
 #include "conversation/conversation_card.h"
 #include "conversation/conversation_time.h"
 #include "data/data_session.h"
@@ -248,7 +249,7 @@ ExpiryHeader::ExpiryHeader(
 }
 
 void ExpiryHeader::scheduleTick() {
-	const auto now = QDateTime::currentMSecsSinceEpoch();
+	const auto now = base::unixtime::serverNowMs();
 	if (Expired(_expiresAt, now)) {
 		return;
 	}
@@ -281,7 +282,7 @@ int ExpiryHeader::resizeGetHeight(int newWidth) {
 void ExpiryHeader::paintEvent(QPaintEvent *e) {
 	Q_UNUSED(e);
 	auto p = Painter(this);
-	const auto now = QDateTime::currentMSecsSinceEpoch();
+	const auto now = base::unixtime::serverNowMs();
 	const auto ring = int(st::conversationJoinRing);
 	const auto skip = int(st::conversationCardSkip);
 	PaintExpiryRing(

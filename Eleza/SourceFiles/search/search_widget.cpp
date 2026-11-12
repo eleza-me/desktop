@@ -1,5 +1,6 @@
 #include "search/search_widget.h"
 
+#include "base/unixtime.h"
 #include "conversation/conversation_boxes.h"
 #include "data/data_chats.h"
 #include "data/data_conversations.h"
@@ -1232,7 +1233,7 @@ void Widget::buildResults() {
 	auto conversations = QVector<Data::OpenConversation>();
 	for (const auto &item : results.conversations) {
 		if (!dismissed.isDismissed(item.id)
-			&& item.expiresAt * 1000 > NowMs()) {
+			&& item.expiresAt * 1000 > base::unixtime::serverNowMs()) {
 			conversations.push_back(item);
 		}
 	}
@@ -1645,7 +1646,8 @@ void Widget::paintRow(
 		cardState.pressedAction = (pressed > kActCard)
 			? (pressed - kActCard)
 			: 0;
-		_cards.paint(p, *row.card, rect, cardState, NowMs());
+		// The cards count down to the server's expiry.
+		_cards.paint(p, *row.card, rect, cardState, base::unixtime::serverNowMs());
 		return;
 	}
 	p.translate(rect.topLeft());

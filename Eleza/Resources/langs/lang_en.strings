@@ -1243,6 +1243,7 @@
 "lng_history_tab_emoji" = "Emoji";
 "lng_history_tab_stickers" = "Stickers";
 "lng_history_spoiler" = "Spoiler";
+"lng_chat_preview_spoiler" = "Spoiler";
 "lng_history_forward_count#one" = "{count} forwarded message";
 "lng_history_forward_count#other" = "{count} forwarded messages";
 "lng_history_forward_title" = "Forward to…";
@@ -1444,6 +1445,9 @@
 "lng_eli_notif_follow_accepted" = "{who} accepted your follow request";
 "lng_eli_notif_post" = "{who} posted";
 "lng_eli_notif_joined" = "{who} joined your conversation and is listening";
+"lng_eli_notif_new_login" = "Sign-in to your account from a new device";
+"lng_eli_notif_two_step_recovered" = "Two-step verification was switched off with the recovery e-mail and a device signed in";
+"lng_eli_notif_new_login_hint" = "If it was not you, end it in “Devices”.";
 "lng_eli_notif_now_follows" = "{who} now follows you";
 "lng_eli_notif_failed" = "Could not load notifications";
 "lng_eli_notif_mark_read" = "Mark all as read";

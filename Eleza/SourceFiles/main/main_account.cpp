@@ -32,6 +32,9 @@ const auto kDeviceIdKey = u"device.id"_s;
 const auto kDefaultApiBase = u"https://api.eleza.me"_s;
 const auto kLanguageKey = u"language"_s;
 constexpr auto kLogoutWaitMs = 5000;
+// A user's directory being removed (renamed so, then removed on a worker
+// thread: up to gigabytes of cached media). Never "user-*".
+const auto kTrashPrefix = u"trash-"_s;
 
 // `access_expires_at` arrives as an RFC 3339 string or a number of
 // (milli)seconds; without it assume nine minutes.
@@ -53,7 +56,7 @@ constexpr auto kLogoutWaitMs = 5000;
 			return normalize(number);
 		}
 	}
-	return base::unixtime::now() + 9 * 60;
+	return base::unixtime::serverNow() + 9 * 60;
 }
 
 } // namespace
@@ -268,18 +271,24 @@ void Account::createSession() {
 		// The session of the other origin was replaced by this sign-in; its
 		// cache must not be taken for this one's even when the ids match.
 		if (_otherOriginUser == _tokens.userId) {
-			base::platform::RemoveRecursively(userDir(_otherOriginUser));
+			base::platform::RemoveRecursivelyInBackground(
+				userDir(_otherOriginUser),
+				kTrashPrefix);
 			_settings->removeSuffix(u'.' + _otherOriginUser);
 		}
 		_otherOriginUser = QString();
 	}
+	// What a run that ended too soon did not finish removing.
+	base::platform::RemoveTrashInBackground(accountDir(), kTrashPrefix);
 	const auto prefix = u"user-"_s;
 	const auto stale = QDir(accountDir()).entryList(
 		{ prefix + u'*' },
 		QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden);
 	for (const auto &name : stale) {
 		if (name != own) {
-			base::platform::RemoveRecursively(QDir(accountDir()).filePath(name));
+			base::platform::RemoveRecursivelyInBackground(
+				QDir(accountDir()).filePath(name),
+				kTrashPrefix);
 			_settings->removeSuffix(u'.' + name.mid(prefix.size()));
 		}
 	}
@@ -297,7 +306,7 @@ void Account::destroySession(bool wipeData) {
 	session->shutdown();
 	session = nullptr;
 	if (wipeData) {
-		base::platform::RemoveRecursively(dir);
+		base::platform::RemoveRecursivelyInBackground(dir, kTrashPrefix);
 	}
 }
 
@@ -316,7 +325,7 @@ void Account::endSession(SessionEndReason reason) {
 	if (_session) {
 		destroySession(wipe);
 	} else if (wipe && !userId.isEmpty()) {
-		base::platform::RemoveRecursively(userDir(userId));
+		base::platform::RemoveRecursivelyInBackground(userDir(userId), kTrashPrefix);
 	}
 	if (wipe && !userId.isEmpty()) {
 		// What the screens keep per user next to the account ("<name>.<user
@@ -361,7 +370,8 @@ bool Account::stale(int marginSeconds) const {
 	if (_tokens.access.isEmpty() || !_tokens.accessExpiresAt) {
 		return true;
 	}
-	return (_tokens.accessExpiresAt - base::unixtime::now()) < marginSeconds;
+	// The expiry is the server's clock.
+	return (_tokens.accessExpiresAt - base::unixtime::serverNow()) < marginSeconds;
 }
 
 void Account::accessToken(Fn<void(QString)> done) {

@@ -1,11 +1,14 @@
 #include "eli/eli_logic.h"
 
+#include <QtCore/QJsonArray>
 #include <QtCore/QRegularExpression>
 
 #include <algorithm>
 #include <cmath>
 #include <functional>
 #include <numeric>
+
+using namespace Qt::Literals::StringLiterals;
 
 namespace Eli::Logic {
 namespace {
@@ -168,6 +171,97 @@ int ReadingMinutes(const QStringList &parts) {
 		words += int(part.split(kSpaces, Qt::SkipEmptyParts).size());
 	}
 	return std::max(1, int(std::lround(double(words) / kWordsPerMinute)));
+}
+
+bool StoredDraft::empty() const {
+	const auto blank = [](const QString &text) {
+		return text.trimmed().isEmpty();
+	};
+	return blank(text)
+		&& std::all_of(parts.begin(), parts.end(), blank)
+		&& media.isEmpty()
+		&& (!poll || std::all_of(pollOptions.begin(), pollOptions.end(), blank));
+}
+
+QJsonObject StoredDraft::toJson() const {
+	auto result = QJsonObject{ { u"text"_s, text } };
+	auto list = QJsonArray();
+	for (const auto &part : parts) {
+		if (!part.trimmed().isEmpty()) {
+			list.push_back(part);
+		}
+	}
+	result.insert(u"parts"_s, list);
+	if (!media.isEmpty()) {
+		auto files = QJsonArray();
+		for (const auto &item : media) {
+			auto file = QJsonObject{ { u"path"_s, item.path } };
+			if (item.video) {
+				file.insert(u"video"_s, true);
+			}
+			if (!item.alt.isEmpty()) {
+				file.insert(u"alt"_s, item.alt);
+			}
+			files.push_back(file);
+		}
+		result.insert(u"media"_s, files);
+	}
+	if (poll) {
+		result.insert(u"poll"_s, QJsonObject{
+			{ u"options"_s, QJsonArray::fromStringList(pollOptions) },
+			{ u"hours"_s, pollHours },
+		});
+	}
+	if (!policy.isEmpty()) {
+		result.insert(u"policy"_s, policy);
+	}
+	if (!original.isEmpty()) {
+		result.insert(u"original"_s, original);
+	}
+	return result;
+}
+
+StoredDraft StoredDraft::FromJson(const QJsonObject &json) {
+	auto result = StoredDraft();
+	result.text = json.value(u"text"_s).toString();
+	for (const auto &part : json.value(u"parts"_s).toArray()) {
+		result.parts.push_back(part.toString());
+	}
+	for (const auto &value : json.value(u"media"_s).toArray()) {
+		const auto file = value.toObject();
+		auto item = Media();
+		item.path = file.value(u"path"_s).toString();
+		item.video = file.value(u"video"_s).toBool();
+		item.alt = file.value(u"alt"_s).toString();
+		if (!item.path.isEmpty()) {
+			result.media.push_back(item);
+		}
+	}
+	if (const auto poll = json.value(u"poll"_s); poll.isObject()) {
+		result.poll = true;
+		for (const auto &option : poll.toObject().value(u"options"_s).toArray()) {
+			result.pollOptions.push_back(option.toString());
+		}
+		result.pollHours = poll.toObject().value(u"hours"_s).toInt();
+	}
+	result.policy = json.value(u"policy"_s).toString();
+	result.original = json.value(u"original"_s).toString();
+	return result;
+}
+
+QString DraftKey(ComposeKind kind, const QString &userId, const QString &target) {
+	// «الی تازه» keeps the key it always had. Every key ends with the user
+	// id: what a user leaves behind goes with their sign-out
+	// (Storage::KeyValue::removeSuffix).
+	const auto user = u'.' + userId;
+	switch (kind) {
+	case ComposeKind::New: return u"eli.draft"_s + user;
+	case ComposeKind::Reply: return u"eli.draft.reply."_s + target + user;
+	case ComposeKind::Quote: return u"eli.draft.quote."_s + target + user;
+	case ComposeKind::Invite: return u"eli.draft.invite."_s + target + user;
+	case ComposeKind::Edit: return u"eli.draft.edit."_s + target + user;
+	}
+	return u"eli.draft"_s + user;
 }
 
 ComposeProblem ValidateCompose(

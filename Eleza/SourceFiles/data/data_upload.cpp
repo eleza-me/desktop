@@ -11,9 +11,16 @@
 #include <QtCore/QMimeDatabase>
 
 #include <atomic>
+#include <chrono>
 
 namespace Data {
 namespace {
+
+// A clock that never jumps, for the progress throttle.
+[[nodiscard]] qint64 SteadyNowMs() {
+	return std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 
 constexpr auto kDefaultPartSize = qint64(5) << 20;
 
@@ -525,7 +532,23 @@ void Upload::transfer(Id id) {
 	pumpParts(id);
 }
 
-void Upload::reportProgress(Id id) {
+bool ProgressThrottle::due(qint64 sent, qint64 total, qint64 nowMs, bool force) {
+	const auto first = (_sent < 0);
+	const auto last = (total > 0 && sent >= total);
+	if (!first && sent == _sent) {
+		return false;
+	} else if (!first && !last && !force) {
+		const auto step = std::max(total / 100, qint64(1));
+		if (std::abs(sent - _sent) < step || (nowMs - _at) < kMinGapMs) {
+			return false;
+		}
+	}
+	_sent = sent;
+	_at = nowMs;
+	return true;
+}
+
+void Upload::reportProgress(Id id, bool force) {
 	const auto current = job(id);
 	if (!current || !current->callbacks.progress || !current->guard.alive()) {
 		return;
@@ -534,7 +557,10 @@ void Upload::reportProgress(Id id) {
 	for (const auto &part : current->parts) {
 		sent += part.finished ? part.length : part.sent;
 	}
-	current->callbacks.progress(std::min(sent, current->size), current->size);
+	sent = std::min(sent, current->size);
+	if (current->progress.due(sent, current->size, SteadyNowMs(), force)) {
+		current->callbacks.progress(sent, current->size);
+	}
 }
 
 void Upload::pumpParts(Id id) {
@@ -587,7 +613,7 @@ void Upload::startPart(Id id, int index) {
 			part.sent = part.length;
 			part.request = 0;
 			--current->active;
-			reportProgress(id);
+			reportProgress(id, true);
 			pumpParts(id);
 		})
 		.fail([=, this](const Api::Error &error) {
@@ -603,7 +629,7 @@ void Upload::startPart(Id id, int index) {
 				fail(id, error);
 				return;
 			}
-			reportProgress(id);
+			reportProgress(id, true);
 			// The part is tried again after attempt x 1 s, others keep going.
 			const auto attempt = part.attempt;
 			QTimer::singleShot(attempt * 1000, this, [=, this] {

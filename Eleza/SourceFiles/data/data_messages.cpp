@@ -10,6 +10,7 @@
 #include "storage/storage_database.h"
 
 #include <algorithm>
+#include <vector>
 
 namespace Data {
 namespace {
@@ -148,6 +149,81 @@ bool Messages::live(const QString &chat) const {
 	return (i != _histories.end())
 		&& i->second.loaded
 		&& !i->second.hasMoreAfter;
+}
+
+void Messages::hold(const QString &chat) {
+	if (chat.isEmpty()) {
+		return;
+	}
+	++_holds[chat];
+	_shownAt.insert(chat, ++_shownCounter);
+}
+
+void Messages::unhold(const QString &chat) {
+	const auto i = _holds.find(chat);
+	if (i == _holds.end()) {
+		return;
+	} else if (--i.value() > 0) {
+		return;
+	}
+	_holds.erase(i);
+	_shownAt.insert(chat, ++_shownCounter);
+	if (const auto history = existing(chat)) {
+		trimUnheld(*history);
+	}
+	dropUnused();
+}
+
+void Messages::trimUnheld(History &history) {
+	auto server = 0;
+	for (const auto &message : std::as_const(history.items)) {
+		server += (message.seq > 0) ? 1 : 0;
+	}
+	if (server <= kKeepUnheld) {
+		return;
+	}
+	// Oldest first: the server messages before the newest kKeepUnheld go,
+	// the ones still on their way stay.
+	auto drop = server - kKeepUnheld;
+	auto kept = QVector<Message>();
+	kept.reserve(history.items.size() - drop);
+	for (auto &message : history.items) {
+		if (drop > 0 && message.seq > 0) {
+			--drop;
+		} else {
+			kept.push_back(std::move(message));
+		}
+	}
+	history.items = std::move(kept);
+	history.hasMoreBefore = true;
+}
+
+void Messages::dropUnused() {
+	if (int(_histories.size()) <= kKeepHistories) {
+		return;
+	}
+	auto candidates = std::vector<std::pair<quint64, QString>>();
+	for (const auto &[chat, history] : _histories) {
+		if (_holds.contains(chat)) {
+			continue;
+		}
+		const auto pending = std::any_of(
+			history.items.begin(),
+			history.items.end(),
+			[](const Message &message) { return message.seq <= 0; });
+		if (!pending) {
+			candidates.emplace_back(_shownAt.value(chat), chat);
+		}
+	}
+	std::sort(candidates.begin(), candidates.end());
+	auto excess = int(_histories.size()) - kKeepHistories;
+	for (const auto &[at, chat] : candidates) {
+		if (excess-- <= 0) {
+			break;
+		}
+		_histories.erase(chat);
+		_shownAt.remove(chat);
+	}
 }
 
 void Messages::forget(const QString &chat) {
@@ -333,6 +409,23 @@ void Messages::patchMessage(
 		storeChanged(*i, { message });
 	}
 	Q_EMIT historyChanged(chat);
+}
+
+void Messages::setUploadProgress(const QString &chat, const QString &key, double progress) {
+	const auto i = existing(chat);
+	const auto index = i ? i->indexOfKey(key) : -1;
+	if (index < 0) {
+		return;
+	}
+	auto &message = i->items[index];
+	const auto was = message.uploadProgress;
+	message.uploadProgress = progress;
+	if ((was >= 0.) != (progress >= 0.)) {
+		// Starting or ending an upload changes the bubble's lines.
+		Q_EMIT historyChanged(chat);
+	} else if (was != progress) {
+		Q_EMIT messageChanged(chat, key);
+	}
 }
 
 void Messages::storeChanged(const History &history, const QVector<Message> &messages) {

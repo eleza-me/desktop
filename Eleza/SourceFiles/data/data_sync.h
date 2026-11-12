@@ -64,6 +64,9 @@ public:
 	static constexpr auto kAckEvery = 16;
 	static constexpr auto kMaxDifferencePages = 50;
 	static constexpr auto kInboxReloadDelayMs = 800;
+	// A first message the inbox has not brought by then is not announced.
+	static constexpr auto kFirstMessageWaitMs = 60 * 1000;
+	static constexpr auto kMaxFirstMessages = 32;
 
 Q_SIGNALS:
 	void updatingChanged(bool updating);
@@ -86,6 +89,7 @@ private:
 	void applyRemoved(const QString &chat);
 	void rememberInfo(const ChatInfo &info);
 	void reloadInboxSoon();
+	void announceFirstMessages();
 	void scheduleFallback();
 	void syncLoop(std::optional<qint64> from);
 	void syncOnce(std::optional<qint64> from, Fn<void()> done);
@@ -96,6 +100,13 @@ private:
 	std::optional<qint64> _pts;
 	base::Timer _fallbackTimer;
 	base::Timer _inboxReload;
+	// Live messages of chats without a row yet (a new person, a request):
+	// announced (messageReceived) once the inbox brings the row.
+	struct FirstMessage {
+		Message message;
+		qint64 receivedAt = 0;
+	};
+	QHash<QString, FirstMessage> _firstMessages;
 	int _unacked = 0;
 	bool _started = false;
 	bool _syncing = false;

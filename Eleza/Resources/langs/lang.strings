@@ -1273,6 +1273,7 @@
 "lng_history_tab_emoji" = "ایموجی";
 "lng_history_tab_stickers" = "استیکر";
 "lng_history_spoiler" = "اسپویلر";
+"lng_chat_preview_spoiler" = "اسپویلر";
 "lng_history_forward_count#one" = "{count} پیام هدایت‌شده";
 "lng_history_forward_count#other" = "{count} پیام هدایت‌شده";
 "lng_history_forward_title" = "هدایت به…";
@@ -1474,6 +1475,9 @@
 "lng_eli_notif_follow_accepted" = "{who} درخواست دنبال کردنت را پذیرفت";
 "lng_eli_notif_post" = "{who} پست تازه‌ای گذاشت";
 "lng_eli_notif_joined" = "{who} به گفتگویت پیوست و می‌شنود";
+"lng_eli_notif_new_login" = "ورود از دستگاه جدید به حسابت";
+"lng_eli_notif_two_step_recovered" = "تأیید دومرحله‌ای با ایمیل بازیابی خاموش شد و دستگاهی وارد حسابت شد";
+"lng_eli_notif_new_login_hint" = "اگر تو نبودی، در «دستگاه‌ها» آن را بیرون کن.";
 "lng_eli_notif_now_follows" = "{who} حالا دنبالت می‌کند";
 "lng_eli_notif_failed" = "اعلان‌ها بارگذاری نشد";
 "lng_eli_notif_mark_read" = "علامت‌زدن همه به‌عنوان خوانده‌شده";

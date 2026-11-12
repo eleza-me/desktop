@@ -219,6 +219,8 @@ private:
 	[[nodiscard]] const QVector<Data::Message> &items() const;
 	void refreshRows();
 	void applyRows(const QVector<Data::Message> &items);
+	// One message changed in place (Data::Messages::messageChanged).
+	void refreshRow(const QString &key);
 	void rebuildIndex();
 	[[nodiscard]] int indexOfKey(const QString &key) const;
 	[[nodiscard]] int indexOfSeq(qint64 seq) const;
@@ -308,6 +310,7 @@ private:
 
 	Window::SessionController *_controller = nullptr;
 	Main::Session *_session = nullptr;
+	QPointer<Data::Messages> _heldBy;
 	QString _chatId;
 	QPointer<Ui::ScrollArea> _scroll;
 	Downloads *_downloads = nullptr;

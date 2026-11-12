@@ -1,7 +1,9 @@
 // Data::Chats on a fake transport: which rows the list shows, what an inbox
 // reload keeps, and how unread counts follow read marks.
+#include "data/data_feed.h"
 #include "data/data_json.h"
 #include "data/data_users.h"
+#include "data/data_notifications.h"
 #include "test_harness.h"
 
 #include <QtCore/QTemporaryDir>
@@ -126,6 +128,9 @@ private Q_SLOTS:
 	void partialAndRemoteReads();
 	void scrolledUpCountsUnread();
 	void leftOutCardIsNotFinal();
+	void desktopAlertsFollowThePushRules();
+	void timelinesAreLetGo();
+	void postStoreIsBounded();
 
 };
 
@@ -599,6 +604,151 @@ void TestChats::leftOutCardIsNotFinal() {
 		QCOMPARE(users.peek(u"u_b"_s).displayName, u"B"_s);
 		QVERIFY(!users.peek(u"u_b"_s).deleted);
 	}
+// The toasts follow the server's push rules (push.go onChat).
+void TestChats::desktopAlertsFollowThePushRules() {
+	using Data::ChatAlert;
+	// 12:30 in Tehran (UTC+3:30).
+	const auto noon = QDateTime(QDate(2026, 11, 12), QTime(9, 0), Qt::UTC);
+	const auto midnight = QDateTime(QDate(2026, 11, 12), QTime(20, 0), Qt::UTC);
+	auto chat = Data::Chat();
+	chat.id = u"c1"_s;
+	chat.section = u"message"_s;
+	auto settings = QJsonObject();
+	QVERIFY(Data::ChatAlertFor(chat, settings, noon) == ChatAlert::Full);
+
+	// Requests never notify.
+	auto request = chat;
+	request.section = u"request"_s;
+	QVERIFY(Data::ChatAlertFor(request, settings, noon) == ChatAlert::None);
+	request.section = u"message"_s;
+	request.request = u"incoming"_s;
+	QVERIFY(Data::ChatAlertFor(request, settings, noon) == ChatAlert::None);
+
+	// Quiet hours, in their own time zone, across midnight.
+	settings.insert(u"quiet_hours"_s, QJsonObject{
+		{ u"enabled"_s, true },
+		{ u"start"_s, u"23:00"_s },
+		{ u"end"_s, u"07:00"_s },
+		{ u"tz"_s, u"Asia/Tehran"_s },
+	});
+	QVERIFY(Data::ChatAlertFor(chat, settings, noon) == ChatAlert::Full);
+	QVERIFY(Data::ChatAlertFor(chat, settings, midnight) == ChatAlert::None); // 23:30
+	QVERIFY(!Data::InQuietHours(QJsonObject{
+		{ u"enabled"_s, false },
+		{ u"start"_s, u"00:00"_s },
+		{ u"end"_s, u"23:59"_s },
+	}, noon));
+	QVERIFY(Data::InQuietHours(QJsonObject{
+		{ u"enabled"_s, true },
+		{ u"start"_s, u"09:00"_s },
+		{ u"end"_s, u"09:30"_s },
+		{ u"tz"_s, u"no/such_zone"_s }, // read as UTC
+	}, noon));
+	settings.remove(u"quiet_hours"_s);
+
+	// A conversation: its own two switches.
+	auto conversation = chat;
+	conversation.section = u"conversation"_s;
+	conversation.isConversation = true;
+	QVERIFY(Data::ChatAlertFor(conversation, settings, noon) == ChatAlert::Full);
+	settings.insert(u"conversations"_s, QJsonObject{ { u"enabled"_s, true }, { u"new_message"_s, false } });
+	QVERIFY(Data::ChatAlertFor(conversation, settings, noon) == ChatAlert::None);
+	QVERIFY(Data::ChatAlertFor(chat, settings, noon) == ChatAlert::Full);
+	settings.insert(u"conversations"_s, QJsonObject{ { u"enabled"_s, false }, { u"new_message"_s, true } });
+	QVERIFY(Data::ChatAlertFor(conversation, settings, noon) == ChatAlert::None);
+	settings.remove(u"conversations"_s);
+
+	// A hidden chat: anonymous unless told otherwise.
+	auto hidden = chat;
+	hidden.info.hidden = true;
+	QVERIFY(Data::ChatAlertFor(hidden, settings, noon) == ChatAlert::Anonymous);
+	settings.insert(u"hidden_chats"_s, u"none"_s);
+	QVERIFY(Data::ChatAlertFor(hidden, settings, noon) == ChatAlert::None);
+	settings.insert(u"hidden_chats"_s, u"normal"_s);
+	QVERIFY(Data::ChatAlertFor(hidden, settings, noon) == ChatAlert::Full);
+	QVERIFY(Data::ChatInfo::FromJson(QJsonObject{
+		{ u"chat"_s, u"c1"_s },
+		{ u"hidden"_s, true },
+	}).hidden);
+}
+
+// The app stays open for days: a timeline no screen shows keeps its newest
+// messages, and only the timelines shown last stay in memory.
+void TestChats::timelinesAreLetGo() {
+	auto harness = Harness();
+	QVERIFY(harness.start());
+	auto &messages = harness.messages();
+	const auto server = [](const QString &chat, qint64 seq) {
+		auto result = Message();
+		result.chat = chat;
+		result.seq = seq;
+		result.kind = MessageKind::Text;
+		result.text = QString::number(seq);
+		result.createdAt = 1800000000000 + seq;
+		return result;
+	};
+	auto many = QVector<Message>();
+	for (auto seq = 1; seq <= 250; ++seq) {
+		many.push_back(server(u"c_long"_s, seq));
+	}
+	messages.hold(u"c_long"_s);
+	messages.merge(u"c_long"_s, many, false);
+	QCOMPARE(int(messages.history(u"c_long"_s).items.size()), 250);
+	messages.unhold(u"c_long"_s);
+	const auto &kept = messages.history(u"c_long"_s);
+	QCOMPARE(int(kept.items.size()), int(Messages::kKeepUnheld));
+	QCOMPARE(kept.firstSeq(), qint64(51));
+	QCOMPARE(kept.lastSeq(), qint64(250));
+	QVERIFY(kept.hasMoreBefore);
+
+	// A screen keeps its timeline; one with a message still on its way
+	// stays too.
+	messages.hold(u"c_open"_s);
+	messages.merge(u"c_open"_s, { server(u"c_open"_s, 1) }, false);
+	auto local = Message();
+	local.chat = u"c_pending"_s;
+	local.clientMessageId = u"cm1"_s;
+	local.mine = true;
+	local.text = u"on its way"_s;
+	messages.addLocal(local);
+	for (auto i = 0; i != 2 * Messages::kKeepHistories; ++i) {
+		const auto chat = u"c_%1"_s.arg(i);
+		messages.hold(chat);
+		messages.merge(chat, { server(chat, 1) }, false);
+		messages.unhold(chat);
+	}
+	QVERIFY(messages.held(u"c_open"_s));
+	QVERIFY(messages.held(u"c_pending"_s));
+	const auto last = u"c_%1"_s.arg(2 * Messages::kKeepHistories - 1);
+	QVERIFY(messages.held(last));
+	QVERIFY(!messages.held(u"c_0"_s));
+	QVERIFY(!messages.held(u"c_long"_s));
+	messages.unhold(u"c_open"_s);
+}
+
+// Posts seen long ago are let go; what a card shows stays.
+void TestChats::postStoreIsBounded() {
+	auto harness = Harness();
+	auto &feed = harness.session->feed();
+	const auto post = [](int i) {
+		auto result = Post();
+		result.id = u"p%1"_s.arg(i);
+		result.text = QString::number(i);
+		return result;
+	};
+	feed.merge({ post(0), post(1) });
+	feed.hold(u"p0"_s);
+	auto batch = QVector<Post>();
+	const auto total = Feed::kKeepUnheld + 1000;
+	for (auto i = 2; i != total; ++i) {
+		batch.push_back(post(i));
+	}
+	feed.merge(batch);
+	QVERIFY(feed.post(u"p0"_s) != nullptr);              // held
+	QVERIFY(feed.post(u"p1"_s) == nullptr);              // the oldest
+	QVERIFY(feed.post(u"p%1"_s.arg(total - 1)) != nullptr); // the newest
+	feed.unhold(u"p0"_s);
+	QVERIFY(feed.post(u"p0"_s) != nullptr); // let go later, not at once
 }
 
 QTEST_GUILESS_MAIN(TestChats)

@@ -11,6 +11,9 @@
 #include "lang_auto.h"
 #include "main/main_session.h"
 
+#include <algorithm>
+#include <vector>
+
 namespace Support {
 namespace {
 
@@ -310,6 +313,76 @@ QString MessageKindLabel(const Data::Message &message) {
 	return QString();
 }
 
+QString MaskSpoilers(
+		const QString &text,
+		const QVector<Data::Entity> &entities,
+		int shift) {
+	auto spans = std::vector<std::pair<int, int>>(); // from, till in `text`
+	for (const auto &entity : entities) {
+		if (entity.type != u"spoiler" || entity.length <= 0) {
+			continue;
+		}
+		auto from = std::max(entity.offset - shift, 0);
+		auto till = std::min(
+			qint64(entity.offset) + entity.length - shift,
+			qint64(text.size()));
+		if (till <= from) {
+			continue;
+		}
+		// Never half of a surrogate pair.
+		if (from > 0 && text[from].isLowSurrogate() && text[from - 1].isHighSurrogate()) {
+			--from;
+		}
+		if (till < text.size() && text[till].isLowSurrogate() && text[till - 1].isHighSurrogate()) {
+			++till;
+		}
+		spans.emplace_back(from, int(till));
+	}
+	if (spans.empty()) {
+		return text;
+	}
+	std::sort(spans.begin(), spans.end());
+	const auto mask = tr::lng_chat_preview_spoiler(tr::now);
+	auto result = QString();
+	result.reserve(text.size());
+	auto at = 0;
+	for (const auto &[from, till] : spans) {
+		if (till <= at) {
+			continue; // inside the one before
+		}
+		if (from > at) {
+			result += QStringView(text).mid(at, from - at);
+		}
+		if (from >= at) {
+			result += mask;
+		}
+		at = till;
+	}
+	if (at < text.size()) {
+		result += QStringView(text).mid(at);
+	}
+	return result;
+}
+
+QString QuotePreview(const Data::Quote &quote, const Data::Message *target) {
+	if (!target) {
+		return quote.text;
+	}
+	// The quote is where it says in the message (or found in it); otherwise
+	// nothing tells which of it was hidden.
+	const auto &text = target->text;
+	const auto length = int(quote.text.size());
+	auto offset = (quote.offset >= 0
+		&& quote.offset + length <= text.size()
+		&& QStringView(text).mid(quote.offset, length) == quote.text)
+		? quote.offset
+		: int(text.indexOf(quote.text));
+	if (offset < 0) {
+		return quote.text;
+	}
+	return MaskSpoilers(quote.text, target->entities, offset);
+}
+
 QString MessagePreview(const Data::Message &message) {
 	if (message.call) {
 		// A call record, whatever its outcome (the chat shows the details).
@@ -354,12 +427,14 @@ QString MessagePreview(const Data::Message &message) {
 	// (the kind, the time), so direction overrides and invisible marks of the
 	// sender are dropped; a file shows the name it will be saved under
 	// ("x<RLO>fdp.exe" is not "xexe.pdf").
-	auto text = (message.kind == Data::MessageKind::File && !message.text.trimmed().isEmpty())
-		? base::platform::SafeFileName(message.text)
+	// Spoilers first: the offsets are those of the message's text.
+	const auto source = MaskSpoilers(message.text, message.entities);
+	auto text = (message.kind == Data::MessageKind::File && !source.trimmed().isEmpty())
+		? base::platform::SafeFileName(source)
 		: Data::Json::CleanName((label.isEmpty()
 			// A reply to a note shows «↩︎ <answer>», not the quoted note.
-			? Data::NoteReply::Preview(message.text)
-			: message.text).simplified());
+			? Data::NoteReply::Preview(source)
+			: source).simplified());
 	if (label.isEmpty()) {
 		return text.isEmpty() ? tr::lng_support_notify_new_message(tr::now) : text;
 	} else if (message.kind == Data::MessageKind::Sticker
