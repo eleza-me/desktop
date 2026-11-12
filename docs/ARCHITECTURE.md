@@ -122,7 +122,9 @@ call into the media library; `calls/calls_media_livekit.cpp`).
 ## Identity and platform string
 
 Device key: Ed25519 or P-256 generated on first run, private key stored through
-`Storage::SecureBlob` (DPAPI on Windows, 0600 file on Linux). Platform string sent to the API is
+`Storage::SecureBlob` (DPAPI on Windows; on Linux encrypted under a key kept in the Secret Service,
+`storage/storage_keyring.h`, libsecret loaded at run time, or a 0600 file where there is none).
+Platform string sent to the API is
 `desktop` (`X-Eleza-Client: desktop/<version> (<os>)`).
 
 ## Debug / test hooks

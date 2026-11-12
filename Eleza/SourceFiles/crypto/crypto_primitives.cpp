@@ -195,7 +195,12 @@ QByteArray X25519Shared(const QByteArray &privateKey, const QByteArray &peerPubl
 	return result;
 }
 
-QByteArray ChaChaPolyEncrypt(
+namespace {
+
+// ChaCha20-Poly1305 and AES-256-GCM: the same EVP calls, 32-byte keys,
+// 12-byte nonces, 16-byte tags.
+[[nodiscard]] QByteArray AeadEncrypt(
+		const EVP_CIPHER *cipher,
 		const QByteArray &key,
 		const QByteArray &nonce,
 		const QByteArray &associatedData,
@@ -205,7 +210,7 @@ QByteArray ChaChaPolyEncrypt(
 	}
 	const auto context = CipherContextPointer(EVP_CIPHER_CTX_new());
 	if (!context
-		|| EVP_EncryptInit_ex(context.get(), EVP_chacha20_poly1305(), nullptr, nullptr, nullptr) != 1
+		|| EVP_EncryptInit_ex(context.get(), cipher, nullptr, nullptr, nullptr) != 1
 		|| EVP_CIPHER_CTX_ctrl(context.get(), EVP_CTRL_AEAD_SET_IVLEN, kNonceSize, nullptr) != 1
 		|| EVP_EncryptInit_ex(context.get(), nullptr, nullptr, Bytes(key), Bytes(nonce)) != 1) {
 		return QByteArray();
@@ -248,7 +253,8 @@ QByteArray ChaChaPolyEncrypt(
 	return result;
 }
 
-std::optional<QByteArray> ChaChaPolyDecrypt(
+[[nodiscard]] std::optional<QByteArray> AeadDecrypt(
+		const EVP_CIPHER *cipher,
 		const QByteArray &key,
 		const QByteArray &nonce,
 		const QByteArray &associatedData,
@@ -261,7 +267,7 @@ std::optional<QByteArray> ChaChaPolyDecrypt(
 	const auto size = int(ciphertext.size()) - kTagSize;
 	const auto context = CipherContextPointer(EVP_CIPHER_CTX_new());
 	if (!context
-		|| EVP_DecryptInit_ex(context.get(), EVP_chacha20_poly1305(), nullptr, nullptr, nullptr) != 1
+		|| EVP_DecryptInit_ex(context.get(), cipher, nullptr, nullptr, nullptr) != 1
 		|| EVP_CIPHER_CTX_ctrl(context.get(), EVP_CTRL_AEAD_SET_IVLEN, kNonceSize, nullptr) != 1
 		|| EVP_DecryptInit_ex(context.get(), nullptr, nullptr, Bytes(key), Bytes(nonce)) != 1) {
 		return std::nullopt;
@@ -301,6 +307,40 @@ std::optional<QByteArray> ChaChaPolyDecrypt(
 		result = QByteArray("", 0);
 	}
 	return result;
+}
+
+} // namespace
+
+QByteArray ChaChaPolyEncrypt(
+		const QByteArray &key,
+		const QByteArray &nonce,
+		const QByteArray &associatedData,
+		const QByteArray &plaintext) {
+	return AeadEncrypt(EVP_chacha20_poly1305(), key, nonce, associatedData, plaintext);
+}
+
+std::optional<QByteArray> ChaChaPolyDecrypt(
+		const QByteArray &key,
+		const QByteArray &nonce,
+		const QByteArray &associatedData,
+		const QByteArray &ciphertext) {
+	return AeadDecrypt(EVP_chacha20_poly1305(), key, nonce, associatedData, ciphertext);
+}
+
+QByteArray AesGcmEncrypt(
+		const QByteArray &key,
+		const QByteArray &nonce,
+		const QByteArray &associatedData,
+		const QByteArray &plaintext) {
+	return AeadEncrypt(EVP_aes_256_gcm(), key, nonce, associatedData, plaintext);
+}
+
+std::optional<QByteArray> AesGcmDecrypt(
+		const QByteArray &key,
+		const QByteArray &nonce,
+		const QByteArray &associatedData,
+		const QByteArray &ciphertext) {
+	return AeadDecrypt(EVP_aes_256_gcm(), key, nonce, associatedData, ciphertext);
 }
 
 QByteArray Ed25519GeneratePrivate() {

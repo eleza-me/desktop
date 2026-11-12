@@ -13,6 +13,7 @@
 #include "main/main_session.h"
 #include "rt/rt_keys.h"
 #include "storage/storage_key_value.h"
+#include "storage/storage_keyring.h"
 #include "storage/storage_secure_blob.h"
 
 #include <QtCore/QDir>
@@ -90,6 +91,7 @@ class TestApi final : public QObject {
 	Q_OBJECT
 
 private Q_SLOTS:
+	void initTestCase();
 	void headersAndQuery();
 	void idempotencyKeys();
 	void problemJson();
@@ -129,6 +131,11 @@ private:
 	QTemporaryDir _dir;
 
 };
+
+void TestApi::initTestCase() {
+	// Never the keyring of whoever runs the tests.
+	Storage::Keyring::SetDefaultForTests(nullptr);
+}
 
 void TestApi::headersAndQuery() {
 	auto server = HttpServer();

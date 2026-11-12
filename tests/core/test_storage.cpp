@@ -1,6 +1,7 @@
 // SecureBlob, KeyValue and the SQLite cache (ordering, paging, persistence, wipe).
 #include "storage/storage_database.h"
 #include "storage/storage_key_value.h"
+#include "storage/storage_keyring.h"
 #include "storage/storage_secure_blob.h"
 
 #include <atomic>
@@ -35,6 +36,41 @@ template <typename Result, typename Start>
 	return result;
 }
 
+// The Secret Service as far as SecureBlob sees it.
+class FakeKeyring final : public Storage::Keyring {
+public:
+	QHash<QString, QByteArray> secrets;
+	bool available = true;
+
+	bool store(const QString &id, const QString &label, const QByteArray &secret) override {
+		Q_UNUSED(label);
+		if (!available) {
+			return false;
+		}
+		secrets.insert(id, secret);
+		return true;
+	}
+	Lookup lookup(const QString &id, QByteArray &secret) override {
+		if (!available) {
+			return Lookup::Unavailable;
+		}
+		const auto i = secrets.constFind(id);
+		if (i == secrets.cend()) {
+			return Lookup::Missing;
+		}
+		secret = *i;
+		return Lookup::Found;
+	}
+	void remove(const QString &id) override {
+		secrets.remove(id);
+	}
+};
+
+[[nodiscard]] QByteArray FileBytes(const QString &path) {
+	auto file = QFile(path);
+	return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+}
+
 [[nodiscard]] QStringList Texts(const QVector<QJsonObject> &rows) {
 	auto result = QStringList();
 	for (const auto &row : rows) {
@@ -49,7 +85,9 @@ class TestStorage final : public QObject {
 	Q_OBJECT
 
 private Q_SLOTS:
+	void initTestCase();
 	void secureBlob();
+	void secureBlobInKeyring();
 	void keyValue();
 	void metaAndValues();
 	void chats();
@@ -67,6 +105,11 @@ private:
 	QTemporaryDir _dir;
 
 };
+
+void TestStorage::initTestCase() {
+	// Never the keyring of whoever runs the tests.
+	Storage::Keyring::SetDefaultForTests(nullptr);
+}
 
 void TestStorage::secureBlob() {
 	const auto blob = Storage::SecureBlob(_dir.path() + u"/secrets/device.key"_s);
@@ -93,6 +136,81 @@ void TestStorage::secureBlob() {
 	QVERIFY(!blob.read().has_value());
 	blob.remove();
 	QVERIFY(!blob.exists());
+}
+
+void TestStorage::secureBlobInKeyring() {
+#ifdef Q_OS_WIN
+	QSKIP("DPAPI on Windows");
+#else // Q_OS_WIN
+	auto keyring = FakeKeyring();
+	const auto path = _dir.path() + u"/keyring/session.bin"_s;
+	const auto secret = QByteArray("refresh-token-1234567890");
+	{
+		// Written while there is no Secret Service: a plain owner-only file.
+		Storage::Keyring::SetDefaultForTests(nullptr);
+		QVERIFY(Storage::SecureBlob(path).write(secret));
+		QVERIFY(FileBytes(path).contains(secret));
+	}
+	Storage::Keyring::SetDefaultForTests(&keyring);
+	{
+		// The first read with a service moves it there.
+		const auto blob = Storage::SecureBlob(path);
+		QCOMPARE(blob.read().value(), secret);
+		QVERIFY(FileBytes(path).startsWith("ELZB2"));
+		QVERIFY(!FileBytes(path).contains(secret));
+		QCOMPARE(keyring.secrets.size(), 1);
+		QVERIFY(keyring.secrets.contains(QFileInfo(path).absoluteFilePath()));
+		const auto next = QByteArray("refresh-token-2");
+		QVERIFY(blob.write(next));
+		QVERIFY(!FileBytes(path).contains(next));
+		QCOMPARE(blob.read().value(), next);
+	}
+	{
+		// Another run: the key comes from the keyring again.
+		QCOMPARE(Storage::SecureBlob(path).read().value(), QByteArray("refresh-token-2"));
+		// Changed on the disk: not accepted.
+		auto bytes = FileBytes(path);
+		bytes[bytes.size() - 1] = char(bytes[bytes.size() - 1] ^ 1);
+		auto file = QFile(path);
+		QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+		file.write(bytes);
+		file.close();
+		QVERIFY(!Storage::SecureBlob(path).read().has_value());
+		QVERIFY(Storage::SecureBlob(path).write(secret));
+	}
+	{
+		// The keyring does not answer (locked): nothing to read, and the file
+		// stays for a later run.
+		keyring.available = false;
+		QVERIFY(!Storage::SecureBlob(path).read().has_value());
+		QVERIFY(QFile::exists(path));
+		keyring.available = true;
+		QCOMPARE(Storage::SecureBlob(path).read().value(), secret);
+	}
+	{
+		// The copy on another machine (or a profile without its key).
+		auto copied = keyring.secrets;
+		keyring.secrets.clear();
+		QVERIFY(!Storage::SecureBlob(path).read().has_value());
+		keyring.secrets = copied;
+	}
+	{
+		// Removed: the file and its key.
+		const auto blob = Storage::SecureBlob(path);
+		QVERIFY(blob.read().has_value());
+		blob.remove();
+		QVERIFY(!QFile::exists(path));
+		QVERIFY(keyring.secrets.isEmpty());
+	}
+	{
+		// A service that takes no key: an owner-only file as before.
+		keyring.available = false;
+		QVERIFY(Storage::SecureBlob(path).write(secret));
+		QVERIFY(FileBytes(path).startsWith("ELZB1"));
+		keyring.available = true;
+	}
+	Storage::Keyring::SetDefaultForTests(nullptr);
+#endif // !Q_OS_WIN
 }
 
 void TestStorage::keyValue() {
