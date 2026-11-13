@@ -328,6 +328,15 @@ Viewer::Viewer(
 	_close->setClickedCallback([this] { close(); });
 	_more->setClickedCallback([this] { showMenu(); });
 	_pause->setClickedCallback([this] { togglePause(); });
+	_close->setAccessibleName(tr::lng_close(tr::now));
+	_more->setAccessibleName(tr::lng_more(tr::now));
+	_pause->setAccessibleName(tr::lng_stories_pause(tr::now));
+	_previousNav->setAccessibleName(style::RightToLeft()
+		? tr::lng_a11y_next(tr::now)
+		: tr::lng_a11y_previous(tr::now));
+	_nextNav->setAccessibleName(style::RightToLeft()
+		? tr::lng_a11y_previous(tr::now)
+		: tr::lng_a11y_next(tr::now));
 	// The arrows are physical: the left one goes back in LTR, on in RTL.
 	_previousNav->setClickedCallback([this] {
 		style::RightToLeft() ? next() : previous();
@@ -343,6 +352,7 @@ Viewer::Viewer(
 	_reply->setMaxLength(4096);
 	_send = Ui::CreateChild<Ui::IconButton>(_chrome, st::storiesSend);
 	_send->setClickedCallback([this] { sendReply(); });
+	_send->setAccessibleName(tr::lng_send(tr::now));
 	connect(_reply, &Ui::InputField::submitted, this, [this] { sendReply(); });
 	connect(_reply, &Ui::InputField::cancelled, this, [this] { setFocus(); });
 	connect(_reply, &Ui::InputField::focusedChanged, this, [this] {
@@ -352,6 +362,7 @@ Viewer::Viewer(
 	connect(_reply, &Ui::InputField::changed, this, [this] { updateControls(); });
 	_share = Ui::CreateChild<Ui::IconButton>(_chrome, st::storiesShare);
 	_share->setClickedCallback([this] { shareStory(); });
+	_share->setAccessibleName(tr::lng_stories_share(tr::now));
 	_share->hide();
 
 	_seePost = Ui::CreateChild<Ui::RoundButton>(
@@ -774,6 +785,9 @@ void Viewer::updatePlayback() {
 	}
 	const auto &icon = _userPaused ? st::storiesPlayIcon : st::storiesPauseIcon;
 	_pause->setIconOverride(&icon, &icon);
+	_pause->setAccessibleName(_userPaused
+		? tr::lng_stories_play(tr::now)
+		: tr::lng_stories_pause(tr::now));
 	_lastTick = Ui::Now();
 }
 

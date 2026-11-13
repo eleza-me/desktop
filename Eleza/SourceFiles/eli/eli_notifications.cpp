@@ -1089,6 +1089,16 @@ public:
 		update();
 	}
 
+	QString accessibilityName() const override {
+		return tr::lng_eli_follow_requests(tr::now);
+	}
+	QString accessibilityValue() const override {
+		return tr::lng_eli_notif_requests_waiting(
+			tr::now,
+			lt_count,
+			double(_users.size()));
+	}
+
 protected:
 	int resizeGetHeight(int newWidth) override {
 		Q_UNUSED(newWidth);

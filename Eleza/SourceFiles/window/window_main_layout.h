@@ -63,6 +63,9 @@ protected:
 	void resizeEvent(QResizeEvent *e) override;
 	void paintEvent(QPaintEvent *e) override;
 	bool eventFilter(QObject *object, QEvent *event) override;
+	// Tab goes through the columns in reading order: the rail, the side
+	// column, the main one (they are created in another order).
+	bool focusNextPrevChild(bool next) override;
 
 private:
 	class Resizer;

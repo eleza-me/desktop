@@ -15,6 +15,7 @@
 #include "history/history_downloads.h"
 #include "history/history_view_media.h"
 #include "history/history_themes.h"
+#include "lang/lang_format.h"
 #include "lang_auto.h"
 #include "main/main_session.h"
 #include "media/media_audio_player.h"
@@ -961,6 +962,7 @@ void ListWidget::applyRows(const QVector<Data::Message> &timeline) {
 }
 
 void ListWidget::rebuildIndex() {
+	Ui::Accessibility::ItemsChanged(this);
 	_indexByKey.clear();
 	_indexBySeq.clear();
 	_indexByKey.reserve(int(_rows.size()));
@@ -1012,6 +1014,36 @@ int ListWidget::rowAt(int y) const {
 	}
 	const auto top = rowTop(index);
 	return (y >= top && y < top + _rows[index].height) ? index : -1;
+}
+
+Ui::Accessibility::Item ListWidget::accessibilityItem(int index) const {
+	if (index < 0 || index >= int(_rows.size())) {
+		return {};
+	}
+	const auto element = _rows[index].element.get();
+	const auto &message = element->data();
+	auto parts = QStringList();
+	if (!element->isService()) {
+		const auto sender = message.mine
+			? tr::lng_you(tr::now)
+			: element->sender().name;
+		if (!sender.isEmpty()) {
+			parts.push_back(sender);
+		}
+	}
+	if (message.createdAt > 0) {
+		parts.push_back(Lang::ListTime(
+			QDateTime::fromMSecsSinceEpoch(message.createdAt)));
+	}
+	auto result = Ui::Accessibility::Item();
+	result.name = Support::MessagePreview(_session, message);
+	result.description = parts.join(tr::lng_a11y_separator(tr::now));
+	result.role = element->isService()
+		? QAccessible::StaticText
+		: QAccessible::ListItem;
+	result.rect = rowRect(index);
+	result.pressable = false;
+	return result;
 }
 
 QRect ListWidget::rowRect(int index) const {

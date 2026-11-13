@@ -12,11 +12,15 @@
 // that survived with their layouts and keeps the viewport where it was:
 // glued to the bottom when it was there, otherwise anchored to the row at
 // the bottom edge.
+//
+// Screen readers see the rows as a list: each message's text (or the kind of
+// its media), who sent it and when.
 #pragma once
 
 #include "data/data_media.h"
 #include "data/data_messages.h"
 #include "history/history_view_element.h"
+#include "ui/accessibility.h"
 #include "ui/effects/animations.h"
 #include "ui/effects/radial_animation.h"
 #include "ui/rp_widget.h"
@@ -50,7 +54,10 @@ namespace History {
 
 class Downloads;
 
-class ListWidget final : public Ui::RpWidget, private View::Delegate {
+class ListWidget final
+	: public Ui::RpWidget
+	, public Ui::Accessibility::ItemsSource
+	, private View::Delegate {
 	Q_OBJECT
 
 public:
@@ -75,6 +82,14 @@ public:
 	// A chat with a bot: «/command» in the text is a link, buttons that
 	// switch to inline mode use `botHandle` when the message names no bot.
 	void setBotChat(bool bot, const QString &botHandle);
+
+	int accessibilityItemsCount() const override {
+		return int(_rows.size());
+	}
+	Ui::Accessibility::Item accessibilityItem(int index) const override;
+	void accessibilityItemPress(int index) override {
+		Q_UNUSED(index);
+	}
 
 	// ---- navigation
 	void jumpTo(qint64 seq, const std::optional<Data::Quote> &quote = std::nullopt);

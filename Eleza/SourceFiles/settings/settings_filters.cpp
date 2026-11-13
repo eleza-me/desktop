@@ -134,6 +134,7 @@ public:
 	Ui::IconButton *addRemove(std::function<void()> callback) {
 		const auto button = new Ui::IconButton(this, st::settingsWordRemove);
 		button->setClickedCallback(std::move(callback));
+		button->setAccessibleName(tr::lng_delete(tr::now));
 		setControl(button);
 		return button;
 	}

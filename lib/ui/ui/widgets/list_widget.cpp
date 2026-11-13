@@ -53,6 +53,30 @@ void ListWidget::refresh() {
 	_countedWidth = -1;
 	resizeToWidth(width());
 	update();
+	Accessibility::ItemsChanged(this);
+}
+
+Accessibility::Item ListWidget::accessibilityItem(int index) const {
+	if (index < 0 || index >= rowsCount()) {
+		return {};
+	}
+	const auto clickable = _delegate->rowClickable(index);
+	auto result = Accessibility::Item();
+	result.name = _delegate->rowAccessibilityName(index);
+	result.description = _delegate->rowAccessibilityDescription(index);
+	result.role = clickable ? QAccessible::ListItem : QAccessible::StaticText;
+	result.rect = rowRect(index);
+	result.selected = (index == _active);
+	result.pressable = clickable;
+	return result;
+}
+
+void ListWidget::accessibilityItemPress(int index) {
+	if (index >= 0
+		&& index < rowsCount()
+		&& _delegate->rowClickable(index)) {
+		emit rowClicked(index, Qt::LeftButton, Qt::NoModifier);
+	}
 }
 
 void ListWidget::updateRow(int index) {
@@ -188,6 +212,7 @@ void ListWidget::selectSkip(int direction) {
 	setSelected(index);
 	const auto rect = rowRect(index);
 	emit scrollToRequested(rect.top(), rect.top() + rect.height());
+	Accessibility::ItemFocused(this, index);
 }
 
 void ListWidget::selectSkipPage(int height, int direction) {

@@ -88,6 +88,10 @@ ImageViewer::ImageViewer(
 	_saveButton->setClickedCallback([this] { save(); });
 	_previous->setClickedCallback([this] { step(-1); });
 	_next->setClickedCallback([this] { step(1); });
+	_closeButton->setAccessibleName(tr::lng_close(tr::now));
+	_saveButton->setAccessibleName(tr::lng_history_save_as(tr::now));
+	_previous->setAccessibleName(tr::lng_a11y_previous(tr::now));
+	_next->setAccessibleName(tr::lng_a11y_next(tr::now));
 	_paging = std::move(options.paging);
 	_origin = std::move(options.origin);
 	for (auto i = 0; i != int(_items.size()); ++i) {

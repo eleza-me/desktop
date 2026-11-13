@@ -116,6 +116,7 @@ public:
 			update();
 		});
 		_close->setClickedCallback([this] { closeOverlay(); });
+		_close->setAccessibleName(tr::lng_close(tr::now));
 
 		auto &media_ = controller->session().data().media();
 		const auto ref = Data::MediaRef::PostMedia(_postId, _media.id);

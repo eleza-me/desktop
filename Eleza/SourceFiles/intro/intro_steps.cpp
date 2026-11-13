@@ -103,6 +103,11 @@ public:
 		_iso = country ? country->iso : QString();
 		_name = country ? country->name() : tr::lng_intro_country(tr::now);
 		update();
+		accessibilityNameChanged();
+	}
+
+	QString accessibilityName() const override {
+		return _name;
 	}
 
 protected:
@@ -1157,6 +1162,7 @@ public:
 			style::margins(0, 0, 0, st::introPhotoSkip),
 			style::al_top);
 		_photo->setClickedCallback([this] { choosePhoto(); });
+		_photo->setAccessibleName(tr::lng_support_pick_image(tr::now));
 
 		_name = layout->add(
 			Ui::object_ptr<Ui::InputField>(

@@ -2,6 +2,7 @@
 
 #include "ui/effects/shadow.h"
 #include "ui/painter.h"
+#include "ui/ui_phrases.h"
 #include "ui/ui_utility.h"
 
 #include <QtGui/QKeyEvent>
@@ -253,6 +254,7 @@ SheetLayerWidget::SheetLayerWidget(
 	_content->setParent(this);
 	_content->show();
 	_close->setClickedCallback([this] { closeLayer(); });
+	_close->setAccessibleName(CurrentPhrases().close);
 	_content->setDelegate(this);
 	parentResized();
 }

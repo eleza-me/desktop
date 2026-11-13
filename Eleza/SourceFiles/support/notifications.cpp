@@ -250,6 +250,7 @@ NotificationWidget::NotificationWidget(
 	Ui::MakeTransparentForMouse(_userpic);
 	_userpic->setBorderColor(st::notifyBg);
 	_close->setClickedCallback([this] { hideAnimated(); });
+	_close->setAccessibleName(tr::lng_close(tr::now));
 	_close->hide();
 
 	_hideTimer.setSingleShot(true);

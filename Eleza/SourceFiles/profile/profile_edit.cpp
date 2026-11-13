@@ -377,6 +377,9 @@ void EditSection::build() {
 		st::defaultFlatButton);
 
 	_photo->setClickedCallback([this] { showPhotoMenu(); });
+	// «تغییر عکس» under it does the same for the keyboard.
+	_photo->setKeyboardFocusable(false);
+	_photo->setAccessibleName(tr::lng_profile_change_photo(tr::now));
 	_changePhoto->setClickedCallback([this] { showPhotoMenu(); });
 	connect(_name, &Ui::InputField::changed, this, [this] {
 		setHint(_nameHint, QString(), false);

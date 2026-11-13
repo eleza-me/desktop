@@ -146,7 +146,7 @@ Ui::SettingsButton *AddInfoRow(
 	const auto result = AddButton(container, text, icon);
 	result->setValueText(value);
 	result->setAttribute(Qt::WA_TransparentForMouseEvents);
-	result->setFocusPolicy(Qt::NoFocus);
+	result->setKeyboardFocusable(false);
 	return result;
 }
 

@@ -1582,6 +1582,26 @@ int Widget::rowHeight(int index, int width) const {
 	return 0;
 }
 
+QString Widget::rowAccessibilityName(int index) const {
+	const auto &row = *_rows[index];
+	return !row.title.isEmpty()
+		? row.title
+		: !row.heading.isEmpty()
+		? row.heading.toString()
+		: row.text.toString();
+}
+
+QString Widget::rowAccessibilityDescription(int index) const {
+	const auto &row = *_rows[index];
+	if (!row.subtitle.isEmpty()) {
+		return row.subtitle;
+	}
+	// A post: its text after the author; a state: the text under the title.
+	return (!row.title.isEmpty() || !row.heading.isEmpty())
+		? row.text.toString()
+		: QString();
+}
+
 bool Widget::rowClickable(int index) const {
 	switch (_rows[index]->kind) {
 	case kRecent:

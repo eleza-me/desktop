@@ -1,5 +1,6 @@
 #include "ui/image/userpic.h"
 
+#include "ui/accessibility.h"
 #include "ui/image/image_prepare.h"
 #include "ui/painter.h"
 
@@ -244,6 +245,12 @@ void UserpicWidget::setSize(int size) {
 		refreshFromSource();
 	}
 	update();
+}
+
+void UserpicWidget::paintFocusRing(QPainter &p) {
+	Accessibility::PaintFocusRingEllipse(
+		p,
+		QRectF(0., 0., _size, _size));
 }
 
 void UserpicWidget::paintEvent(QPaintEvent *e) {

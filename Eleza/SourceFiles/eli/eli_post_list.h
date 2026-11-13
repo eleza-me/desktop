@@ -20,12 +20,15 @@
 // Mouse: every part of a card acts as on the web (profile, links, media, poll,
 // quote, actions); right click opens the post menu (the people list on the
 // like / dislike buttons); double click likes. Keyboard (when focused):
-// J / K next / previous post, L like, R reply, B save, Enter opens.
+// J / K next / previous post, L like, R reply, B save, Enter opens. Screen
+// readers see the cards as a list (author; text, time), the keyboard's post
+// as their focus.
 #pragma once
 
 #include "base/timer.h"
 #include "eli/eli_logic.h"
 #include "eli/eli_post_card.h"
+#include "ui/accessibility.h"
 #include "ui/effects/animations.h"
 #include "ui/rp_widget.h"
 #include "ui/widgets/misc_widgets.h"
@@ -81,7 +84,10 @@ struct ListRow {
 	QString moreText;
 };
 
-class PostList final : public Ui::RpWidget, public CardHost {
+class PostList final
+	: public Ui::RpWidget
+	, public CardHost
+	, public Ui::Accessibility::ItemsSource {
 	Q_OBJECT
 
 public:
@@ -129,6 +135,15 @@ public:
 
 	// J / K / L / R / B / Enter. Returns false for other keys.
 	bool handleKey(QKeyEvent *e);
+
+	int accessibilityItemsCount() const override {
+		return count();
+	}
+	Ui::Accessibility::Item accessibilityItem(int index) const override;
+	void accessibilityItemPress(int index) override;
+	int accessibilityFocusedItem() const override {
+		return indexOf(_selectedId);
+	}
 
 Q_SIGNALS:
 	// The keyboard selection moved: make [top, bottom) visible.

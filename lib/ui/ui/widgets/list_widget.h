@@ -17,8 +17,12 @@
 // paintRow gets `rect` in the list's physical coordinates; use rect.width() as the
 // outer width for RTL-aware helpers after p.translate(rect.topLeft()) if you prefer.
 // The hover / active background and the press ripple are painted by the list.
+//
+// Screen readers see the rows as a list: the delegate names them
+// (rowAccessibilityName); the keyboard selection is their focus.
 #pragma once
 
+#include "ui/accessibility.h"
 #include "ui/rp_widget.h"
 #include "ui/effects/ripple_animation.h"
 #include "styles/style_widgets.h"
@@ -50,13 +54,23 @@ public:
 		Q_UNUSED(index);
 		return true;
 	}
+	// What a screen reader says of the row: its title, then the rest.
+	[[nodiscard]] virtual QString rowAccessibilityName(int index) const {
+		Q_UNUSED(index);
+		return QString();
+	}
+	[[nodiscard]] virtual QString rowAccessibilityDescription(
+			int index) const {
+		Q_UNUSED(index);
+		return QString();
+	}
 
 protected:
 	~ListDelegate() = default;
 
 };
 
-class ListWidget : public RpWidget {
+class ListWidget : public RpWidget, public Accessibility::ItemsSource {
 	Q_OBJECT
 
 public:
@@ -96,6 +110,15 @@ public:
 
 	// Space above / below the rows (a header, bottom padding).
 	void setSkips(int top, int bottom);
+
+	int accessibilityItemsCount() const override {
+		return rowsCount();
+	}
+	Accessibility::Item accessibilityItem(int index) const override;
+	void accessibilityItemPress(int index) override;
+	int accessibilityFocusedItem() const override {
+		return _selected;
+	}
 
 Q_SIGNALS:
 	void rowClicked(

@@ -1,5 +1,6 @@
 #include "ui/widgets/checkbox.h"
 
+#include "ui/accessibility.h"
 #include "ui/painter.h"
 
 #include <algorithm>
@@ -221,6 +222,7 @@ void Checkbox::setText(const QString &text) {
 	_text.setText(_st.style, text);
 	resizeToWidth(width());
 	update();
+	accessibilityNameChanged();
 }
 
 bool Checkbox::checked() const {
@@ -230,6 +232,7 @@ bool Checkbox::checked() const {
 void Checkbox::setChecked(bool checked, bool animated) {
 	if (_check->checked() != checked) {
 		_check->setChecked(checked, animated);
+		accessibilityCheckedChanged();
 		emit checkedChanged(checked);
 	}
 }
@@ -317,8 +320,13 @@ bool Toggle::checked() const {
 void Toggle::setChecked(bool checked, bool animated) {
 	if (_view.checked() != checked) {
 		_view.setChecked(checked, animated);
+		accessibilityCheckedChanged();
 		emit checkedChanged(checked);
 	}
+}
+
+void Toggle::paintFocusRing(QPainter &p) {
+	Accessibility::PaintFocusRing(p, QRectF(rect()), height() / 2.);
 }
 
 void Toggle::paintEvent(QPaintEvent *e) {
@@ -382,7 +390,15 @@ Radiobutton::~Radiobutton() {
 }
 
 void Radiobutton::handleNewGroupValue(int value) {
+	const auto was = _radio.checked();
 	_radio.setChecked(value == _value, true);
+	if (was != _radio.checked()) {
+		accessibilityCheckedChanged();
+	}
+}
+
+std::optional<bool> Radiobutton::accessibilityChecked() const {
+	return _radio.checked();
 }
 
 int Radiobutton::naturalWidth() const {

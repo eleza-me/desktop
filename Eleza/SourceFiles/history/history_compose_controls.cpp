@@ -273,6 +273,9 @@ void ComposeControls::setupButtons() {
 	_mic->setClickedCallback([this] { startRecording(); });
 	_barClose->setClickedCallback([this] { cancelMode(); });
 	_previewClose->setClickedCallback([this] { dismissPreview(); });
+	_barClose->setAccessibleName(tr::lng_cancel(tr::now));
+	_previewClose->setAccessibleName(tr::lng_cancel(tr::now));
+	_botCommands->setAccessibleName(tr::lng_bot_commands(tr::now));
 	_recordCancel->setClickedCallback([this] { stopRecording(false); });
 	Ui::InstallTooltip(_attach, [] { return tr::lng_chat_attach(tr::now); });
 	Ui::InstallTooltip(_emoji, [] { return tr::lng_history_tab_emoji(tr::now); });
@@ -1576,6 +1579,9 @@ void ComposeControls::updateControls() {
 	_keyboardToggle->setIconOverride(
 		open ? &st::historyBotKeyboardHideIcon : nullptr,
 		open ? &st::historyBotKeyboardHideIconOver : nullptr);
+	_keyboardToggle->setAccessibleName(open
+		? tr::lng_bot_keyboard_hide(tr::now)
+		: tr::lng_bot_keyboard_show(tr::now));
 	const auto listed = (_botPanel->mode() == BotSuggestPanel::Mode::Commands);
 	_botCommands->setIconOverride(
 		listed ? &st::historyBotCommandsActiveIcon : nullptr,

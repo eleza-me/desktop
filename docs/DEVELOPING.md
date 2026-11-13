@@ -342,6 +342,20 @@ the keyboard focus, then of the other visible one, then to the handlers register
 `Window::RegisterCommandHandler(command, [](Window::SessionController *controller) { …; return true; })`.
 While a box is shown only back / close / theme / quit work.
 
+**Tab and screen readers** (`ui/accessibility.h`). Every `Ui::AbstractButton` that does
+something (a click callback or a connection to `clickedSignal`) is a Tab stop that the mouse
+never focuses: Tab / Shift+Tab reach it, Space / Enter press it and the focus ring of the
+style is painted over it — only for a focus the keyboard brought (a focus Qt gives by itself,
+on activation or when a focused widget hides, goes on to the field or section that had it
+before). Screen readers get its name from `accessibleName()`, else from the button's text
+(`accessibilityName()` in a subclass), else from its tooltip: an icon button without a
+tooltip needs `setAccessibleName(tr::lng_…(tr::now))`. Use `setKeyboardFocusable(false)`,
+not `setFocusPolicy(Qt::NoFocus)`, to keep a button out of the Tab order. A widget that
+paints several items itself (the rail, the story strip, `Ui::TabBar`, the lists) derives from
+`Ui::Accessibility::ItemsSource`; `Ui::ListWidget` asks its delegate for
+`rowAccessibilityName` / `rowAccessibilityDescription`. The columns of the window and a box
+take Tab in reading order (`FocusNextInRegions`); a box keeps Tab inside.
+
 **Esc is handled once.** A field (`InputField`, `MaskedInputField`, `CodeInput`) gives the
 key to whoever listens to its `cancelled()` signal and then the key stops there; with no
 listener it travels on to the parents and ends in the window's "back". `SearchField` clears
@@ -760,7 +774,9 @@ Do
 * reuse the helpers in section 6 instead of re-implementing userpics, error texts, links,
   pickers, viewers;
 * keep the keyboard working: Enter submits, Esc goes back, focus lands where typing goes
-  (`setInnerFocus`).
+  (`setInnerFocus`), Tab reaches every control and screen readers can name it (section 5a);
+* let animations go through `Ui::Animations` / `Ui::AnimationsDisabled()`: «کاهش حرکت»
+  (settings → «ظاهر») turns them off with `Ui::SetAnimationsDisabled`.
 
 Don't
 

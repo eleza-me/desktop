@@ -1606,6 +1606,21 @@
 "lng_title_close" = "Close";
 "lng_title_use_system" = "Use system title bar";
 "lng_title_use_system_about" = "Takes effect after the app is restarted.";
+// ---- accessibility ----
+// What screen readers say of painted items, and the settings of «ظاهر».
+"lng_a11y_separator" = ", ";
+"lng_a11y_navigation" = "Navigation";
+"lng_a11y_story_unseen" = "Unseen story";
+"lng_a11y_story_muted" = "Hidden";
+"lng_a11y_previous" = "Previous";
+"lng_a11y_next" = "Next";
+"lng_a11y_playlist" = "Playlist";
+"lng_settings_accessibility" = "Accessibility";
+"lng_settings_ui_scale" = "Interface size";
+"lng_settings_ui_scale_percent" = "{percent}%";
+"lng_settings_ui_scale_about" = "The size of text and everything else in the app on this device. Takes effect after the app is restarted.";
+"lng_settings_reduce_motion" = "Reduce motion";
+"lng_settings_reduce_motion_about" = "Turns off the app's animations on this device. Until you choose, it follows the system setting.";
 // ---- update ----
 "lng_update_title" = "Updates";
 "lng_update_button" = "Update Eleza";

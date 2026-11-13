@@ -337,6 +337,40 @@ void InnerWidget::rebuild() {
 	if (wasCount != rowsCount() || !wasCount) {
 		Q_EMIT rowsChanged();
 	}
+	Ui::Accessibility::ItemsChanged(this);
+}
+
+Ui::Accessibility::Item InnerWidget::accessibilityItem(int index) const {
+	if (index < 0 || index >= rowsCount()) {
+		return {};
+	}
+	auto &row = const_cast<Row&>(_rows[index]);
+	if (!row.prepared) {
+		const_cast<InnerWidget*>(this)->prepare(row);
+	}
+	// «سارا» — «تو: سلام، ۱۰:۴۲، ۲ پیام خوانده‌نشده»
+	auto parts = QStringList();
+	const auto preview = row.preview.prefix.isEmpty()
+		? row.preview.text
+		: (row.preview.prefix + QLatin1Char(' ') + row.preview.text);
+	if (!preview.trimmed().isEmpty()) {
+		parts.push_back(preview);
+	}
+	if (!row.date.isEmpty()) {
+		parts.push_back(row.date);
+	}
+	if (row.type == Row::Type::Chat && row.chat.unread > 0) {
+		parts.push_back(
+			tr::lng_unread_messages(tr::now, lt_count, row.chat.unread));
+	}
+	return {
+		.name = row.title,
+		.description = parts.join(tr::lng_a11y_separator(tr::now)),
+		.role = QAccessible::ListItem,
+		.rect = rowRect(index),
+		.selected = (row.type == Row::Type::Chat)
+			&& (row.chat.id == _activeChat),
+	};
 }
 
 void InnerWidget::chatChanged(const QString &id) {
@@ -1166,6 +1200,7 @@ void InnerWidget::selectSkip(int direction) {
 	index = std::clamp(index, 0, rowsCount() - 1);
 	setSelected(index);
 	Q_EMIT scrollToRequested(rowTop(index), rowTop(index) + st::dialogsRowHeight);
+	Ui::Accessibility::ItemFocused(this, index);
 }
 
 void InnerWidget::selectSkipPage(int height, int direction) {

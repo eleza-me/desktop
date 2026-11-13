@@ -65,6 +65,10 @@ struct CallSettings {
 	}
 };
 
+// The system asks apps not to animate («Show animations» off on Windows);
+// false where that is not known.
+[[nodiscard]] bool SystemReducesMotion();
+
 struct WindowGeometry {
 	QRect rect; // null = never saved
 	bool maximized = false;
@@ -189,6 +193,26 @@ public:
 	}
 	void setCalls(const CallSettings &settings);
 
+	// «اندازهٔ رابط» of this computer in percent (kUiScaleMin…kUiScaleMax).
+	// It becomes QT_SCALE_FACTOR before the QApplication is created, so it
+	// is read from the file by the launcher and takes effect at the next start.
+	static constexpr auto kUiScaleMin = 100;
+	static constexpr auto kUiScaleMax = 150;
+	[[nodiscard]] int uiScale() const {
+		return _uiScale;
+	}
+	void setUiScale(int percent);
+	[[nodiscard]] static int NormalizeUiScale(int percent);
+	// Only the scale, from the settings file at `path` (100 when there is none).
+	[[nodiscard]] static int ReadUiScale(const QString &path);
+
+	// «کاهش حرکت»: the app's animations off on this computer. nullopt until
+	// the user chooses: then the system's setting decides.
+	[[nodiscard]] std::optional<bool> reduceMotion() const {
+		return _reduceMotion;
+	}
+	void setReduceMotion(bool reduce);
+
 	// Writes pending changes right now (on quit).
 	void flush();
 
@@ -224,6 +248,8 @@ private:
 	QMap<QString, int> _emojiTones;
 	bool _autoUpdate = true;
 	CallSettings _calls;
+	int _uiScale = kUiScaleMin;
+	std::optional<bool> _reduceMotion;
 
 };
 

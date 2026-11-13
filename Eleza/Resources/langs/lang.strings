@@ -1636,6 +1636,21 @@
 "lng_title_close" = "بستن";
 "lng_title_use_system" = "استفاده از نوار عنوان سیستم";
 "lng_title_use_system_about" = "پس از اجرای دوبارهٔ برنامه اعمال می‌شود.";
+// ---- accessibility ----
+// What screen readers say of painted items, and the settings of «ظاهر».
+"lng_a11y_separator" = "، ";
+"lng_a11y_navigation" = "ناوبری";
+"lng_a11y_story_unseen" = "استوری دیده‌نشده";
+"lng_a11y_story_muted" = "پنهان‌شده";
+"lng_a11y_previous" = "قبلی";
+"lng_a11y_next" = "بعدی";
+"lng_a11y_playlist" = "فهرست پخش";
+"lng_settings_accessibility" = "دسترس‌پذیری";
+"lng_settings_ui_scale" = "اندازهٔ رابط";
+"lng_settings_ui_scale_percent" = "{percent}٪";
+"lng_settings_ui_scale_about" = "اندازهٔ متن و همهٔ اجزای برنامه در این دستگاه. پس از اجرای دوبارهٔ برنامه اعمال می‌شود.";
+"lng_settings_reduce_motion" = "کاهش حرکت";
+"lng_settings_reduce_motion_about" = "انیمیشن‌های برنامه در این دستگاه خاموش می‌شوند. تا وقتی انتخاب نکرده‌ای، از تنظیم سیستم پیروی می‌کند.";
 // ---- update ----
 "lng_update_title" = "به‌روزرسانی";
 "lng_update_button" = "به‌روزرسانی الزا";

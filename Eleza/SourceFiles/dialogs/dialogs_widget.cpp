@@ -66,6 +66,15 @@ public:
 	void setText(const QString &text) {
 		_text = text;
 		update();
+		accessibilityNameChanged();
+	}
+
+	// The button is «تلاش دوباره»; the text says why.
+	QString accessibilityName() const override {
+		return tr::lng_try_again(tr::now);
+	}
+	QString accessibilityValue() const override {
+		return _text;
 	}
 
 protected:

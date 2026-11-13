@@ -55,6 +55,7 @@
 #include "lang/lang_instance.h"
 #include "ui/style/style_core_palette.h"
 
+#include <QtCore/QByteArray>
 #include <QtCore/QSize>
 #include <QtCore/QString>
 #include <QtCore/QStringList>
@@ -134,6 +135,11 @@ private:
 	char **_argv = nullptr;
 	CommandLine _commandLine;
 	QString _workDir;
+	// QT_SCALE_FACTOR as it was before the interface scale was put into it:
+	// given back once Qt has read it, so that a restarted process (an update)
+	// does not scale twice.
+	std::optional<QByteArray> _scaleFactorBefore;
+	bool _restoreScaleFactor = false;
 
 };
 

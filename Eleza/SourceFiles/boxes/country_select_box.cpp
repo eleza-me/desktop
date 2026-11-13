@@ -159,6 +159,14 @@ int CountrySelectBox::rowHeight(int index, int width) const {
 	return st::countryRowHeight;
 }
 
+QString CountrySelectBox::rowAccessibilityName(int index) const {
+	return _rows[index]->name();
+}
+
+QString CountrySelectBox::rowAccessibilityDescription(int index) const {
+	return QStringLiteral("+") + _rows[index]->code;
+}
+
 void CountrySelectBox::paintRow(
 		Painter &p,
 		int index,

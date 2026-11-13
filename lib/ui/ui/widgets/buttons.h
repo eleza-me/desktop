@@ -4,7 +4,9 @@
 //   send->setClickedCallback([=] { ... });
 //   send->resizeToNaturalWidth(width());   // or setFullWidth(w)
 //
-//   AbstractButton   state machine: over / down / disabled, click callback + signal
+//   AbstractButton   state machine: over / down / disabled, click callback + signal;
+//                    a Tab stop with a focus ring, Space / Enter press it, and
+//                    an interface for screen readers (ui/accessibility.h)
 //   RippleButton     + press ripple (override prepareRippleMask for the shape)
 //   RoundButton      text button: st::defaultRoundButton (filled), lightRoundButton,
 //                    dangerRoundButton, dangerLightButton, outlineRoundButton; loading state
@@ -20,6 +22,7 @@
 #include "ui/effects/ripple_animation.h"
 #include "styles/style_widgets.h"
 
+#include <QtGui/QAccessible>
 #include <QtGui/QPainterPath>
 
 #include <functional>
@@ -37,9 +40,7 @@ class AbstractButton : public RpWidget {
 public:
 	explicit AbstractButton(QWidget *parent);
 
-	void setClickedCallback(std::function<void()> callback) {
-		_clickedCallback = std::move(callback);
-	}
+	void setClickedCallback(std::function<void()> callback);
 
 	[[nodiscard]] bool isOver() const {
 		return (_state & StateFlag::Over) != 0;
@@ -66,6 +67,29 @@ public:
 	}
 
 	void clearState();
+
+	// ---- the keyboard and screen readers
+	//
+	// A button that does something (a click callback or a connection to
+	// clickedSignal) is a Tab stop; this turns that off (use it instead of
+	// setFocusPolicy(Qt::NoFocus), which a later callback would undo).
+	void setKeyboardFocusable(bool focusable);
+	[[nodiscard]] bool actionable() const {
+		return _clickedCallback || _clickConnected;
+	}
+	// What a screen reader says. The name is accessibleName() when one is
+	// set, else accessibilityName() (the button's own text), else its tooltip.
+	[[nodiscard]] virtual QAccessible::Role accessibilityRole() const;
+	[[nodiscard]] virtual QString accessibilityName() const {
+		return QString();
+	}
+	[[nodiscard]] virtual QString accessibilityValue() const {
+		return QString();
+	}
+	// A two-state control: whether it is on.
+	[[nodiscard]] virtual std::optional<bool> accessibilityChecked() const {
+		return std::nullopt;
+	}
 
 Q_SIGNALS:
 	void clickedSignal(Qt::KeyboardModifiers modifiers, Qt::MouseButton button);
@@ -99,14 +123,32 @@ protected:
 	void mouseMoveEvent(QMouseEvent *e) override;
 	void mouseReleaseEvent(QMouseEvent *e) override;
 	void keyPressEvent(QKeyEvent *e) override;
+	void focusInEvent(QFocusEvent *e) override;
+	void focusOutEvent(QFocusEvent *e) override;
+	bool event(QEvent *e) override;
+	void connectNotify(const QMetaMethod &signal) override;
+
+	// The ring is shown while the keyboard focus is here (not after a focus
+	// that the window's activation gave).
+	[[nodiscard]] bool focusRingShown() const;
+	// Painted over the button; a rounded rectangle of the whole by default.
+	virtual void paintFocusRing(QPainter &p);
+	// Tell screen readers that accessibilityName() / Checked() changed.
+	void accessibilityNameChanged();
+	void accessibilityCheckedChanged();
 
 private:
 	void updateCursor();
+	void refreshFocusPolicy();
 
 	State _state = StateFlag::None;
 	Qt::KeyboardModifiers _modifiers;
 	bool _enablePointerCursor = true;
 	bool _acceptBoth = false;
+	bool _keyboardFocusable = true;
+	bool _clickConnected = false;
+	bool _keyboardFocus = false;
+	Qt::FocusPolicy _appliedFocusPolicy = Qt::NoFocus;
 	std::function<void()> _clickedCallback;
 
 };
@@ -181,10 +223,15 @@ public:
 	// Paints the over state as if it was down (for default buttons of a box).
 	void setBrandOverride(bool active);
 
+	QString accessibilityName() const override {
+		return _text;
+	}
+
 protected:
 	void paintEvent(QPaintEvent *e) override;
 	int resizeGetHeight(int newWidth) override;
 	void onStateChanged(State was, StateChangeSource source) override;
+	void paintFocusRing(QPainter &p) override;
 
 	QImage prepareRippleMask() const override;
 
@@ -228,6 +275,7 @@ public:
 protected:
 	void paintEvent(QPaintEvent *e) override;
 	void onStateChanged(State was, StateChangeSource source) override;
+	void paintFocusRing(QPainter &p) override;
 
 	QImage prepareRippleMask() const override;
 	QPoint prepareRippleStartPosition() const override;
@@ -254,10 +302,16 @@ public:
 	void setColorOverride(std::optional<QColor> color);
 	[[nodiscard]] int naturalWidth() const override;
 
+	QAccessible::Role accessibilityRole() const override;
+	QString accessibilityName() const override {
+		return _text;
+	}
+
 protected:
 	void paintEvent(QPaintEvent *e) override;
 	void onStateChanged(State was, StateChangeSource source) override;
 	int resizeGetHeight(int newWidth) override;
+	void paintFocusRing(QPainter &p) override;
 
 private:
 	const style::LinkButton &_st;
@@ -291,6 +345,15 @@ public:
 	[[nodiscard]] bool hasToggle() const {
 		return _toggle != nullptr;
 	}
+
+	QAccessible::Role accessibilityRole() const override;
+	QString accessibilityName() const override {
+		return _text;
+	}
+	QString accessibilityValue() const override {
+		return _value;
+	}
+	std::optional<bool> accessibilityChecked() const override;
 
 Q_SIGNALS:
 	void toggledChanged(bool checked);
@@ -327,10 +390,15 @@ public:
 	}
 	[[nodiscard]] int naturalWidth() const override;
 
+	QString accessibilityName() const override {
+		return _text;
+	}
+
 protected:
 	void paintEvent(QPaintEvent *e) override;
 	int resizeGetHeight(int newWidth) override;
 	QImage prepareRippleMask() const override;
+	void paintFocusRing(QPainter &p) override;
 
 private:
 	[[nodiscard]] QPainterPath shape(const QRectF &rect) const;
