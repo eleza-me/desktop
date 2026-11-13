@@ -51,6 +51,14 @@ public:
 			+ u" · "_s
 			+ item(profile.following, tr::lng_profile_following(tr::now));
 		update();
+		accessibilityNameChanged();
+	}
+
+	QString accessibilityName() const override {
+		return _name.toString();
+	}
+	QString accessibilityValue() const override {
+		return _stats;
 	}
 
 protected:

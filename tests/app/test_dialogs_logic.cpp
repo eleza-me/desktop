@@ -293,6 +293,52 @@ private Q_SLOTS:
 			Dialogs::Preview::Kind::Empty);
 	}
 
+	// Spoilers never show where they cannot be tapped open: the row, a
+	// notification (both MessagePreview), a quote, a draft.
+	void spoilersMasked() {
+		const auto spoiler = [](int offset, int length) {
+			auto result = Data::Entity();
+			result.type = QStringLiteral("spoiler");
+			result.offset = offset;
+			result.length = length;
+			return result;
+		};
+		const auto mask = tr::lng_chat_preview_spoiler(tr::now);
+		auto message = Text("the end: he dies");
+		message.entities = { spoiler(9, 7) };
+		QCOMPARE(Support::MessagePreview(message), U("the end: ") + mask);
+
+		auto chat = Chat("a", 10);
+		chat.lastMessage = message;
+		QCOMPARE(Dialogs::PreviewFor(chat).text, U("the end: ") + mask);
+
+		// Two spans, one inside the other, one out of range; a pair of
+		// surrogates is never cut.
+		QCOMPARE(
+			Support::MaskSpoilers(
+				U("a 😀b c"),
+				{ spoiler(2, 1), spoiler(2, 2), spoiler(40, 3) }),
+			U("a ") + mask + U("b c"));
+		QCOMPARE(Support::MaskSpoilers(U("plain"), {}), U("plain"));
+
+		// A quote: the spoiler of the message where the quote is.
+		auto quote = Data::Quote();
+		quote.text = U("he dies");
+		quote.offset = 9;
+		QCOMPARE(Support::QuotePreview(quote, &message), mask);
+		quote.text = U("end: he");
+		quote.offset = 0; // wrong: found in the text
+		QCOMPARE(Support::QuotePreview(quote, &message), U("end: ") + mask);
+		QCOMPARE(Support::QuotePreview(quote, nullptr), U("end: he"));
+
+		// My draft too.
+		auto draft = Data::Draft();
+		draft.text = U("secret 42");
+		draft.entities = { spoiler(7, 2) };
+		chat.draft = draft;
+		QCOMPARE(Dialogs::PreviewFor(chat).text, U("secret ") + mask);
+	}
+
 	void noteNames() {
 		auto note = Data::Message();
 		note.chat = QStringLiteral("j1group");

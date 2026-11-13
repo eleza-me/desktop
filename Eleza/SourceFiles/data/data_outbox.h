@@ -5,10 +5,23 @@
 // restart (the database's outbox table).
 //
 // Ordering: messages of one chat leave strictly in the order they were
-// queued; a message waits (Queued) until the ones before it are sent. A
-// transient failure is retried with a backoff (2 s .. 30 s, six attempts),
-// then the message becomes Failed and the ones behind it go on; a Failed
-// message stays in the timeline until retry() or discard().
+// queued; a message waits (Queued) until the ones before it are sent. No
+// answer at all (offline, the connection dropped the request) is no attempt:
+// the message waits for the network however long that takes, retried with a
+// backoff (2 s .. 30 s) and at once when the connection comes up, and the
+// ones behind it keep waiting. Another transient failure (5xx, 429) is
+// retried with the same backoff, six attempts, then the message becomes
+// Failed and the ones behind it go on; it is tried again by itself when the
+// connection comes up next (retryAll()). A Failed message stays in the
+// timeline until retry() or discard().
+//
+// Files: one in the app's temporary directory (a recording, a pasted
+// picture) is gone after a restart, so the queue sends its own copy (in
+// setFilesDirectory()) and removes it once the message is sent or discarded.
+//
+// Discarding a message whose send may have reached the server (the request
+// is out, or one went without an answer) cannot stop it there: when it turns
+// out to be sent (the answer, or its echo) it is deleted for everyone.
 //
 //   outbox.sendText(chat, u"hello"_s);
 //   outbox.sendFile(chat, path, { .caption = u"look"_s });
@@ -76,6 +89,11 @@ public:
 	explicit Outbox(Session *session);
 	~Outbox();
 
+	// Where the queue keeps its copies of temporary files (the account's
+	// directory). Before start(); empty (tests): files are sent from where
+	// they are.
+	void setFilesDirectory(const QString &path);
+
 	// Loads the stored queue, shows its bubbles and starts sending.
 	void start(base::Guard guard = base::Guard(), Fn<void()> ready = nullptr);
 	void stop();
@@ -110,12 +128,17 @@ public:
 
 	// Tries a failed message again.
 	void retry(const QString &clientMessageId);
-	// Removes a queued / failed message (and stops its upload).
+	// Removes a queued / failed message (and stops its upload). One that
+	// may have been sent already is deleted for everyone once it shows up.
 	void discard(const QString &clientMessageId);
 	// Removes everything queued for a chat that is gone.
 	void discardChat(const QString &chat);
-	// Tries everything that is not Failed (called when the connection comes up).
+	// Tries everything that is not Failed now, and what failed for a
+	// transient reason (called when the connection comes up).
 	void retryAll();
+	// `message` (from the server) is one I discarded while it was on its
+	// way: it is being deleted for everyone and is not to be shown.
+	[[nodiscard]] bool discarded(const Message &message);
 
 	[[nodiscard]] bool contains(const QString &clientMessageId) const {
 		return _items.contains(clientMessageId);
@@ -157,6 +180,26 @@ private:
 	void errored(const QString &clientMessageId, const Api::Error &error);
 	void setStatus(const OutboxItem &item, MessageStatus status);
 	[[nodiscard]] QVector<QString> chatQueue(const QString &chat) const;
+	// A copy of a temporary file the queue owns; `path` when there is none.
+	[[nodiscard]] QString adoptFile(const QString &clientMessageId, const QString &path) const;
+	[[nodiscard]] QString ownFolder(const QString &clientMessageId) const;
+	void removeOwnFile(const QString &clientMessageId);
+	[[nodiscard]] QString keepSentFile(const OutboxItem &item, const QString &localPath) const;
+	void removeStrayFiles();
+	// What follows discarding an item that may have been sent.
+	void forget(const OutboxItem &item);
+	void recall(const QString &clientMessageId, qint64 seq);
+
+	// What the queue keeps of an item besides OutboxItem (stored with it).
+	struct State {
+		bool sentOnce = false;        // a send went out: it may be on the server
+		bool retryOnConnect = false;  // Failed for a transient reason
+		int unanswered = 0;           // sends in a row that got no answer
+	};
+	struct Recall {
+		QString chat;
+		qint64 seq = 0;               // known: the delete was sent
+	};
 
 	Session *_session = nullptr;
 	QHash<QString, OutboxItem> _items;
@@ -166,6 +209,9 @@ private:
 	QHash<QString, base::Timer*> _retryTimers;
 	QSet<QString> _sending;                      // ids whose send request is out
 	QSet<QString> _albumUploadFailed;            // items left for their own turn
+	QHash<QString, State> _states;
+	QHash<QString, Recall> _recalls;             // discarded, maybe sent
+	QString _filesDirectory;
 	bool _started = false;
 
 };

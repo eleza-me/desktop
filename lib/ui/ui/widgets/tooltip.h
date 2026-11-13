@@ -37,8 +37,12 @@ private:
 
 };
 
-// Shows `text()` after a short hover over `widget`; hides on leave / press.
+// Shows `text()` after a short hover over `widget` and at once when the
+// keyboard focus comes to it; hides on leave / press / focus out.
 void InstallTooltip(QWidget *widget, std::function<QString()> text);
+// The text of the tooltip installed on `widget`, empty if none (the name a
+// screen reader reads for an icon button).
+[[nodiscard]] QString TooltipText(const QWidget *widget);
 
 // Hover tooltips are not shown while suppressed (scripted screenshot runs: the
 // pointer of a headless platform rests at the window origin and would raise

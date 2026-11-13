@@ -31,6 +31,7 @@
 
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
+#include <QtCore/QSet>
 #include <QtCore/QUrl>
 #include <QtNetwork/QNetworkAccessManager>
 
@@ -138,10 +139,13 @@ struct DownloadSpec {
 	QString target;       // "/v1/..." (API path) or an absolute URL
 	bool authenticated = true;
 	QString filePath;
+	bool resumable = false;
 	qint64 maxBytes = 0;  // 0: unlimited
 	int timeoutMs = 60000;
 	base::Guard guard;
 	Fn<void(qint64, qint64)> progress;
+	Fn<void(const QString &partPath, qint64 written, qint64 total)> written;
+	Fn<void()> finishing;
 	Fn<void(const DownloadResult &)> done;
 	Fn<void(const Error &)> fail;
 };
@@ -154,12 +158,30 @@ public:
 	// Stream to this file (written as <path>.<n>.part, one per download,
 	// renamed when complete; a failed write fails it with code "file").
 	DownloadBuilder &toFile(const QString &path);
+	// With toFile(): the part is <path>.part (one download of a file at a
+	// time; another one at once gets a part of its own) and outlives a
+	// download that breaks off or is cancelled, next to the entity tag of
+	// what it holds (<path>.part.tag). The next download of the same file
+	// continues it with `Range: bytes=<size>-` and `If-Range: <tag>`
+	// (ADR-0044 of the backend): a 206 that continues it is appended, a 200
+	// (the file changed, or a server without ranges) starts it over, a 416
+	// says it was complete. A part without a tag is never continued.
+	DownloadBuilder &resumable();
 	// Abort with code "too_large" beyond this size.
 	DownloadBuilder &maxBytes(qint64 bytes);
 	DownloadBuilder &timeout(int ms);
 	DownloadBuilder &guard(QObject *object);
 	DownloadBuilder &guard(base::Guard guard);
+	// `received` and `total` count the whole file, a continued part included.
 	DownloadBuilder &progress(Fn<void(qint64 received, qint64 total)> callback);
+	// With toFile(): the first `written` bytes of the file are in `partPath`
+	// (on disk, readable by another handle); called after every piece.
+	// `total` is the size of the whole file (-1: unknown).
+	DownloadBuilder &written(Fn<void(const QString &partPath, qint64 written, qint64 total)> callback);
+	// With toFile(): the part is complete and about to be renamed to the
+	// file (anyone reading the part closes it now: Windows renames no file
+	// that is open).
+	DownloadBuilder &finishing(Fn<void()> callback);
 	DownloadBuilder &done(Fn<void(const DownloadResult &)> callback);
 	DownloadBuilder &fail(Fn<void(const Error &)> callback);
 
@@ -301,6 +323,8 @@ private:
 	void performDownload(RequestId id);
 	void downloadFinished(RequestId id);
 	void failDownload(RequestId id, const Error &error);
+	// Removes the part (and its tag) unless it may be continued later.
+	void releasePart(Download *download, bool keep);
 
 	void performUpload(RequestId id);
 
@@ -317,6 +341,8 @@ private:
 	TokenProvider *_tokens = nullptr;
 	bool _reachable = true;
 	RequestId _lastId = 0;
+	// The <path>.part files resumable downloads are writing now.
+	QSet<QString> _partsInUse;
 	std::map<RequestId, std::unique_ptr<Call>> _calls;
 	std::map<RequestId, std::unique_ptr<Download>> _downloads;
 	std::map<RequestId, std::unique_ptr<Upload>> _uploads;

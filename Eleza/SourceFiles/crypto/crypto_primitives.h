@@ -66,6 +66,19 @@ struct HkdfOutput {
 	const QByteArray &associatedData,
 	const QByteArray &ciphertext);
 
+// AES-256-GCM, the same shape: 32-byte key, 12-byte nonce (random: never
+// the same twice under one key), ciphertext || 16-byte tag.
+[[nodiscard]] QByteArray AesGcmEncrypt(
+	const QByteArray &key,
+	const QByteArray &nonce,
+	const QByteArray &associatedData,
+	const QByteArray &plaintext);
+[[nodiscard]] std::optional<QByteArray> AesGcmDecrypt(
+	const QByteArray &key,
+	const QByteArray &nonce,
+	const QByteArray &associatedData,
+	const QByteArray &ciphertext);
+
 // Ed25519 (RFC 8032), raw 32-byte keys and 64-byte signatures.
 [[nodiscard]] QByteArray Ed25519GeneratePrivate();
 [[nodiscard]] QByteArray Ed25519PublicFromPrivate(const QByteArray &privateKey);

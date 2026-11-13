@@ -1,5 +1,6 @@
 #include "data/data_users.h"
 
+#include "base/unixtime.h"
 #include "data/data_json.h"
 #include "data/data_session.h"
 #include "data/data_transport.h"
@@ -9,6 +10,13 @@ namespace Data {
 namespace {
 
 constexpr auto kFlushDelayMs = 20;
+
+// What fetchChunk() made of an id the server left out. Older versions
+// stored it: such a row is not a card (the server's card of a deleted
+// account has a name).
+[[nodiscard]] bool LocalPlaceholder(const User &user) {
+	return user.deleted && user.displayName.isEmpty() && user.handle.isEmpty();
+}
 
 } // namespace
 
@@ -29,14 +37,26 @@ User Users::peek(const QString &id) const {
 User Users::get(const QString &id) {
 	const auto i = _cards.constFind(id);
 	if (i != _cards.cend()) {
+		if (wanted(id)) {
+			request(id);
+		}
 		return *i;
 	}
 	request(id);
 	return User();
 }
 
+bool Users::wanted(const QString &id) const {
+	if (!_cards.contains(id)) {
+		return true;
+	}
+	const auto i = _missingAt.constFind(id);
+	return (i != _missingAt.cend())
+		&& (base::unixtime::nowMs() - *i >= kMissingRecheckMs);
+}
+
 void Users::request(const QString &id) {
-	if (id.isEmpty() || _cards.contains(id) || _pending.contains(id)) {
+	if (id.isEmpty() || !wanted(id) || _pending.contains(id)) {
 		return;
 	}
 	_pending.insert(id);
@@ -62,12 +82,38 @@ bool Users::store(const User &user) {
 	if (!user.valid()) {
 		return false;
 	}
+	_missingAt.remove(user.id);
 	const auto i = _cards.find(user.id);
 	if (i != _cards.end() && *i == user) {
 		return false;
 	}
 	_cards.insert(user.id, user);
 	return true;
+}
+
+// In memory only: the server may give them a card again (an account back
+// from suspension, a block lifted), so neither the database nor the next
+// run takes them as final.
+void Users::storeMissing(const QStringList &ids) {
+	const auto now = base::unixtime::nowMs();
+	auto updated = QStringList();
+	for (const auto &id : ids) {
+		const auto i = _cards.constFind(id);
+		if (i != _cards.cend() && !_missingAt.contains(id)) {
+			continue; // a card of the server's (from an earlier answer) stays
+		}
+		_missingAt.insert(id, now);
+		auto gone = User();
+		gone.id = id;
+		gone.deleted = true;
+		if (i == _cards.cend() || *i != gone) {
+			_cards.insert(id, gone);
+			updated.push_back(id);
+		}
+	}
+	if (!updated.isEmpty()) {
+		Q_EMIT changed(updated);
+	}
 }
 
 void Users::seed(const User &user) {
@@ -124,7 +170,7 @@ void Users::seedJson(const QJsonValue &listOrMap) {
 void Users::ensure(const QStringList &ids, base::Guard guard, Fn<void()> done) {
 	auto missing = QStringList();
 	for (const auto &id : ids) {
-		if (!id.isEmpty() && !_cards.contains(id) && !missing.contains(id)) {
+		if (!id.isEmpty() && wanted(id) && !missing.contains(id)) {
 			missing.push_back(id);
 		}
 	}
@@ -140,7 +186,7 @@ void Users::ensure(const QStringList &ids, base::Guard guard, Fn<void()> done) {
 	const auto fromNetwork = [=, this] {
 		auto still = QStringList();
 		for (const auto &id : missing) {
-			if (!_cards.contains(id)) {
+			if (wanted(id)) {
 				still.push_back(id);
 			}
 		}
@@ -159,9 +205,9 @@ void Users::ensure(const QStringList &ids, base::Guard guard, Fn<void()> done) {
 		auto changedIds = QStringList();
 		for (auto i = stored.cbegin(); i != stored.cend(); ++i) {
 			auto user = User::FromJson(i.value());
-			// A cached placeholder for a deleted / unknown user is not final:
-			// ask the server again next time it matters.
-			if (user.valid() && !_cards.contains(user.id)) {
+			// A placeholder an older version stored is not a card: the
+			// server is asked again.
+			if (user.valid() && !_cards.contains(user.id) && !LocalPlaceholder(user)) {
 				_cards.insert(user.id, user);
 				changedIds.push_back(user.id);
 			}
@@ -193,20 +239,20 @@ void Users::fetchChunk(const QStringList &ids, int offset, Fn<void()> done) {
 		.body(QJsonObject{ { u"ids"_s, chunk.join(u',') } })
 		.guard(this)
 		.done([=, this](const QJsonObject &result) {
-			auto users = Json::List<User>(result.value("users"_L1));
-			// Deleted / unknown people: a placeholder so rows stop asking.
+			const auto users = Json::List<User>(result.value("users"_L1));
+			// Left out (unknown, unavailable, blocking me): a placeholder so
+			// rows stop asking, for now.
+			auto left = QStringList();
 			for (const auto &id : chunk) {
 				const auto found = std::any_of(users.cbegin(), users.cend(), [&](const User &user) {
 					return user.id == id;
 				});
 				if (!found) {
-					auto gone = User();
-					gone.id = id;
-					gone.deleted = true;
-					users.push_back(gone);
+					left.push_back(id);
 				}
 			}
 			seed(users);
+			storeMissing(left);
 			next();
 		})
 		.fail([=](const Api::Error &error) {

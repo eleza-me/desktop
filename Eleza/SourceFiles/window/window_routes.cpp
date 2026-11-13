@@ -18,14 +18,16 @@ namespace {
 
 [[nodiscard]] QMap<QString, QString> ParseQuery(const QString &query) {
 	auto result = QMap<QString, QString>();
-	const auto parsed = QUrlQuery(query);
+	// A bare "+" means a space in what browsers produce; it is replaced
+	// before the decoding, so that an encoded one ("%2B", as toString()
+	// writes it too) stays a "+".
+	auto raw = query;
+	raw.replace(QLatin1Char('+'), QStringLiteral("%20"));
+	const auto parsed = QUrlQuery(raw);
 	const auto items = parsed.queryItems(QUrl::FullyDecoded);
 	for (const auto &[name, value] : items) {
 		if (!name.isEmpty()) {
-			// "+" means a space in what browsers produce.
-			auto decoded = value;
-			decoded.replace(QLatin1Char('+'), QLatin1Char(' '));
-			result.insert(name, decoded);
+			result.insert(name, value);
 		}
 	}
 	return result;

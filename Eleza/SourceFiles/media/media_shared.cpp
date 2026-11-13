@@ -1423,6 +1423,11 @@ ViewerItem List::viewerItem(const Data::Message &message) {
 				guard,
 				[=](const QString &path) { done(path); });
 		};
+		item.videoDownload = [=] {
+			return downloads
+				? downloads->handle(message, Data::MediaVariant::Mp4)
+				: nullptr;
+		};
 	} else {
 		auto options = Support::ImageOptions();
 		options.original = true;
@@ -1833,6 +1838,9 @@ public:
 	, _forward(new Ui::IconButton(this, st::sharedSelectionForward))
 	, _delete(new Ui::IconButton(this, st::sharedSelectionDelete)) {
 		style::OnPaletteChanged(this, [this] { update(); });
+		_cancel->setAccessibleName(tr::lng_cancel(tr::now));
+		_forward->setAccessibleName(tr::lng_forward(tr::now));
+		_delete->setAccessibleName(tr::lng_delete(tr::now));
 	}
 
 	void setState(int count, bool canForward) {

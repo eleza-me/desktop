@@ -44,6 +44,8 @@ private:
 		int index,
 		const QRect &rect,
 		const Ui::ListRowState &state) override;
+	QString rowAccessibilityName(int index) const override;
+	QString rowAccessibilityDescription(int index) const override;
 
 	void applyFilter(const QString &query);
 	void choose(int index);

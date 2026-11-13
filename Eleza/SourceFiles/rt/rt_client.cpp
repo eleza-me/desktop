@@ -10,6 +10,9 @@
 #include <QtCore/QLoggingCategory>
 #include <QtNetwork/QNetworkInformation>
 
+#include <algorithm>
+#include <vector>
+
 namespace Rt {
 namespace {
 
@@ -313,7 +316,8 @@ void Client::sessionClosed(Session *session, int code) {
 	};
 	// The socket opened but closed before `hello`: a wrong static key after a
 	// server redeploy ends the handshake like this. Re-read /v2/keys so the
-	// next attempt uses the current key.
+	// next attempt uses the current key (against production it can only pick
+	// another built-in key, see rt_keys.h).
 	const auto handshakeFailed = !_connected
 		&& session->handshakeSent()
 		&& finalCode != kCloseKeyRotation;
@@ -421,6 +425,11 @@ void Client::resumeAfterPause() {
 
 void Client::onHello(const Hello &hello) {
 	_hello = hello;
+	// A new connection follows nothing yet.
+	_profileSubsOnServer.clear();
+	if (hello.clockOffsetMs) {
+		base::unixtime::setServerOffsetMs(*hello.clockOffsetMs);
+	}
 	_authFailures = 0;
 	_backoff.reset();
 	if (hello.pingInterval > 0) {
@@ -577,6 +586,17 @@ Api::Error Client::ToApiError(const Response &response) {
 	if (response.error.retryAfter > 0) {
 		error.retryAfter = double(response.error.retryAfter);
 	}
+	// The same problem document the HTTP route answers, as far as the
+	// connection carries it, so a screen reads `meta` the same way on both.
+	auto problem = QJsonObject{
+		{ u"status"_s, error.status },
+		{ u"code"_s, error.code },
+		{ u"title"_s, response.error.title },
+	};
+	if (!response.error.meta.isEmpty()) {
+		problem.insert(u"meta"_s, response.error.meta);
+	}
+	error.body = problem;
 	return error;
 }
 
@@ -663,7 +683,9 @@ void Client::subscribePresence(
 		base::Guard guard,
 		Fn<void(const QJsonArray &)> done) {
 	for (const auto &user : users) {
-		++_presenceSubs[user];
+		auto &sub = _presenceSubs[user];
+		++sub.count;
+		sub.asked = ++_presenceAsked;
 	}
 	const auto session = _session.data();
 	if (!session || !session->isOpen() || users.isEmpty()) {
@@ -701,7 +723,7 @@ void Client::unsubscribePresence(const QStringList &users) {
 	auto gone = QStringList();
 	for (const auto &user : users) {
 		const auto i = _presenceSubs.find(user);
-		if (i != _presenceSubs.end() && --i.value() <= 0) {
+		if (i != _presenceSubs.end() && --i->count <= 0) {
 			_presenceSubs.erase(i);
 			gone.push_back(user);
 		}
@@ -718,13 +740,23 @@ void Client::sendPresenceSubs(Session *session) {
 	if (_presenceSubs.isEmpty()) {
 		return;
 	}
-	// More than the gateway's cap would be refused as a whole.
-	auto users = QStringList();
+	// More than the gateway's cap would be refused as a whole: the most
+	// recently subscribed go (the screens open now).
+	auto recent = std::vector<std::pair<quint64, QString>>();
+	recent.reserve(_presenceSubs.size());
 	for (auto i = _presenceSubs.cbegin(); i != _presenceSubs.cend(); ++i) {
-		if (users.size() == kPresenceSubMax) {
-			break;
-		}
-		users.push_back(i.key());
+		recent.emplace_back(i->asked, i.key());
+	}
+	const auto count = std::min(int(recent.size()), int(kPresenceSubMax));
+	std::partial_sort(
+		recent.begin(),
+		recent.begin() + count,
+		recent.end(),
+		[](const auto &a, const auto &b) { return a.first > b.first; });
+	auto users = QStringList();
+	users.reserve(count);
+	for (auto i = 0; i != count; ++i) {
+		users.push_back(recent[i].second);
 	}
 	session->signal(u"presence_sub"_s, EncodeBody("PresenceSub", QJsonObject{
 		{ u"users"_s, ToArray(users) },

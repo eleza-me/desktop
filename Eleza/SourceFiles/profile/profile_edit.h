@@ -117,6 +117,10 @@ private:
 	std::optional<Data::Birthday> _birthday;
 	QString _birthdayError;
 	QString _handleError;
+	Api::HandleRules _handleRules;
+	// The server refused this handle in the check, saying why.
+	QString _handleRefused;
+	QString _handleRefusedText;
 	int _nameMax = 0;
 	int _bioMax = 0;
 

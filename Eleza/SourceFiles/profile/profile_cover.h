@@ -33,6 +33,10 @@ public:
 	void setValue(qint64 value, const QString &label);
 	void setClickable(bool clickable);
 
+	QString accessibilityName() const override {
+		return _value + QLatin1Char(' ') + _label;
+	}
+
 protected:
 	void paintEvent(QPaintEvent *e) override;
 	QImage prepareRippleMask() const override;
@@ -126,6 +130,13 @@ public:
 	void setConversation(const Data::OpenConversation &conversation);
 	[[nodiscard]] const QString &conversationId() const {
 		return _id;
+	}
+
+	QString accessibilityName() const override {
+		return _topic.toString();
+	}
+	QString accessibilityValue() const override {
+		return _time;
 	}
 
 protected:

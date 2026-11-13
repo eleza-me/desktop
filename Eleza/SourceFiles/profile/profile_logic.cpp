@@ -134,20 +134,49 @@ QString NormalizeHandle(const QString &typed) {
 	return result;
 }
 
-HandleState ClassifyHandle(const QString &handle, const QString &current) {
-	static const auto kValid = QRegularExpression(u"^[a-z0-9._]{3,24}$"_s);
+HandleState ClassifyHandle(
+		const QString &handle,
+		const QString &current,
+		const Api::HandleRules &rules) {
 	if (handle == current) {
 		return HandleState::Idle;
-	} else if (!kValid.match(handle).hasMatch()) {
-		return HandleState::Invalid;
 	}
-	auto letters = 0;
-	for (const auto ch : handle) {
-		if (ch >= QLatin1Char('a') && ch <= QLatin1Char('z')) {
-			++letters;
-		}
+	switch (Api::Auth::CheckHandle(handle, rules)) {
+	case Api::HandleProblem::None:
+	case Api::HandleProblem::LetterFirst: return HandleState::Checking;
+	case Api::HandleProblem::TooShort: return HandleState::Short;
+	case Api::HandleProblem::Empty:
+	case Api::HandleProblem::Characters:
+	case Api::HandleProblem::TooLong:
+	case Api::HandleProblem::Dots: break;
 	}
-	return (letters < 3) ? HandleState::Short : HandleState::Checking;
+	return HandleState::Invalid;
+}
+
+QString HandleProblemText(
+		Api::HandleProblem problem,
+		const Api::HandleRules &rules) {
+	switch (problem) {
+	case Api::HandleProblem::None: break;
+	case Api::HandleProblem::Empty:
+	case Api::HandleProblem::TooShort:
+		return tr::lng_intro_username_too_short(
+			tr::now,
+			lt_count,
+			rules.minLength);
+	case Api::HandleProblem::TooLong:
+		return tr::lng_intro_username_too_long(
+			tr::now,
+			lt_count,
+			rules.maxLength);
+	case Api::HandleProblem::Characters:
+		return tr::lng_intro_username_rules(tr::now);
+	case Api::HandleProblem::Dots:
+		return tr::lng_intro_username_dots(tr::now);
+	case Api::HandleProblem::LetterFirst:
+		return tr::lng_intro_username_letter_first(tr::now);
+	}
+	return QString();
 }
 
 bool HandleBlocksSave(HandleState state) {
@@ -183,6 +212,10 @@ void HandleChecker::setChanged(Fn<void()> changed) {
 	_changed = std::move(changed);
 }
 
+void HandleChecker::setRules(const Api::HandleRules &rules) {
+	_rules = rules;
+}
+
 void HandleChecker::setCurrent(const QString &handle) {
 	_current = handle;
 	if (_value.isEmpty()) {
@@ -197,7 +230,7 @@ void HandleChecker::setValue(const QString &handle) {
 	_value = handle;
 	++_generation;
 	_timer.cancel();
-	const auto state = ClassifyHandle(handle, _current);
+	const auto state = ClassifyHandle(handle, _current, _rules);
 	setState(state);
 	if (state == HandleState::Checking) {
 		_timer.callOnce(_delay);
@@ -238,6 +271,8 @@ void HandleChecker::check() {
 			? HandleState::Free
 			: (answer == Answer::Taken)
 			? HandleState::Taken
+			: (answer == Answer::Invalid)
+			? HandleState::Invalid
 			: HandleState::Unknown);
 	});
 }

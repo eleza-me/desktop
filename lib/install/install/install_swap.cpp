@@ -424,6 +424,10 @@ Result Apply(const Request &request, FileOps &ops, const Log &log) {
 			return fail("could not copy the new version: " + relative);
 		}
 	}
+	if (request.verify && !request.verify(incoming, fresh, error)) {
+		RemoveTree(ops, incoming);
+		return fail(error.empty() ? std::string("the new version was refused") : error);
+	}
 
 	// ---- 4. the swap
 	const auto journalPath = installDir / kJournalName;

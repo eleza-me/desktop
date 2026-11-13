@@ -1,5 +1,6 @@
 #include "conversation/conversation_radar_model.h"
 
+#include "base/unixtime.h"
 #include "data/data_chats.h"
 #include "data/data_conversations.h"
 #include "data/data_session.h"
@@ -15,7 +16,7 @@ namespace Conversation {
 namespace {
 
 [[nodiscard]] qint64 NowMs() {
-	return QDateTime::currentMSecsSinceEpoch();
+	return base::unixtime::serverNowMs();
 }
 
 [[nodiscard]] bool IsEndingEvent(const QString &event) {

@@ -115,6 +115,7 @@ private:
 		Header,
 		Reaction,
 		Viewers,
+		Retry,
 	};
 	struct Hit {
 		Part part = Part::None;
@@ -139,6 +140,11 @@ private:
 	[[nodiscard]] QRect viewersRect() const;
 	[[nodiscard]] QString viewersText() const;
 	[[nodiscard]] QRect postCardRect() const;
+	// «دوباره» under what failed: the story's media, or the person's list.
+	[[nodiscard]] bool retryShown() const;
+	[[nodiscard]] QRect retryRect() const;
+	void paintRetry(Painter &p, const QString &text);
+	void retry();
 	[[nodiscard]] bool replyShown() const;
 	[[nodiscard]] bool shareShown() const;
 	[[nodiscard]] Hit hitAt(QPoint point) const;
@@ -177,6 +183,9 @@ private:
 	int _openRequest = 0;
 	bool _loadingUser = false;
 	QString _unavailable;
+	// The list of a person could not be read (offline, a server error):
+	// asked again with «دوباره», not skipped.
+	Fn<void()> _retryUser;
 	std::optional<Data::Story> _preloaded;
 
 	QRect _stage;
@@ -319,6 +328,15 @@ Viewer::Viewer(
 	_close->setClickedCallback([this] { close(); });
 	_more->setClickedCallback([this] { showMenu(); });
 	_pause->setClickedCallback([this] { togglePause(); });
+	_close->setAccessibleName(tr::lng_close(tr::now));
+	_more->setAccessibleName(tr::lng_more(tr::now));
+	_pause->setAccessibleName(tr::lng_stories_pause(tr::now));
+	_previousNav->setAccessibleName(style::RightToLeft()
+		? tr::lng_a11y_next(tr::now)
+		: tr::lng_a11y_previous(tr::now));
+	_nextNav->setAccessibleName(style::RightToLeft()
+		? tr::lng_a11y_previous(tr::now)
+		: tr::lng_a11y_next(tr::now));
 	// The arrows are physical: the left one goes back in LTR, on in RTL.
 	_previousNav->setClickedCallback([this] {
 		style::RightToLeft() ? next() : previous();
@@ -334,6 +352,7 @@ Viewer::Viewer(
 	_reply->setMaxLength(4096);
 	_send = Ui::CreateChild<Ui::IconButton>(_chrome, st::storiesSend);
 	_send->setClickedCallback([this] { sendReply(); });
+	_send->setAccessibleName(tr::lng_send(tr::now));
 	connect(_reply, &Ui::InputField::submitted, this, [this] { sendReply(); });
 	connect(_reply, &Ui::InputField::cancelled, this, [this] { setFocus(); });
 	connect(_reply, &Ui::InputField::focusedChanged, this, [this] {
@@ -343,6 +362,7 @@ Viewer::Viewer(
 	connect(_reply, &Ui::InputField::changed, this, [this] { updateControls(); });
 	_share = Ui::CreateChild<Ui::IconButton>(_chrome, st::storiesShare);
 	_share->setClickedCallback([this] { shareStory(); });
+	_share->setAccessibleName(tr::lng_stories_share(tr::now));
 	_share->hide();
 
 	_seePost = Ui::CreateChild<Ui::RoundButton>(
@@ -414,7 +434,9 @@ bool Viewer::paused() const {
 		|| (_reply && _reply->hasFocus())
 		|| _menu
 		|| _controller->window()->layers()->hasLayers()
-		|| !_unavailable.isEmpty();
+		|| !_unavailable.isEmpty()
+		// Not shown: it waits for «دوباره» (or a tap on to the next one).
+		|| _mediaFailed;
 }
 
 void Viewer::close() {
@@ -451,6 +473,7 @@ void Viewer::openUser(int index, bool fromEnd, const QString &storyId) {
 	const auto request = ++_openRequest;
 	clearMedia();
 	_unavailable = QString();
+	_retryUser = nullptr;
 	_index = -1;
 	_list = Data::UserStories();
 	_list.user = session().data().users().peek(userId);
@@ -497,14 +520,19 @@ void Viewer::openUser(int index, bool fromEnd, const QString &storyId) {
 		}
 		_loadingUser = false;
 		_loading.stop();
-		if (!current()) {
-			if (_users.size() > 1 && _userIndex + 1 < _users.size()) {
-				openUser(_userIndex + 1, false);
-			} else {
-				showUnavailable(error.notFound()
-					? tr::lng_stories_unavailable(tr::now)
-					: Support::ErrorText(error, tr::lng_stories_media_failed(tr::now)));
-			}
+		if (current()) {
+			return;
+		} else if (!error.notFound()) {
+			// Offline, a timeout, a server error: this person stays on
+			// screen (the next ones would fail the same way).
+			showUnavailable(Support::ErrorText(error, tr::lng_stories_media_failed(tr::now)));
+			_retryUser = [=, this] { openUser(index, fromEnd, storyId); };
+			_chrome->update();
+		} else if (_users.size() > 1 && _userIndex + 1 < _users.size()) {
+			// Nothing of theirs is left to see: the next person.
+			openUser(_userIndex + 1, false);
+		} else {
+			showUnavailable(tr::lng_stories_unavailable(tr::now));
 		}
 	});
 }
@@ -686,7 +714,7 @@ void Viewer::showStory(int index) {
 	updateControls();
 	updateGeometries();
 	checkMediaReady();
-	if (_mediaReady) {
+	if (_mediaReady && !_mediaFailed) {
 		mediaShown();
 	}
 	update();
@@ -704,14 +732,15 @@ void Viewer::checkMediaReady() {
 	} else if (!_image->request(_stage.size() * devicePixelRatioF()).isNull()) {
 		_mediaReady = true;
 	}
-	if (_mediaReady) {
+	// A story that did not load was not seen.
+	if (_mediaReady && !_mediaFailed) {
 		mediaShown();
 	}
 }
 
 void Viewer::mediaShown() {
 	const auto story = current();
-	if (!story || _seenMarked) {
+	if (!story || _seenMarked || _mediaFailed) {
 		return;
 	}
 	_seenMarked = true;
@@ -756,6 +785,9 @@ void Viewer::updatePlayback() {
 	}
 	const auto &icon = _userPaused ? st::storiesPlayIcon : st::storiesPauseIcon;
 	_pause->setIconOverride(&icon, &icon);
+	_pause->setAccessibleName(_userPaused
+		? tr::lng_stories_play(tr::now)
+		: tr::lng_stories_pause(tr::now));
 	_lastTick = Ui::Now();
 }
 
@@ -1094,9 +1126,13 @@ void Viewer::paintChrome(Painter &p) {
 	const auto story = current();
 	auto hq = PainterHighQualityEnabler(p);
 	if (!_unavailable.isEmpty() || (!story && !_loadingUser)) {
-		p.setFont(st::storiesErrorFont);
-		p.setPen(st::storiesOverFgDim);
-		p.drawText(_stage, Qt::AlignCenter | Qt::TextWordWrap, _unavailable);
+		if (retryShown()) {
+			paintRetry(p, _unavailable);
+		} else {
+			p.setFont(st::storiesErrorFont);
+			p.setPen(st::storiesOverFgDim);
+			p.drawText(_stage, Qt::AlignCenter | Qt::TextWordWrap, _unavailable);
+		}
 		return;
 	}
 	{
@@ -1284,9 +1320,7 @@ void Viewer::paintChrome(Painter &p) {
 			p.drawText(inner, Qt::AlignCenter, tr::lng_stories_post_unavailable(tr::now));
 		}
 	} else if (_mediaFailed) {
-		p.setFont(st::storiesErrorFont);
-		p.setPen(st::storiesOverFgDim);
-		p.drawText(_stage, Qt::AlignCenter, tr::lng_stories_media_failed(tr::now));
+		paintRetry(p, tr::lng_stories_media_failed(tr::now));
 	} else if (!_mediaReady) {
 		const auto size = int(st::storiesSpinnerSize);
 		_loading.draw(
@@ -1376,6 +1410,8 @@ void Viewer::paintChrome(Painter &p) {
 Viewer::Hit Viewer::hitAt(QPoint point) const {
 	if (!_stage.contains(point)) {
 		return { Part::Outside, -1 };
+	} else if (retryShown() && retryRect().contains(point)) {
+		return { Part::Retry, -1 };
 	}
 	const auto story = current();
 	if (!story) {
@@ -1432,7 +1468,8 @@ void Viewer::chromeMove(QMouseEvent *e) {
 		_over = hit;
 		const auto pointer = (hit.part == Part::Header)
 			|| (hit.part == Part::Reaction)
-			|| (hit.part == Part::Viewers);
+			|| (hit.part == Part::Viewers)
+			|| (hit.part == Part::Retry);
 		_chrome->setCursor(pointer ? style::cur_pointer : style::cur_default);
 		_chrome->update();
 	}
@@ -1487,8 +1524,53 @@ void Viewer::chromeRelease(QMouseEvent *e) {
 			ShowViewersBox(_controller, story->id);
 		}
 		break;
+	case Part::Retry:
+		retry();
+		break;
 	case Part::None:
 		break;
+	}
+}
+
+bool Viewer::retryShown() const {
+	return (_mediaFailed && current())
+		|| (_retryUser && !_unavailable.isEmpty() && !current());
+}
+
+QRect Viewer::retryRect() const {
+	const auto text = tr::lng_retry(tr::now);
+	const auto height = st::storiesErrorFont->height + 16;
+	const auto width = st::storiesErrorFont->width(text) + 2 * 20;
+	return QRect(
+		_stage.x() + (_stage.width() - width) / 2,
+		_stage.y() + _stage.height() / 2 + 12,
+		width,
+		height);
+}
+
+void Viewer::paintRetry(Painter &p, const QString &text) {
+	const auto button = retryRect();
+	p.setFont(st::storiesErrorFont);
+	p.setPen(st::storiesOverFgDim);
+	const auto above = QRect(
+		_stage.x() + 16,
+		_stage.y(),
+		_stage.width() - 32,
+		button.y() - 12 - _stage.y());
+	p.drawText(above, Qt::AlignHCenter | Qt::AlignBottom | Qt::TextWordWrap, text);
+	const auto over = (_over.part == Part::Retry);
+	p.setPen(Qt::NoPen);
+	p.setBrush(over ? st::storiesOverBgOver : st::storiesProgressBg);
+	p.drawRoundedRect(button, button.height() / 2., button.height() / 2.);
+	p.setPen(st::storiesOverFg);
+	p.drawText(button, Qt::AlignCenter, tr::lng_retry(tr::now));
+}
+
+void Viewer::retry() {
+	if (_mediaFailed && current()) {
+		showStory(_index);
+	} else if (const auto again = std::exchange(_retryUser, nullptr)) {
+		again();
 	}
 }
 

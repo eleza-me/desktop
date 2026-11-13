@@ -1,18 +1,98 @@
 #include "ui/widgets/buttons.h"
 
+#include "ui/accessibility.h"
 #include "ui/effects/radial_animation.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/painter.h"
 #include "ui/ui_utility.h"
 
+#include <QtCore/QMetaMethod>
+#include <QtGui/QFocusEvent>
 #include <QtGui/QKeyEvent>
 #include <QtGui/QMouseEvent>
+#include <QtGui/QPainter>
 
 namespace Ui {
 
 AbstractButton::AbstractButton(QWidget *parent) : RpWidget(parent) {
+	Accessibility::Install();
 	setMouseTracking(true);
 	updateCursor();
+}
+
+void AbstractButton::setClickedCallback(std::function<void()> callback) {
+	_clickedCallback = std::move(callback);
+	refreshFocusPolicy();
+}
+
+void AbstractButton::connectNotify(const QMetaMethod &signal) {
+	RpWidget::connectNotify(signal);
+	if (!_clickConnected
+		&& signal == QMetaMethod::fromSignal(&AbstractButton::clickedSignal)) {
+		_clickConnected = true;
+		refreshFocusPolicy();
+	}
+}
+
+void AbstractButton::setKeyboardFocusable(bool focusable) {
+	_keyboardFocusable = focusable;
+	// From now on the policy is ours again, whatever was set before.
+	_appliedFocusPolicy = focusPolicy();
+	refreshFocusPolicy();
+}
+
+void AbstractButton::refreshFocusPolicy() {
+	const auto wanted = (_keyboardFocusable && actionable())
+		? Qt::TabFocus
+		: Qt::NoFocus;
+	// A policy that somebody else set stays.
+	if (focusPolicy() == _appliedFocusPolicy && wanted != _appliedFocusPolicy) {
+		_appliedFocusPolicy = wanted;
+		setFocusPolicy(wanted);
+	}
+}
+
+QAccessible::Role AbstractButton::accessibilityRole() const {
+	return actionable() ? QAccessible::Button : QAccessible::StaticText;
+}
+
+void AbstractButton::accessibilityNameChanged() {
+	Accessibility::NameChanged(this);
+}
+
+void AbstractButton::accessibilityCheckedChanged() {
+	auto changed = QAccessible::State();
+	changed.checked = true;
+	Accessibility::StateChanged(this, changed);
+}
+
+bool AbstractButton::focusRingShown() const {
+	return _keyboardFocus && hasFocus();
+}
+
+void AbstractButton::paintFocusRing(QPainter &p) {
+	Accessibility::PaintFocusRing(p, QRectF(rect()), st::radiusSm);
+}
+
+bool AbstractButton::event(QEvent *e) {
+	const auto result = RpWidget::event(e);
+	if (e->type() == QEvent::Paint && focusRingShown()) {
+		// Over whatever the subclass painted, in the same paint event.
+		auto p = QPainter(this);
+		paintFocusRing(p);
+	}
+	return result;
+}
+
+void AbstractButton::focusInEvent(QFocusEvent *e) {
+	Accessibility::TabStopFocusIn(this, e->reason(), _keyboardFocus);
+	update();
+	RpWidget::focusInEvent(e);
+}
+
+void AbstractButton::focusOutEvent(QFocusEvent *e) {
+	update();
+	RpWidget::focusOutEvent(e);
 }
 
 void AbstractButton::setDisabled(bool disabled) {
@@ -23,6 +103,11 @@ void AbstractButton::setDisabled(bool disabled) {
 	} else if (!disabled && (was & StateFlag::Disabled)) {
 		_state &= ~State(StateFlag::Disabled);
 		onStateChanged(was, StateChangeSource::ByUser);
+	}
+	if (was != _state) {
+		auto changed = QAccessible::State();
+		changed.disabled = true;
+		Accessibility::StateChanged(this, changed);
 	}
 	updateCursor();
 	update();
@@ -144,11 +229,19 @@ void AbstractButton::mouseReleaseEvent(QMouseEvent *e) {
 }
 
 void AbstractButton::keyPressEvent(QKeyEvent *e) {
-	if ((e->key() == Qt::Key_Return
-		|| e->key() == Qt::Key_Enter
-		|| e->key() == Qt::Key_Space)
-		&& focusPolicy() != Qt::NoFocus) {
-		clicked(e->modifiers(), Qt::LeftButton);
+	const auto key = e->key();
+	const auto press = (key == Qt::Key_Return
+		|| key == Qt::Key_Enter
+		|| key == Qt::Key_Space)
+		&& !(e->modifiers()
+			& (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier))
+		&& focusRingShown();
+	if (press) {
+		// Once per press: a held key does not click again and again.
+		if (!e->isAutoRepeat()) {
+			clicked(e->modifiers(), Qt::LeftButton);
+		}
+		e->accept();
 	} else {
 		RpWidget::keyPressEvent(e);
 	}
@@ -267,6 +360,7 @@ void RoundButton::setText(const QString &text) {
 	_text = text;
 	_textWidth = _st.font->width(_text);
 	refreshSize();
+	accessibilityNameChanged();
 }
 
 void RoundButton::setIcon(const style::icon *icon) {
@@ -341,6 +435,13 @@ void RoundButton::onStateChanged(State was, StateChangeSource source) {
 
 QImage RoundButton::prepareRippleMask() const {
 	return RippleAnimation::RoundRectMask(size(), _st.radius);
+}
+
+void RoundButton::paintFocusRing(QPainter &p) {
+	Accessibility::PaintFocusRing(
+		p,
+		QRectF(rect()),
+		std::min(_st.radius, height() / 2));
 }
 
 void RoundButton::paintEvent(QPaintEvent *e) {
@@ -462,6 +563,20 @@ QPoint IconButton::rippleOffset() const {
 		(height() - _st.rippleSize) / 2);
 }
 
+void IconButton::paintFocusRing(QPainter &p) {
+	// Around the circle of the hover.
+	const auto size = std::min(
+		_st.rippleSize + 2 * st::focusRingWidth,
+		std::min(width(), height()));
+	Accessibility::PaintFocusRingEllipse(
+		p,
+		QRectF(
+			(width() - size) / 2.,
+			(height() - size) / 2.,
+			size,
+			size));
+}
+
 QImage IconButton::prepareRippleMask() const {
 	return RippleAnimation::EllipseMask(
 		QSize(_st.rippleSize, _st.rippleSize));
@@ -530,6 +645,16 @@ void LinkButton::setText(const QString &text) {
 	_textWidth = _st.font->width(_text);
 	resize(naturalWidth(), _st.font->height);
 	update();
+	accessibilityNameChanged();
+}
+
+QAccessible::Role LinkButton::accessibilityRole() const {
+	return actionable() ? QAccessible::Link : QAccessible::StaticText;
+}
+
+void LinkButton::paintFocusRing(QPainter &p) {
+	// The text has no margins: the ring goes over its edges.
+	Accessibility::PaintFocusRing(p, QRectF(rect()), st::radiusXs);
 }
 
 void LinkButton::setColorOverride(std::optional<QColor> color) {
@@ -588,6 +713,17 @@ SettingsButton::~SettingsButton() = default;
 void SettingsButton::setText(const QString &text) {
 	_text = text;
 	update();
+	accessibilityNameChanged();
+}
+
+QAccessible::Role SettingsButton::accessibilityRole() const {
+	return _toggle
+		? QAccessible::CheckBox
+		: AbstractButton::accessibilityRole();
+}
+
+std::optional<bool> SettingsButton::accessibilityChecked() const {
+	return _toggle ? std::make_optional(_toggle->checked()) : std::nullopt;
 }
 
 void SettingsButton::setIcon(const style::icon *icon) {
@@ -624,11 +760,13 @@ void SettingsButton::setToggle(bool checked, bool animated) {
 			[this, raw](Qt::KeyboardModifiers, Qt::MouseButton button) {
 				if (button == Qt::LeftButton && _toggle.get() == raw) {
 					raw->setChecked(!raw->checked(), true);
+					accessibilityCheckedChanged();
 					emit toggledChanged(raw->checked());
 				}
 			});
-	} else {
+	} else if (_toggle->checked() != checked) {
 		_toggle->setChecked(checked, animated);
+		accessibilityCheckedChanged();
 	}
 	update();
 }
@@ -730,6 +868,7 @@ void PillButton::setText(const QString &text) {
 	_textWidth = _st.font->width(_text);
 	resize(naturalWidth(), _st.height);
 	update();
+	accessibilityNameChanged();
 }
 
 void PillButton::setIcon(const style::icon *icon) {
@@ -790,6 +929,14 @@ QPainterPath PillButton::shape(const QRectF &rect) const {
 	path.arcTo(QRectF(rect.left(), rect.top(), 2 * r, 2 * r), 180, -90);
 	path.closeSubpath();
 	return path;
+}
+
+void PillButton::paintFocusRing(QPainter &p) {
+	const auto half = st::focusRingWidth / 2.;
+	Accessibility::PaintFocusRingPath(
+		p,
+		shape(QRectF(rect()).marginsRemoved(
+			QMarginsF(half, half, half, half))));
 }
 
 QImage PillButton::prepareRippleMask() const {

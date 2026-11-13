@@ -78,8 +78,33 @@ enum class NotifHit {
 		return st::eliNotifIconPost;
 	} else if (kind == u"conversation_joined") {
 		return st::eliNotifIconListener;
+	} else if (kind == u"security_new_login") {
+		return st::eliNotifIconSecurity;
 	}
 	return st::eliNotifIconOther;
+}
+
+// A sign-in from a new device (or two-step verification switched off with
+// the recovery e-mail, refs.reason): nobody behind it to show, and it opens
+// «دستگاه‌ها». The server keeps it in the list for every client.
+[[nodiscard]] bool SecurityKind(const QString &kind) {
+	return (kind == u"security_new_login");
+}
+
+[[nodiscard]] QString SecurityText(const Data::NotificationEntry &entry) {
+	auto result = (entry.refs.value(u"reason"_s) == u"two_step_recovered")
+		? tr::lng_eli_notif_two_step_recovered(tr::now)
+		: tr::lng_eli_notif_new_login(tr::now);
+	// As the server's push words it: «…: device — city».
+	const auto device = entry.refs.value(u"device"_s).trimmed();
+	const auto city = entry.refs.value(u"city"_s).trimmed();
+	if (!device.isEmpty()) {
+		result += u": "_s + Lang::Isolated(device);
+	}
+	if (!city.isEmpty()) {
+		result += u" — "_s + Lang::Isolated(city);
+	}
+	return result;
 }
 
 [[nodiscard]] bool KnownKind(const QString &kind) {
@@ -339,7 +364,9 @@ void ShowNewFollowers(
 		const QString &who,
 		bool accepted) {
 	const auto &kind = entry.kind;
-	if (accepted) {
+	if (SecurityKind(kind)) {
+		return SecurityText(entry);
+	} else if (accepted) {
 		return tr::lng_eli_notif_now_follows(tr::now, lt_who, who);
 	} else if (kind == u"like") {
 		return (entry.actorCount > 1)
@@ -390,6 +417,8 @@ void ShowNewFollowers(
 		return ref("chat").isEmpty() ? QString() : Window::Routes::Chat(ref("chat"));
 	} else if (kind == u"follow" || kind == u"follow_request" || kind == u"follow_accepted") {
 		return QString();
+	} else if (SecurityKind(kind)) {
+		return Window::Routes::Settings(u"devices"_s);
 	}
 	return post(ref("post"));
 }
@@ -604,6 +633,12 @@ private:
 		if (snippetId.isEmpty() && kind != u"conversation_joined") {
 			snippetId = row.entry.refs.value(u"post"_s);
 		}
+		if (SecurityKind(kind)) {
+			snippetId = QString();
+			row.snippet.setMarkedText(
+				st::eliNotifSnippetStyle,
+				{ tr::lng_eli_notif_new_login_hint(tr::now) });
+		}
 		if (!snippetId.isEmpty()) {
 			row.snippetPost = snippetId;
 			const auto post = session.data().feed().post(snippetId);
@@ -641,17 +676,21 @@ private:
 		const auto fits = std::max((contentWidth + st::eliNotifFaceSkip) / (face + st::eliNotifFaceSkip), 1);
 		const auto actors = int(row.entry.actors.size());
 		const auto shown = std::min({ actors, int(kMaxFaces), fits });
-		for (auto i = 0; i != std::max(shown, 1); ++i) {
+		// A security alert has nobody behind it: no faces, the line first.
+		const auto faces = SecurityKind(row.entry.kind) ? 0 : std::max(shown, 1);
+		for (auto i = 0; i != faces; ++i) {
 			row.faces.push_back(QRect(
 				contentLeft + i * (face + st::eliNotifFaceSkip),
 				y,
 				face,
 				face));
 		}
-		row.moreFaces = std::max(
-			std::max(row.entry.actorCount, actors) - std::max(shown, 1),
-			0);
-		y += face + st::eliNotifTextSkip;
+		row.moreFaces = faces
+			? std::max(std::max(row.entry.actorCount, actors) - faces, 0)
+			: 0;
+		if (faces) {
+			y += face + st::eliNotifTextSkip;
+		}
 		const auto textHeight = row.text.countHeight(contentWidth, 3);
 		row.textRect = QRect(contentLeft, y, contentWidth, textHeight);
 		y += textHeight;
@@ -1048,6 +1087,16 @@ public:
 		_users = users;
 		resizeToWidth(width());
 		update();
+	}
+
+	QString accessibilityName() const override {
+		return tr::lng_eli_follow_requests(tr::now);
+	}
+	QString accessibilityValue() const override {
+		return tr::lng_eli_notif_requests_waiting(
+			tr::now,
+			lt_count,
+			double(_users.size()));
 	}
 
 protected:

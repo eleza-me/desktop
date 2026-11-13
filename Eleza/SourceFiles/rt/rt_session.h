@@ -18,6 +18,7 @@
 
 #include <deque>
 #include <map>
+#include <optional>
 
 namespace Rt {
 
@@ -37,6 +38,9 @@ struct Hello {
 	qint64 pts = 0;
 	bool resumed = false;
 	qint64 serverTimeMs = 0;
+	// server clock - system clock, measured on this hello (empty when the
+	// server sent no time or the answer took too long to say).
+	std::optional<qint64> clockOffsetMs;
 };
 
 struct AuthParams {
@@ -54,6 +58,8 @@ struct ErrorInfo {
 	bool retryable = false;
 	int retryAfter = 0; // seconds
 	int httpStatus = 0;
+	// The problem document's meta (string values, e.g. chat.peer_flood's until).
+	QJsonObject meta;
 };
 
 struct Response {
@@ -187,6 +193,7 @@ private:
 	int _callsInFlight = 0;
 	quint32 _nextId = 1;
 	qint64 _lastReceivedAt = 0;
+	qint64 _authSentAt = 0;
 	bool _open = false;
 	bool _closed = false;
 

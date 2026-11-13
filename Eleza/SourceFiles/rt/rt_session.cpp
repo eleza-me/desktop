@@ -56,6 +56,7 @@ constexpr auto kMaxIncomingMessage = quint64(Noise::kMaxMessage) + 1024;
 	result.retryable = error.value("retryable"_L1).toBool();
 	result.retryAfter = base::SafeInt(error.value("retry_after_s"_L1).toDouble());
 	result.httpStatus = base::SafeInt(error.value("http_status"_L1).toDouble());
+	result.meta = error.value("meta"_L1).toObject();
 	return result;
 }
 
@@ -159,7 +160,7 @@ void Session::start(int keyId, const QByteArray &serverKey, const AuthParams &au
 		fail(u"handshake: cannot write message 1"_s);
 		return;
 	}
-	_lastReceivedAt = base::unixtime::nowMs();
+	_lastReceivedAt = _authSentAt = base::unixtime::nowMs();
 	_socket->sendBinaryMessage(QByteArray(1, char(keyId & 0xFF)) + *message1);
 }
 
@@ -251,6 +252,12 @@ void Session::dispatch(const QJsonObject &envelope, int depth) {
 		_hello.pts = base::SafeInt64(h.value("pts"_L1).toDouble());
 		_hello.resumed = h.value("resumed"_L1).toBool();
 		_hello.serverTimeMs = base::SafeInt64(h.value("server_time_ms"_L1).toDouble());
+		// The hello answers the auth sent with the first handshake message.
+		const auto now = base::unixtime::nowMs();
+		_hello.clockOffsetMs = (_authSentAt > 0)
+			? base::unixtime::OffsetFromHello(_hello.serverTimeMs, now, now - _authSentAt)
+			: std::nullopt;
+		_authSentAt = 0;
 		Q_EMIT helloReceived(_hello);
 	} else if (const auto response = envelope.value("res"_L1); response.isObject()) {
 		onResponse(response.toObject());
@@ -315,6 +322,8 @@ void Session::onResponse(const QJsonObject &response) {
 		const auto proof = Proto::Encode("Proof"_L1, QJsonObject{
 			{ u"sig"_s, base::bytes::toBase64(signature) },
 		});
+		// The hello answers the proof now.
+		_authSentAt = base::unixtime::nowMs();
 		enqueue(QJsonObject{
 			{ u"req"_s, QJsonObject{
 				{ u"id"_s, double(_nextId++) },

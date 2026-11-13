@@ -1,6 +1,7 @@
 #include "data/data_sync.h"
 
 #include "api/api_client_config.h"
+#include "base/unixtime.h"
 #include "data/data_chats.h"
 #include "data/data_conversations.h"
 #include "data/data_graph.h"
@@ -79,6 +80,12 @@ void Sync::start(base::Guard guard, Fn<void()> ready) {
 			this,
 			&Sync::handle,
 			Qt::UniqueConnection);
+		connect(
+			&_session->chats(),
+			&Chats::inboxLoadingChanged,
+			this,
+			&Sync::announceFirstMessages,
+			Qt::UniqueConnection);
 		scheduleFallback();
 		if (!_pts && !_session->transport().connected()) {
 			// The connection is not up (yet, or at all): without a pts the
@@ -114,6 +121,7 @@ void Sync::stop() {
 	_session->transport().setPtsProvider(nullptr);
 	_fallbackTimer.cancel();
 	_inboxReload.cancel();
+	_firstMessages.clear();
 	_replaying = false;
 	_syncAgain = false;
 	updateUpdating();
@@ -362,6 +370,9 @@ void Sync::applyLive(
 				c.archived = Json::Bool(d, "archived"_L1);
 				c.info.archived = c.archived;
 			}
+			if (Json::Has(d, "hidden"_L1)) {
+				c.info.hidden = Json::Bool(d, "hidden"_L1);
+			}
 		});
 		if (const auto cleared = Json::Int64(d, "cleared_before_seq"_L1)) {
 			applyCleared(chat, cleared, false);
@@ -534,15 +545,24 @@ void Sync::applyMessage(Message message, bool live) {
 					break;
 				}
 			}
+			const auto unreadGone = (row->unread > 0) && (message.seq > row->lastReadSeq);
 			chats.patch(chatId, [&](Chat &c) {
 				c.lastMessage = last;
 				c.lastMine = last && last->mine;
 			});
+			if (!last || unreadGone) {
+				// The message before it is not known here, or the one that
+				// went was counted as unread: the inbox has both right.
+				reloadInboxSoon();
+			}
 		}
 		return;
 	}
 	message.resolveLocal(info, _session->userId());
 	const auto mine = message.mine;
+	if (mine && _session->outbox().discarded(message)) {
+		return; // discarded here while it was on its way: being deleted
+	}
 	// A timeline takes what lies inside its window and, when it reaches the
 	// newest message, what extends it (anything else would show a hole
 	// between its run and this message); my own echo always replaces its
@@ -588,6 +608,44 @@ void Sync::applyMessage(Message message, bool live) {
 			}
 		});
 		if (live && isNew && !mine) {
+			Q_EMIT messageReceived(message);
+		}
+	} else if (live && !mine && message.seq > 0) {
+		// The first message of a chat new here: the live update carries no
+		// header, the inbox brings the row (reloadInboxSoon above).
+		const auto i = _firstMessages.constFind(chatId);
+		if (i == _firstMessages.cend() || i->message.seq < message.seq) {
+			if (i == _firstMessages.cend()
+				&& _firstMessages.size() >= kMaxFirstMessages) {
+				_firstMessages.erase(_firstMessages.begin());
+			}
+			_firstMessages.insert(chatId, { message, base::unixtime::nowMs() });
+		}
+	}
+}
+
+void Sync::announceFirstMessages() {
+	auto &chats = _session->chats();
+	if (_firstMessages.isEmpty() || chats.inboxLoading() || !_started) {
+		return;
+	}
+	const auto now = base::unixtime::nowMs();
+	for (auto i = _firstMessages.begin(); i != _firstMessages.end();) {
+		const auto row = chats.chat(i.key());
+		if (!row) {
+			// Not in this inbox (one already on its way when the message
+			// came): the next one may have it.
+			const auto stale = (now - i->receivedAt > kFirstMessageWaitMs)
+				|| (i->receivedAt > now);
+			i = stale ? _firstMessages.erase(i) : std::next(i);
+			continue;
+		}
+		auto message = i->message;
+		i = _firstMessages.erase(i);
+		// Read meanwhile (another device), or mine after all (a mask of mine
+		// in a conversation the header now tells about).
+		message.resolveLocal(&row->info, _session->userId());
+		if (!message.mine && message.seq > row->lastReadSeq) {
 			Q_EMIT messageReceived(message);
 		}
 	}

@@ -150,6 +150,9 @@ struct ChatInfo {
 	bool muted = false;
 	qint64 mutedUntil = 0;
 	bool archived = false;
+	// I hid the chat (on a phone: docs/hidden-chats.md of the backend). The
+	// desktop keeps it in the list and only says less about it.
+	bool hidden = false;
 	QString request;        // incoming | outgoing | ""
 	bool canSend = true;
 	bool peerDeleted = false;
@@ -571,6 +574,10 @@ struct Chat {
 
 	[[nodiscard]] bool isRequest() const {
 		return section == u"request";
+	}
+	// Hidden by me (ChatInfo::hidden, Group::hidden).
+	[[nodiscard]] bool hidden() const {
+		return isGroup ? (group && group->hidden) : info.hidden;
 	}
 	// A conversation still waiting for its listener.
 	[[nodiscard]] bool waitingForListener() const;

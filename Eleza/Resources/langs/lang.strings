@@ -67,8 +67,9 @@
 "lng_intro_username_taken" = "این شناسه قبلاً گرفته شده";
 // pwa: ✓ این شناسه آزاد است
 "lng_intro_username_available" = "✓ این شناسه آزاد است";
-// pwa: فقط حروف انگلیسی کوچک، عدد، نقطه و _ (۳ تا ۲۴ حرف)
-"lng_intro_username_rules" = "فقط حروف انگلیسی کوچک، عدد، نقطه و _ (۳ تا ۲۴ حرف)";
+"lng_intro_username_rules" = "فقط حروف انگلیسی کوچک، عدد، نقطه و _";
+"lng_intro_username_letter_first" = "شناسه باید با یک حرف انگلیسی شروع شود";
+"lng_intro_username_dots" = "نقطه نباید در ابتدا یا انتهای شناسه یا پشت سر هم بیاید";
 
 // ---- Main: tabs, settings entry, sign out
 // pwa: پیام
@@ -390,8 +391,10 @@
 "lng_intro_code_has_expired_request_new" = "کد منقضی شده است؛ دوباره درخواست کنید";
 // pwa: این حساب ایمیل بازیابی ندارد
 "lng_intro_account_has_no_recovery_e" = "این حساب ایمیل بازیابی ندارد";
-// pwa: شناسه باید دست‌کم ۳ حرف انگلیسی باشد
-"lng_intro_username_needs_at_least_3" = "شناسه باید دست‌کم ۳ حرف انگلیسی باشد";
+"lng_intro_username_too_short#one" = "شناسه باید دست‌کم {count} نویسه باشد";
+"lng_intro_username_too_short#other" = "شناسه باید دست‌کم {count} نویسه باشد";
+"lng_intro_username_too_long#one" = "شناسه حداکثر {count} نویسه است";
+"lng_intro_username_too_long#other" = "شناسه حداکثر {count} نویسه است";
 // pwa: در حال بررسی شناسه…
 "lng_intro_checking_username" = "در حال بررسی شناسه…";
 // pwa: بررسی شناسه ممکن نشد؛ هنگام ادامه دوباره بررسی می‌شود
@@ -1082,6 +1085,9 @@
 "lng_settings_audience_chat_people" = "کسانی که با آن‌ها چت دارم";
 "lng_settings_audience_chat_contacts" = "مخاطبان چت";
 "lng_settings_audience_contacts" = "مخاطبان";
+"lng_settings_audience_mutuals" = "دوستان دوطرفه";
+// A value set by a newer app that this one has no choice for.
+"lng_settings_value_custom" = "سفارشی";
 "lng_settings_notify_this_device" = "این رایانه";
 "lng_settings_notify_desktop" = "اعلان‌های دسکتاپ";
 "lng_settings_notify_sender" = "نمایش نام فرستنده";
@@ -1110,7 +1116,8 @@
 "lng_settings_read_receipts_about" = "اگر خاموش باشد، دیگران نمی‌بینند پیامشان را خوانده‌ای و تو هم رسید آن‌ها را نمی‌بینی.";
 "lng_settings_default_duration" = "مدت پیش‌فرض گفتگو";
 "lng_settings_masked_join" = "اجازهٔ پیوستن ناشناس";
-"lng_settings_media" = "رسانه";
+"lng_settings_media" = "رسانه روی گوشی";
+"lng_settings_media_phone_about" = "این‌ها با حسابت همگام می‌شوند و فقط رفتار برنامهٔ گوشی را عوض می‌کنند، نه این رایانه را.";
 "lng_settings_autodownload_wifi" = "دانلود خودکار رسانه فقط با وای‌فای";
 "lng_settings_autoplay_notes" = "پخش خودکار ویدیو دایره‌ای";
 "lng_settings_autoplay_videos" = "پخش خودکار ویدیوهای الی";
@@ -1266,6 +1273,7 @@
 "lng_history_tab_emoji" = "ایموجی";
 "lng_history_tab_stickers" = "استیکر";
 "lng_history_spoiler" = "اسپویلر";
+"lng_chat_preview_spoiler" = "اسپویلر";
 "lng_history_forward_count#one" = "{count} پیام هدایت‌شده";
 "lng_history_forward_count#other" = "{count} پیام هدایت‌شده";
 "lng_history_forward_title" = "هدایت به…";
@@ -1467,6 +1475,9 @@
 "lng_eli_notif_follow_accepted" = "{who} درخواست دنبال کردنت را پذیرفت";
 "lng_eli_notif_post" = "{who} پست تازه‌ای گذاشت";
 "lng_eli_notif_joined" = "{who} به گفتگویت پیوست و می‌شنود";
+"lng_eli_notif_new_login" = "ورود از دستگاه جدید به حسابت";
+"lng_eli_notif_two_step_recovered" = "تأیید دومرحله‌ای با ایمیل بازیابی خاموش شد و دستگاهی وارد حسابت شد";
+"lng_eli_notif_new_login_hint" = "اگر تو نبودی، در «دستگاه‌ها» آن را بیرون کن.";
 "lng_eli_notif_now_follows" = "{who} حالا دنبالت می‌کند";
 "lng_eli_notif_failed" = "اعلان‌ها بارگذاری نشد";
 "lng_eli_notif_mark_read" = "علامت‌زدن همه به‌عنوان خوانده‌شده";
@@ -1625,6 +1636,21 @@
 "lng_title_close" = "بستن";
 "lng_title_use_system" = "استفاده از نوار عنوان سیستم";
 "lng_title_use_system_about" = "پس از اجرای دوبارهٔ برنامه اعمال می‌شود.";
+// ---- accessibility ----
+// What screen readers say of painted items, and the settings of «ظاهر».
+"lng_a11y_separator" = "، ";
+"lng_a11y_navigation" = "ناوبری";
+"lng_a11y_story_unseen" = "استوری دیده‌نشده";
+"lng_a11y_story_muted" = "پنهان‌شده";
+"lng_a11y_previous" = "قبلی";
+"lng_a11y_next" = "بعدی";
+"lng_a11y_playlist" = "فهرست پخش";
+"lng_settings_accessibility" = "دسترس‌پذیری";
+"lng_settings_ui_scale" = "اندازهٔ رابط";
+"lng_settings_ui_scale_percent" = "{percent}٪";
+"lng_settings_ui_scale_about" = "اندازهٔ متن و همهٔ اجزای برنامه در این دستگاه. پس از اجرای دوبارهٔ برنامه اعمال می‌شود.";
+"lng_settings_reduce_motion" = "کاهش حرکت";
+"lng_settings_reduce_motion_about" = "انیمیشن‌های برنامه در این دستگاه خاموش می‌شوند. تا وقتی انتخاب نکرده‌ای، از تنظیم سیستم پیروی می‌کند.";
 // ---- update ----
 "lng_update_title" = "به‌روزرسانی";
 "lng_update_button" = "به‌روزرسانی الزا";
@@ -1969,6 +1995,8 @@
 "lng_groups_about" = "دربارهٔ گروه";
 "lng_groups_administration" = "مدیریت گروه";
 "lng_groups_slow_mode" = "حالت آهسته";
+// Between the items of a list (the permissions a restricted member lost).
+"lng_list_separator" = "، ";
 "lng_groups_member_restricted_until" = "محدود تا {time} دیگر";
 "lng_groups_you_tag" = "تو";
 "lng_groups_notify_mentioned" = "{name} در «{group}» به تو اشاره کرد";

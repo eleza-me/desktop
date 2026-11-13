@@ -46,6 +46,7 @@ class Session;
 enum class SessionEndReason {
 	SignedOut,      // the user signed out here
 	Expired,        // the refresh token is no longer accepted: sign in again, local data stays
+	                // (for kExpiredRetention, main_account.cpp)
 	Revoked,        // ended on purpose elsewhere (another device, an operator): local data is wiped
 	AccountDeleted,
 };
@@ -169,6 +170,8 @@ private:
 	void persistTokens();
 	void createSession();
 	void destroySession(bool wipeData);
+	// Deletes what expired sessions left once they are old enough.
+	void pruneExpired();
 	[[nodiscard]] bool stale(int marginSeconds) const;
 
 	void refreshShared(bool ignoreBackoff, Fn<void(bool)> done);

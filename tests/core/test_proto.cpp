@@ -1,6 +1,7 @@
 // The dynamic protobuf codec: the web client's proto.test.ts ported, plus the conventions
 // the desktop codec adds (row wrappers, body / data unwrapping, the method table).
 #include "base/bytes.h"
+#include "rt/rt_client.h"
 #include "rt/rt_methods.h"
 #include "rt/rt_proto.h"
 #include "rt/rt_schema_auto.h"
@@ -48,6 +49,7 @@ private Q_SLOTS:
 	void httpBridge();
 	void hostileBytes();
 	void repeatedFieldsAreLinearAndBudgeted();
+	void backendFieldsDecode();
 
 };
 
@@ -300,6 +302,69 @@ void TestProto::updateFrameShapes() {
 	const auto batch = RoundTrip("Envelope", Json(R"({"batch":{"items":[{"ping":{"nonce":7}},{"signal":{"t":"resumed"}}]}})"));
 	QCOMPARE(batch["batch"].toObject()["items"].toArray().size(), 2);
 	QCOMPARE(batch["batch"].toObject()["items"].toArray().at(1).toObject()["signal"].toObject()["t"].toString(), u"resumed"_s);
+}
+
+// Fields the backend added since the schema was first copied: they arrive
+// over the connection as they do over HTTP instead of being dropped.
+void TestProto::backendFieldsDecode() {
+	const auto message = RoundTrip("MessageView", Json(R"({"chat":"c1","seq":5,"kind":"poll",
+		"poll":{"question":"Q?","options":[{"text":"a","voters":2},{"text":"b","voters":0}],"total_voters":2,"anonymous":true,"my_options":[0]},
+		"forward_origin":{"name":"Sara","user":"u_sara","date":1700000000},
+		"shelf_id":"s1","shelf":{"name":"Close","palette":"rose","owner_id":"u_sara"},
+		"pending_id":"p1"})"));
+	QCOMPARE(message["poll"].toObject()["question"].toString(), u"Q?"_s);
+	QCOMPARE(message["poll"].toObject()["options"].toArray().size(), 2);
+	// Always-keys of the new views come back when zero.
+	QCOMPARE(message["poll"].toObject()["options"].toArray().at(1).toObject()["voters"].toInt(-1), 0);
+	QCOMPARE(message["poll"].toObject()["closed"].toBool(true), false);
+	QCOMPARE(message["forward_origin"].toObject()["name"].toString(), u"Sara"_s);
+	QCOMPARE(message["shelf"].toObject()["palette"].toString(), u"rose"_s);
+	QCOMPARE(message["shelf_id"].toString(), u"s1"_s);
+	QCOMPARE(message["pending_id"].toString(), u"p1"_s);
+
+	QVERIFY(RoundTrip("ChatView", Json(R"({"chat":"c1","hidden":true})"))["hidden"].toBool());
+	QVERIFY(RoundTrip("InboxEntry", Json(R"({"chat":"c1","hidden":true})"))["hidden"].toBool());
+	// The member update always says whether the chat is hidden.
+	const auto member = RoundTrip("MemberData", Json(R"({"chat":"c1","hidden":false})"));
+	QVERIFY(member.contains(u"hidden"_s) && !member["hidden"].toBool(true));
+	QVERIFY(RoundTrip("GroupView", Json(R"({"group":"g1","hidden":true})"))["hidden"].toBool());
+	const auto avatar = RoundTrip("ProfileOut", Json(R"({"id":"u1","emoji_avatar":{"kind":"emoji","emoji":"🦊","colors":["#f00","#0f0"]}})"));
+	QCOMPARE(avatar["emoji_avatar"].toObject()["emoji"].toString(), u"🦊"_s);
+	const auto story = RoundTrip("StoryOut", Json(R"({"id":"st1","stickers":[{"id":"k1","type":"poll","placement":{"x":0.5,"y":0.25,"width":0.3,"height":0.1,"rotation":0},
+		"poll":{"question":"?","options":[{"text":"yes","percent":60}],"my_vote":0}}],"shelf":{"id":"s1","name":"Close"}})"));
+	QCOMPARE(story["stickers"].toArray().size(), 1);
+	QCOMPARE(story["stickers"].toArray().at(0).toObject()["poll"].toObject()["my_vote"].toInt(-1), 0);
+	QCOMPARE(story["shelf"].toObject()["name"].toString(), u"Close"_s);
+
+	// A poll update of a direct chat: its payload, not an empty object.
+	const auto poll = RoundTrip("Envelope", Json(R"({"update":{"pts":7,"kind":"poll","data":{"poll":{"chat":"c1","seq":5,"poll":{"question":"Q?","total_voters":3}}}}})"));
+	const auto data = Proto::UnwrapData(poll["update"].toObject()["data"].toObject());
+	QCOMPARE(data["chat"].toString(), u"c1"_s);
+	QCOMPARE(data["poll"].toObject()["total_voters"].toInt(), 3);
+
+	// The problem document's meta (chat.peer_flood: until) over the connection.
+	const auto refused = RoundTrip("Envelope", Json(R"({"res":{"id":4,"error":{"code":"chat.peer_flood","title":"t","http_status":429,"meta":{"until":"1700000000"}}}})"));
+	const auto error = refused["res"].toObject()["error"].toObject();
+	QCOMPARE(error["meta"].toObject()["until"].toString(), u"1700000000"_s);
+	auto response = Response();
+	response.status = Response::Status::Error;
+	response.error.code = u"chat.peer_flood"_s;
+	response.error.httpStatus = 429;
+	response.error.meta = error["meta"].toObject();
+	const auto converted = Client::ToApiError(response);
+	QCOMPARE(converted.status, 429);
+	QCOMPARE(converted.body.toObject()["meta"].toObject()["until"].toString(), u"1700000000"_s);
+	QCOMPARE(converted.body.toObject()["code"].toString(), u"chat.peer_flood"_s);
+
+	// The new methods are bridged to their routes.
+	const auto vote = Methods::ToHttp(u"chat.poll.vote"_s, Json(R"({"chat":"c1","seq":5,"options":[1]})"));
+	QVERIFY(vote.has_value());
+	QCOMPARE(vote->verb, u"PUT"_s);
+	QCOMPARE(vote->path, u"/v1/chats/c1/messages/5/poll/vote"_s);
+	QCOMPARE(vote->body, Json(R"({"options":[1]})"));
+	QVERIFY(Schema::FindMethod("groups.poll.close"_L1));
+	QVERIFY(Schema::FindMethod("stories.sticker_vote"_L1));
+	QVERIFY(Schema::FindMethod("groups.online"_L1));
 }
 
 void TestProto::httpBridge() {

@@ -66,6 +66,12 @@ public:
 	[[nodiscard]] const Post *post(const QString &id) const;
 	// Server copies in (also used by search results and profiles).
 	void merge(const QVector<Post> &posts);
+	// A card on screen shows the post: the store keeps every held post and,
+	// of the others, the kKeepUnheld stored most recently (the app stays
+	// open for days; a post let go is read again when it is needed).
+	void hold(const QString &id);
+	void unhold(const QString &id);
+	static constexpr auto kKeepUnheld = 2000;
 	// A reply was published under `id` from here: its counter moves at once
 	// (a local change, kept over the server copies that are still on the way).
 	void noteReplyAdded(const QString &id);
@@ -165,6 +171,7 @@ Q_SIGNALS:
 
 private:
 	void store(const Post &post, qint64 now);
+	void trimStore(qint64 now);
 	void patch(const QString &id, const Fn<void(Post &)> &change);
 	void markDeleted(const QString &id);
 	void applyCounts(const QJsonObject &map);
@@ -176,6 +183,9 @@ private:
 
 	Session *_session = nullptr;
 	QHash<QString, Post> _posts;
+	QHash<QString, int> _holds;
+	QHash<QString, quint64> _storedAt; // the order the posts came in
+	quint64 _storedCounter = 0;
 	QHash<QString, qint64> _localUntil;
 	QHash<QString, qint64> _statsAt;
 	QSet<QString> _viewed;

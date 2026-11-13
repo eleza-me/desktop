@@ -821,6 +821,7 @@ void ShowTagInfoBox(
 			box,
 			st::groupsTagInfoClose);
 		close->setClickedCallback([=] { box->closeBox(); });
+		close->setAccessibleName(tr::lng_close(tr::now));
 		const auto place = [=](QSize size) {
 			close->moveToRight(
 				st::groupsTagInfoCloseTop,

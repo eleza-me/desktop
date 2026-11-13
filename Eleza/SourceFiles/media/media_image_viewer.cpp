@@ -2,6 +2,7 @@
 
 #include "core/core_application.h"
 #include "data/data_image_decode.h"
+#include "data/data_media_stream.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
 #include "media/media_video_player.h"
@@ -87,6 +88,10 @@ ImageViewer::ImageViewer(
 	_saveButton->setClickedCallback([this] { save(); });
 	_previous->setClickedCallback([this] { step(-1); });
 	_next->setClickedCallback([this] { step(1); });
+	_closeButton->setAccessibleName(tr::lng_close(tr::now));
+	_saveButton->setAccessibleName(tr::lng_history_save_as(tr::now));
+	_previous->setAccessibleName(tr::lng_a11y_previous(tr::now));
+	_next->setAccessibleName(tr::lng_a11y_next(tr::now));
 	_paging = std::move(options.paging);
 	_origin = std::move(options.origin);
 	for (auto i = 0; i != int(_items.size()); ++i) {
@@ -216,6 +221,7 @@ void ImageViewer::showItem(int index) {
 	}
 	QObject::disconnect(_sourceConnection);
 	QObject::disconnect(_previewConnection);
+	QObject::disconnect(_streamConnection);
 	_index = index;
 	_image = QImage();
 	_imageFinal = false;
@@ -228,35 +234,8 @@ void ImageViewer::showItem(int index) {
 	const auto &current = item();
 	_caption.setText(st::viewerCaptionStyle, current.caption.trimmed());
 	if (!current.videoPath.isEmpty()) {
-		_video = new VideoPlayerWidget(this);
-		_video->setMuted(ViewerMuted);
-		QObject::connect(
-			_video,
-			&VideoPlayerWidget::mutedChanged,
-			this,
-			[this](bool muted) { applyMuted(muted); });
-		_video->setPoster(current.videoPoster);
+		createVideo(current);
 		_video->setSource(current.videoPath);
-		_video->show();
-		_video->setFocusProxy(this);
-		QObject::connect(
-			_video,
-			&VideoPlayerWidget::videoSizeChanged,
-			this,
-			[this] { updateVideoGeometry(); });
-		QObject::connect(
-			_video,
-			&VideoPlayerWidget::fullscreenChanged,
-			this,
-			[this](bool fullscreen) {
-				if (!fullscreen) {
-					updateVideoGeometry();
-					_closeButton->raise();
-					_saveButton->raise();
-					_previous->raise();
-					_next->raise();
-				}
-			});
 		_imageFinal = true;
 		updateVideoGeometry();
 		_video->play();
@@ -441,6 +420,55 @@ void ImageViewer::loadFile(const QString &path, int serial) {
 	});
 }
 
+void ImageViewer::createVideo(const ViewerItem &current) {
+	_video = new VideoPlayerWidget(this);
+	_video->setMuted(ViewerMuted);
+	QObject::connect(
+		_video,
+		&VideoPlayerWidget::mutedChanged,
+		this,
+		[this](bool muted) { applyMuted(muted); });
+	_video->setPoster(current.videoPoster);
+	_video->show();
+	_video->setFocusProxy(this);
+	QObject::connect(
+		_video,
+		&VideoPlayerWidget::videoSizeChanged,
+		this,
+		[this] { updateVideoGeometry(); });
+	QObject::connect(
+		_video,
+		&VideoPlayerWidget::fullscreenChanged,
+		this,
+		[this](bool fullscreen) {
+			if (!fullscreen) {
+				updateVideoGeometry();
+				_closeButton->raise();
+				_saveButton->raise();
+				_previous->raise();
+				_next->raise();
+			}
+		});
+}
+
+void ImageViewer::streamVideo(int serial, const Data::MediaHandlePtr &handle) {
+	const auto index = indexOfSerial(serial);
+	if (index < 0 || index != _index || _video) {
+		return;
+	}
+	// The beginning is here: it plays while the rest arrives.
+	const auto &current = item();
+	createVideo(current);
+	_video->setStream(handle);
+	_image = QImage();
+	_imageFinal = true;
+	_loading.stop();
+	updateVideoGeometry();
+	_video->play();
+	updateControls();
+	update();
+}
+
 void ImageViewer::loadVideo(int serial) {
 	const auto weak = QPointer<ImageViewer>(this);
 	const auto start = indexOfSerial(serial);
@@ -463,12 +491,37 @@ void ImageViewer::loadVideo(int serial) {
 		auto &item = weak->_items[index];
 		item.videoPath = path;
 		item.loadVideo = nullptr;
-		if (weak->_index == index) {
-			// Shown again, now as the player.
+		item.videoDownload = nullptr;
+		if (weak->_index == index && !weak->_video) {
+			// Shown again, now as the player (one that plays the download
+			// as it came goes on with the finished file by itself).
 			weak->_index = -1;
 			weak->showItem(index);
+		} else if (weak->_index == index) {
+			weak->updateControls(); // «save» has a file now
 		}
 	});
+	if (!ProgressivePlayback() || !_items[start].videoDownload) {
+		return;
+	}
+	const auto handle = _items[start].videoDownload();
+	if (!handle) {
+		return;
+	}
+	const auto check = [=, this, weak = std::weak_ptr<Data::MediaHandle>(handle)] {
+		const auto handle = weak.lock();
+		if (handle
+			&& Data::MediaStream::Streamable(*handle, Data::MediaStream::kVideoStart)) {
+			QObject::disconnect(_streamConnection);
+			streamVideo(serial, handle);
+		}
+	};
+	_streamConnection = QObject::connect(
+		handle.get(),
+		&Data::MediaHandle::partialChanged,
+		this,
+		check);
+	check();
 }
 
 void ImageViewer::setImage(const QImage &image, bool final) {
