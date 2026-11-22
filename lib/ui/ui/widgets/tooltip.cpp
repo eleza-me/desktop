@@ -1,11 +1,13 @@
 #include "ui/widgets/tooltip.h"
 
+#include "ui/accessibility.h"
 #include "ui/painter.h"
 #include "ui/ui_utility.h"
 
 #include <QtCore/QEvent>
 #include <QtCore/QPointer>
 #include <QtCore/QTimer>
+#include <QtGui/QFocusEvent>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QScreen>
 
@@ -98,12 +100,30 @@ public:
 		widget->installEventFilter(this);
 	}
 
+	[[nodiscard]] QString text() const {
+		return _text ? _text() : QString();
+	}
+
 protected:
 	bool eventFilter(QObject *object, QEvent *event) override {
 		switch (event->type()) {
 		case QEvent::Enter:
 			_timer.start();
 			break;
+		case QEvent::FocusIn:
+			// What an icon button does, for who came to it with Tab.
+			if (!HoverSuppressed
+				&& _widget
+				&& Accessibility::KeyboardFocusReason(
+					static_cast<QFocusEvent*>(event)->reason())) {
+				const auto text = this->text();
+				if (!text.isEmpty()) {
+					Tooltip::Show(_widget, text);
+					_shown = true;
+				}
+			}
+			break;
+		case QEvent::FocusOut:
 		case QEvent::Leave:
 		case QEvent::MouseButtonPress:
 		case QEvent::Wheel:
@@ -225,6 +245,20 @@ void Tooltip::paintEvent(QPaintEvent *e) {
 
 void InstallTooltip(QWidget *widget, std::function<QString()> text) {
 	new Watcher(widget, std::move(text));
+}
+
+QString TooltipText(const QWidget *widget) {
+	if (!widget) {
+		return QString();
+	}
+	const auto children = widget->children();
+	for (auto i = children.size(); i != 0; --i) {
+		// The latest installed one is the one that shows.
+		if (const auto watcher = dynamic_cast<Watcher*>(children[i - 1])) {
+			return watcher->text();
+		}
+	}
+	return QString();
 }
 
 void SetHoverTooltipsSuppressed(bool suppressed) {

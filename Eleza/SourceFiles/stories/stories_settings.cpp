@@ -64,6 +64,7 @@ public:
 	, _userpics(session, [this](const QString &) { update(); }, this)
 	, _remove(Ui::CreateChild<Ui::IconButton>(this, st::storiesListRemove)) {
 		_remove->setClickedCallback(std::move(remove));
+		_remove->setAccessibleName(tr::lng_delete(tr::now));
 	}
 
 protected:

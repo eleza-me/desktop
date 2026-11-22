@@ -208,18 +208,52 @@ private Q_SLOTS:
 	}
 
 	void handleClassify() {
+		// The server's defaults (profile.handle_*): 4 to 30, a letter first.
 		const auto current = QStringLiteral("hadi");
 		QCOMPARE(ClassifyHandle(QStringLiteral("hadi"), current), HandleState::Idle);
-		QCOMPARE(ClassifyHandle(QStringLiteral("ab"), current), HandleState::Invalid);
 		QCOMPARE(ClassifyHandle(QStringLiteral("a b c"), current), HandleState::Invalid);
 		QCOMPARE(ClassifyHandle(QStringLiteral("Hadi2"), current), HandleState::Invalid);
 		QCOMPARE(ClassifyHandle(U("هادی"), current), HandleState::Invalid);
-		QCOMPARE(ClassifyHandle(QString(25, QLatin1Char('a')), current), HandleState::Invalid);
-		QCOMPARE(ClassifyHandle(QString(24, QLatin1Char('a')), current), HandleState::Checking);
-		QCOMPARE(ClassifyHandle(QStringLiteral("a1_2"), current), HandleState::Short);
-		QCOMPARE(ClassifyHandle(QStringLiteral("12345"), current), HandleState::Short);
-		QCOMPARE(ClassifyHandle(QStringLiteral("abc"), current), HandleState::Checking);
+		QCOMPARE(ClassifyHandle(QStringLiteral("abc"), current), HandleState::Short);
+		QCOMPARE(ClassifyHandle(QStringLiteral("ab"), current), HandleState::Short);
+		QCOMPARE(ClassifyHandle(QString(31, QLatin1Char('a')), current), HandleState::Invalid);
+		QCOMPARE(ClassifyHandle(QString(30, QLatin1Char('a')), current), HandleState::Checking);
+		QCOMPARE(ClassifyHandle(QStringLiteral(".ali"), current), HandleState::Invalid);
+		QCOMPARE(ClassifyHandle(QStringLiteral("ali."), current), HandleState::Invalid);
+		QCOMPARE(ClassifyHandle(QStringLiteral("a..b"), current), HandleState::Invalid);
 		QCOMPARE(ClassifyHandle(QStringLiteral("a.b_c9"), current), HandleState::Checking);
+		QCOMPARE(ClassifyHandle(QStringLiteral("a1_2"), current), HandleState::Checking);
+		// Not a letter first: asked about (its owner may keep it), the server
+		// answers handle.invalid for anybody else.
+		QCOMPARE(ClassifyHandle(QStringLiteral("1ali"), current), HandleState::Checking);
+
+		// The rules of the client-config.
+		auto rules = Api::HandleRules();
+		rules.minLength = 3;
+		rules.maxLength = 24;
+		QCOMPARE(ClassifyHandle(QStringLiteral("abc"), current, rules), HandleState::Checking);
+		QCOMPARE(ClassifyHandle(QString(25, QLatin1Char('a')), current, rules), HandleState::Invalid);
+
+		using Problem = Api::HandleProblem;
+		const auto check = [](const char *handle, const Api::HandleRules &rules = {}) {
+			return Api::Auth::CheckHandle(QString::fromLatin1(handle), rules);
+		};
+		QCOMPARE(check(""), Problem::Empty);
+		QCOMPARE(check("ali-r"), Problem::Characters);
+		QCOMPARE(check("ali"), Problem::TooShort);
+		QCOMPARE(check("abcdefghijabcdefghijabcdefghijx"), Problem::TooLong);
+		QCOMPARE(check("ali..r"), Problem::Dots);
+		QCOMPARE(check("_ali"), Problem::LetterFirst);
+		QCOMPARE(check("9ali"), Problem::LetterFirst);
+		QCOMPARE(check("ali.r_9"), Problem::None);
+		auto loose = Api::HandleRules();
+		loose.letterFirst = false;
+		QCOMPARE(check("9ali", loose), Problem::None);
+
+		QCOMPARE(
+			HandleProblemText(Problem::TooShort, Api::HandleRules()),
+			U("شناسه باید دست‌کم ۴ نویسه باشد"));
+		QVERIFY(HandleProblemText(Problem::None, Api::HandleRules()).isEmpty());
 
 		QVERIFY(HandleBlocksSave(HandleState::Invalid));
 		QVERIFY(HandleBlocksSave(HandleState::Short));
@@ -245,7 +279,7 @@ private Q_SLOTS:
 		checker.setChanged([&] { ++changes; });
 
 		// Typing: only the last value is asked about, after the pause.
-		checker.setValue(QStringLiteral("had"));
+		checker.setValue(QStringLiteral("hadx"));
 		QCOMPARE(checker.state(), HandleState::Checking);
 		checker.setValue(QStringLiteral("hadi"));
 		QCOMPARE(checker.state(), HandleState::Idle);
@@ -258,7 +292,7 @@ private Q_SLOTS:
 		QVERIFY(changes >= 3);
 
 		// Invalid input never reaches the server.
-		checker.setValue(QStringLiteral("x"));
+		checker.setValue(QStringLiteral("a..b"));
 		QCOMPARE(checker.state(), HandleState::Invalid);
 		QTest::qWait(80);
 		QCOMPARE(asked.size(), 1);
@@ -266,6 +300,11 @@ private Q_SLOTS:
 		answer = HandleChecker::Answer::Taken;
 		checker.setValue(QStringLiteral("sara"));
 		QTRY_COMPARE_WITH_TIMEOUT(checker.state(), HandleState::Taken, 1000);
+
+		// The server refused it (handle.invalid): an error, not "unknown".
+		answer = HandleChecker::Answer::Invalid;
+		checker.setValue(QStringLiteral("1ali"));
+		QTRY_COMPARE_WITH_TIMEOUT(checker.state(), HandleState::Invalid, 1000);
 
 		answer = HandleChecker::Answer::Failed;
 		checker.setValue(QStringLiteral("nika"));

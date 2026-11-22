@@ -195,7 +195,12 @@ private:
 	struct UserEntry {
 		UserStories data;
 		bool fresh = true; // false after a `story` signal named them
+		quint64 readOrder = 0; // when it was read (the oldest go first)
 	};
+	// The people whose stories are remembered (besides me): others are
+	// read again when they are opened.
+	static constexpr auto kKeepUsers = 100;
+	void trimUsers();
 
 	void handleSignal(const QString &userId);
 	void patchStory(const QString &storyId, const Fn<void(Story &)> &change);
@@ -224,6 +229,7 @@ private:
 	QHash<QString, StoryRingState> _hints;
 	QHash<QString, StoryRingState> _rings; // what was told last (ringsChanged)
 	std::map<QString, UserEntry> _users;
+	quint64 _readCounter = 0;
 
 	QStringList _seenQueue;
 	QSet<QString> _seenSent;

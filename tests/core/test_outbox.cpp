@@ -1,5 +1,6 @@
 // Data::Outbox: what is queued, in which order it leaves, what happens on
 // failures, and that the queue survives a restart.
+#include "base/platform_file.h"
 #include "base/random.h"
 #include "data/data_json.h"
 #include "test_harness.h"
@@ -54,6 +55,9 @@ private Q_SLOTS:
 	void backoffRetriesByItself();
 	void permanentFailureLetsOthersPass();
 	void attemptsRunOut();
+	void offlineNeverFails();
+	void sentDiscardIsDeletedForEveryone();
+	void discardedEchoIsNotShown();
 	void discardRemovesEverything();
 	void bodiesOfEveryKind();
 	void echoBeforeAnswer();
@@ -63,6 +67,8 @@ private Q_SLOTS:
 	void albumIsUploadedThenSent();
 	void processedSignalEndsTheWait();
 	void queueSurvivesRestart();
+	void temporaryFileSurvivesRestart();
+	void olderFailedForNoAnswerGoesAgain();
 
 };
 
@@ -204,10 +210,11 @@ void TestOutbox::transientFailureKeepsOrder() {
 	const auto b = outbox.sendText(u"c1"_s, u"b"_s);
 	Test::Settle(60);
 
-	// `a` failed once and waits out its backoff; `b` must not overtake it.
+	// `a` got no answer and waits out its backoff; `b` must not overtake
+	// it. No answer is no attempt.
 	QCOMPARE(SentTexts(harness, u"c1"_s), QStringList{ u"a"_s });
 	QCOMPARE(failed.size(), 0);
-	QCOMPARE(outbox.items()[0].attempts, 1);
+	QCOMPARE(outbox.items()[0].attempts, 0);
 	QVERIFY(!outbox.items()[0].failed);
 	QVERIFY(HasLocal(harness, u"c1"_s, a));
 	QVERIFY(StatusOf(harness, u"c1"_s, a) != MessageStatus::Failed);
@@ -296,8 +303,9 @@ void TestOutbox::permanentFailureLetsOthersPass() {
 void TestOutbox::attemptsRunOut() {
 	auto harness = Harness();
 	QVERIFY(harness.start());
-	harness.on(u"chat.send"_s, [](const Call &) {
-		return Reply::Offline();
+	auto down = true;
+	harness.on(u"chat.send"_s, [&](const Call &) {
+		return down ? Reply::Fail(503, u"server.unavailable"_s) : Reply::Ok(Sent(60));
 	});
 	auto failed = QSignalSpy(&harness.outbox(), &Outbox::failed);
 	auto &outbox = harness.outbox();
@@ -312,11 +320,64 @@ void TestOutbox::attemptsRunOut() {
 	QVERIFY(Test::WaitFor([&] { return failed.size() == 1; }));
 	QCOMPARE(harness.transport.count(u"chat.send"_s), int(Outbox::kMaxAttempts));
 	QVERIFY(StatusOf(harness, u"c1"_s, a) == MessageStatus::Failed);
-	QVERIFY(failed[0][2].value<Api::Error>().offline());
+	QCOMPARE(failed[0][2].value<Api::Error>().status, 503);
 	// A manual retry starts the count again.
 	outbox.retry(a);
 	QCOMPARE(outbox.items()[0].attempts, 0);
 	QVERIFY(!outbox.items()[0].failed);
+	for (auto attempt = 1; attempt <= Outbox::kMaxAttempts; ++attempt) {
+		outbox.retryAll();
+		QVERIFY(Test::WaitFor([&] {
+			return harness.transport.count(u"chat.send"_s) == Outbox::kMaxAttempts + attempt;
+		}));
+		Test::Settle();
+	}
+	QVERIFY(Test::WaitFor([&] { return failed.size() == 2; }));
+
+	// It failed for a reason that may be over: the connection coming up
+	// (Hello) tries it again by itself.
+	down = false;
+	outbox.retryAll();
+	QVERIFY(StatusOf(harness, u"c1"_s, a) != MessageStatus::Failed);
+	QVERIFY(Test::WaitFor([&] { return !outbox.contains(a); }));
+	QCOMPARE(harness.messages().find(u"c1"_s, 60)->text, u"a"_s);
+}
+
+// Offline for a long time: nothing fails, the order holds, and everything
+// goes when the connection comes up.
+void TestOutbox::offlineNeverFails() {
+	auto harness = Harness();
+	QVERIFY(harness.start());
+	auto offline = true;
+	auto seq = qint64(64);
+	harness.on(u"chat.send"_s, [&](const Call &) {
+		return offline ? Reply::Offline() : Reply::Ok(Sent(seq++));
+	});
+	auto failed = QSignalSpy(&harness.outbox(), &Outbox::failed);
+	auto &outbox = harness.outbox();
+	const auto a = outbox.sendText(u"c1"_s, u"a"_s);
+	const auto b = outbox.sendText(u"c1"_s, u"b"_s);
+	for (auto attempt = 1; attempt <= 3 * Outbox::kMaxAttempts; ++attempt) {
+		QVERIFY(Test::WaitFor([&] { return harness.transport.count(u"chat.send"_s) == attempt; }));
+		Test::Settle(10);
+		outbox.retryAll(); // as every reconnect that fails at once would
+	}
+	Test::Settle();
+	QCOMPARE(failed.size(), 0);
+	QCOMPARE(outbox.items().size(), 2);
+	QCOMPARE(outbox.items()[0].attempts, 0);
+	QVERIFY(!outbox.items()[0].failed);
+	QVERIFY(StatusOf(harness, u"c1"_s, a) == MessageStatus::Sending);
+	QVERIFY(StatusOf(harness, u"c1"_s, b) == MessageStatus::Queued);
+	// Only `a` was tried: `b` waits behind it.
+	QCOMPARE(SentTexts(harness, u"c1"_s).count(u"b"_s), 0);
+
+	offline = false;
+	outbox.retryAll();
+	QVERIFY(Test::WaitFor([&] { return outbox.items().isEmpty(); }));
+	QCOMPARE(harness.messages().find(u"c1"_s, 64)->text, u"a"_s);
+	QCOMPARE(harness.messages().find(u"c1"_s, 65)->text, u"b"_s);
+	QCOMPARE(failed.size(), 0);
 }
 
 void TestOutbox::discardRemovesEverything() {
@@ -349,6 +410,92 @@ void TestOutbox::discardRemovesEverything() {
 	QVERIFY(outbox.contains(c));
 	outbox.discard(u"no-such-id"_s);
 	QCOMPARE(outbox.items().size(), 1);
+	// `b` never left: nothing to take back. `a` did, and it went: it is
+	// deleted for everyone.
+	const auto deletes = harness.bodies(u"chat.delete"_s);
+	QCOMPARE(deletes.size(), 1);
+	QCOMPARE(deletes[0].value("chat"_L1).toString(), u"c1"_s);
+	QCOMPARE(Json::Int64(deletes[0], "seq"_L1), 50);
+	QCOMPARE(deletes[0].value("scope"_L1).toString(), u"everyone"_s);
+}
+
+// Discarding stops what is still here (a retry waiting out its backoff is
+// not sent again); a send that is out and turns out to have gone is
+// deleted for everyone.
+void TestOutbox::sentDiscardIsDeletedForEveryone() {
+	auto harness = Harness();
+	QVERIFY(harness.start());
+	auto calls = 0;
+	harness.on(u"chat.send"_s, [&](const Call &) {
+		return (++calls == 1) ? Reply::Offline() : Reply::Hold();
+	});
+	auto &outbox = harness.outbox();
+	const auto a = outbox.sendText(u"c1"_s, u"a"_s);
+	const auto b = outbox.sendText(u"c1"_s, u"b"_s);
+	QVERIFY(Test::WaitFor([&] { return harness.transport.count(u"chat.send"_s) == 1; }));
+	Test::Settle();
+	// Waiting out its backoff, nothing out: discarded, not sent again.
+	outbox.discard(a);
+	QVERIFY(Test::WaitFor([&] { return harness.transport.count(u"chat.send"_s) == 2; }));
+	QCOMPARE(SentTexts(harness, u"c1"_s), (QStringList{ u"a"_s, u"b"_s }));
+	QCOMPARE(harness.transport.count(u"chat.delete"_s), 0);
+	// The one out is discarded too, and its answer comes.
+	outbox.discard(b);
+	harness.transport.resolve(harness.transport.lastIndexOf(u"chat.send"_s), Sent(52));
+	QVERIFY(Test::WaitFor([&] { return harness.transport.count(u"chat.delete"_s) == 1; }));
+	QCOMPARE(Json::Int64(harness.bodies(u"chat.delete"_s)[0], "seq"_L1), 52);
+	QVERIFY(harness.messages().find(u"c1"_s, 52) == nullptr);
+	QVERIFY(outbox.items().isEmpty());
+}
+
+// The answer of a discarded message was lost, its echo comes: never shown,
+// deleted for everyone.
+void TestOutbox::discardedEchoIsNotShown() {
+	auto harness = Harness();
+	QVERIFY(harness.start());
+	auto loaded = false;
+	harness.messages().loadLatest(u"c1"_s, base::Guard(), [&] { loaded = true; });
+	QVERIFY(Test::WaitFor([&] { return loaded; }));
+	harness.on(u"chat.send"_s, [](const Call &) {
+		return Reply::Offline();
+	});
+	auto &outbox = harness.outbox();
+	const auto a = outbox.sendText(u"c1"_s, u"oops"_s);
+	QVERIFY(Test::WaitFor([&] { return harness.transport.count(u"chat.send"_s) == 1; }));
+	outbox.discard(a);
+	QVERIFY(!HasLocal(harness, u"c1"_s, a));
+
+	auto hello = Rt::Frame();
+	hello.type = Rt::Frame::Type::Hello;
+	hello.pts = 100;
+	harness.transport.setOnline(true);
+	harness.transport.emitFrame(hello);
+	auto echo = Rt::Frame();
+	echo.type = Rt::Frame::Type::Update;
+	echo.pts = 101;
+	echo.kind = u"message"_s;
+	echo.data = QJsonObject{
+		{ u"chat"_s, u"c1"_s },
+		{ u"seq"_s, 10 },
+		{ u"id"_s, u"m10"_s },
+		{ u"sender"_s, u"u_me"_s },
+		{ u"kind"_s, u"text"_s },
+		{ u"text"_s, u"oops"_s },
+		{ u"client_message_id"_s, a },
+		{ u"created_at"_s, 1800000000010. },
+	};
+	harness.transport.emitFrame(echo);
+	QVERIFY(harness.messages().find(u"c1"_s, 10) == nullptr);
+	QVERIFY(harness.chats().chat(u"c1"_s)->lastMessage->seq != 10);
+	QVERIFY(Test::WaitFor([&] { return harness.transport.count(u"chat.delete"_s) == 1; }));
+	const auto deleted = harness.bodies(u"chat.delete"_s)[0];
+	QCOMPARE(Json::Int64(deleted, "seq"_L1), 10);
+	QCOMPARE(deleted.value("scope"_L1).toString(), u"everyone"_s);
+	// The same echo again (a replay): nothing more.
+	harness.transport.emitFrame(echo);
+	Test::Settle();
+	QCOMPARE(harness.transport.count(u"chat.delete"_s), 1);
+	QVERIFY(harness.messages().find(u"c1"_s, 10) == nullptr);
 }
 
 void TestOutbox::bodiesOfEveryKind() {
@@ -974,6 +1121,150 @@ void TestOutbox::queueSurvivesRestart() {
 		QVERIFY(harness.outbox().items().isEmpty());
 		QCOMPARE(harness.transport.count(u"chat.send"_s), 0);
 	}
+}
+
+// A recording or a pasted picture lives in the temporary directory, which
+// the next start clears: the queue keeps a copy of its own until it is sent.
+void TestOutbox::temporaryFileSurvivesRestart() {
+	auto data = QTemporaryDir();
+	auto temp = QTemporaryDir();
+	QVERIFY(data.isValid() && temp.isValid());
+	base::platform::SetPrivateTempRoot(temp.path());
+	const auto databasePath = data.filePath(u"cache.db"_s);
+	const auto filesPath = data.filePath(u"outbox"_s);
+	const auto voice = QDir(base::platform::PrivateTempDirectory()).filePath(u"eleza-voice-1.ogg"_s);
+	const auto content = base::RandomBytes(10);
+	{
+		auto file = QFile(voice);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(content);
+	}
+	const auto serve = [](Harness &harness, bool up, QByteArray *uploaded) {
+		harness.http.handler = [&harness, up, uploaded](const Test::HttpServer::Request &request) {
+			using Response = Test::HttpServer::Response;
+			if (!up) {
+				return Response::Problem(503, "server.unavailable");
+			} else if (request.method == "POST" && request.path == "/v1/uploads") {
+				return Response::Ok(QJsonObject{
+					{ u"upload_id"_s, u"up1"_s },
+					{ u"media_id"_s, u"med1"_s },
+					{ u"state"_s, u"pending"_s },
+					{ u"part_size"_s, 1024 },
+					{ u"parts"_s, QJsonArray{
+						QJsonObject{ { u"n"_s, 1 }, { u"url"_s, harness.http.base() + u"/put/1"_s } },
+					} },
+				});
+			} else if (request.method == "PUT") {
+				*uploaded = request.body;
+			} else if (request.path == "/v1/media/med1") {
+				return Response::Ok(QJsonObject{ { u"state"_s, u"ready"_s } });
+			}
+			return Response::Ok();
+		};
+	};
+	auto uploaded = QByteArray();
+	auto id = QString();
+	auto queued = QString();
+	{
+		auto harness = Harness(databasePath);
+		harness.outbox().setFilesDirectory(filesPath);
+		QVERIFY(harness.start());
+		serve(harness, false, &uploaded);
+		auto options = SendFileOptions();
+		options.asVoice = true;
+		options.durationMs = 1500;
+		id = harness.outbox().sendFile(u"c1"_s, voice, options);
+		QVERIFY(!id.isEmpty());
+		queued = harness.outbox().items()[0].filePath;
+		QVERIFY(queued != voice);
+		QVERIFY(queued.startsWith(filesPath + u'/'));
+		QVERIFY(StatusOf(harness, u"c1"_s, id) == MessageStatus::Sending);
+		QVERIFY(Test::WaitFor([&] { return !harness.http.to("/v1/uploads").isEmpty(); }));
+		Test::Settle();
+		// The application quits before the server answers.
+	}
+	// The next start clears the temporary directory.
+	base::platform::ClearPrivateTemp();
+	QVERIFY(!QFileInfo::exists(voice));
+	QVERIFY(QFileInfo::exists(queued));
+	// A copy no item refers to (an earlier crash) goes at the start.
+	QVERIFY(QDir().mkpath(QDir(filesPath).filePath(u"stray"_s)));
+	{
+		auto harness = Harness(databasePath);
+		harness.outbox().setFilesDirectory(filesPath);
+		serve(harness, true, &uploaded);
+		auto seq = qint64(90);
+		harness.on(u"chat.send"_s, [&](const Call &) {
+			return Reply::Ok(Sent(seq++));
+		});
+		auto sent = QSignalSpy(&harness.outbox(), &Outbox::sent);
+		QVERIFY(harness.start());
+		QVERIFY(!QFileInfo::exists(QDir(filesPath).filePath(u"stray"_s)));
+		QVERIFY(Test::WaitFor([&] { return sent.size() == 1; }, 10000));
+		QCOMPARE(uploaded, content);
+		const auto sends = harness.bodies(u"chat.send"_s);
+		QCOMPARE(sends.size(), 1);
+		QCOMPARE(sends[0].value("client_message_id"_L1).toString(), id);
+		QCOMPARE(sends[0].value("kind"_L1).toString(), u"voice"_s);
+		QCOMPARE(sends[0].value("attachment"_L1).toString(), u"med1"_s);
+		// Sent: the queue's copy is gone, the bubble plays from the
+		// temporary directory until the next start.
+		QVERIFY(!QFileInfo::exists(queued));
+		QVERIFY(QDir(filesPath).entryList(QDir::Dirs | QDir::NoDotAndDotDot).isEmpty());
+		const auto message = harness.messages().find(u"c1"_s, 90);
+		QVERIFY(message);
+		QVERIFY(message->localPath.startsWith(QDir(temp.path()).absolutePath() + u'/'));
+		QVERIFY(QFileInfo::exists(message->localPath));
+	}
+	// Discarded: the copy goes as well.
+	{
+		auto harness = Harness(databasePath);
+		harness.outbox().setFilesDirectory(filesPath);
+		QVERIFY(harness.start());
+		serve(harness, false, &uploaded);
+		const auto again = QDir(base::platform::PrivateTempDirectory()).filePath(u"eleza-paste.png"_s);
+		{
+			auto file = QFile(again);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			file.write(content);
+		}
+		const auto other = harness.outbox().sendFile(u"c1"_s, again);
+		QVERIFY(!other.isEmpty());
+		QVERIFY(QFileInfo::exists(QDir(filesPath).filePath(other)));
+		harness.outbox().discard(other);
+		QVERIFY(!QFileInfo::exists(QDir(filesPath).filePath(other)));
+		// The temporary file itself is the caller's.
+		QVERIFY(QFileInfo::exists(again));
+	}
+	base::platform::SetPrivateTempRoot(QString());
+}
+
+// A message an older version stored as Failed because it got no answer
+// goes again when the connection comes up.
+void TestOutbox::olderFailedForNoAnswerGoesAgain() {
+	auto dir = QTemporaryDir();
+	QVERIFY(dir.isValid());
+	auto harness = Harness(dir.filePath(u"cache.db"_s));
+	auto stored = OutboxItem();
+	stored.clientMessageId = base::RandomUuid();
+	stored.chat = u"c1"_s;
+	stored.kind = u"text"_s;
+	stored.body = QJsonObject{ { u"kind"_s, u"text"_s }, { u"text"_s, u"old"_s } };
+	stored.createdAt = 1800000000000;
+	stored.attempts = Outbox::kMaxAttempts;
+	stored.failed = true;
+	stored.errorCode = u"offline"_s;
+	harness.database->putOutbox({ stored.clientMessageId, stored.chat, stored.createdAt, stored.toJson() });
+	harness.on(u"chat.send"_s, [](const Call &) {
+		return Reply::Ok(Sent(95));
+	});
+	QVERIFY(harness.start());
+	QCOMPARE(harness.outbox().items().size(), 1);
+	QVERIFY(harness.outbox().items()[0].failed);
+	QCOMPARE(harness.transport.count(u"chat.send"_s), 0);
+	harness.outbox().retryAll();
+	QVERIFY(Test::WaitFor([&] { return harness.outbox().items().isEmpty(); }));
+	QCOMPARE(harness.messages().find(u"c1"_s, 95)->text, u"old"_s);
 }
 
 QTEST_GUILESS_MAIN(TestOutbox)

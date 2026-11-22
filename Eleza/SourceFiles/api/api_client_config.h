@@ -21,6 +21,14 @@ namespace Api {
 
 class Client;
 
+// What a new handle may be (profile.handle_*, the server's defaults when the
+// document has none). The server's own check stays the last word.
+struct HandleRules {
+	int minLength = 4;
+	int maxLength = 30;
+	bool letterFirst = true; // starts with a-z
+};
+
 struct ConversationCategory {
 	QString slug;
 	QString title;
@@ -80,6 +88,7 @@ public:
 	[[nodiscard]] QStringList allowedCountryPrefixes() const;
 	[[nodiscard]] int handleMinLength() const;
 	[[nodiscard]] int handleMaxLength() const;
+	[[nodiscard]] HandleRules handleRules() const;
 	[[nodiscard]] int displayNameMaxChars() const;
 	[[nodiscard]] int bioMaxChars() const;
 	[[nodiscard]] int twoStepMinPasswordLength() const;

@@ -9,6 +9,7 @@
 // dependencies are not available.
 #include "api/api_client.h"
 #include "crypto/crypto_device_key.h"
+#include "base/unixtime.h"
 #include "rt/rt_client.h"
 #include "storage/storage_key_value.h"
 #include "test_fakes.h"
@@ -210,6 +211,11 @@ void TestRtInterop::handshakeAndHello() {
 	QCOMPARE(peer.client.hello().reconnectSpread, 5);
 	QVERIFY(peer.client.hello().connection.startsWith(u"conn-"));
 	QVERIFY(peer.client.hello().serverTimeMs > 1700000000000);
+	// The peer's clock is this machine's: the measured offset is about 0,
+	// and the deadlines read the server's clock through it.
+	QVERIFY(peer.client.hello().clockOffsetMs.has_value());
+	QVERIFY(std::abs(*peer.client.hello().clockOffsetMs) < 5000);
+	QCOMPARE(base::unixtime::serverOffsetMs(), *peer.client.hello().clockOffsetMs);
 
 	// What the other side read from message 1.
 	const auto auth = LastOf(state, "auths");

@@ -267,11 +267,21 @@ QStringList ClientConfig::allowedCountryPrefixes() const {
 }
 
 int ClientConfig::handleMinLength() const {
-	return int(integer(u"profile.handle_min_len"_s, 3));
+	return int(integer(u"profile.handle_min_len"_s, HandleRules().minLength));
 }
 
 int ClientConfig::handleMaxLength() const {
-	return int(integer(u"profile.handle_max_len"_s, 24));
+	return int(integer(u"profile.handle_max_len"_s, HandleRules().maxLength));
+}
+
+HandleRules ClientConfig::handleRules() const {
+	auto result = HandleRules();
+	result.minLength = std::max(handleMinLength(), 1);
+	result.maxLength = std::max(handleMaxLength(), result.minLength);
+	result.letterFirst = boolean(
+		u"profile.handle_letter_first"_s,
+		result.letterFirst);
+	return result;
 }
 
 int ClientConfig::displayNameMaxChars() const {

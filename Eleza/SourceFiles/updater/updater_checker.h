@@ -220,10 +220,15 @@ private:
 	bool _sawStale = false;
 	bool _sawAnswer = false;
 	QByteArray _manifestBytes;
+	QByteArray _signatureBytes;
 
 	// ---- the download in progress
 	Package _package;
 	QString _packageVersion;
+	// The signed manifest of `_package`, kept next to the staged version for
+	// the elevated Windows updater (install_verify.h).
+	QByteArray _packageManifest;
+	QByteArray _packageSignature;
 	int _mirrorIndex = 0;
 	bool _rangeRefused = false; // this mirror was already asked again without a range
 	bool _rangeBad = false; // the answer in progress is not the range asked for

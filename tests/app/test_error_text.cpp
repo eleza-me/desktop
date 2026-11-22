@@ -47,6 +47,13 @@ private Q_SLOTS:
 		QCOMPARE(
 			Support::ErrorText(Problem(409, "conversation.limit_reached")),
 			tr::lng_conv_youve_reached_limit_concurrent_conversations(tr::now));
+		// The server says which handle rule failed: its words win over ours.
+		QCOMPARE(
+			Support::ErrorText(Problem(400, "handle.invalid", "شناسه باید با یک حرف انگلیسی شروع شود")),
+			U("شناسه باید با یک حرف انگلیسی شروع شود"));
+		QCOMPARE(
+			Support::ErrorText(Problem(400, "handle.invalid")),
+			tr::lng_intro_username_rules(tr::now));
 		QVERIFY(Support::ErrorPhrase(QStringLiteral("no.such_code")).isEmpty());
 		QVERIFY(Support::ErrorPhrase(QString()).isEmpty());
 	}

@@ -1,6 +1,7 @@
 #include "eli/eli_actions.h"
 
 #include "api/api_client_config.h"
+#include "base/unixtime.h"
 #include "boxes/peer_list_box.h"
 #include "data/data_feed.h"
 #include "data/data_graph.h"
@@ -51,7 +52,7 @@ constexpr auto kDefaultEditWindow = qint64(48) * 3600;
 	if (window <= 0) {
 		window = kDefaultEditWindow;
 	}
-	const auto age = QDateTime::currentMSecsSinceEpoch() - post.createdAt;
+	const auto age = base::unixtime::serverNowMs() - post.createdAt;
 	return (age < window * 1000)
 		&& (post.type == u"text"
 			|| post.type == u"short_text"

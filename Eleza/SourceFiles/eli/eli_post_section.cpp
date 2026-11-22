@@ -261,6 +261,7 @@ public:
 				expand();
 			}
 		});
+		_cancelTarget->setAccessibleName(tr::lng_cancel(tr::now));
 		_cancelTarget->setClickedCallback([this] {
 			if (cancelTarget) {
 				cancelTarget();

@@ -161,7 +161,8 @@ public:
 		Fn<void(const QJsonArray &)> done = nullptr);
 	void unsubscribePresence(const QStringList &users);
 	// Presence subscriptions are counted per user: two screens showing the
-	// same person need two unsubscribes. At most kPresenceSubMax are sent.
+	// same person need two unsubscribes. At most kPresenceSubMax are sent
+	// (after a reconnect, the most recently subscribed: what is on screen).
 	static constexpr auto kPresenceSubMax = 200; // presence.max_subscriptions_per_connection
 	// Card change notifications (Frame::Type::Profile) for these users. The
 	// most recently shown kProfileSubMax are followed (the gateway's cap);
@@ -241,7 +242,12 @@ private:
 	bool _background = false;
 	bool _networkWatched = false;
 
-	QHash<QString, int> _presenceSubs;  // user -> subscribers here
+	struct PresenceSub {
+		int count = 0;      // subscribers here
+		quint64 asked = 0;  // when last subscribed (a counter)
+	};
+	QHash<QString, PresenceSub> _presenceSubs;
+	quint64 _presenceAsked = 0;
 	int _presenceTtl = 300;             // seconds (PresenceSubResult.ttl_s)
 	QStringList _profileSubs;           // most recently shown first
 	QSet<QString> _profileSubsOnServer; // what the gateway holds, at most

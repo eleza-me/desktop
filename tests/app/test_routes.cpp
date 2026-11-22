@@ -69,6 +69,17 @@ private Q_SLOTS:
 		QCOMPARE(search.type, RouteType::Search);
 		QCOMPARE(search.queryValue("q"), U("سلام دنیا"));
 		QCOMPARE(ParseRoute("search?q=a+b").queryValue("q"), QStringLiteral("a b"));
+		// An encoded "+" is a plus, not a space.
+		QCOMPARE(ParseRoute("search?q=c%2B%2B").queryValue("q"), QStringLiteral("c++"));
+		QCOMPARE(
+			ParseRoute(Routes::Search(QStringLiteral("+98 912"))).queryValue("q"),
+			QStringLiteral("+98 912"));
+		QCOMPARE(
+			RouteFromWebPath("/search", "q=c%2B%2B+x")->queryValue("q"),
+			QStringLiteral("c++ x"));
+		QCOMPARE(
+			RouteFromWebPath("/weather_bot", "start=a%2Bb")->queryValue("start"),
+			QStringLiteral("a+b"));
 		QCOMPARE(ParseRoute("conversation/topics").type, RouteType::ConversationTopics);
 		const auto conversation = ParseRoute("conversation/conv1");
 		QCOMPARE(conversation.type, RouteType::Conversation);

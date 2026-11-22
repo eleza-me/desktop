@@ -2,8 +2,12 @@
 // with a «+»; a ring when I have stories; the posting progress), then the
 // people I follow in the server's order (unseen, seen, muted). A click opens
 // the viewer, a right click mutes; the wheel scrolls it sideways.
+// Keyboard: a Tab stop; Left / Right (Home / End) move between the circles,
+// Space / Enter open one, the menu key (Shift+F10) shows its menu. Screen
+// readers see a list.
 #pragma once
 
+#include "ui/accessibility.h"
 #include "ui/rp_widget.h"
 
 #include <memory>
@@ -18,13 +22,20 @@ class UserpicPainter;
 
 namespace Stories {
 
-class Tray final : public Ui::RpWidget {
+class Tray final
+	: public Ui::RpWidget
+	, public Ui::Accessibility::ItemsSource {
 public:
 	Tray(QWidget *parent, Window::SessionController *controller);
 	~Tray();
 
 	// The feed came back on screen: read the tray again (debounced).
 	void refresh();
+
+	int accessibilityItemsCount() const override;
+	Ui::Accessibility::Item accessibilityItem(int index) const override;
+	void accessibilityItemPress(int index) override;
+	int accessibilityFocusedItem() const override;
 
 protected:
 	int resizeGetHeight(int newWidth) override;
@@ -35,6 +46,9 @@ protected:
 	void leaveEvent(QEvent *e) override;
 	void wheelEvent(QWheelEvent *e) override;
 	void contextMenuEvent(QContextMenuEvent *e) override;
+	void keyPressEvent(QKeyEvent *e) override;
+	void focusInEvent(QFocusEvent *e) override;
+	void focusOutEvent(QFocusEvent *e) override;
 
 private:
 	enum class Part {
@@ -64,6 +78,8 @@ private:
 	void showMenu(int index, QPoint global);
 	void openMine();
 	void updateVisibility();
+	[[nodiscard]] QString nameAt(int index) const;
+	void setKeyboardIndex(int index);
 
 	Window::SessionController *_controller = nullptr;
 	std::unique_ptr<Support::UserpicPainter> _userpics;
@@ -71,6 +87,8 @@ private:
 	Hit _over;
 	Hit _pressed;
 	qint64 _lastRefresh = 0;
+	int _keyboardIndex = -1; // the circle the keyboard is on
+	bool _keyboardFocus = false;
 
 };
 

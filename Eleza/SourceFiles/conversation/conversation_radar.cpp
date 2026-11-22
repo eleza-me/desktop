@@ -1,5 +1,6 @@
 #include "conversation/conversation_radar.h"
 
+#include "base/unixtime.h"
 #include "conversation/conversation_boxes.h"
 #include "conversation/conversation_card.h"
 #include "conversation/conversation_radar_model.h"
@@ -63,7 +64,7 @@ constexpr auto kPeople = std::array<FloatingPerson, 6>{ {
 } };
 
 [[nodiscard]] qint64 NowMs() {
-	return QDateTime::currentMSecsSinceEpoch();
+	return base::unixtime::serverNowMs();
 }
 
 // A name inside a sentence of the other direction: isolated, so it neither

@@ -89,6 +89,9 @@ protected:
 	void resizeEvent(QResizeEvent *e) override;
 	void keyPressEvent(QKeyEvent *e) override;
 	void focusInEvent(QFocusEvent *e) override;
+	// Tab goes round the step and the corner buttons, never to this widget
+	// itself (it gives its focus to the step at once).
+	bool focusNextPrevChild(bool next) override;
 
 private:
 	class Transition;

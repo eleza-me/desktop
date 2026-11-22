@@ -190,7 +190,9 @@ Preview PreviewFor(
 	} else if (chat.draft && !chat.draft->empty()) {
 		result.kind = Preview::Kind::Draft;
 		result.prefix = tr::lng_dialogs_draft(tr::now);
-		result.text = chat.draft->text.simplified();
+		result.text = Support::MaskSpoilers(
+			chat.draft->text,
+			chat.draft->entities).simplified();
 		return result;
 	} else if (!chat.lastMessage || !chat.lastMessage->visible()) {
 		return result;
@@ -207,7 +209,9 @@ Preview PreviewFor(
 		return result;
 	}
 	const auto label = Support::MessageKindLabel(message);
-	const auto caption = message.text.simplified();
+	const auto caption = Support::MaskSpoilers(
+		message.text,
+		message.entities).simplified();
 	result.thumbnail = !message.mediaSpoiler
 		&& !message.attachment.isEmpty()
 		&& (message.kind == Data::MessageKind::Photo

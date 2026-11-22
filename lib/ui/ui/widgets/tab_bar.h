@@ -4,8 +4,12 @@
 //   tabs->setTabs({ tr::lng_for_you(tr::now), tr::lng_following(tr::now) });
 //   connect(tabs, &Ui::TabBar::activeChanged, this, [=](int index) { ... });
 //   tabs->resizeToWidth(width());
+//
+// Keyboard: a Tab stop; Left / Right (Home / End) choose the tab. Screen
+// readers see a tab list.
 #pragma once
 
+#include "ui/accessibility.h"
 #include "ui/rp_widget.h"
 #include "ui/effects/animations.h"
 #include "ui/effects/ripple_animation.h"
@@ -17,7 +21,7 @@
 
 namespace Ui {
 
-class TabBar : public RpWidget {
+class TabBar : public RpWidget, public Accessibility::ItemsSource {
 	Q_OBJECT
 
 public:
@@ -39,6 +43,18 @@ public:
 
 	[[nodiscard]] int naturalWidth() const override;
 
+	int accessibilityItemsCount() const override {
+		return count();
+	}
+	Accessibility::Item accessibilityItem(int index) const override;
+	void accessibilityItemPress(int index) override;
+	int accessibilityFocusedItem() const override {
+		return _active;
+	}
+	QAccessible::Role accessibilityRole() const override {
+		return QAccessible::PageTabList;
+	}
+
 Q_SIGNALS:
 	void activeChanged(int index);
 
@@ -49,6 +65,8 @@ protected:
 	void mouseReleaseEvent(QMouseEvent *e) override;
 	void leaveEvent(QEvent *e) override;
 	void keyPressEvent(QKeyEvent *e) override;
+	void focusInEvent(QFocusEvent *e) override;
+	void focusOutEvent(QFocusEvent *e) override;
 	int resizeGetHeight(int newWidth) override;
 
 private:
@@ -62,6 +80,7 @@ private:
 	};
 
 	void layoutTabs(int forWidth);
+	void choose(int index);
 	[[nodiscard]] int tabAt(QPoint position) const;
 	[[nodiscard]] QRect tabRect(int index) const; // physical
 	// Logical left and width of the underline for a tab.
@@ -73,6 +92,7 @@ private:
 	int _over = -1;
 	int _pressed = -1;
 	bool _stretch = false;
+	bool _keyboardFocus = false;
 	double _indicatorFrom = 0.;
 	double _indicatorWidthFrom = 0.;
 	Animations::Simple _indicatorAnimation;

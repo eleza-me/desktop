@@ -1,5 +1,6 @@
 #include "profile/profile_cover.h"
 
+#include "base/unixtime.h"
 #include "data/data_session.h"
 #include "data/data_stories.h"
 #include "lang/lang_format.h"
@@ -130,6 +131,7 @@ Cover::Cover(QWidget *parent, Window::SessionController *controller)
 	_follow->setClickedCallback([this] { Q_EMIT followClicked(); });
 	_message->setClickedCallback([this] { Q_EMIT messageClicked(); });
 	_more->setClickedCallback([this] { Q_EMIT moreClicked(); });
+	_more->setAccessibleName(tr::lng_more(tr::now));
 	_edit->setClickedCallback([this] { Q_EMIT editClicked(); });
 	_share->setClickedCallback([this] { Q_EMIT shareClicked(); });
 	_requests->setClickedCallback([this] { Q_EMIT requestsClicked(); });
@@ -522,7 +524,7 @@ void ConversationCard::setConversation(
 }
 
 bool ConversationCard::expired() const {
-	return _expiresAt * 1000 <= QDateTime::currentMSecsSinceEpoch();
+	return _expiresAt * 1000 <= base::unixtime::serverNowMs();
 }
 
 void ConversationCard::refreshTime() {
@@ -530,7 +532,7 @@ void ConversationCard::refreshTime() {
 	const auto ended = expired();
 	_time = ended
 		? QString()
-		: RemainingText(_expiresAt, QDateTime::currentMSecsSinceEpoch());
+		: RemainingText(_expiresAt, base::unixtime::serverNowMs());
 	setAttribute(Qt::WA_TransparentForMouseEvents, ended);
 	if (ended) {
 		_timer.cancel();

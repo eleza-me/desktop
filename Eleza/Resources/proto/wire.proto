@@ -83,6 +83,10 @@ message Error {
   bool   retryable = 3;
   uint32 retry_after_s = 4;
   uint32 http_status = 5;
+  // The problem document's meta: a few machine-readable facts of some
+  // refusals, string values (chat.peer_flood: until, spambot; group.peer_flood:
+  // also users — docs/stranger-restriction.md §2). Empty for most errors.
+  map<string, string> meta = 6;
 }
 
 // UpdateFrame is a pts-logged change. A live frame carries kind, section and
@@ -138,6 +142,11 @@ message UpdateFrame {
 //                                      {"user","action":"new"|"deleted"}: an account the user follows
 //                                      posted or deleted a story; without "user" when several did or
 //                                      a high-follower account did — refresh the story tray)
+//   message_early   EarlyMessageSignal(server → client, views.proto; only to a connection whose
+//                                      Auth.features has "early_message": a message of a DirectThread
+//                                      right after it is committed, ahead of its durable "message"
+//                                      update; the placeholder of a pending media message; its
+//                                      withdrawal — docs/fast-delivery.md §2)
 //   (right after Hello the gateway also sends call.incoming when a call is ringing for the user)
 //   resumed, resync (server → client; no body)
 //   presence_reset  (server → client; re-subscribe presence)
@@ -263,7 +272,10 @@ message Auth {
   // (docs/self-destruct-media.md): it gets them as such in updates, and the
   // gateway forwards the features with every bridged call (header
   // X-Eleza-Features); without it an app gets them as an "update the app"
-  // text.
+  // text. "early_message": the connection gets Signal t:"message_early"
+  // (EarlyMessageSignal, docs/fast-delivery.md §2). "pending_media": its
+  // bridged chat.send with a preview may be answered pending (§3; an app
+  // that declares it declares early_message too).
   repeated string features = 7;
 }
 message AuthResult { int64 expires_at = 1; }

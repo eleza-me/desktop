@@ -63,6 +63,9 @@ protected:
 	void resizeEvent(QResizeEvent *e) override;
 	void paintEvent(QPaintEvent *e) override;
 	bool eventFilter(QObject *object, QEvent *event) override;
+	// Tab goes through the columns in reading order: the rail, the side
+	// column, the main one (they are created in another order).
+	bool focusNextPrevChild(bool next) override;
 
 private:
 	class Resizer;
@@ -73,7 +76,16 @@ private:
 		SectionFactory sideFactory; // overrides the registry
 		SectionWidget *side = nullptr;
 		std::vector<SectionWidget*> stack; // bottom to top, the top one is shown
+		// Under the bottom of `stack`: sections let go as it grew (only
+		// their routes, oldest first), made again when the user goes back.
+		QStringList parked;
 	};
+
+	// Sections kept alive per tab (each with its lists, pictures and
+	// subscriptions); deeper ones are parked, at most kMaxParked of them.
+	static constexpr auto kMaxLiveSections = 8;
+	static constexpr auto kMaxParked = 40;
+	void parkOldest(TabState &entry);
 
 	[[nodiscard]] TabState &state(Tab tab) {
 		return _tabs[int(tab)];

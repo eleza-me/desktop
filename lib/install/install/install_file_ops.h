@@ -8,6 +8,7 @@
 
 #include "install/install_paths.h"
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -49,6 +50,11 @@ public:
 		const Path &file,
 		std::string &text,
 		std::size_t limit);
+	// A regular file in pieces, in order; false when it is not one, it cannot
+	// be read, or `chunk` returned false.
+	[[nodiscard]] virtual bool readChunks(
+		const Path &file,
+		const std::function<bool(const char *data, std::size_t size)> &chunk);
 	virtual void sleep(int milliseconds);
 	// Whether two names that differ only in letter case are the same file
 	// (Windows).

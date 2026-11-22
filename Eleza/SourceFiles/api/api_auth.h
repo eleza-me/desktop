@@ -5,6 +5,7 @@
 // The platform string sent to the API is "desktop".
 #pragma once
 
+#include "api/api_client_config.h"
 #include "api/api_error.h"
 #include "base/weak_guard.h"
 #include "data/data_types.h"
@@ -16,6 +17,18 @@ class Account;
 } // namespace Main
 
 namespace Api {
+
+// What the server's rules refuse in a new handle (the reserved names aside),
+// the first one found.
+enum class HandleProblem {
+	None,
+	Empty,
+	Characters, // not only a-z, 0-9, "." and "_"
+	TooShort,
+	TooLong,
+	Dots, // at the start or the end, or two in a row
+	LetterFirst, // does not start with a-z
+};
 
 struct OtpChallenge {
 	QString challengeId;
@@ -123,8 +136,13 @@ public:
 	// `POST /v1/auth/logout` (best effort), then the local session is dropped.
 	void logout(QObject *guard = nullptr, Fn<void()> done = nullptr);
 
-	// ^[a-z0-9_.]{3,24}$
+	// Could be somebody's handle, for an exact lookup: ^[a-z0-9_.]{3,32}$
+	// (also those kept from before the current rules, and the bots').
 	[[nodiscard]] static bool IsValidHandle(const QString &handle);
+	// The rules for a handle claimed now (internal/profile normalizeHandle).
+	[[nodiscard]] static HandleProblem CheckHandle(
+		const QString &handle,
+		const HandleRules &rules);
 	// Persian / Arabic-Indic digits -> ASCII digits (codes typed on a Persian keyboard).
 	[[nodiscard]] static QString Latinize(const QString &text);
 

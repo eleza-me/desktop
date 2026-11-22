@@ -46,6 +46,7 @@ class QMediaPlayer;
 
 namespace Data {
 struct Message;
+class MediaStream;
 } // namespace Data
 
 namespace Main {
@@ -218,6 +219,12 @@ private:
 	void startAt(int queueIndex, bool advanced);
 	void request(bool force);
 	void start(const QString &filePath);
+	// Plays the download as it arrives (ProgressivePlayback()).
+	void startStream();
+	void dropStream();
+	// The player ran out of what has arrived: Loading until the file is
+	// complete, then on from there.
+	void streamStalled();
 	void stopPlayback();
 	void setState(State state);
 	void fail(AudioFailure reason);
@@ -229,6 +236,9 @@ private:
 
 	std::unique_ptr<QMediaPlayer> _player;
 	std::unique_ptr<QAudioOutput> _output;
+	std::unique_ptr<Data::MediaStream> _stream; // what the player reads, while it arrives
+	bool _stalled = false;
+	qint64 _rebufferAt = 0; // a stalled stream opens again with this many bytes
 	AudioTrack _track;
 	Data::MediaHandlePtr _handle;
 	QString _temporaryFile;

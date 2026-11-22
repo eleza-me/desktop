@@ -4,12 +4,14 @@
 #include "data/data_group_rules.h"
 #include "data/data_groups.h"
 #include "data/data_json.h"
+#include "data/data_media.h"
 #include "data/data_session.h"
 #include "data/data_transport.h"
 #include "data/data_users.h"
 #include "storage/storage_database.h"
 
 #include <algorithm>
+#include <vector>
 
 namespace Data {
 namespace {
@@ -148,6 +150,81 @@ bool Messages::live(const QString &chat) const {
 	return (i != _histories.end())
 		&& i->second.loaded
 		&& !i->second.hasMoreAfter;
+}
+
+void Messages::hold(const QString &chat) {
+	if (chat.isEmpty()) {
+		return;
+	}
+	++_holds[chat];
+	_shownAt.insert(chat, ++_shownCounter);
+}
+
+void Messages::unhold(const QString &chat) {
+	const auto i = _holds.find(chat);
+	if (i == _holds.end()) {
+		return;
+	} else if (--i.value() > 0) {
+		return;
+	}
+	_holds.erase(i);
+	_shownAt.insert(chat, ++_shownCounter);
+	if (const auto history = existing(chat)) {
+		trimUnheld(*history);
+	}
+	dropUnused();
+}
+
+void Messages::trimUnheld(History &history) {
+	auto server = 0;
+	for (const auto &message : std::as_const(history.items)) {
+		server += (message.seq > 0) ? 1 : 0;
+	}
+	if (server <= kKeepUnheld) {
+		return;
+	}
+	// Oldest first: the server messages before the newest kKeepUnheld go,
+	// the ones still on their way stay.
+	auto drop = server - kKeepUnheld;
+	auto kept = QVector<Message>();
+	kept.reserve(history.items.size() - drop);
+	for (auto &message : history.items) {
+		if (drop > 0 && message.seq > 0) {
+			--drop;
+		} else {
+			kept.push_back(std::move(message));
+		}
+	}
+	history.items = std::move(kept);
+	history.hasMoreBefore = true;
+}
+
+void Messages::dropUnused() {
+	if (int(_histories.size()) <= kKeepHistories) {
+		return;
+	}
+	auto candidates = std::vector<std::pair<quint64, QString>>();
+	for (const auto &[chat, history] : _histories) {
+		if (_holds.contains(chat)) {
+			continue;
+		}
+		const auto pending = std::any_of(
+			history.items.begin(),
+			history.items.end(),
+			[](const Message &message) { return message.seq <= 0; });
+		if (!pending) {
+			candidates.emplace_back(_shownAt.value(chat), chat);
+		}
+	}
+	std::sort(candidates.begin(), candidates.end());
+	auto excess = int(_histories.size()) - kKeepHistories;
+	for (const auto &[at, chat] : candidates) {
+		if (excess-- <= 0) {
+			break;
+		}
+		_histories.erase(chat);
+		_shownAt.remove(chat);
+	}
 }
 
 void Messages::forget(const QString &chat) {
@@ -335,6 +412,23 @@ void Messages::patchMessage(
 	Q_EMIT historyChanged(chat);
 }
 
+void Messages::setUploadProgress(const QString &chat, const QString &key, double progress) {
+	const auto i = existing(chat);
+	const auto index = i ? i->indexOfKey(key) : -1;
+	if (index < 0) {
+		return;
+	}
+	auto &message = i->items[index];
+	const auto was = message.uploadProgress;
+	message.uploadProgress = progress;
+	if ((was >= 0.) != (progress >= 0.)) {
+		// Starting or ending an upload changes the bubble's lines.
+		Q_EMIT historyChanged(chat);
+	} else if (was != progress) {
+		Q_EMIT messageChanged(chat, key);
+	}
+}
+
 void Messages::storeChanged(const History &history, const QVector<Message> &messages) {
 	if (history.loaded) {
 		persist(history.chat, messages);
@@ -378,13 +472,15 @@ Message Messages::FromCache(const QJsonObject &row, qint64 peerReadSeq) {
 	return result;
 }
 
-void Messages::removeMessage(const QString &chat, const QString &key) {
+void Messages::removeMessage(const QString &chat, const QString &key, bool uncache) {
 	// Out of the cache as well, also when it is not in the window: an old
 	// message deleted while it was not shown must not come back from it.
-	if (const auto seq = SeqOfKey(key)) {
+	if (const auto seq = SeqOfKey(key); seq && uncache) {
 		if (const auto db = _session->local()) {
 			db->deleteMessage(chat, seq);
 		}
+		// Its photo / video / voice / file in the disk cache too.
+		_session->media().evictAttachment(chat, seq);
 	}
 	const auto i = existing(chat);
 	if (!i) {
@@ -529,6 +625,9 @@ void Messages::dropMessages(const QString &chat, const QVector<qint64> &seqs, bo
 		for (const auto seq : seqs) {
 			db->deleteMessage(chat, seq);
 		}
+	}
+	for (const auto seq : seqs) {
+		_session->media().evictAttachment(chat, seq);
 	}
 }
 
@@ -1173,8 +1272,17 @@ void Messages::editWithPreview(
 }
 
 void Messages::deleteMessage(const QString &chat, qint64 seq, bool forEveryone) {
-	removeMessage(chat, Message::KeyForSeq(seq));
+	const auto key = Message::KeyForSeq(seq);
+	// Until the server agrees it only leaves the screen: the cache keeps it,
+	// and a refusal (offline, the time for «delete for everyone» is over)
+	// puts it back.
+	const auto shown = find(chat, seq);
+	const auto removed = shown ? std::make_optional(*shown) : std::nullopt;
+	removeMessage(chat, key, false);
 	// The row's preview follows when the newest message went away.
+	auto previous = std::optional<Message>();
+	auto previousMine = false;
+	auto previewLost = false;
 	if (const auto row = _session->chats().chat(chat); row && row->lastMessage && row->lastMessage->seq == seq) {
 		const auto &items = historyRef(chat).items;
 		auto last = std::optional<Message>();
@@ -1184,19 +1292,74 @@ void Messages::deleteMessage(const QString &chat, qint64 seq, bool forEveryone) 
 				break;
 			}
 		}
+		previous = row->lastMessage;
+		previousMine = row->lastMine;
+		previewLost = !last;
 		_session->chats().patch(chat, [&](Chat &c) {
 			c.lastMessage = last;
 			c.lastMine = last && last->mine;
 		});
 	}
-	simple(IsGroupId(chat) ? u"groups.delete"_s : u"chat.delete"_s, QJsonObject{
-		{ ChatKey(chat), chat },
-		{ u"seq"_s, double(seq) },
-		{ u"scope"_s, forEveryone ? u"everyone"_s : u"me"_s },
-	}, u"message.delete"_s, chat, [=, this] {
-		// Bring it back.
-		if (historyRef(chat).loaded) {
-			loadLatest(chat);
+	const auto action = u"message.delete"_s;
+	_session->transport().rpc(IsGroupId(chat) ? u"groups.delete"_s : u"chat.delete"_s)
+		.body(QJsonObject{
+			{ ChatKey(chat), chat },
+			{ u"seq"_s, double(seq) },
+			{ u"scope"_s, forEveryone ? u"everyone"_s : u"me"_s },
+		})
+		.guard(this)
+		.done([=, this] {
+			// Now out of the cache too (and of the window, should an edit
+			// have brought it back meanwhile).
+			removeMessage(chat, key);
+			if (previewLost) {
+				// The message before it is not known here: the inbox has it.
+				_session->chats().loadInbox();
+			}
+		})
+		.fail([=, this](const Api::Error &error) {
+			if (IsGroupId(chat) && _session->groups().handleError(chat, error)) {
+				// The group is gone, and its timeline with it.
+				_session->reportFailure(action, chat, error);
+				return;
+			}
+			restoreDeleted(chat, removed, previous, previousMine);
+			_session->reportFailure(action, chat, error);
+		})
+		.send();
+}
+
+// A delete the server refused: the message returns to the window it was
+// taken from (the cache never lost it), the row to its preview.
+void Messages::restoreDeleted(
+		const QString &chat,
+		const std::optional<Message> &message,
+		const std::optional<Message> &preview,
+		bool previewMine) {
+	if (message && !find(chat, message->seq)) {
+		const auto &history = historyRef(chat);
+		const auto first = history.firstSeq();
+		const auto last = history.lastSeq();
+		const auto seq = message->seq;
+		// Only where the window has no hole for it (it may have moved).
+		const auto belongs = (first > 0)
+			? ((seq >= first || !history.hasMoreBefore)
+				&& (seq <= last || !history.hasMoreAfter))
+			: history.loaded;
+		if (belongs) {
+			merge(chat, { *message }, false);
+		}
+	}
+	if (!preview) {
+		return;
+	}
+	_session->chats().patch(chat, [&](Chat &c) {
+		// Unless something newer took the row meanwhile.
+		const auto current = c.lastMessage ? c.lastMessage->seq : 0;
+		const auto pending = c.lastMessage && c.lastMessage->local();
+		if (!pending && current < preview->seq) {
+			c.lastMessage = preview;
+			c.lastMine = previewMine;
 		}
 	});
 }

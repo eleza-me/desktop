@@ -394,6 +394,8 @@ InputField::InputField(
 	_inner->setFont(_st.font->f);
 	_inner->document()->setDefaultFont(_st.font->f);
 	_inner->setCursorWidth(1);
+	// The placeholder is painted by us: screen readers get it as the name.
+	_inner->setAccessibleName(_placeholder);
 	if (_mode == Mode::SingleLine) {
 		_inner->setLineWrapMode(QTextEdit::NoWrap);
 		_inner->setWordWrapMode(QTextOption::NoWrap);
@@ -467,6 +469,7 @@ void InputField::insertText(const QString &text) {
 
 void InputField::setPlaceholder(const QString &placeholder) {
 	_placeholder = placeholder;
+	_inner->setAccessibleName(_placeholder);
 	update();
 }
 
@@ -940,6 +943,7 @@ MaskedInputField::MaskedInputField(
 	_inner->setContentsMargins(0, 0, 0, 0);
 	_inner->setFont(_st.font->f);
 	_inner->setAlignment(Qt::AlignLeading | Qt::AlignVCenter);
+	_inner->setAccessibleName(_placeholder);
 	setFocusProxy(_inner);
 	setFocusPolicy(Qt::StrongFocus);
 	setCursor(style::cur_text);
@@ -983,6 +987,7 @@ void MaskedInputField::clear() {
 
 void MaskedInputField::setPlaceholder(const QString &placeholder) {
 	_placeholder = placeholder;
+	_inner->setAccessibleName(_placeholder);
 	update();
 }
 
@@ -1336,13 +1341,17 @@ PasswordInput::PasswordInput(
 	_toggle->setClickedCallback([this] {
 		setRevealed(!_revealed);
 	});
-	_toggle->setFocusPolicy(Qt::NoFocus);
+	// A Tab stop after the field (a click does not take the focus from it).
+	_toggle->setAccessibleName(CurrentPhrases().show);
 }
 
 void PasswordInput::setRevealed(bool revealed) {
 	_revealed = revealed;
 	setEchoMode(revealed ? QLineEdit::Normal : QLineEdit::Password);
 	_toggle->setIconOverride(revealed ? &st::passwordHideIcon : nullptr);
+	_toggle->setAccessibleName(revealed
+		? CurrentPhrases().hide
+		: CurrentPhrases().show);
 }
 
 void PasswordInput::resizeEvent(QResizeEvent *e) {
@@ -1944,7 +1953,8 @@ SearchField::SearchField(
 	this,
 	object_ptr<IconButton>(this, st.clear))) {
 	_clear->hide(anim::type::instant);
-	_clear->entity()->setFocusPolicy(Qt::NoFocus);
+	// Esc clears the field: no Tab stop for the keyboard.
+	_clear->entity()->setKeyboardFocusable(false);
 	_clear->entity()->setClickedCallback([this] {
 		_field->clear();
 		_field->setFocusFast();

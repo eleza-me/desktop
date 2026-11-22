@@ -4,6 +4,7 @@
 // Compiled into the unit tests on its own (tests/app/test_profile_logic.cpp).
 #pragma once
 
+#include "api/api_auth.h"
 #include "base/timer.h"
 #include "data/data_social_types.h"
 #include "ui/text/text_entity.h"
@@ -121,8 +122,8 @@ struct ButtonModel {
 
 enum class HandleState {
 	Idle, // unchanged
-	Invalid, // not [a-z0-9._]{3,24}
-	Short, // fewer than three letters
+	Invalid, // breaks a rule (Api::Auth::CheckHandle), or the server said so
+	Short, // shorter than the rules allow
 	Checking,
 	Unknown, // the check failed: saving will tell
 	Taken,
@@ -132,12 +133,20 @@ enum class HandleState {
 // What the field holds for something typed: trimmed, lower case, without the
 // leading "@", Persian / Arabic digits as Latin ones.
 [[nodiscard]] QString NormalizeHandle(const QString &typed);
-// Idle, Invalid, Short or Checking (= worth asking the server).
+// Idle, Invalid, Short or Checking (= worth asking the server). A handle
+// that only does not start with a letter is asked about: its owner may keep
+// one from before that rule (the server answers handle.invalid otherwise).
 [[nodiscard]] HandleState ClassifyHandle(
 	const QString &handle,
-	const QString &current);
+	const QString &current,
+	const Api::HandleRules &rules = Api::HandleRules());
 [[nodiscard]] bool HandleBlocksSave(HandleState state);
 [[nodiscard]] bool HandleIsError(HandleState state);
+// The rule a handle breaks, in words («شناسه باید دست‌کم ۴ نویسه باشد»);
+// empty for None.
+[[nodiscard]] QString HandleProblemText(
+	Api::HandleProblem problem,
+	const Api::HandleRules &rules);
 
 // The debounced availability check of the handle field.
 //
@@ -150,6 +159,7 @@ public:
 	enum class Answer {
 		Free,
 		Taken,
+		Invalid, // the server refused it (400 handle.invalid and the like)
 		Failed,
 	};
 	using Request = Fn<void(const QString &handle, Fn<void(Answer)> done)>;
@@ -158,6 +168,7 @@ public:
 
 	void setRequest(Request request);
 	void setChanged(Fn<void()> changed);
+	void setRules(const Api::HandleRules &rules);
 	// The handle the account has now (typing it again is Idle).
 	void setCurrent(const QString &handle);
 	void setValue(const QString &handle);
@@ -179,6 +190,7 @@ private:
 
 	Request _request;
 	Fn<void()> _changed;
+	Api::HandleRules _rules;
 	QString _current;
 	QString _value;
 	HandleState _state = HandleState::Idle;

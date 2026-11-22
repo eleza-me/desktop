@@ -38,8 +38,11 @@ public:
 	void request(const QStringList &ids);
 
 	// Makes the cards available (database, then one batched request per 50
-	// ids) and calls `done`. Unknown / deleted people get a `deleted`
-	// placeholder so rows stop asking.
+	// ids) and calls `done`. Somebody the server leaves out (unknown,
+	// suspended, blocking me) gets a `deleted` placeholder so rows stop
+	// asking; it is kept in memory only and asked for again after
+	// kMissingRecheckMs (they may be back). A deleted account is a card of
+	// the server's own and is stored like any other.
 	void ensure(const QStringList &ids, base::Guard guard, Fn<void()> done);
 	// Refetches one card (a `profile` frame said it changed).
 	void refresh(const QString &id, base::Guard guard = base::Guard(), Fn<void(const User &)> done = nullptr);
@@ -49,6 +52,8 @@ public:
 	void seed(const QVector<User> &users);
 	void seed(const QVector<Profile> &profiles);
 	void seedJson(const QJsonValue &listOrMap);
+
+	static constexpr auto kMissingRecheckMs = qint64(60 * 60 * 1000);
 
 	// ---- the signed-in user
 	// Valid once loaded from the cache or the server.
@@ -74,10 +79,14 @@ private:
 	void fetch(const QStringList &ids, Fn<void()> done);
 	void fetchChunk(const QStringList &ids, int offset, Fn<void()> done);
 	bool store(const User &user);
+	void storeMissing(const QStringList &ids);
+	// Not known, or only a placeholder that is due to be asked for again.
+	[[nodiscard]] bool wanted(const QString &id) const;
 
 	Session *_session = nullptr;
 	QHash<QString, User> _cards;
 	QSet<QString> _pending;
+	QHash<QString, qint64> _missingAt;  // placeholders: when the server left them out
 	base::Timer _flushTimer;
 	Profile _me;
 

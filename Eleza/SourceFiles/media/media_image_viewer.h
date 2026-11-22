@@ -25,9 +25,11 @@
 // An item is one of: `source` (remote, through Support::MakeImageSource), `image`
 // (already decoded), `filePath` (a local picture, decoded on a worker thread) or
 // `videoPath` (a local video file: played by Media::VideoPlayerWidget), or
-// `loadVideo` (a video downloaded when it is shown).
+// `loadVideo` (a video downloaded when it is shown; with `videoDownload` it
+// plays while it arrives, Media::ProgressivePlayback()).
 #pragma once
 
+#include "data/data_media.h"
 #include "ui/effects/animations.h"
 #include "ui/effects/radial_animation.h"
 #include "ui/image/image_source.h"
@@ -69,6 +71,9 @@ struct ViewerItem {
 	// `done` gets the local file (empty: it failed). `videoPoster` is shown
 	// meanwhile. `guard` dies with the viewer.
 	std::function<void(QObject *guard, std::function<void(QString)> done)> loadVideo;
+	// The download loadVideo started (null: none): the video plays from it
+	// once its beginning is on disk.
+	std::function<Data::MediaHandlePtr()> videoDownload;
 };
 
 struct ViewerPaging {
@@ -139,6 +144,8 @@ private:
 	// front).
 	void loadFile(const QString &path, int serial);
 	void loadVideo(int serial);
+	void createVideo(const ViewerItem &item);
+	void streamVideo(int serial, const Data::MediaHandlePtr &handle);
 	[[nodiscard]] int indexOfSerial(int serial) const;
 	void setImage(const QImage &image, bool final);
 	void updateControls();
@@ -182,6 +189,7 @@ private:
 	bool _failed = false;
 	QMetaObject::Connection _sourceConnection;
 	QMetaObject::Connection _previewConnection;
+	QMetaObject::Connection _streamConnection;
 	double _zoom = 1.; // 1 = fitted
 	QPointF _offset; // of the image center from the area center
 	bool _pressed = false;

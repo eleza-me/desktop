@@ -63,6 +63,10 @@ public:
 
 	[[nodiscard]] int naturalWidth() const override;
 
+	QString accessibilityName() const override {
+		return FollowText(_state);
+	}
+
 protected:
 	void paintEvent(QPaintEvent *e) override;
 	int resizeGetHeight(int newWidth) override;

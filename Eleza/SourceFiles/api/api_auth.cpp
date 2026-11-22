@@ -26,8 +26,40 @@ Auth::Auth(Main::Account *account) : _account(account) {
 }
 
 bool Auth::IsValidHandle(const QString &handle) {
-	static const auto kHandle = QRegularExpression(u"^[a-z0-9_.]{3,24}$"_s);
+	static const auto kHandle = QRegularExpression(u"^[a-z0-9_.]{3,32}$"_s);
 	return kHandle.match(handle).hasMatch();
+}
+
+HandleProblem Auth::CheckHandle(
+		const QString &handle,
+		const HandleRules &rules) {
+	if (handle.isEmpty()) {
+		return HandleProblem::Empty;
+	}
+	for (const auto ch : handle) {
+		const auto code = ch.unicode();
+		const auto allowed = (code >= 'a' && code <= 'z')
+			|| (code >= '0' && code <= '9')
+			|| (code == '_')
+			|| (code == '.');
+		if (!allowed) {
+			return HandleProblem::Characters;
+		}
+	}
+	if (handle.size() < rules.minLength) {
+		return HandleProblem::TooShort;
+	} else if (handle.size() > rules.maxLength) {
+		return HandleProblem::TooLong;
+	} else if (handle.startsWith(QLatin1Char('.'))
+		|| handle.endsWith(QLatin1Char('.'))
+		|| handle.contains(u".."_s)) {
+		return HandleProblem::Dots;
+	}
+	const auto first = handle.front().unicode();
+	if (rules.letterFirst && (first < 'a' || first > 'z')) {
+		return HandleProblem::LetterFirst;
+	}
+	return HandleProblem::None;
 }
 
 QString Auth::Latinize(const QString &text) {

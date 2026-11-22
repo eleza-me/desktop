@@ -1,16 +1,22 @@
 // Data::Media: addresses and cache keys, decoding, authenticated downloads
 // through a redirect, the memory and disk caches, and handle sharing.
+#include "base/platform_file.h"
 #include "data/data_image_decode.h"
 #include "data/data_media.h"
+#include "data/data_media_stream.h"
 #include "data/data_upload.h"
 #include "test_harness.h"
 
 #include <QtCore/QBuffer>
 #include <QtCore/QDirIterator>
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QFileInfo>
 #include <QtCore/QTemporaryDir>
 #include <QtGui/QImage>
 #include <QtTest/QSignalSpy>
+
+#include <atomic>
+#include <thread>
 
 using namespace Data;
 using Test::Harness;
@@ -73,12 +79,16 @@ private Q_SLOTS:
 	void memoryOnly();
 	void failureAndRetry();
 	void evict();
+	void deletedMessageLeavesNoMedia();
 	void releasedHandleStopsTheDownload();
 	void urlsCarryNoToken();
 	void diskLimit();
 	void picturesOutliveTheSharedCache();
 	void picturesComeFromDiskAtOnce();
 	void picturesAreOnlyPictures();
+	void uploadProgressIsThrottled();
+	void streamReadsWhatHasArrived();
+	void downloadResumesAndStreams();
 
 };
 
@@ -605,6 +615,36 @@ void TestMedia::evict() {
 	QCOMPARE(harness.http.count("/v1/users/u_ali/avatar"), 2);
 }
 
+void TestMedia::deletedMessageLeavesNoMedia() {
+	auto dir = QTemporaryDir();
+	auto options = Harness::Options();
+	options.cacheDir = dir.filePath(u"media"_s);
+	auto harness = Harness(options);
+	auto &media = harness.session->media();
+	const auto put = [&](const MediaRef &ref, MediaVariant variant) {
+		const auto path = media.filePathFor(ref, variant);
+		QDir().mkpath(QFileInfo(path).absolutePath());
+		auto file = QFile(path);
+		return file.open(QIODevice::WriteOnly) && file.write("bytes") == 5;
+	};
+	const auto deleted = MediaRef::Attachment(u"c1"_s, 3);
+	const auto hidden = MediaRef::Attachment(u"g1"_s, 4);
+	const auto kept = MediaRef::Attachment(u"c1"_s, 5);
+	for (const auto variant : { MediaVariant::Thumb, MediaVariant::Full, MediaVariant::File, MediaVariant::Mp4 }) {
+		QVERIFY(put(deleted, variant));
+		QVERIFY(put(hidden, variant));
+	}
+	QVERIFY(put(kept, MediaVariant::Thumb));
+	QCOMPARE(FilesIn(options.cacheDir), 9);
+
+	// Deleted (here, by the other side, on another device): its files go.
+	harness.messages().removeMessage(u"c1"_s, Data::Message::KeyForSeq(3));
+	QCOMPARE(FilesIn(options.cacheDir), 5);
+	harness.messages().dropMessages(u"g1"_s, { 4 }, true);
+	QCOMPARE(FilesIn(options.cacheDir), 1);
+	QVERIFY(QFile::exists(media.filePathFor(kept, MediaVariant::Thumb)));
+}
+
 void TestMedia::releasedHandleStopsTheDownload() {
 	auto harness = Harness();
 	auto hang = true;
@@ -806,6 +846,229 @@ void TestMedia::picturesAreOnlyPictures() {
 	const auto handle = media.request(ref, MediaVariant::Thumb);
 	QVERIFY(Loaded(handle));
 	QVERIFY(media.picture(ref, MediaVariant::Thumb).isNull());
+}
+
+// Ten reports a second at most, and only a change of 1 %; the first, the
+// last and the forced ones always pass.
+void TestMedia::uploadProgressIsThrottled() {
+	auto throttle = Data::ProgressThrottle();
+	const auto total = qint64(10'000);
+	QVERIFY(throttle.due(0, total, 1000));
+	QVERIFY(!throttle.due(0, total, 2000));       // nothing new
+	QVERIFY(!throttle.due(50, total, 2000));      // less than 1 %
+	QVERIFY(!throttle.due(500, total, 1050));     // too soon
+	QVERIFY(throttle.due(500, total, 1100));
+	QVERIFY(!throttle.due(600, total, 1150));
+	QVERIFY(throttle.due(600, total, 1150, true)); // a part is done
+	QVERIFY(throttle.due(total, total, 1151));    // the end
+	QVERIFY(!throttle.due(total, total, 5000));
+
+	// Hundreds of chunks over a second: about ten reports.
+	auto other = Data::ProgressThrottle();
+	auto reports = 0;
+	for (auto i = 0; i <= 500; ++i) {
+		reports += other.due(qint64(i) * 20, total, 5000 + i * 2) ? 1 : 0;
+	}
+	QVERIFY2(reports >= 10 && reports <= 13, qPrintable(QString::number(reports)));
+}
+
+void TestMedia::streamReadsWhatHasArrived() {
+	auto dir = QTemporaryDir();
+	const auto part = dir.filePath(u"video.mp4.part"_s);
+	const auto done = dir.filePath(u"video.mp4"_s);
+	auto bytes = QByteArray(3000, Qt::Uninitialized);
+	for (auto i = 0; i != bytes.size(); ++i) {
+		bytes[i] = char(i * 7);
+	}
+	auto writer = QFile(part);
+	QVERIFY(writer.open(QIODevice::WriteOnly | QIODevice::Unbuffered));
+	writer.write(bytes.left(1000));
+
+	auto stream = MediaStream(part, bytes.size());
+	stream.setAvailable(1000);
+	QVERIFY(stream.open(QIODevice::ReadOnly));
+	QVERIFY(!stream.isSequential());
+	QCOMPARE(stream.size(), qint64(3000));
+	QCOMPARE(stream.bytesAvailable(), qint64(1000));
+	QVERIFY(!stream.atEnd());
+	QCOMPARE(stream.read(400), bytes.left(400));
+	QCOMPARE(stream.availableShare(), 1000. / 3000.);
+	// Beyond what has arrived, on the stream's own thread: nothing, at once
+	// (and the stream knows it ran out, not that the file ended).
+	QVERIFY(!stream.ranOut());
+	QVERIFY(stream.seek(1500));
+	QCOMPARE(stream.bytesAvailable(), qint64(0));
+	QVERIFY(!stream.atEnd());
+	QCOMPARE(stream.read(100), QByteArray());
+	QVERIFY(stream.ranOut());
+
+	// On another thread a read waits for the bytes.
+	auto got = QByteArray();
+	auto finished = std::atomic<bool>(false);
+	QVERIFY(stream.seek(1500));
+	auto reader = std::thread([&] {
+		got = stream.read(500);
+		finished = true;
+	});
+	Test::Settle(100);
+	QVERIFY(!finished);
+	writer.write(bytes.mid(1000, 1200));
+	stream.setAvailable(2200);
+	QVERIFY(Test::WaitFor([&] { return finished.load(); }));
+	reader.join();
+	QCOMPARE(got, bytes.mid(1500, 500));
+
+	// The part is renamed when complete; the rest comes from the file.
+	finished = false;
+	QVERIFY(stream.seek(2200));
+	reader = std::thread([&] {
+		got = stream.read(800); // waits: 2200 are there
+		finished = true;
+	});
+	Test::Settle(50);
+	stream.setMoving();
+	writer.write(bytes.mid(2200));
+	writer.close();
+	QVERIFY(QFile::rename(part, done));
+	stream.setComplete(done);
+	QVERIFY(Test::WaitFor([&] { return finished.load(); }));
+	reader.join();
+	QCOMPARE(got, bytes.mid(2200));
+	QVERIFY(stream.complete());
+	QCOMPARE(stream.available(), qint64(3000));
+	QVERIFY(stream.seek(0));
+	QCOMPARE(stream.readAll(), bytes);
+	QVERIFY(stream.atEnd());
+
+	// A waiting read ends when the stream is aborted (the player stops).
+	auto other = MediaStream(done, 6000);
+	other.setAvailable(3000);
+	QVERIFY(other.open(QIODevice::ReadOnly));
+	QVERIFY(other.seek(4000));
+	auto result = qint64(0);
+	finished = false;
+	reader = std::thread([&] {
+		auto buffer = QByteArray(10, Qt::Uninitialized);
+		result = other.read(buffer.data(), buffer.size());
+		finished = true;
+	});
+	Test::Settle(50);
+	QVERIFY(!finished);
+	other.abort();
+	QVERIFY(Test::WaitFor([&] { return finished.load(); }));
+	reader.join();
+	QCOMPARE(result, qint64(-1));
+
+	// A read on another thread waits a moment only, then reads as the end.
+	auto slow = MediaStream(done, 6000);
+	slow.setAvailable(3000);
+	QVERIFY(slow.open(QIODevice::ReadOnly));
+	QVERIFY(slow.seek(3500));
+	finished = false;
+	auto timer = QElapsedTimer();
+	timer.start();
+	reader = std::thread([&] {
+		auto buffer = QByteArray(10, Qt::Uninitialized);
+		result = slow.read(buffer.data(), buffer.size());
+		finished = true;
+	});
+	QVERIFY(Test::WaitFor([&] { return finished.load(); }, 5000));
+	reader.join();
+	QCOMPARE(result, qint64(0));
+	QVERIFY(timer.elapsed() >= 900);
+	QVERIFY(slow.ranOut());
+
+	// Opened again after a few seconds more of it (by its average rate).
+	QCOMPARE(MediaStream::RebufferBytes(12000000, 120000), qint64(800000));
+	QCOMPARE(MediaStream::RebufferBytes(12000000, 0), qint64(1) << 20);
+	QCOMPARE(MediaStream::RebufferBytes(100000, 60000), qint64(128) << 10);
+
+	// A failed download fails every read.
+	auto failing = MediaStream(done, 6000);
+	failing.setAvailable(3000);
+	QVERIFY(failing.open(QIODevice::ReadOnly));
+	failing.setFailed();
+	QVERIFY(failing.failed());
+	auto buffer = QByteArray(10, Qt::Uninitialized);
+	QCOMPARE(failing.read(buffer.data(), buffer.size()), qint64(-1));
+}
+
+void TestMedia::downloadResumesAndStreams() {
+	auto dir = QTemporaryDir();
+	auto options = Harness::Options();
+	options.cacheDir = dir.filePath(u"media"_s);
+	auto harness = Harness(options);
+	auto token = Token();
+	harness.api.setTokenProvider(&token);
+	auto video = QByteArray(600000, Qt::Uninitialized);
+	for (auto i = 0; i != video.size(); ++i) {
+		video[i] = char((i * 13) >> 3);
+	}
+	auto cutAfter = 300000;
+	harness.http.handler = [&](const Request &request) {
+		auto response = Response::Bytes(video, "video/mp4");
+		response.headers.push_back({ "ETag", "\"e1\"" });
+		const auto range = request.header("Range");
+		if (range.startsWith("bytes=") && request.header("If-Range") == "\"e1\"") {
+			const auto from = range.mid(6).chopped(1).toLongLong();
+			response.status = 206;
+			response.body = video.mid(from);
+			response.headers.push_back({
+				"Content-Range",
+				"bytes " + QByteArray::number(from) + '-' + QByteArray::number(video.size() - 1)
+					+ '/' + QByteArray::number(video.size()),
+			});
+		}
+		response.cutAfter = std::exchange(cutAfter, -1);
+		return response;
+	};
+	auto &media = harness.session->media();
+	const auto ref = MediaRef::Attachment(u"c1"_s, 9);
+	auto request = Media::Options();
+	request.decode = false;
+
+	// The first half arrives, then the connection drops.
+	auto handle = media.request(ref, MediaVariant::Mp4, request);
+	auto streamable = false;
+	QObject::connect(handle.get(), &MediaHandle::partialChanged, handle.get(), [&] {
+		if (MediaStream::Streamable(*handle, MediaStream::kAudioStart)) {
+			streamable = true;
+		}
+	});
+	QVERIFY(Loaded(handle));
+	QVERIFY(handle->isFailed());
+	QVERIFY(streamable);
+	QVERIFY(handle->partialPath().isEmpty());
+	const auto path = media.filePathFor(ref, MediaVariant::Mp4);
+	QCOMPARE(QFileInfo(path + u".part"_s).size(), qint64(300000));
+	// Not counted in the cache, never pruned while it may be continued.
+	QCOMPARE(media.diskUsage(), qint64(0));
+
+	// Asked again: the rest only, played while it comes.
+	handle = media.request(ref, MediaVariant::Mp4, request);
+	QVERIFY(handle->state() == MediaHandle::State::Loading);
+	auto stream = std::unique_ptr<MediaStream>();
+	auto read = QByteArray();
+	QObject::connect(handle.get(), &MediaHandle::partialChanged, handle.get(), [&] {
+		if (!stream && MediaStream::Streamable(*handle, MediaStream::kAudioStart)) {
+			QCOMPARE(handle->totalBytes(), qint64(video.size()));
+			stream = std::make_unique<MediaStream>(handle);
+			QVERIFY(stream->open(QIODevice::ReadOnly));
+			read = stream->read(200000);
+		}
+	});
+	QVERIFY(Loaded(handle));
+	QVERIFY(handle->isReady());
+	QCOMPARE(harness.http.requests.size(), 2);
+	QCOMPARE(harness.http.requests.back().header("Range"), QByteArray("bytes=300000-"));
+	QVERIFY(stream != nullptr);
+	QCOMPARE(read, video.left(200000));
+	QVERIFY(stream->complete());
+	QCOMPARE(stream->readAll(), video.mid(200000));
+	QCOMPARE(base::platform::ReadFile(handle->filePath()).value_or(QByteArray()), video);
+	QVERIFY(!QFileInfo::exists(path + u".part"_s));
+	QVERIFY(!QFileInfo::exists(path + u".part.tag"_s));
+	QCOMPARE(media.diskUsage(), qint64(video.size()));
 }
 
 QTEST_GUILESS_MAIN(TestMedia)

@@ -1245,7 +1245,8 @@ void Chats::flushDrafts() {
 // ---- typing
 
 void Chats::capability(const QString &chat, Fn<void(const QString &)> done) {
-	const auto now = base::unixtime::nowMs();
+	// expires_at is the server's clock.
+	const auto now = base::unixtime::serverNowMs();
 	if (const auto i = _capabilities.constFind(chat);
 		i != _capabilities.cend() && i->expiresAt > now + 5000) {
 		done(i->cap);

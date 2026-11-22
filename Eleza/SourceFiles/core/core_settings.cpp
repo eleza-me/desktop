@@ -34,7 +34,20 @@ constexpr auto kSaveDelay = 600;
 	return style::ThemeMode::System;
 }
 
+[[nodiscard]] int UiScaleFrom(const QJsonObject &root) {
+	return Settings::NormalizeUiScale(
+		root.value(QStringLiteral("ui_scale")).toInt(Settings::kUiScaleMin));
+}
+
 } // namespace
+
+#ifndef Q_OS_WIN
+bool SystemReducesMotion() {
+	// Qt 6.4 tells nothing of it on Linux (the GTK / GNOME setting is not
+	// read): the user chooses in the settings.
+	return false;
+}
+#endif // !Q_OS_WIN
 
 Settings::Settings(const QString &path, QObject *parent)
 : QObject(parent)
@@ -116,6 +129,11 @@ void Settings::read() {
 		qint64(root.value(QStringLiteral("media_cache_limit")).toDouble(0.)),
 		qint64(0));
 	_autoUpdate = root.value(QStringLiteral("auto_update")).toBool(true);
+	_uiScale = UiScaleFrom(root);
+	const auto reduceMotion = root.value(QStringLiteral("reduce_motion"));
+	_reduceMotion = reduceMotion.isBool()
+		? std::make_optional(reduceMotion.toBool())
+		: std::nullopt;
 	const auto calls = root.value(QStringLiteral("calls")).toObject();
 	_calls = CallSettings();
 	_calls.inputDevice = QByteArray::fromBase64(
@@ -224,6 +242,12 @@ QJsonObject Settings::serialize() const {
 			double(_mediaCacheLimit));
 	}
 	root.insert(QStringLiteral("auto_update"), _autoUpdate);
+	if (_uiScale != kUiScaleMin) {
+		root.insert(QStringLiteral("ui_scale"), _uiScale);
+	}
+	if (_reduceMotion) {
+		root.insert(QStringLiteral("reduce_motion"), *_reduceMotion);
+	}
 	if (!(_calls == CallSettings())) {
 		auto calls = QJsonObject();
 		if (!_calls.inputDevice.isEmpty()) {
@@ -430,6 +454,34 @@ void Settings::setCalls(const CallSettings &settings) {
 void Settings::setAutoUpdate(bool enabled) {
 	if (_autoUpdate != enabled) {
 		_autoUpdate = enabled;
+		scheduleWrite();
+	}
+}
+
+int Settings::NormalizeUiScale(int percent) {
+	return std::clamp(percent, kUiScaleMin, kUiScaleMax);
+}
+
+int Settings::ReadUiScale(const QString &path) {
+	auto file = QFile(path);
+	if (path.isEmpty() || !file.open(QIODevice::ReadOnly)) {
+		return kUiScaleMin;
+	}
+	const auto document = QJsonDocument::fromJson(file.readAll());
+	return document.isObject() ? UiScaleFrom(document.object()) : kUiScaleMin;
+}
+
+void Settings::setUiScale(int percent) {
+	percent = NormalizeUiScale(percent);
+	if (_uiScale != percent) {
+		_uiScale = percent;
+		scheduleWrite();
+	}
+}
+
+void Settings::setReduceMotion(bool reduce) {
+	if (_reduceMotion != reduce) {
+		_reduceMotion = reduce;
 		scheduleWrite();
 	}
 }

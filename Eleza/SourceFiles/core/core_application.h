@@ -6,6 +6,7 @@
 //   Core::App().session()                   Main::Session of the signed-in user, or null
 //   Core::App().setLanguage(...)            switches the language at runtime
 //   Core::App().setThemeMode(...)           System / Light / Dark
+//   Core::App().setReduceMotion(...)        «کاهش حرکت»: the animations off
 //   Core::App().window()                    the main window
 //   Core::App().openRoute(route)            now, or as soon as the session is shown
 //   Core::App().updater()                   in-app updates (updater/updater_checker.h)
@@ -103,6 +104,10 @@ public:
 	void setThemeMode(style::ThemeMode mode);
 	// Light <-> dark, as a manual override.
 	void toggleTheme();
+	// «کاهش حرکت»; reduceMotion() is what applies now (the user's choice or
+	// the system's setting).
+	void setReduceMotion(bool reduce);
+	[[nodiscard]] bool reduceMotion() const;
 
 #ifdef ELEZA_DEBUG_TOOLS
 	void showGallery(const QString &page = QString());
@@ -179,6 +184,7 @@ private:
 
 	void createAccount();
 	void applyLanguage(Lang::Language language);
+	void applyReduceMotion();
 	void refreshPhrases();
 	void rebuildContent();
 	void showSession();

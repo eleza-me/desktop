@@ -786,6 +786,20 @@ void TestModels::selfDestructAndBars() {
 	const auto again = Group::FromJson(group.toJson());
 	QCOMPARE(again.outboxReadSeq, qint64(3));
 	QCOMPARE(again.addedBy, u"u17"_s);
+
+	// A chat I hid on a phone (docs/hidden-chats.md): marked, kept stored.
+	auto chat = Chat();
+	chat.info = ChatInfo::FromJson(Test::Json(R"({"chat":"c9","hidden":true})"));
+	QVERIFY(chat.info.hidden);
+	QVERIFY(chat.hidden());
+	QVERIFY(Chat::FromStored(chat.toStored()).hidden());
+	QVERIFY(!ChatInfo::FromJson(info.toJson()).hidden);
+	auto hiddenGroup = Chat();
+	hiddenGroup.isGroup = true;
+	hiddenGroup.group = Group::FromJson(Test::Json(R"({"group":"j2","hidden":true})"));
+	QVERIFY(hiddenGroup.hidden());
+	QVERIFY(Group::FromJson(hiddenGroup.group->toJson()).hidden);
+	QVERIFY(!Group::FromJson(group.toJson()).hidden);
 }
 
 QTEST_GUILESS_MAIN(TestModels)

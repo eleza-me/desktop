@@ -6,6 +6,25 @@
 #include <QtCore/QRegularExpression>
 
 namespace Support {
+namespace {
+
+// The server's localized message, unless it is only an identifier
+// ("chat.not_found"), which is not for people.
+[[nodiscard]] bool HumanMessage(const Api::Error &error) {
+	static const auto kIdentifier = QRegularExpression(
+		QStringLiteral("^[A-Za-z_.]+$"));
+	return !error.message.isEmpty()
+		&& error.message != error.code
+		&& !kIdentifier.match(error.message).hasMatch();
+}
+
+// Codes whose message says more than our phrase: the server names the rule
+// that failed (handle.invalid: which of the handle rules in force).
+[[nodiscard]] bool ServerSaysMore(const QString &code) {
+	return (code == u"handle.invalid");
+}
+
+} // namespace
 
 QString ErrorPhrase(const QString &code) {
 	if (code.isEmpty()) {
@@ -104,7 +123,9 @@ QString ErrorText(const Api::Error &error, const QString &fallback) {
 	if (error.offline()) {
 		return tr::lng_error_connection(tr::now);
 	}
-	if (const auto phrase = ErrorPhrase(error.code); !phrase.isEmpty()) {
+	if (ServerSaysMore(error.code) && HumanMessage(error)) {
+		return error.message;
+	} else if (const auto phrase = ErrorPhrase(error.code); !phrase.isEmpty()) {
 		return phrase;
 	}
 	if (error.status == 429) {
@@ -115,12 +136,7 @@ QString ErrorText(const Api::Error &error, const QString &fallback) {
 			lt_code,
 			Lang::Num(error.status));
 	}
-	// A message that is only an identifier ("chat.not_found") is not for people.
-	static const auto kIdentifier = QRegularExpression(
-		QStringLiteral("^[A-Za-z_.]+$"));
-	if (!error.message.isEmpty()
-		&& error.message != error.code
-		&& !kIdentifier.match(error.message).hasMatch()) {
+	if (HumanMessage(error)) {
 		return error.message;
 	}
 	const auto detail = error.code.isEmpty()

@@ -12,6 +12,7 @@
 #include "lang_auto.h"
 #include "main/main_account.h"
 #include "main/main_session.h"
+#include "profile/profile_logic.h"
 #include "support/brand_mark.h"
 #include "support/error_text.h"
 #include "support/links.h"
@@ -102,6 +103,11 @@ public:
 		_iso = country ? country->iso : QString();
 		_name = country ? country->name() : tr::lng_intro_country(tr::now);
 		update();
+		accessibilityNameChanged();
+	}
+
+	QString accessibilityName() const override {
+		return _name;
 	}
 
 protected:
@@ -227,6 +233,11 @@ class HandleInput final : public Ui::MaskedInputField {
 public:
 	using MaskedInputField::MaskedInputField;
 
+	// The longest handle the server takes (client-config).
+	void setLimit(int limit) {
+		_limit = limit;
+	}
+
 protected:
 	void correctValue(
 			const QString &was,
@@ -245,7 +256,7 @@ protected:
 				|| (ch == '_')
 				|| (ch == '.');
 			// A pasted "@name" loses its sign silently.
-			if (allowed && result.size() < 24) {
+			if (allowed && result.size() < _limit) {
 				result.append(lower[i]);
 			} else if (i < nowCursor) {
 				--cursor;
@@ -254,6 +265,9 @@ protected:
 		now = result;
 		nowCursor = std::clamp(cursor, 0, int(result.size()));
 	}
+
+private:
+	int _limit = Api::HandleRules().maxLength;
 
 };
 
@@ -1148,6 +1162,7 @@ public:
 			style::margins(0, 0, 0, st::introPhotoSkip),
 			style::al_top);
 		_photo->setClickedCallback([this] { choosePhoto(); });
+		_photo->setAccessibleName(tr::lng_support_pick_image(tr::now));
 
 		_name = layout->add(
 			Ui::object_ptr<Ui::InputField>(
@@ -1158,7 +1173,9 @@ public:
 		_name->setMaxLength(std::max(
 			intro->account().clientConfig().displayNameMaxChars(),
 			1));
+		_handleRules = intro->account().clientConfig().handleRules();
 		_handle = layout->add(Ui::object_ptr<HandleField>(layout));
+		_handle->input()->setLimit(_handleRules.maxLength);
 		_hint = layout->add(
 			Ui::object_ptr<HintLine>(layout),
 			style::margins(0, st::introHintSkip, 0, 0));
@@ -1227,15 +1244,19 @@ public:
 			_name->showError();
 			showError(tr::lng_intro_name_required(tr::now));
 			return;
-		} else if (!Api::Auth::IsValidHandle(handle)) {
+		} else if (const auto problem = Api::Auth::CheckHandle(
+				handle,
+				_handleRules); problem != Api::HandleProblem::None) {
 			_handle->showError();
-			showError((handle.size() < 3)
-				? tr::lng_intro_username_needs_at_least_3(tr::now)
-				: tr::lng_intro_username_rules(tr::now));
+			showError(Profile::HandleProblemText(problem, _handleRules));
 			return;
 		} else if (_handleState == HandleState::Taken) {
 			_handle->showError();
 			showError(tr::lng_intro_username_taken(tr::now));
+			return;
+		} else if (_handleState == HandleState::Refused) {
+			_handle->showError();
+			showError(_refusedText);
 			return;
 		}
 		setWorking(true);
@@ -1254,6 +1275,7 @@ private:
 		Invalid,
 		Checking,
 		Taken,
+		Refused, // the server's check said handle.invalid (_refusedText)
 		Available,
 		Failed,
 	};
@@ -1281,7 +1303,8 @@ private:
 		const auto handle = _handle->text();
 		if (handle.isEmpty()) {
 			_handleState = HandleState::Empty;
-		} else if (!Api::Auth::IsValidHandle(handle)) {
+		} else if (Api::Auth::CheckHandle(handle, _handleRules)
+				!= Api::HandleProblem::None) {
 			_handleState = HandleState::Invalid;
 		} else {
 			_handleState = HandleState::Checking;
@@ -1296,15 +1319,18 @@ private:
 			_hint->clear();
 			break;
 		case HandleState::Invalid:
-			_hint->setError((_handle->text().size() < 3)
-				? tr::lng_intro_username_needs_at_least_3(tr::now)
-				: tr::lng_intro_username_rules(tr::now));
+			_hint->setError(Profile::HandleProblemText(
+				Api::Auth::CheckHandle(_handle->text(), _handleRules),
+				_handleRules));
 			break;
 		case HandleState::Checking:
 			_hint->setText(tr::lng_intro_checking_username(tr::now));
 			break;
 		case HandleState::Taken:
 			_hint->setError(tr::lng_intro_username_taken(tr::now));
+			break;
+		case HandleState::Refused:
+			_hint->setError(_refusedText);
 			break;
 		case HandleState::Available:
 			_hint->setText(
@@ -1331,11 +1357,21 @@ private:
 			if (!_errorShown) {
 				refreshHandleHint();
 			}
-		}, [=, this](const Api::Error &) {
+		}, [=, this](const Api::Error &error) {
 			if (generation != _checkGeneration) {
 				return;
 			}
-			_handleState = HandleState::Failed;
+			// 400: a rule of the server's (handle.invalid, a name kept for
+			// bots), said in its words; anything else is checked again on
+			// «ادامه».
+			if (error.status == 400 && !error.offline()) {
+				_handleState = HandleState::Refused;
+				_refusedText = Support::ErrorText(
+					error,
+					tr::lng_intro_username_rules(tr::now));
+			} else {
+				_handleState = HandleState::Failed;
+			}
 			if (!_errorShown) {
 				refreshHandleHint();
 			}
@@ -1465,6 +1501,12 @@ private:
 					_handleState = HandleState::Taken;
 					_handle->showError();
 					showError(tr::lng_intro_username_taken(tr::now));
+				} else if (error.code.startsWith(u"handle.")) {
+					// handle.invalid: the server's words say which rule.
+					_handleState = HandleState::Refused;
+					_refusedText = Support::ErrorText(error);
+					_handle->showError();
+					showError(_refusedText);
 				} else {
 					showError(Support::ErrorText(error));
 				}
@@ -1478,6 +1520,8 @@ private:
 	Ui::RoundButton *_submit = nullptr;
 	QTimer _checkTimer;
 	HandleState _handleState = HandleState::Empty;
+	Api::HandleRules _handleRules;
+	QString _refusedText;
 	int _checkGeneration = 0;
 	bool _errorShown = false;
 	bool _working = false;

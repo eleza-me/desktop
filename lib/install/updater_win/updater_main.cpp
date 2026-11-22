@@ -18,8 +18,9 @@
 //      nothing of the request that it cannot check (see RunElevatedInstall)
 //      and only swaps the files: it writes nothing among the user's files (no
 //      log, no result, the new files are copied out of the staging directory,
-//      never moved), and the app is started again by this process, so it
-//      never runs with administrator rights.
+//      never moved, and installed only when they are exactly what the signed
+//      manifest kept next to them lists), and the app is started again by
+//      this process, so it never runs with administrator rights.
 //   4. Swaps the files, with a rollback when anything fails; writes the result
 //      file for the next start of the app.
 //   5. Starts Eleza.exe again with the arguments it had.
@@ -27,6 +28,8 @@
 // There is no window: the swap is renames inside one volume and normally takes
 // well under a second.
 #include "install/install_helper.h"
+#include "install/install_verify.h"
+#include "updater/updater_keys.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -51,6 +54,9 @@ constexpr auto kRenameRetries = 40;
 constexpr auto kRenameRetryDelayMs = 250;
 
 constexpr auto kUpdaterName = L"Updater.exe";
+// The package of the signed manifest that is installed here (what
+// Updater::PlatformKey() names on Windows).
+constexpr auto kPlatform = "windows-x64";
 
 enum ExitCode : int {
 	kExitInstalled = 0,
@@ -287,6 +293,45 @@ private:
 
 };
 
+// The signed manifest kept next to the staged version (install_verify.h):
+// its signature with the keys built into this program, a version newer than
+// this program's own, and the files with their hashes.
+[[nodiscard]] std::optional<Install::SignedPackage> ReadKeptManifest(
+		Install::FileOps &ops,
+		const Install::Path &updatesDir,
+		const std::string &version) {
+	auto manifest = std::string();
+	auto signature = std::string();
+	if (!ops.readText(
+			updatesDir / Install::PathFromUtf8(version + Install::kManifestSuffix),
+			manifest,
+			Install::kMaxManifestBytes)
+		|| !ops.readText(
+			updatesDir / Install::PathFromUtf8(version + Install::kSignatureSuffix),
+			signature,
+			Install::kMaxSignatureBytes)) {
+		return std::nullopt;
+	}
+	auto keys = std::vector<std::string_view>();
+	for (const auto key : Updater::kPublicKeys) {
+		keys.push_back(key);
+	}
+	auto error = std::string();
+	auto result = Install::ReadSignedPackage(
+		manifest,
+		signature,
+		Install::DecodePublicKeys(keys),
+		kPlatform,
+		error);
+	if (!result
+		|| result->version != version
+		|| Install::CompareVersions(result->version, ELEZA_UPDATER_VERSION).value_or(0) <= 0) {
+		// Not newer than what is installed: an old signed release replayed.
+		return std::nullopt;
+	}
+	return result;
+}
+
 // The swap with administrator rights. The request lies among the user's files,
 // so only what can be checked is used:
 //   * the install directory is the one this program lies in (it is started
@@ -294,6 +339,10 @@ private:
 //     and the list of files are there;
 //   * the new version is <the request's directory>/<version>, neither of the
 //     two a link or a junction;
+//   * what is installed is exactly what a manifest signed with one of the
+//     keys built into this program lists, for a version newer than this one:
+//     the files are copied into the install directory first, out of the
+//     user's reach, and checked there before the swap (install_verify.h);
 //   * the log, the result and the removal of the staging directory are left
 //     to the copy that started this one, which runs as the user.
 [[nodiscard]] int RunElevatedInstall(
@@ -303,6 +352,9 @@ private:
 	const auto self = OwnPath();
 	if (self.empty()
 		|| !SamePath(Install::Path(self).parent_path(), params.installDir)) {
+		return kExitRefused;
+	}
+	if (!Install::IsSafeVersion(params.version)) {
 		return kExitRefused;
 	}
 	const auto installDir = Install::Path(self).parent_path();
@@ -317,6 +369,10 @@ private:
 		|| !SamePath(stagedDir, params.stagedDir)) {
 		return kExitRefused;
 	}
+	const auto signedPackage = ReadKeptManifest(plain, updatesDir, params.version);
+	if (!signedPackage) {
+		return kExitRefused;
+	}
 	auto ops = ElevatedOps(stagedDir);
 	auto request = Install::Request();
 	request.installDir = installDir;
@@ -325,6 +381,12 @@ private:
 	request.lastFile = params.executable;
 	request.retries = kRenameRetries;
 	request.retryDelayMs = kRenameRetryDelayMs;
+	request.verify = [&](
+			const Install::Path &incoming,
+			const std::vector<std::string> &files,
+			std::string &error) {
+		return Install::VerifyFiles(ops, incoming, files, *signedPackage, error);
+	};
 	const auto applied = Install::Apply(request, ops);
 	if (applied.status != Install::Status::Installed) {
 		return (applied.status == Install::Status::Broken)

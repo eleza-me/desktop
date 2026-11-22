@@ -7,6 +7,9 @@
 #include "data/data_transport.h"
 #include "data/data_users.h"
 
+#include <algorithm>
+#include <vector>
+
 namespace Data {
 namespace {
 
@@ -96,10 +99,12 @@ void Feed::store(const Post &post, qint64 now) {
 	for (const auto &part : post.threadParts) {
 		store(part, now);
 	}
+	_storedAt.insert(post.id, ++_storedCounter);
 	const auto i = _posts.find(post.id);
 	if (i == _posts.end()) {
 		_posts.insert(post.id, post);
 		_statsAt.insert(post.id, now);
+		trimStore(now);
 	} else if (_localUntil.value(post.id) > now) {
 		// A local (optimistic) change is fresher than this copy's stats.
 		const auto counts = i->counts;
@@ -112,6 +117,51 @@ void Feed::store(const Post &post, qint64 now) {
 		_statsAt.insert(post.id, now);
 	}
 	Q_EMIT postChanged(post.id);
+}
+
+void Feed::hold(const QString &id) {
+	if (!id.isEmpty()) {
+		++_holds[id];
+	}
+}
+
+void Feed::unhold(const QString &id) {
+	const auto i = _holds.find(id);
+	if (i != _holds.end() && --i.value() <= 0) {
+		_holds.erase(i);
+		_storedAt.insert(id, ++_storedCounter); // just shown: kept the longest
+	}
+}
+
+void Feed::trimStore(qint64 now) {
+	// Now and then, not on every post: down to the limit once well past it.
+	constexpr auto kSlack = 256;
+	if (_posts.size() <= _holds.size() + kKeepUnheld + kSlack) {
+		return;
+	}
+	auto candidates = std::vector<std::pair<quint64, QString>>();
+	candidates.reserve(_posts.size());
+	for (auto i = _posts.cbegin(); i != _posts.cend(); ++i) {
+		const auto &id = i.key();
+		if (!_holds.contains(id) && _localUntil.value(id) <= now) {
+			candidates.emplace_back(_storedAt.value(id), id);
+		}
+	}
+	const auto excess = int(candidates.size()) - kKeepUnheld;
+	if (excess <= 0) {
+		return;
+	}
+	std::nth_element(
+		candidates.begin(),
+		candidates.begin() + excess,
+		candidates.end());
+	for (auto i = 0; i != excess; ++i) {
+		const auto &id = candidates[i].second;
+		_posts.remove(id);
+		_storedAt.remove(id);
+		_statsAt.remove(id);
+		_localUntil.remove(id);
+	}
 }
 
 void Feed::merge(const QVector<Post> &posts) {

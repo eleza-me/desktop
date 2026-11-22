@@ -31,6 +31,10 @@ namespace Main {
 class Session;
 } // namespace Main
 
+namespace Data {
+class Feed;
+} // namespace Data
+
 namespace Support {
 class UserpicPainter;
 } // namespace Support
@@ -287,6 +291,7 @@ private:
 	void requestTile(Tile &tile);
 
 	CardHost *_host = nullptr;
+	QPointer<Data::Feed> _feed;
 	CardOptions _options;
 	Data::Post _post;
 	bool _expanded = false;

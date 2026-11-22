@@ -110,6 +110,16 @@ public:
 
 	[[nodiscard]] int naturalWidth() const override;
 
+	QAccessible::Role accessibilityRole() const override {
+		return QAccessible::CheckBox;
+	}
+	QString accessibilityName() const override {
+		return _text.toString();
+	}
+	std::optional<bool> accessibilityChecked() const override {
+		return checked();
+	}
+
 Q_SIGNALS:
 	void checkedChanged(bool checked);
 
@@ -138,11 +148,20 @@ public:
 	[[nodiscard]] bool checked() const;
 	void setChecked(bool checked, bool animated = true);
 
+	// Name it with setAccessibleName(): the label is a widget of its own.
+	QAccessible::Role accessibilityRole() const override {
+		return QAccessible::CheckBox;
+	}
+	std::optional<bool> accessibilityChecked() const override {
+		return checked();
+	}
+
 Q_SIGNALS:
 	void checkedChanged(bool checked);
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
+	void paintFocusRing(QPainter &p) override;
 
 private:
 	ToggleView _view;
@@ -194,6 +213,14 @@ public:
 	~Radiobutton();
 
 	[[nodiscard]] int naturalWidth() const override;
+
+	QAccessible::Role accessibilityRole() const override {
+		return QAccessible::RadioButton;
+	}
+	QString accessibilityName() const override {
+		return _text.toString();
+	}
+	std::optional<bool> accessibilityChecked() const override;
 
 protected:
 	void paintEvent(QPaintEvent *e) override;

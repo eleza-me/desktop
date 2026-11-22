@@ -408,7 +408,8 @@ QString CompactCount(qint64 value) {
 		return Num(value);
 	}
 	const auto million = qint64(1'000'000);
-	const auto thousands = (value < million);
+	// 999,500 and up round to a thousand thousands: «۱ میلیون» instead.
+	const auto thousands = (value < million - 500);
 	const auto number = thousands
 		? ((value < 10'000) ? OneDecimal(value, 1000) : Rounded(value, 1000))
 		: OneDecimal(value, million);
@@ -429,16 +430,20 @@ QString LastSeen(
 		return tr::lng_status_online(tr::now);
 	} else if (status == QStringLiteral("recently")) {
 		return tr::lng_status_last_seen_recently(tr::now);
-	} else if (status == QStringLiteral("within_week")
+	} else if (status == QStringLiteral("last_week")
+		|| status == QStringLiteral("within_week")
 		|| status == QStringLiteral("week")) {
 		return tr::lng_status_last_seen_week(tr::now);
-	} else if (status == QStringLiteral("within_month")
+	} else if (status == QStringLiteral("last_month")
+		|| status == QStringLiteral("within_month")
 		|| status == QStringLiteral("month")) {
 		return tr::lng_status_last_seen_month(tr::now);
 	} else if (status == QStringLiteral("long_ago")) {
 		return tr::lng_status_last_seen_long_ago(tr::now);
 	} else if (lastSeenAt <= 0) {
-		return status.isEmpty()
+		// "offline" comes with the exact time; without it there is
+		// nothing to tell.
+		return (status.isEmpty() || status == QStringLiteral("offline"))
 			? QString()
 			: tr::lng_status_last_seen_recently(tr::now);
 	}

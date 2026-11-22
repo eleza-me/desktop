@@ -323,13 +323,14 @@ message ChatMediaCountsResponse {
   MediaCounts body = 1 [json_name = "body"]; // the HTTP body itself
 }
 
-// chat.member — PATCH /v1/chats/{id}/member (Mute (timed: mute_for)/archive/clear history for me).
+// chat.member — PATCH /v1/chats/{id}/member (Mute (timed: mute_for)/archive/hide (docs/hidden-chats.md)/clear history for me).
 message ChatMemberRequest {
   string chat = 1 [json_name = "chat"]; // path parameter {id}
   optional bool muted = 2 [json_name = "muted"]; // body
   string mute_for = 3 [json_name = "mute_for"]; // body
   optional bool archived = 4 [json_name = "archived"]; // body
   bool clear_history = 5 [json_name = "clear_history"]; // body
+  optional bool hidden = 6 [json_name = "hidden"]; // body
 }
 
 // chat.member — answer of PATCH /v1/chats/{id}/member.
@@ -394,6 +395,66 @@ message ChatPlayedRequest {
 
 // chat.played — answer of POST /v1/chats/{id}/messages/{seq}/played.
 message ChatPlayedResponse {
+}
+
+// chat.poll.close — POST /v1/chats/{id}/messages/{seq}/poll/close (Stop my poll: no more votes (the sender only; already closed: no change)).
+message ChatPollCloseRequest {
+  string chat = 1 [json_name = "chat"]; // path parameter {id}
+  int64 seq = 2 [json_name = "seq"]; // path parameter {seq}
+}
+
+// chat.poll.close — answer of POST /v1/chats/{id}/messages/{seq}/poll/close.
+message ChatPollCloseResponse {
+  PollView poll = 1 [json_name = "poll"];
+}
+
+// chat.poll.get — GET /v1/chats/{id}/messages/{seq}/poll (A poll as I see it now (my_options; a quiz's answer once I answered or it is closed)).
+message ChatPollGetRequest {
+  string chat = 1 [json_name = "chat"]; // path parameter {id}
+  int64 seq = 2 [json_name = "seq"]; // path parameter {seq}
+}
+
+// chat.poll.get — answer of GET /v1/chats/{id}/messages/{seq}/poll.
+message ChatPollGetResponse {
+  PollView poll = 1 [json_name = "poll"];
+}
+
+// chat.poll.unvote — DELETE /v1/chats/{id}/messages/{seq}/poll/vote (Take my vote back (not in a quiz); nothing to take back: no change).
+message ChatPollUnvoteRequest {
+  string chat = 1 [json_name = "chat"]; // path parameter {id}
+  int64 seq = 2 [json_name = "seq"]; // path parameter {seq}
+}
+
+// chat.poll.unvote — answer of DELETE /v1/chats/{id}/messages/{seq}/poll/vote.
+message ChatPollUnvoteResponse {
+  PollView poll = 1 [json_name = "poll"];
+}
+
+// chat.poll.vote — PUT /v1/chats/{id}/messages/{seq}/poll/vote (Vote in a poll (one option, or several with multiple); a second vote replaces the first, except in a quiz (poll.quiz_final)).
+message ChatPollVoteRequest {
+  string chat = 1 [json_name = "chat"]; // path parameter {id}
+  int64 seq = 2 [json_name = "seq"]; // path parameter {seq}
+  repeated int64 options = 3 [json_name = "options"]; // body
+}
+
+// chat.poll.vote — answer of PUT /v1/chats/{id}/messages/{seq}/poll/vote.
+message ChatPollVoteResponse {
+  PollView poll = 1 [json_name = "poll"];
+}
+
+// chat.poll.voters — GET /v1/chats/{id}/messages/{seq}/poll/voters (Who chose option= of a public poll, newest first (after I voted, or once it is closed)).
+message ChatPollVotersRequest {
+  string chat = 1 [json_name = "chat"]; // path parameter {id}
+  int64 seq = 2 [json_name = "seq"]; // path parameter {seq}
+  string option = 3 [json_name = "option"]; // query parameter
+  string after = 4 [json_name = "after"]; // query parameter
+  string limit = 5 [json_name = "limit"]; // query parameter
+}
+
+// chat.poll.voters — answer of GET /v1/chats/{id}/messages/{seq}/poll/voters.
+message ChatPollVotersResponse {
+  repeated PollVoter voters = 1 [json_name = "voters"];
+  string next = 2 [json_name = "next"];
 }
 
 // chat.react — PUT /v1/chats/{id}/messages/{seq}/reaction (Set reaction).
@@ -473,6 +534,7 @@ message ChatSendRequest {
   int64 reply_to_seq = 5 [json_name = "reply_to_seq"]; // body
   string attachment = 6 [json_name = "attachment"]; // body
   string forwarded_post = 7 [json_name = "forwarded_post"]; // body
+  string shelf_id = 22 [json_name = "shelf_id"]; // body
   Location location = 8 [json_name = "location"]; // body
   int64 live_period = 9 [json_name = "live_period"]; // body
   AudioMeta audio = 10 [json_name = "audio"]; // body
@@ -487,6 +549,8 @@ message ChatSendRequest {
   InlineResultIn inline_result = 17 [json_name = "inline_result"]; // body
   bool silent = 18 [json_name = "silent"]; // body
   SelfDestructInput self_destruct = 21 [json_name = "self_destruct"]; // body
+  PollInput poll = 23 [json_name = "poll"]; // body
+  PendingPreview preview = 24 [json_name = "preview"]; // body
 }
 
 // chat.send — answer of POST /v1/chats/{id}/messages.
@@ -496,9 +560,12 @@ message ChatSendResponse {
   int64 created_at = 3 [json_name = "created_at"];
   bool duplicate = 4 [json_name = "duplicate"];
   int64 live_until = 5 [json_name = "live_until"];
+  bool pending = 6 [json_name = "pending"];
+  string pending_id = 7 [json_name = "pending_id"];
+  string client_message_id = 8 [json_name = "client_message_id"];
 }
 
-// chat.theme — PUT /v1/chats/{id}/theme (Set the 1:1 chat's theme for both members (preset id, empty = default); adds a service message).
+// chat.theme — PUT /v1/chats/{id}/theme (Set the 1:1 chat's theme for both members (preset id, empty = default); adds a service message; chat.peer_flood when the caller is under the spam limit and the other member never wrote).
 message ChatThemeRequest {
   string chat = 1 [json_name = "chat"]; // path parameter {id}
   string theme = 2 [json_name = "theme"]; // body
@@ -676,6 +743,7 @@ message GroupsCreateRequest {
   string title = 1 [json_name = "title"]; // body
   string about = 2 [json_name = "about"]; // body
   string photo = 3 [json_name = "photo"]; // body
+  EmojiAvatarIn emoji_avatar = 6 [json_name = "emoji_avatar"]; // body
   repeated string members = 4 [json_name = "members"]; // body
   optional bool history_visible = 5 [json_name = "history_visible"]; // body
 }
@@ -987,7 +1055,7 @@ message GroupsMediaCountsResponse {
   MediaCounts body = 1 [json_name = "body"]; // the HTTP body itself
 }
 
-// groups.member — PATCH /v1/groups/{id}/member (My settings of the group: mute (timed: mute_for), notify level, archive, clear history for me, hide one message).
+// groups.member — PATCH /v1/groups/{id}/member (My settings of the group: mute (timed: mute_for), notify level, archive, hide the group (hidden, docs/hidden-chats.md), clear history for me, hide one message).
 message GroupsMemberRequest {
   string group = 1 [json_name = "group"]; // path parameter {id}
   optional bool muted = 2 [json_name = "muted"]; // body
@@ -996,6 +1064,7 @@ message GroupsMemberRequest {
   optional bool archived = 5 [json_name = "archived"]; // body
   bool clear_history = 6 [json_name = "clear_history"]; // body
   int64 hide_seq = 7 [json_name = "hide_seq"]; // body
+  optional bool hidden = 8 [json_name = "hidden"]; // body
 }
 
 // groups.member — answer of PATCH /v1/groups/{id}/member.
@@ -1091,12 +1160,23 @@ message GroupsMessageUnpinRequest {
 message GroupsMessageUnpinResponse {
 }
 
-// groups.patch — PATCH /v1/groups/{id} (Change the title, description or photo (photo "" removes it)).
+// groups.online — GET /v1/groups/{id}/online (How many other members the caller sees online now (an aggregate; respects each member's last-seen privacy; cached groups.online.cache_ttl, an estimate in very large groups; 0 while groups.online.enabled is off)).
+message GroupsOnlineRequest {
+  string group = 1 [json_name = "group"]; // path parameter {id}
+}
+
+// groups.online — answer of GET /v1/groups/{id}/online.
+message GroupsOnlineResponse {
+  int32 online = 1 [json_name = "online"];
+}
+
+// groups.patch — PATCH /v1/groups/{id} (Change the title, description or photo (photo "" removes it); emoji_avatar only with photo (docs/emoji-avatars.md), photo alone clears it).
 message GroupsPatchRequest {
   string group = 1 [json_name = "group"]; // path parameter {id}
   optional string title = 2 [json_name = "title"]; // body
   optional string about = 3 [json_name = "about"]; // body
   optional string photo = 4 [json_name = "photo"]; // body
+  EmojiAvatarIn emoji_avatar = 5 [json_name = "emoji_avatar"]; // body
 }
 
 // groups.patch — answer of PATCH /v1/groups/{id}.
@@ -1134,6 +1214,66 @@ message GroupsPinsRequest {
 // groups.pins — answer of GET /v1/groups/{id}/pins.
 message GroupsPinsResponse {
   repeated GroupPin pins = 1 [json_name = "pins"];
+}
+
+// groups.poll.close — POST /v1/groups/{id}/messages/{seq}/poll/close (Stop my poll: no more votes (the sender only; already closed: no change)).
+message GroupsPollCloseRequest {
+  string group = 1 [json_name = "group"]; // path parameter {id}
+  int64 seq = 2 [json_name = "seq"]; // path parameter {seq}
+}
+
+// groups.poll.close — answer of POST /v1/groups/{id}/messages/{seq}/poll/close.
+message GroupsPollCloseResponse {
+  PollView poll = 1 [json_name = "poll"];
+}
+
+// groups.poll.get — GET /v1/groups/{id}/messages/{seq}/poll (A poll as I see it now (my_options; a quiz's answer once I answered or it is closed)).
+message GroupsPollGetRequest {
+  string group = 1 [json_name = "group"]; // path parameter {id}
+  int64 seq = 2 [json_name = "seq"]; // path parameter {seq}
+}
+
+// groups.poll.get — answer of GET /v1/groups/{id}/messages/{seq}/poll.
+message GroupsPollGetResponse {
+  PollView poll = 1 [json_name = "poll"];
+}
+
+// groups.poll.unvote — DELETE /v1/groups/{id}/messages/{seq}/poll/vote (Take my vote back (not in a quiz); nothing to take back: no change).
+message GroupsPollUnvoteRequest {
+  string group = 1 [json_name = "group"]; // path parameter {id}
+  int64 seq = 2 [json_name = "seq"]; // path parameter {seq}
+}
+
+// groups.poll.unvote — answer of DELETE /v1/groups/{id}/messages/{seq}/poll/vote.
+message GroupsPollUnvoteResponse {
+  PollView poll = 1 [json_name = "poll"];
+}
+
+// groups.poll.vote — PUT /v1/groups/{id}/messages/{seq}/poll/vote (Vote in a poll (any member, also one who may not send); a second vote replaces the first, except in a quiz).
+message GroupsPollVoteRequest {
+  string group = 1 [json_name = "group"]; // path parameter {id}
+  int64 seq = 2 [json_name = "seq"]; // path parameter {seq}
+  repeated int64 options = 3 [json_name = "options"]; // body
+}
+
+// groups.poll.vote — answer of PUT /v1/groups/{id}/messages/{seq}/poll/vote.
+message GroupsPollVoteResponse {
+  PollView poll = 1 [json_name = "poll"];
+}
+
+// groups.poll.voters — GET /v1/groups/{id}/messages/{seq}/poll/voters (Who chose option= of a public poll, newest first (after I voted, or once it is closed)).
+message GroupsPollVotersRequest {
+  string group = 1 [json_name = "group"]; // path parameter {id}
+  int64 seq = 2 [json_name = "seq"]; // path parameter {seq}
+  string option = 3 [json_name = "option"]; // query parameter
+  string after = 4 [json_name = "after"]; // query parameter
+  string limit = 5 [json_name = "limit"]; // query parameter
+}
+
+// groups.poll.voters — answer of GET /v1/groups/{id}/messages/{seq}/poll/voters.
+message GroupsPollVotersResponse {
+  repeated PollVoter voters = 1 [json_name = "voters"];
+  string next = 2 [json_name = "next"];
 }
 
 // groups.react — PUT /v1/groups/{id}/messages/{seq}/reaction (Set reaction).
@@ -1196,6 +1336,7 @@ message GroupsSendRequest {
   int64 reply_to_seq = 5 [json_name = "reply_to_seq"]; // body
   string attachment = 6 [json_name = "attachment"]; // body
   string forwarded_post = 7 [json_name = "forwarded_post"]; // body
+  string shelf_id = 20 [json_name = "shelf_id"]; // body
   Location location = 8 [json_name = "location"]; // body
   AudioMeta audio = 9 [json_name = "audio"]; // body
   ForwardIn forward_from = 10 [json_name = "forward_from"]; // body
@@ -1208,6 +1349,7 @@ message GroupsSendRequest {
   string sticker = 15 [json_name = "sticker"]; // body
   bool silent = 16 [json_name = "silent"]; // body
   SelfDestructInput self_destruct = 19 [json_name = "self_destruct"]; // body
+  PollInput poll = 21 [json_name = "poll"]; // body
 }
 
 // groups.send — answer of POST /v1/groups/{id}/messages.
@@ -1294,6 +1436,7 @@ message MeGetResponse {
   string display_name = 3 [json_name = "display_name"];
   string bio = 4 [json_name = "bio"];
   string avatar_id = 5 [json_name = "avatar_id"];
+  EmojiAvatar emoji_avatar = 23 [json_name = "emoji_avatar"];
   string link = 6 [json_name = "link"];
   string meta_line = 7 [json_name = "meta_line"];
   string province = 8 [json_name = "province"];
@@ -1306,6 +1449,7 @@ message MeGetResponse {
   string follow_state = 15 [json_name = "follow_state"];
   bool follows_you = 16 [json_name = "follows_you"];
   bool blocked_by_you = 17 [json_name = "blocked_by_you"];
+  bool minimal = 24 [json_name = "minimal"];
   repeated CardOut mutuals = 18 [json_name = "mutuals"];
   int64 mutuals_total = 19 [json_name = "mutuals_total"];
   BirthdayOut birthday = 20 [json_name = "birthday"];
@@ -1426,7 +1570,9 @@ message StoriesCreateRequest {
   string media_id = 1 [json_name = "media_id"]; // body
   string caption = 2 [json_name = "caption"]; // body
   optional string post_id = 3 [json_name = "post_id"]; // body
+  optional string shared_shelf = 5 [json_name = "shared_shelf"]; // body
   string audience = 4 [json_name = "audience"]; // body
+  repeated StoryStickerIn stickers = 6 [json_name = "stickers"]; // body
 }
 
 // stories.create — answer of POST /v1/stories.
@@ -1435,6 +1581,7 @@ message StoriesCreateResponse {
   string kind = 2 [json_name = "kind"];
   StoryMediaOut media = 3 [json_name = "media"];
   StoryPostOut post = 4 [json_name = "post"];
+  StoryShelfOut shelf = 15 [json_name = "shelf"];
   optional string caption = 5 [json_name = "caption"];
   int64 created_at = 6 [json_name = "created_at"];
   int64 expires_at = 7 [json_name = "expires_at"];
@@ -1445,6 +1592,7 @@ message StoriesCreateResponse {
   bool can_reply = 12 [json_name = "can_reply"];
   bool can_share = 13 [json_name = "can_share"];
   optional int64 share_count = 14 [json_name = "share_count"];
+  repeated StoryStickerOut stickers = 16 [json_name = "stickers"];
 }
 
 // stories.delete — DELETE /v1/stories/{id} (Delete my story now (owner only)).
@@ -1567,6 +1715,91 @@ message StoriesShareResponse {
   repeated StoryShareNotSent not_sent = 2 [json_name = "not_sent"];
 }
 
+// stories.sticker_answer — POST /v1/stories/{id}/stickers/{sticker}/answers (Answer a question sticker of a story I may see (docs/stories.md §19): {text} (stories.sticker_answer_max_chars); I may answer several times, up to stories.sticker_answers_per_viewer. Follows the owner's reply setting. 201 with the sticker as I now see it. Errors: story.not_found, story.sticker_not_found, story.invalid (empty text, my own story), story.too_long, story.replies_off, story.reply_not_allowed, story.sticker_answer_limit (409), story.stickers_disabled, rate_limited).
+message StoriesStickerAnswerRequest {
+  string story = 1 [json_name = "story"]; // path parameter {id}
+  string sticker = 2 [json_name = "sticker"]; // path parameter {sticker}
+  string text = 3 [json_name = "text"]; // body
+}
+
+// stories.sticker_answer — answer of POST /v1/stories/{id}/stickers/{sticker}/answers.
+message StoriesStickerAnswerResponse {
+  string id = 1 [json_name = "id"];
+  string type = 2 [json_name = "type"];
+  StoryStickerPlacement placement = 3 [json_name = "placement"];
+  bool burned = 4 [json_name = "burned"];
+  bool can_respond = 5 [json_name = "can_respond"];
+  StoryStickerMentionOut mention = 6 [json_name = "mention"];
+  StoryStickerHashtag hashtag = 7 [json_name = "hashtag"];
+  StoryStickerLinkOut link = 8 [json_name = "link"];
+  StoryStickerQuestionOut question = 9 [json_name = "question"];
+  StoryStickerSliderOut slider = 10 [json_name = "slider"];
+  StoryStickerPollOut poll = 11 [json_name = "poll"];
+  StoryStickerPost post = 12 [json_name = "post"];
+}
+
+// stories.sticker_responses — GET /v1/stories/{id}/stickers/{sticker}/responses (The responses to an interactive sticker of my story, most recent first (owner only; 404 story.not_found for anyone else): a question's answers, a poll's voters (?option= one option's), a slider's voters and values; stories.viewers_page_size per page, with the sticker's results and total).
+message StoriesStickerResponsesRequest {
+  string story = 1 [json_name = "story"]; // path parameter {id}
+  string sticker = 2 [json_name = "sticker"]; // path parameter {sticker}
+  string option = 3 [json_name = "option"]; // query parameter
+  string cursor = 4 [json_name = "cursor"]; // query parameter
+}
+
+// stories.sticker_responses — answer of GET /v1/stories/{id}/stickers/{sticker}/responses.
+message StoriesStickerResponsesResponse {
+  StoryStickerOut sticker = 1 [json_name = "sticker"];
+  repeated StoryStickerResponseOut responses = 2 [json_name = "responses"];
+  optional string next_cursor = 3 [json_name = "next_cursor"];
+  int64 total = 4 [json_name = "total"];
+}
+
+// stories.sticker_slider — PUT /v1/stories/{id}/stickers/{sticker}/slider (Set my value on an emoji slider sticker of a story I may see: {value} in 0..1; changing it is allowed. 200 with the sticker as I now see it (the average after voting). Errors: story.not_found, story.sticker_not_found, story.sticker_invalid (value out of range), story.invalid (my own story), story.stickers_disabled, rate_limited).
+message StoriesStickerSliderRequest {
+  string story = 1 [json_name = "story"]; // path parameter {id}
+  string sticker = 2 [json_name = "sticker"]; // path parameter {sticker}
+  optional double value = 3 [json_name = "value"]; // body
+}
+
+// stories.sticker_slider — answer of PUT /v1/stories/{id}/stickers/{sticker}/slider.
+message StoriesStickerSliderResponse {
+  string id = 1 [json_name = "id"];
+  string type = 2 [json_name = "type"];
+  StoryStickerPlacement placement = 3 [json_name = "placement"];
+  bool burned = 4 [json_name = "burned"];
+  bool can_respond = 5 [json_name = "can_respond"];
+  StoryStickerMentionOut mention = 6 [json_name = "mention"];
+  StoryStickerHashtag hashtag = 7 [json_name = "hashtag"];
+  StoryStickerLinkOut link = 8 [json_name = "link"];
+  StoryStickerQuestionOut question = 9 [json_name = "question"];
+  StoryStickerSliderOut slider = 10 [json_name = "slider"];
+  StoryStickerPollOut poll = 11 [json_name = "poll"];
+  StoryStickerPost post = 12 [json_name = "post"];
+}
+
+// stories.sticker_vote — PUT /v1/stories/{id}/stickers/{sticker}/vote (Vote on a poll sticker of a story I may see: {option} (0-based); changing it is allowed. 200 with the sticker as I now see it (percentages after voting). Errors: story.not_found, story.sticker_not_found, story.sticker_invalid (no such option), story.invalid (my own story), story.stickers_disabled, rate_limited).
+message StoriesStickerVoteRequest {
+  string story = 1 [json_name = "story"]; // path parameter {id}
+  string sticker = 2 [json_name = "sticker"]; // path parameter {sticker}
+  optional int64 option = 3 [json_name = "option"]; // body
+}
+
+// stories.sticker_vote — answer of PUT /v1/stories/{id}/stickers/{sticker}/vote.
+message StoriesStickerVoteResponse {
+  string id = 1 [json_name = "id"];
+  string type = 2 [json_name = "type"];
+  StoryStickerPlacement placement = 3 [json_name = "placement"];
+  bool burned = 4 [json_name = "burned"];
+  bool can_respond = 5 [json_name = "can_respond"];
+  StoryStickerMentionOut mention = 6 [json_name = "mention"];
+  StoryStickerHashtag hashtag = 7 [json_name = "hashtag"];
+  StoryStickerLinkOut link = 8 [json_name = "link"];
+  StoryStickerQuestionOut question = 9 [json_name = "question"];
+  StoryStickerSliderOut slider = 10 [json_name = "slider"];
+  StoryStickerPollOut poll = 11 [json_name = "poll"];
+  StoryStickerPost post = 12 [json_name = "post"];
+}
+
 // stories.tray — GET /v1/stories/tray (The story tray: my own circle (me, count 0 without a story), then the followed accounts with stories I may see: unseen first, then seen, muted last, each by newest story; stories.tray_page_size per page).
 message StoriesTrayRequest {
   string cursor = 1 [json_name = "cursor"]; // query parameter
@@ -1662,9 +1895,10 @@ message UsersCardsResponse {
   repeated ProfileOut users = 1 [json_name = "users"];
 }
 
-// users.get — GET /v1/users/{id} (Profile as seen by the viewer. A deleted account (also while its deletion grace period runs) answers 200 with only id, display_name and deleted:true (ADR-0043)).
+// users.get — GET /v1/users/{id} (Profile as seen by the viewer. A deleted account (also while its deletion grace period runs) answers 200 with only id, display_name and deleted:true (ADR-0043). ?minimal=1 (apps that show it): an account that blocked the viewer answers 200 with minimal:true and only id, handle, display_name and the avatar (no bio, counts, posts or follow state) instead of 404 user.unavailable).
 message UsersGetRequest {
   string user = 1 [json_name = "user"]; // path parameter {id}
+  string minimal = 2 [json_name = "minimal"]; // query parameter
 }
 
 // users.get — answer of GET /v1/users/{id}.
@@ -1674,6 +1908,7 @@ message UsersGetResponse {
   string display_name = 3 [json_name = "display_name"];
   string bio = 4 [json_name = "bio"];
   string avatar_id = 5 [json_name = "avatar_id"];
+  EmojiAvatar emoji_avatar = 23 [json_name = "emoji_avatar"];
   string link = 6 [json_name = "link"];
   string meta_line = 7 [json_name = "meta_line"];
   string province = 8 [json_name = "province"];
@@ -1686,6 +1921,7 @@ message UsersGetResponse {
   string follow_state = 15 [json_name = "follow_state"];
   bool follows_you = 16 [json_name = "follows_you"];
   bool blocked_by_you = 17 [json_name = "blocked_by_you"];
+  bool minimal = 24 [json_name = "minimal"];
   repeated CardOut mutuals = 18 [json_name = "mutuals"];
   int64 mutuals_total = 19 [json_name = "mutuals_total"];
   BirthdayOut birthday = 20 [json_name = "birthday"];
@@ -1711,6 +1947,7 @@ message Join {
   bool can_publish_video = 14 [json_name = "can_publish_video"];
   bool record = 15 [json_name = "record"];
   GroupCallView summary = 16 [json_name = "summary"];
+  bool joined_existing = 17 [json_name = "joined_existing"];
 }
 
 // CallbackAnswer (github.com/haznetiv/eleza-backend/internal/chat).
@@ -1744,6 +1981,7 @@ message ChatView {
   bool muted = 9 [json_name = "muted"];
   int64 muted_until = 10 [json_name = "muted_until"];
   bool archived = 11 [json_name = "archived"];
+  bool hidden = 23 [json_name = "hidden"];
   string request = 12 [json_name = "request"];
   bool can_send = 13 [json_name = "can_send"];
   bool peer_deleted = 14 [json_name = "peer_deleted"];
@@ -1755,6 +1993,7 @@ message ChatView {
   repeated int64 pins = 20 [json_name = "pins"];
   int64 live_shares = 21 [json_name = "live_shares"];
   string action_bar = 22 [json_name = "action_bar"];
+  bool blocked_by_you = 24 [json_name = "blocked_by_you"];
 }
 
 // Page (github.com/haznetiv/eleza-backend/internal/chat).
@@ -1777,6 +2016,7 @@ message InboxEntry {
   int64 muted_until = 8 [json_name = "muted_until"];
   bool pinned = 9 [json_name = "pinned"];
   bool archived = 10 [json_name = "archived"];
+  bool hidden = 17 [json_name = "hidden"];
   int64 time_ring_expires_at = 11 [json_name = "time_ring_expires_at"];
   int64 last_activity_at = 12 [json_name = "last_activity_at"];
   MessageView last_message = 13 [json_name = "last_message"];
@@ -1829,6 +2069,28 @@ message PinnedMessage {
   MessageView message = 3 [json_name = "message"];
 }
 
+// PollView (github.com/haznetiv/eleza-backend/internal/chat).
+message PollView {
+  string question = 1 [json_name = "question"];
+  repeated PollOptionView options = 2 [json_name = "options"];
+  int64 total_voters = 3 [json_name = "total_voters"];
+  bool anonymous = 4 [json_name = "anonymous"];
+  bool multiple = 5 [json_name = "multiple"];
+  bool quiz = 6 [json_name = "quiz"];
+  bool closed = 7 [json_name = "closed"];
+  int64 closed_at_unix = 8 [json_name = "closed_at_unix"];
+  repeated int64 my_options = 9 [json_name = "my_options"];
+  optional int64 correct_option = 10 [json_name = "correct_option"];
+  string explanation = 11 [json_name = "explanation"];
+  repeated string recent_voters = 12 [json_name = "recent_voters"];
+}
+
+// PollVoter (github.com/haznetiv/eleza-backend/internal/chat).
+message PollVoter {
+  string user = 1 [json_name = "user"];
+  int64 voted_at_unix = 2 [json_name = "voted_at_unix"];
+}
+
 // SelfDestructView (github.com/haznetiv/eleza-backend/internal/chat).
 message SelfDestructView {
   string mode = 1 [json_name = "mode"];
@@ -1858,6 +2120,7 @@ message AudioMeta {
 message ForwardIn {
   string chat = 1 [json_name = "chat"];
   int64 seq = 2 [json_name = "seq"];
+  bool hide_sender = 3 [json_name = "hide_sender"];
 }
 
 // Quote (github.com/haznetiv/eleza-backend/internal/chat).
@@ -1877,6 +2140,28 @@ message InlineResultIn {
 message SelfDestructInput {
   bool view_once = 1 [json_name = "view_once"];
   int64 seconds = 2 [json_name = "seconds"];
+}
+
+// PollInput (github.com/haznetiv/eleza-backend/internal/chat).
+message PollInput {
+  string question = 1 [json_name = "question"];
+  repeated string options = 2 [json_name = "options"];
+  optional bool anonymous = 3 [json_name = "anonymous"];
+  bool multiple = 4 [json_name = "multiple"];
+  bool quiz = 5 [json_name = "quiz"];
+  optional int64 correct_option = 6 [json_name = "correct_option"];
+  string explanation = 7 [json_name = "explanation"];
+}
+
+// PendingPreview (github.com/haznetiv/eleza-backend/internal/chat).
+message PendingPreview {
+  bytes thumb = 1 [json_name = "thumb"]; // base64 in JSON
+  int32 w = 2 [json_name = "w"];
+  int32 h = 3 [json_name = "h"];
+  int64 duration_ms = 4 [json_name = "duration_ms"];
+  bytes waveform = 5 [json_name = "waveform"]; // base64 in JSON
+  string mime = 6 [json_name = "mime"];
+  int64 size = 7 [json_name = "size"];
 }
 
 // ConvView (github.com/haznetiv/eleza-backend/internal/chat).
@@ -1932,12 +2217,21 @@ message GroupAdminLogEntry {
   GroupAdminLogDetail detail = 6 [json_name = "detail"];
 }
 
+// EmojiAvatarIn (github.com/haznetiv/eleza-backend/pkg/emojiavatar).
+message EmojiAvatarIn {
+  string kind = 1 [json_name = "kind"];
+  string emoji = 2 [json_name = "emoji"];
+  string sticker_id = 3 [json_name = "sticker_id"];
+  repeated string colors = 4 [json_name = "colors"];
+}
+
 // GroupView (github.com/haznetiv/eleza-backend/internal/chat).
 message GroupView {
   string group = 1 [json_name = "group"];
   string title = 2 [json_name = "title"];
   string about = 3 [json_name = "about"];
   string photo = 4 [json_name = "photo"];
+  EmojiAvatar emoji_avatar = 42 [json_name = "emoji_avatar"];
   int64 member_count = 5 [json_name = "member_count"];
   int64 admin_count = 33 [json_name = "admin_count"];
   string state = 6 [json_name = "state"];
@@ -1966,6 +2260,7 @@ message GroupView {
   int64 muted_until = 24 [json_name = "muted_until"];
   string notify = 25 [json_name = "notify"];
   bool archived = 26 [json_name = "archived"];
+  bool hidden = 43 [json_name = "hidden"];
   bool pinned = 27 [json_name = "pinned"];
   repeated int64 pins = 28 [json_name = "pins"];
   int64 cleared_before_seq = 29 [json_name = "cleared_before_seq"];
@@ -2018,10 +2313,15 @@ message MessageView {
   StickerView sticker = 29 [json_name = "sticker"];
   ClientMarkup reply_markup = 30 [json_name = "reply_markup"];
   ViaBotView via_bot = 31 [json_name = "via_bot"];
+  string shelf_id = 38 [json_name = "shelf_id"];
+  ShelfCardView shelf = 39 [json_name = "shelf"];
   StoryRefView story = 34 [json_name = "story"];
+  PollView poll = 40 [json_name = "poll"];
   SelfDestructView self_destruct = 35 [json_name = "self_destruct"];
+  string pending_id = 41 [json_name = "pending_id"];
   string sender_tag = 36 [json_name = "sender_tag"];
   string sender_role = 37 [json_name = "sender_role"];
+  ForwardOriginView forward_origin = 42 [json_name = "forward_origin"];
 }
 
 // GroupPage (github.com/haznetiv/eleza-backend/internal/chat).
@@ -2120,6 +2420,15 @@ message GroupReadData {
   int64 outbox_read_seq = 2 [json_name = "outbox_read_seq"];
 }
 
+// EmojiAvatar (github.com/haznetiv/eleza-backend/pkg/emojiavatar).
+message EmojiAvatar {
+  string kind = 1 [json_name = "kind"];
+  string emoji = 2 [json_name = "emoji"];
+  string sticker_id = 3 [json_name = "sticker_id"];
+  EmojiAvatarSticker sticker = 4 [json_name = "sticker"];
+  repeated string colors = 5 [json_name = "colors"];
+}
+
 // CardOut (github.com/haznetiv/eleza-backend/internal/profile).
 message CardOut {
   string id = 1 [json_name = "id"];
@@ -2179,6 +2488,19 @@ message StoryUser {
   bool deleted = 6 [json_name = "deleted"];
 }
 
+// StoryStickerIn (github.com/haznetiv/eleza-backend/internal/post).
+message StoryStickerIn {
+  string type = 1 [json_name = "type"];
+  StoryStickerPlacement placement = 2 [json_name = "placement"];
+  StoryStickerMentionIn mention = 3 [json_name = "mention"];
+  StoryStickerHashtag hashtag = 4 [json_name = "hashtag"];
+  StoryStickerLinkIn link = 5 [json_name = "link"];
+  StoryStickerQuestion question = 6 [json_name = "question"];
+  StoryStickerSliderIn slider = 7 [json_name = "slider"];
+  StoryStickerPollIn poll = 8 [json_name = "poll"];
+  StoryStickerPost post = 9 [json_name = "post"];
+}
+
 // StoryMediaOut (github.com/haznetiv/eleza-backend/internal/post).
 message StoryMediaOut {
   string url = 1 [json_name = "url"];
@@ -2198,12 +2520,40 @@ message StoryPostOut {
   bool available = 5 [json_name = "available"];
 }
 
+// StoryShelfOut (github.com/haznetiv/eleza-backend/internal/post).
+message StoryShelfOut {
+  string id = 1 [json_name = "id"];
+  string name = 2 [json_name = "name"];
+  string palette = 3 [json_name = "palette"];
+  optional string cover_id = 4 [json_name = "cover_id"];
+  string owner_id = 5 [json_name = "owner_id"];
+  int64 post_count = 6 [json_name = "post_count"];
+  bool available = 7 [json_name = "available"];
+}
+
+// StoryStickerOut (github.com/haznetiv/eleza-backend/internal/post).
+message StoryStickerOut {
+  string id = 1 [json_name = "id"];
+  string type = 2 [json_name = "type"];
+  StoryStickerPlacement placement = 3 [json_name = "placement"];
+  bool burned = 4 [json_name = "burned"];
+  bool can_respond = 5 [json_name = "can_respond"];
+  StoryStickerMentionOut mention = 6 [json_name = "mention"];
+  StoryStickerHashtag hashtag = 7 [json_name = "hashtag"];
+  StoryStickerLinkOut link = 8 [json_name = "link"];
+  StoryStickerQuestionOut question = 9 [json_name = "question"];
+  StoryStickerSliderOut slider = 10 [json_name = "slider"];
+  StoryStickerPollOut poll = 11 [json_name = "poll"];
+  StoryStickerPost post = 12 [json_name = "post"];
+}
+
 // StoryOut (github.com/haznetiv/eleza-backend/internal/post).
 message StoryOut {
   string id = 1 [json_name = "id"];
   string kind = 2 [json_name = "kind"];
   StoryMediaOut media = 3 [json_name = "media"];
   StoryPostOut post = 4 [json_name = "post"];
+  StoryShelfOut shelf = 15 [json_name = "shelf"];
   optional string caption = 5 [json_name = "caption"];
   int64 created_at = 6 [json_name = "created_at"];
   int64 expires_at = 7 [json_name = "expires_at"];
@@ -2214,6 +2564,7 @@ message StoryOut {
   bool can_reply = 12 [json_name = "can_reply"];
   bool can_share = 13 [json_name = "can_share"];
   optional int64 share_count = 14 [json_name = "share_count"];
+  repeated StoryStickerOut stickers = 16 [json_name = "stickers"];
 }
 
 // StoryShareSent (github.com/haznetiv/eleza-backend/internal/post).
@@ -2227,6 +2578,73 @@ message StoryShareSent {
 message StoryShareNotSent {
   string to = 1 [json_name = "to"];
   string reason = 2 [json_name = "reason"];
+  string code = 3 [json_name = "code"];
+}
+
+// StoryStickerPlacement (github.com/haznetiv/eleza-backend/internal/post).
+message StoryStickerPlacement {
+  double x = 1 [json_name = "x"];
+  double y = 2 [json_name = "y"];
+  double width = 3 [json_name = "width"];
+  double height = 4 [json_name = "height"];
+  double rotation = 5 [json_name = "rotation"];
+}
+
+// StoryStickerMentionOut (github.com/haznetiv/eleza-backend/internal/post).
+message StoryStickerMentionOut {
+  StoryUser user = 1 [json_name = "user"];
+}
+
+// StoryStickerHashtag (github.com/haznetiv/eleza-backend/internal/post).
+message StoryStickerHashtag {
+  string tag = 1 [json_name = "tag"];
+}
+
+// StoryStickerLinkOut (github.com/haznetiv/eleza-backend/internal/post).
+message StoryStickerLinkOut {
+  optional string url = 1 [json_name = "url"];
+  string label = 2 [json_name = "label"];
+}
+
+// StoryStickerQuestionOut (github.com/haznetiv/eleza-backend/internal/post).
+message StoryStickerQuestionOut {
+  string prompt = 1 [json_name = "prompt"];
+  int64 my_answer_count = 2 [json_name = "my_answer_count"];
+  optional int64 answer_count = 3 [json_name = "answer_count"];
+  StoryStickerStyle style = 4 [json_name = "style"];
+}
+
+// StoryStickerSliderOut (github.com/haznetiv/eleza-backend/internal/post).
+message StoryStickerSliderOut {
+  string emoji = 1 [json_name = "emoji"];
+  string prompt = 2 [json_name = "prompt"];
+  string direction = 3 [json_name = "direction"];
+  optional double my_value = 4 [json_name = "my_value"];
+  optional double average = 5 [json_name = "average"];
+  optional int64 vote_count = 6 [json_name = "vote_count"];
+  StoryStickerStyle style = 7 [json_name = "style"];
+}
+
+// StoryStickerPollOut (github.com/haznetiv/eleza-backend/internal/post).
+message StoryStickerPollOut {
+  string question = 1 [json_name = "question"];
+  repeated StoryStickerPollOption options = 2 [json_name = "options"];
+  optional int64 my_vote = 3 [json_name = "my_vote"];
+  optional int64 total_votes = 4 [json_name = "total_votes"];
+  StoryStickerStyle style = 5 [json_name = "style"];
+}
+
+// StoryStickerPost (github.com/haznetiv/eleza-backend/internal/post).
+message StoryStickerPost {
+}
+
+// StoryStickerResponseOut (github.com/haznetiv/eleza-backend/internal/post).
+message StoryStickerResponseOut {
+  StoryUser user = 1 [json_name = "user"];
+  int64 at = 2 [json_name = "at"];
+  optional string text = 3 [json_name = "text"];
+  optional int64 option = 4 [json_name = "option"];
+  optional double value = 5 [json_name = "value"];
 }
 
 // TrayMeOut (github.com/haznetiv/eleza-backend/internal/post).
@@ -2274,6 +2692,7 @@ message ProfileOut {
   string display_name = 3 [json_name = "display_name"];
   string bio = 4 [json_name = "bio"];
   string avatar_id = 5 [json_name = "avatar_id"];
+  EmojiAvatar emoji_avatar = 23 [json_name = "emoji_avatar"];
   string link = 6 [json_name = "link"];
   string meta_line = 7 [json_name = "meta_line"];
   string province = 8 [json_name = "province"];
@@ -2286,6 +2705,7 @@ message ProfileOut {
   string follow_state = 15 [json_name = "follow_state"];
   bool follows_you = 16 [json_name = "follows_you"];
   bool blocked_by_you = 17 [json_name = "blocked_by_you"];
+  bool minimal = 24 [json_name = "minimal"];
   repeated CardOut mutuals = 18 [json_name = "mutuals"];
   int64 mutuals_total = 19 [json_name = "mutuals_total"];
   BirthdayOut birthday = 20 [json_name = "birthday"];
@@ -2298,6 +2718,7 @@ message UpdateData {
   MessageView message = 1 [json_name = "message"]; // typed by the gateway
   ReadData read = 2 [json_name = "read"];
   ReactionData reaction = 3 [json_name = "reaction"];
+  PollData poll = 12 [json_name = "poll"];
   PlayedData played = 4 [json_name = "played"];
   ClearedData cleared = 5 [json_name = "cleared"];
   MemberData member = 6 [json_name = "member"];
@@ -2329,6 +2750,13 @@ message ReactionData {
   string emoji = 4 [json_name = "emoji"];
 }
 
+// PollData (github.com/haznetiv/eleza-backend/internal/realtime/rtviews).
+message PollData {
+  string chat = 1 [json_name = "chat"];
+  int64 seq = 2 [json_name = "seq"];
+  PollView poll = 3 [json_name = "poll"]; // typed by the gateway
+}
+
 // PlayedData (github.com/haznetiv/eleza-backend/internal/realtime/rtviews).
 message PlayedData {
   string chat = 1 [json_name = "chat"];
@@ -2351,6 +2779,7 @@ message MemberData {
   int64 cleared_before_seq = 4 [json_name = "cleared_before_seq"];
   int64 hidden_seq = 5 [json_name = "hidden_seq"];
   int64 muted_until = 6 [json_name = "muted_until"];
+  bool hidden = 8 [json_name = "hidden"];
   bool action_bar_dismissed = 7 [json_name = "action_bar_dismissed"];
 }
 
@@ -2404,6 +2833,7 @@ message GroupSignal {
 message GroupSignalData {
   MessageView message = 1 [json_name = "message"]; // typed by the gateway
   GroupReactionData reaction = 2 [json_name = "reaction"];
+  GroupPollData poll = 7 [json_name = "poll"];
   GroupInfoData info = 3 [json_name = "info"];
   GroupSeqsData deleted_many = 4 [json_name = "deleted_many"];
   GroupSeqData unpinned = 5 [json_name = "unpinned"];
@@ -2415,6 +2845,13 @@ message GroupReactionData {
   string group = 1 [json_name = "group"];
   int64 seq = 2 [json_name = "seq"];
   map<string, int64> reactions = 3 [json_name = "reactions"];
+}
+
+// GroupPollData (github.com/haznetiv/eleza-backend/internal/realtime/rtviews).
+message GroupPollData {
+  string group = 1 [json_name = "group"];
+  int64 seq = 2 [json_name = "seq"];
+  PollView poll = 3 [json_name = "poll"]; // typed by the gateway
 }
 
 // GroupInfoData (github.com/haznetiv/eleza-backend/internal/realtime/rtviews).
@@ -2442,6 +2879,30 @@ message GroupSeqsData {
 message GroupSeqData {
   string group = 1 [json_name = "group"];
   int64 seq = 2 [json_name = "seq"];
+}
+
+// PendingMessageView (github.com/haznetiv/eleza-backend/internal/chat).
+message PendingMessageView {
+  string pending_id = 1 [json_name = "pending_id"];
+  string sender = 2 [json_name = "sender"];
+  string client_message_id = 3 [json_name = "client_message_id"];
+  string kind = 4 [json_name = "kind"];
+  string text = 5 [json_name = "text"];
+  repeated Entity entities = 6 [json_name = "entities"];
+  int64 reply_to = 7 [json_name = "reply_to"];
+  string album = 8 [json_name = "album"];
+  bool caption_above = 9 [json_name = "caption_above"];
+  bool media_spoiler = 10 [json_name = "media_spoiler"];
+  int64 created_at_unix_ms = 11 [json_name = "created_at_unix_ms"];
+  PendingPreview preview = 12 [json_name = "preview"];
+}
+
+// EarlyMessageSignal (github.com/haznetiv/eleza-backend/internal/realtime/rtviews).
+message EarlyMessageSignal {
+  string chat = 1 [json_name = "chat"];
+  MessageView message = 2 [json_name = "message"]; // typed by the gateway
+  PendingMessageView pending = 3 [json_name = "pending"]; // typed by the gateway
+  string cancel = 4 [json_name = "cancel"];
 }
 
 // TURNCredential (github.com/haznetiv/eleza-backend/pkg/sfu).
@@ -2493,6 +2954,12 @@ message DraftView {
   int64 reply_to_seq = 2 [json_name = "reply_to_seq"];
   repeated Entity entities = 3 [json_name = "entities"];
   int64 updated_at = 4 [json_name = "updated_at"];
+}
+
+// PollOptionView (github.com/haznetiv/eleza-backend/internal/chat).
+message PollOptionView {
+  string text = 1 [json_name = "text"];
+  int64 voters = 2 [json_name = "voters"];
 }
 
 // SelfDestructMedia (github.com/haznetiv/eleza-backend/internal/chat).
@@ -2614,6 +3081,14 @@ message ViaBotView {
   string name = 3 [json_name = "name"];
 }
 
+// ShelfCardView (github.com/haznetiv/eleza-backend/internal/chat).
+message ShelfCardView {
+  string name = 1 [json_name = "name"];
+  string palette = 2 [json_name = "palette"];
+  string cover_id = 3 [json_name = "cover_id"];
+  string owner_id = 4 [json_name = "owner_id"];
+}
+
 // StoryRefView (github.com/haznetiv/eleza-backend/internal/chat).
 message StoryRefView {
   string story_id = 1 [json_name = "story_id"];
@@ -2624,6 +3099,23 @@ message StoryRefView {
   string emoji = 6 [json_name = "emoji"];
   string comment = 7 [json_name = "comment"];
   optional bool available = 8 [json_name = "available"];
+}
+
+// ForwardOriginView (github.com/haznetiv/eleza-backend/internal/chat).
+message ForwardOriginView {
+  string name = 1 [json_name = "name"];
+  string user = 2 [json_name = "user"];
+  int64 date = 3 [json_name = "date"];
+}
+
+// EmojiAvatarSticker (github.com/haznetiv/eleza-backend/pkg/emojiavatar).
+message EmojiAvatarSticker {
+  string id = 1 [json_name = "id"];
+  string pack = 2 [json_name = "pack"];
+  string emoji = 3 [json_name = "emoji"];
+  string url = 4 [json_name = "url"];
+  int64 width = 5 [json_name = "width"];
+  int64 height = 6 [json_name = "height"];
 }
 
 //  ().
@@ -2644,6 +3136,8 @@ message DocPrivacy {
   string phone_number = 14 [json_name = "phone_number"];
   string find_by_phone = 15 [json_name = "find_by_phone"];
   string group_add = 16 [json_name = "group_add"];
+  bool allow_video_downloads = 17 [json_name = "allow_video_downloads"];
+  string forwards = 18 [json_name = "forwards"];
 }
 
 //  ().
@@ -2660,6 +3154,7 @@ message DocNotifications {
   DocNotificationsGeneral general = 3 [json_name = "general"];
   QuietHours quiet_hours = 4 [json_name = "quiet_hours"];
   DocNotificationsContacts contacts = 5 [json_name = "contacts"];
+  string hidden_chats = 6 [json_name = "hidden_chats"];
 }
 
 //  ().
@@ -2679,6 +3174,50 @@ message DocAccessibility {
   bool auto_transcription = 1 [json_name = "auto_transcription"];
 }
 
+// StoryStickerMentionIn (github.com/haznetiv/eleza-backend/internal/post).
+message StoryStickerMentionIn {
+  string user = 1 [json_name = "user"];
+}
+
+// StoryStickerLinkIn (github.com/haznetiv/eleza-backend/internal/post).
+message StoryStickerLinkIn {
+  string url = 1 [json_name = "url"];
+  string label = 2 [json_name = "label"];
+}
+
+// StoryStickerQuestion (github.com/haznetiv/eleza-backend/internal/post).
+message StoryStickerQuestion {
+  string prompt = 1 [json_name = "prompt"];
+  StoryStickerStyle style = 2 [json_name = "style"];
+}
+
+// StoryStickerSliderIn (github.com/haznetiv/eleza-backend/internal/post).
+message StoryStickerSliderIn {
+  string emoji = 1 [json_name = "emoji"];
+  string prompt = 2 [json_name = "prompt"];
+  string direction = 3 [json_name = "direction"];
+  StoryStickerStyle style = 4 [json_name = "style"];
+}
+
+// StoryStickerPollIn (github.com/haznetiv/eleza-backend/internal/post).
+message StoryStickerPollIn {
+  string question = 1 [json_name = "question"];
+  repeated string options = 2 [json_name = "options"];
+  StoryStickerStyle style = 3 [json_name = "style"];
+}
+
+// StoryStickerStyle (github.com/haznetiv/eleza-backend/internal/post).
+message StoryStickerStyle {
+  string color = 1 [json_name = "color"];
+}
+
+// StoryStickerPollOption (github.com/haznetiv/eleza-backend/internal/post).
+message StoryStickerPollOption {
+  string text = 1 [json_name = "text"];
+  optional int64 percent = 2 [json_name = "percent"];
+  optional int64 votes = 3 [json_name = "votes"];
+}
+
 // GroupSelfSettings (github.com/haznetiv/eleza-backend/internal/realtime/rtviews).
 message GroupSelfSettings {
   bool muted = 1 [json_name = "muted"];
@@ -2687,6 +3226,7 @@ message GroupSelfSettings {
   bool archived = 4 [json_name = "archived"];
   bool pinned = 5 [json_name = "pinned"];
   int64 cleared_before_seq = 6 [json_name = "cleared_before_seq"];
+  bool hidden = 7 [json_name = "hidden"];
 }
 
 // GroupSelfReaction (github.com/haznetiv/eleza-backend/internal/realtime/rtviews).
@@ -2724,6 +3264,7 @@ message DocNotificationsEli {
   bool new_followers = 4 [json_name = "new_followers"];
   bool subscribed_posts = 5 [json_name = "subscribed_posts"];
   bool hot_posts = 6 [json_name = "hot_posts"];
+  bool shelf_posts = 7 [json_name = "shelf_posts"];
 }
 
 //  ().

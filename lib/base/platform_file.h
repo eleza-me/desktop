@@ -30,6 +30,17 @@ bool EnsureDirectory(const QString &path, bool ownerOnly = false);
 // itself, what it points to is left alone.
 bool RemoveRecursively(const QString &path);
 
+// The same without making the caller wait (a cache of gigabytes, on Windows
+// behind an antivirus, takes many seconds): the directory is renamed at once
+// to "<trashPrefix><random>" next to itself, so its name is free again, and
+// removed on a worker thread. One that cannot be renamed (a file in it is
+// held open elsewhere) is removed here and now. True when it is gone from
+// its place.
+bool RemoveRecursivelyInBackground(const QString &path, const QString &trashPrefix);
+// Removes, on a worker thread, the "<trashPrefix>*" entries of `directory`
+// (left by a run that ended before their removal did).
+void RemoveTrashInBackground(const QString &directory, const QString &trashPrefix);
+
 // A directory for short-lived files that nobody else on the machine can list
 // or read (voice recordings, pasted images, cropped photos, media handed to
 // the player): never the shared temporary directory itself, where names are

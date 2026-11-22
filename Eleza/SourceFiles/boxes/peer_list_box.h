@@ -214,6 +214,8 @@ private:
 		const Ui::ListRowState &state) override;
 	bool rowClickable(int index) const override;
 	int rowActionAt(int index, QPoint point, int width) const override;
+	QString rowAccessibilityName(int index) const override;
+	QString rowAccessibilityDescription(int index) const override;
 
 	// PeerListDelegate
 	void setRows(const QVector<PeerListRow> &rows) override;

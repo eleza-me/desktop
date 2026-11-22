@@ -4,6 +4,7 @@
 #include "base/random.h"
 #include "crypto/crypto_primitives.h"
 #include "install/install_paths.h"
+#include "install/install_verify.h"
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
@@ -95,14 +96,29 @@ struct Prepared {
 	QString detail;
 };
 
+// <updates>/<version>.update.json and .sig (install_verify.h).
+[[nodiscard]] QString ManifestCopyPath(const QString &target) {
+	return target + QString::fromLatin1(Install::kManifestSuffix);
+}
+
+[[nodiscard]] QString SignatureCopyPath(const QString &target) {
+	return target + QString::fromLatin1(Install::kSignatureSuffix);
+}
+
+[[nodiscard]] bool RemoveFile(const QString &path) {
+	return QFile::remove(path) || !QFileInfo(path).exists();
+}
+
 // On a worker thread: the package is exactly what the manifest signed, then
-// it is unpacked into `target`.
+// it is unpacked into `target`, and the signed manifest is kept next to it.
 [[nodiscard]] Prepared Prepare(
 		const QString &archive,
 		const Package &package,
 		const QString &target,
 		const QString &executable,
-		const UnpackLimits &limits) {
+		const UnpackLimits &limits,
+		const QByteArray &manifest,
+		const QByteArray &signature) {
 	auto result = Prepared();
 	{
 		auto file = QFile(archive);
@@ -128,7 +144,9 @@ struct Prepared {
 		}
 	}
 	if (!base::platform::RemoveRecursively(target)
-		|| !base::platform::RemoveRecursively(target + u".tmp"_s)) {
+		|| !base::platform::RemoveRecursively(target + u".tmp"_s)
+		|| !RemoveFile(ManifestCopyPath(target))
+		|| !RemoveFile(SignatureCopyPath(target))) {
 		result.failure = Failure::Disk;
 		return result;
 	}
@@ -149,6 +167,10 @@ struct Prepared {
 		base::platform::RemoveRecursively(target);
 		result.failure = Failure::Unpack;
 		result.detail = u"no executable"_s;
+	} else if (!base::platform::WriteFileAtomic(ManifestCopyPath(target), manifest, true)
+		|| !base::platform::WriteFileAtomic(SignatureCopyPath(target), signature, true)) {
+		base::platform::RemoveRecursively(target);
+		result.failure = Failure::Disk;
 	}
 	return result;
 }
@@ -288,6 +310,22 @@ void Checker::cleanDirectory() {
 		if (Version::Parse(version)
 			&& (name != _ready.version || entry.isSymLink())) {
 			remove.push_back(entry.absoluteFilePath());
+		}
+	}
+	// The signed manifests kept next to the versions.
+	const auto files = root.entryInfoList(QDir::Files | QDir::System | QDir::Hidden);
+	for (const auto &entry : files) {
+		const auto name = entry.fileName();
+		for (const auto suffix : { Install::kManifestSuffix, Install::kSignatureSuffix }) {
+			const auto tail = QString::fromLatin1(suffix);
+			if (name.endsWith(tail)) {
+				const auto version = name.chopped(tail.size());
+				if (Version::Parse(version)
+					&& (version != _ready.version || entry.isSymLink())) {
+					remove.push_back(entry.absoluteFilePath());
+				}
+				break;
+			}
 		}
 	}
 	const auto now = QDateTime::currentSecsSinceEpoch();
@@ -474,6 +512,7 @@ void Checker::manifestReceived() {
 		sourceFailed(Failure::Signature);
 		return;
 	}
+	_signatureBytes = _buffer;
 	auto options = ParseOptions();
 	options.platform = _config.platform;
 	options.allowInsecureLoopback = _config.allowInsecureLoopback;
@@ -578,6 +617,8 @@ void Checker::checkFinished(
 	}
 	_package = *manifest.package;
 	_packageVersion = version;
+	_packageManifest = _manifestBytes;
+	_packageSignature = _signatureBytes;
 	if (_ready.version == version) {
 		_ready = info;
 		saveStored();
@@ -692,9 +733,18 @@ void Checker::packageReceived() {
 	const auto target = versionDir(version);
 	const auto executable = _config.executable;
 	const auto limits = _config.limits;
+	const auto manifest = _packageManifest;
+	const auto signature = _packageSignature;
 	const auto weak = QPointer<Checker>(this);
 	_pool.start([=] {
-		const auto result = Prepare(archive, package, target, executable, limits);
+		const auto result = Prepare(
+			archive,
+			package,
+			target,
+			executable,
+			limits,
+			manifest,
+			signature);
 		// Back on the main thread; the checker may be gone by then.
 		const auto application = QCoreApplication::instance();
 		if (!application) {

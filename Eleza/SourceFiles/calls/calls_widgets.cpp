@@ -59,6 +59,8 @@ LabeledButton::LabeledButton(
 
 void LabeledButton::setLabel(const QString &label) {
 	_label = label;
+	// The caption under the disc names it for screen readers.
+	_button->setAccessibleName(label);
 	const auto &font = st::callsViewLabelFont;
 	const auto width = std::max(
 		_button->width(),

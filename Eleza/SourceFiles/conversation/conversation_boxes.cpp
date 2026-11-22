@@ -1,5 +1,6 @@
 #include "conversation/conversation_boxes.h"
 
+#include "base/unixtime.h"
 #include "boxes/report_box.h"
 #include "conversation/conversation_card.h"
 #include "conversation/conversation_controls.h"
@@ -15,7 +16,9 @@
 #include "data/data_users.h"
 #include "lang/lang_format.h"
 #include "lang_auto.h"
+#include "main/main_account.h"
 #include "main/main_session.h"
+#include "storage/storage_key_value.h"
 #include "support/chat_text.h"
 #include "support/error_text.h"
 #include "support/media_image.h"
@@ -38,6 +41,11 @@
 
 namespace Conversation {
 namespace {
+
+// "<name>.<user id>": dropped with the user's other keys on sign-out.
+[[nodiscard]] QString DefaultDurationKey(const QString &userId) {
+	return u"conversation.default_expiry."_s + userId;
+}
 
 constexpr auto kFindChatTimeout = 7000;
 // Without the connection the row cannot be announced: the inbox is read
@@ -160,7 +168,6 @@ private:
 	ChipFlow *_duration = nullptr;
 	Ui::FlatLabel *_error = nullptr;
 	Ui::RoundButton *_submit = nullptr;
-	bool _durationTouched = false;
 	bool _sending = false;
 
 };
@@ -253,26 +260,11 @@ void NewConversationBox::prepare() {
 			items.push_back({ duration, DurationTitle(duration) });
 		}
 		_duration->setItems(items);
-		_duration->setChangedCallback([this](const QString &) {
-			_durationTouched = true;
-		});
 	}
 
 	// The user's default lifetime («پیام‌ها و گفتگو» settings), when it is
 	// one of the choices; the longest one otherwise.
-	auto &graph = data.graph();
-	applyDefaultDuration(graph.settingsLoaded()
-		? graph.settingValue(u"messages.default_expiry"_s).toString()
-		: QString());
-	if (!graph.settingsLoaded()) {
-		graph.loadSettings(false, this, [this](const QJsonObject &) {
-			if (!_durationTouched) {
-				applyDefaultDuration(_controller->session().data().graph()
-					.settingValue(u"messages.default_expiry"_s).toString());
-			}
-		}, [](const Api::Error &) {
-		});
-	}
+	applyDefaultDuration(DefaultDurationPreference(&_controller->session()));
 
 	QObject::connect(_topic, &Ui::InputField::changed, this, [this] {
 		updateCounter();
@@ -621,7 +613,7 @@ void JoinBox::loaded(const Data::Conversation &conversation) {
 		const auto waiting = (conversation.myRole != u"listener")
 			&& (PhaseOf(
 				conversation,
-				QDateTime::currentMSecsSinceEpoch()) == RadarPhase::Waiting);
+				base::unixtime::serverNowMs()) == RadarPhase::Waiting);
 		// The box dies here: only locals below.
 		closeBox();
 		if (waiting) {
@@ -713,7 +705,7 @@ void JoinBox::showReady() {
 			_content,
 			conversation.expiresAt
 				? conversation.expiresAt
-				: (QDateTime::currentSecsSinceEpoch()),
+				: (base::unixtime::serverNow()),
 			data().conversations().categoryTitle(conversation.category)),
 		RowMargins(labelSkip));
 	header->setMoreCallback([this](QWidget *anchor) {
@@ -836,6 +828,19 @@ void JoinBox::join() {
 Notifier *Events() {
 	static const auto result = new Notifier();
 	return result;
+}
+
+QString DefaultDurationPreference(Main::Session *session) {
+	return session->account().settings().string(
+		DefaultDurationKey(session->userId()));
+}
+
+void SetDefaultDurationPreference(
+		Main::Session *session,
+		const QString &duration) {
+	session->account().settings().set(
+		DefaultDurationKey(session->userId()),
+		duration);
 }
 
 void ShowNewConversationBox(
@@ -1094,7 +1099,7 @@ void OpenConversation(
 			|| (conversation.myRole == u"speaker");
 		if (speaker && PhaseOf(
 				conversation,
-				QDateTime::currentMSecsSinceEpoch()) == RadarPhase::Waiting) {
+				base::unixtime::serverNowMs()) == RadarPhase::Waiting) {
 			controller->showMainSection(
 				RadarFactory(id, conversation),
 				{ .tab = Window::Tab::Chats });

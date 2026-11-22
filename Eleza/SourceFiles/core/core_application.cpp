@@ -138,6 +138,7 @@ void Application::start() {
 		style::SetThemeMode(_settings->themeMode());
 	}
 	applyLanguage(arguments.language.value_or(_settings->language()));
+	applyReduceMotion();
 	if (arguments.ephemeral()) {
 		// Screenshots must not depend on the timing of animations.
 		Ui::SetAnimationsDisabled(true);
@@ -620,6 +621,25 @@ void Application::setThemeMode(style::ThemeMode mode) {
 		_window->update();
 	}
 	emit themeChanged();
+}
+
+bool Application::reduceMotion() const {
+	return _settings->reduceMotion().value_or(SystemReducesMotion());
+}
+
+void Application::setReduceMotion(bool reduce) {
+	_settings->setReduceMotion(reduce);
+	applyReduceMotion();
+}
+
+void Application::applyReduceMotion() {
+	if (_launcher->commandLine().ephemeral()) {
+		// Off for screenshots whatever this computer says.
+		return;
+	}
+	// Every animation of the widget library (and those of the app that ask
+	// Ui::AnimationsDisabled()) jumps to its end.
+	Ui::SetAnimationsDisabled(reduceMotion());
 }
 
 void Application::toggleTheme() {

@@ -27,6 +27,18 @@ namespace Support {
 [[nodiscard]] QString SelfDestructTimerText(int seconds);
 // The label of a media kind («عکس», «ویدیو», …); empty for plain text.
 [[nodiscard]] QString MessageKindLabel(const Data::Message &message);
+// `text` with every spoiler span of `entities` replaced by «اسپویلر», as the
+// phones show it where the text cannot be tapped open (the chat list, a
+// notification, a reply header). `shift`: where `text` starts in the text
+// the entities belong to (a quote of a message).
+[[nodiscard]] QString MaskSpoilers(
+	const QString &text,
+	const QVector<Data::Entity> &entities,
+	int shift = 0);
+// A quote of `target` (which may be unknown), its spoilers masked.
+[[nodiscard]] QString QuotePreview(
+	const Data::Quote &quote,
+	const Data::Message *target);
 // One line for a message; never empty for a visible message.
 [[nodiscard]] QString MessagePreview(const Data::Message &message);
 

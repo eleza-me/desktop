@@ -10,12 +10,16 @@
 //
 //   video->setControlsShown(false);  video->setLooped(true);  video->setMuted(true);   // a gif
 //
+//   video->setStream(handle);  // a download that is still coming (Data::MediaStream):
+//                              // plays what has arrived, seeks within it
+//
 // Click toggles playback, double click / F toggles full screen, Space, arrows
 // (seek 5 s), M (mute) work while the widget has the focus. The controls hide
 // after a moment of playing without mouse movement. Starting a video with sound
 // pauses Media::Player().
 #pragma once
 
+#include "data/data_media.h"
 #include "ui/effects/animations.h"
 #include "ui/rp_widget.h"
 
@@ -29,7 +33,19 @@ class QAudioOutput;
 class QMediaPlayer;
 class QVideoSink;
 
+namespace Data {
+class MediaStream;
+} // namespace Data
+
 namespace Media {
+
+// Whether a video or a voice message may start while it downloads
+// (Data::MediaStream): with the FFmpeg backend of Qt 6.5+ (the default
+// there), which reads the stream on threads of its own and does not hold
+// the main thread while it does. Elsewhere (GStreamer, the default of
+// Qt 6.4, reads on the main thread: the file seems to end early) they play
+// once downloaded, as before.
+[[nodiscard]] bool ProgressivePlayback();
 
 class VideoPlayerWidget final : public Ui::RpWidget {
 	Q_OBJECT
@@ -39,6 +55,11 @@ public:
 	~VideoPlayerWidget();
 
 	void setSource(const QString &filePath);
+	// A download in progress (a Loading handle with its first bytes on
+	// disk, Data::MediaStream::Streamable): played as it arrives, seeking
+	// only into what is there. Once the file is complete it is the source;
+	// if the player ran out of bytes first, it goes on from where it stopped.
+	void setStream(Data::MediaHandlePtr handle);
 	void setPoster(const QImage &poster);
 	void play();
 	void pause();
@@ -113,6 +134,15 @@ private:
 	};
 
 	void ensurePlayer();
+	[[nodiscard]] bool hasSource() const;
+	void setPlayerSource();
+	void openStream(Data::MediaHandlePtr handle);
+	void reopenStream();
+	void dropStream();
+	void streamStalled();
+	void streamCompleted(const QString &path);
+	// The position a seek may go to while the file is still arriving.
+	[[nodiscard]] qint64 playablePosition(qint64 position) const;
 	[[nodiscard]] Layout controlsLayout() const;
 	[[nodiscard]] Part partAt(QPoint position) const;
 	[[nodiscard]] QRect videoRect() const;
@@ -125,6 +155,12 @@ private:
 	void paintControls(QPainter &p);
 	[[nodiscard]] double volume() const;
 
+	// Declared before the player: destroyed after it.
+	Data::MediaHandlePtr _streamHandle;
+	std::unique_ptr<Data::MediaStream> _stream;
+	qint64 _resumeAt = -1;    // ran out of bytes there: on from it once more came
+	qint64 _rebufferAt = 0;   // ...this many bytes from the start
+	qint64 _pendingSeek = -1; // applied once the new source is loaded
 	std::unique_ptr<QMediaPlayer> _player;
 	std::unique_ptr<QAudioOutput> _output;
 	std::unique_ptr<QVideoSink> _sink;

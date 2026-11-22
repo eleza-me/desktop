@@ -146,7 +146,7 @@ Ui::SettingsButton *AddInfoRow(
 	const auto result = AddButton(container, text, icon);
 	result->setValueText(value);
 	result->setAttribute(Qt::WA_TransparentForMouseEvents);
-	result->setFocusPolicy(Qt::NoFocus);
+	result->setKeyboardFocusable(false);
 	return result;
 }
 
@@ -460,7 +460,10 @@ Ui::SettingsButton *SyncedPage::addPicker(
 				return option.label;
 			}
 		}
-		return QString();
+		// A value this version has no choice for (set by a newer app).
+		return value.isEmpty()
+			? QString()
+			: tr::lng_settings_value_custom(tr::now);
 	};
 	button->setClickedCallback([=, this] {
 		ShowPickerBox(

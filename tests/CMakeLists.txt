@@ -36,6 +36,8 @@ eleza_add_test(test_lang_codegen ui/test_lang_codegen.cpp LIBS codegen_lang_lib)
 eleza_add_test(test_lang_format ui/test_lang_format.cpp LIBS ElezaLang)
 eleza_add_test(test_ui_text ui/test_ui_text.cpp LIBS ElezaUi Qt6::Gui GUI)
 eleza_add_test(test_ui_style ui/test_ui_style.cpp LIBS ElezaUi Qt6::Gui GUI)
+# Tab stops, Space / Enter and what screen readers see (ui/accessibility.h).
+eleza_add_test(test_ui_accessibility ui/test_ui_accessibility.cpp LIBS ElezaUi Qt6::Gui GUI)
 # Telegram's emoji: the pack reader against the real pack, the parser, the tables.
 eleza_add_test(test_emoji ui/test_emoji.cpp LIBS ElezaUi Qt6::Gui GUI)
 target_compile_definitions(test_emoji PRIVATE
@@ -84,6 +86,10 @@ if (TARGET ElezaCore)
 	target_sources(test_settings_logic PRIVATE
 		"${_eleza_app_src}/settings/settings_logic.cpp")
 	target_include_directories(test_settings_logic PRIVATE "${_eleza_app_src}")
+	# The preferences file of this computer: «اندازهٔ رابط», «کاهش حرکت».
+	eleza_add_test(test_core_settings app/test_core_settings.cpp LIBS ElezaCore ElezaLang ElezaUi)
+	target_sources(test_core_settings PRIVATE "${_eleza_app_src}/core/core_settings.cpp")
+	target_include_directories(test_core_settings PRIVATE "${_eleza_app_src}")
 	# The chat screen's widget-free rules (history/history_*logic.cpp).
 	eleza_add_test(test_history_logic app/test_history_logic.cpp LIBS ElezaCore ElezaUi)
 	target_sources(test_history_logic PRIVATE "${_eleza_app_src}/history/history_logic.cpp")

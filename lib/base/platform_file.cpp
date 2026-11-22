@@ -1,5 +1,7 @@
 #include "base/platform_file.h"
 
+#include "base/random.h"
+
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -9,6 +11,7 @@
 #include <QtCore/QStandardPaths>
 #include <QtCore/QSysInfo>
 #include <QtCore/QTemporaryDir>
+#include <QtCore/QThreadPool>
 
 #ifndef Q_OS_WIN
 #include <sys/stat.h>
@@ -119,6 +122,39 @@ bool RemoveRecursively(const QString &path) {
 		return true;
 	}
 	return QDir(path).removeRecursively();
+}
+
+bool RemoveRecursivelyInBackground(const QString &path, const QString &trashPrefix) {
+	const auto info = QFileInfo(path);
+	if (path.isEmpty() || (!info.exists() && !info.isSymLink())) {
+		return true;
+	}
+	const auto parent = info.absoluteDir();
+	for (auto attempt = 0; attempt != 3; ++attempt) {
+		const auto trash = parent.filePath(trashPrefix + RandomUuid());
+		if (QDir().rename(info.absoluteFilePath(), trash)) {
+			QThreadPool::globalInstance()->start([=] {
+				RemoveRecursively(trash);
+			});
+			return true;
+		}
+	}
+	return RemoveRecursively(path);
+}
+
+void RemoveTrashInBackground(const QString &directory, const QString &trashPrefix) {
+	if (directory.isEmpty() || trashPrefix.isEmpty()) {
+		return;
+	}
+	QThreadPool::globalInstance()->start([=] {
+		const auto dir = QDir(directory);
+		const auto names = dir.entryList(
+			{ trashPrefix + u'*' },
+			QDir::Dirs | QDir::Files | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System);
+		for (const auto &name : names) {
+			RemoveRecursively(dir.filePath(name));
+		}
+	});
 }
 
 void SetPrivateTempRoot(const QString &path) {

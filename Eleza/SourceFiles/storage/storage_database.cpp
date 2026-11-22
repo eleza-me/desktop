@@ -1,9 +1,12 @@
 #include "storage/storage_database.h"
 
 #include "base/platform_file.h"
+#include "crypto/crypto_primitives.h"
 
+#include <iterator>
 #include <utility>
 
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
@@ -37,6 +40,20 @@ constexpr auto kVersion = int(sizeof(kMigrations) / sizeof(kMigrations[0]));
 
 const char *const kTables[] = { "meta", "kv", "chats", "messages", "users", "outbox", "drafts" };
 
+// A file that could not be opened for a while (locked by an antivirus or a
+// backup tool, the disk full) is tried again: a few times at the start, then
+// now and then later. It is never dropped for that.
+constexpr int kOpenRetryDelaysMs[] = { 250, 1000, 2000 };
+constexpr auto kReopenAfterMs = qint64(30 * 1000);
+
+// SQLite's primary result codes that mean the file itself is no database
+// (any more): SQLITE_CORRUPT, SQLITE_NOTADB.
+[[nodiscard]] bool Damaged(const QSqlError &error) {
+	auto ok = false;
+	const auto code = error.nativeErrorCode().toInt(&ok) & 0xff;
+	return ok && (code == 11 || code == 26);
+}
+
 [[nodiscard]] QByteArray Serialize(const QJsonObject &object) {
 	return QJsonDocument(object).toJson(QJsonDocument::Compact);
 }
@@ -50,8 +67,56 @@ const char *const kTables[] = { "meta", "kv", "chats", "messages", "users", "out
 	return Serialize(QJsonObject{ { u"v"_s, value } });
 }
 
-[[nodiscard]] QJsonValue ParseValue(const QVariant &value) {
-	return Parse(value).value(u"v"_s);
+// ---- encryption at rest (a Database opened with a data key)
+//
+// Every row's document (the `data` / `value` column of every table) is
+// stored as kSealedHeader || nonce || AES-256-GCM(document) || tag. A plain
+// document is JSON and starts with '{', so the two never mix up; rows of a
+// file from before the encryption are sealed in place the first time it is
+// opened with a key. The keys of the rows (chat ids, seqs, …) stay readable:
+// the queries need them.
+const auto kSealedHeader = QByteArray("\x00\x01", 2);
+constexpr auto kSealedNonceSize = 12;
+// A meta row sealed like the rest: which key the file belongs to.
+const auto kSealedMarker = u"_sealed"_s;
+
+// The tables and the columns that name a row, for sealing old rows.
+struct SealedTable {
+	const char *name = nullptr;
+	const char *keys = nullptr;
+};
+constexpr SealedTable kSealedTables[] = {
+	{ "meta", "key" },
+	{ "kv", "key" },
+	{ "chats", "id" },
+	{ "messages", "chat, seq" },
+	{ "users", "id" },
+	{ "outbox", "position" },
+	{ "drafts", "chat" },
+};
+
+[[nodiscard]] bool IsSealed(const QByteArray &bytes) {
+	return bytes.startsWith(kSealedHeader);
+}
+
+[[nodiscard]] QByteArray Seal(const QByteArray &key, const QByteArray &bytes) {
+	const auto nonce = Crypto::RandomBytes(kSealedNonceSize);
+	const auto sealed = Crypto::AesGcmEncrypt(key, nonce, kSealedHeader, bytes);
+	if (nonce.size() != kSealedNonceSize || sealed.isEmpty()) {
+		return QByteArray();
+	}
+	return kSealedHeader + nonce + sealed;
+}
+
+[[nodiscard]] std::optional<QByteArray> Unseal(
+		const QByteArray &key,
+		const QByteArray &bytes) {
+	const auto start = kSealedHeader.size();
+	return Crypto::AesGcmDecrypt(
+		key,
+		bytes.mid(start, kSealedNonceSize),
+		kSealedHeader,
+		bytes.mid(start + kSealedNonceSize));
 }
 
 } // namespace
@@ -61,9 +126,10 @@ namespace details {
 // Lives on the worker thread; owns the connection.
 class DatabaseWorker final : public QObject {
 public:
-	DatabaseWorker(Database *owner, const QString &path)
+	DatabaseWorker(Database *owner, const QString &path, const QByteArray &key)
 	: _owner(owner)
 	, _path(path)
+	, _key(key)
 	, _connection(u"eleza-db-"_s + QUuid::createUuid().toString(QUuid::Id128)) {
 	}
 
@@ -88,7 +154,7 @@ public:
 
 	// False when the database is unusable: operations become no-ops.
 	[[nodiscard]] bool ready() {
-		if (!_opened) {
+		if (!_opened || (!_ready && _openedAt.hasExpired(kReopenAfterMs))) {
 			open();
 		}
 		return _ready;
@@ -98,13 +164,26 @@ public:
 		auto query = QSqlQuery(QSqlDatabase::database(_connection, false));
 		query.setForwardOnly(true);
 		if (!query.prepare(sql)) {
+			_lastError = query.lastError();
 			fail(query.lastError().text() + u" in "_s + sql);
 			return false;
 		}
 		for (const auto &value : values) {
-			query.addBindValue(value);
+			// Every byte array bound to a statement is a row's document
+			// (Serialize()): with a data key it is stored sealed.
+			if (!_key.isEmpty() && value.typeId() == QMetaType::QByteArray) {
+				const auto sealed = Seal(_key, value.toByteArray());
+				if (sealed.isEmpty()) {
+					fail(u"could not encrypt a row"_s);
+					return false;
+				}
+				query.addBindValue(sealed);
+			} else {
+				query.addBindValue(value);
+			}
 		}
 		if (!query.exec()) {
+			_lastError = query.lastError();
 			fail(query.lastError().text() + u" in "_s + sql);
 			return false;
 		}
@@ -134,12 +213,24 @@ public:
 		}
 	}
 
+	// A stored document: opened when sealed; empty when it cannot be.
+	[[nodiscard]] QJsonObject parse(const QVariant &value) const {
+		const auto bytes = value.toByteArray();
+		if (!IsSealed(bytes)) {
+			return Parse(bytes);
+		} else if (_key.isEmpty()) {
+			return QJsonObject();
+		}
+		const auto opened = Unseal(_key, bytes);
+		return opened ? Parse(*opened) : QJsonObject();
+	}
+
 	[[nodiscard]] QVector<QJsonObject> rows(const QString &sql, const QVariantList &values = {}) {
 		auto result = QVector<QJsonObject>();
 		auto query = QSqlQuery();
 		if (ready() && exec(sql, values, &query)) {
 			while (query.next()) {
-				result.push_back(Parse(query.value(0)));
+				result.push_back(parse(query.value(0)));
 			}
 		}
 		return result;
@@ -150,7 +241,7 @@ public:
 		if (ready()
 			&& exec(u"SELECT value FROM %1 WHERE key = ?"_s.arg(table), { key }, &query)
 			&& query.next()) {
-			return ParseValue(query.value(0));
+			return parse(query.value(0)).value(u"v"_s);
 		}
 		return QJsonValue(QJsonValue::Undefined);
 	}
@@ -160,57 +251,147 @@ public:
 	}
 
 private:
+	enum class OpenResult {
+		Ok,
+		Unavailable, // locked, no space, cannot be opened now: try again later
+		Replace,     // damaged, or written by a newer build
+	};
+
 	void open() {
 		_opened = true;
+		_openedAt.start();
 		base::platform::EnsureDirectory(QFileInfo(_path).absolutePath(), true);
-		for (auto attempt = 0; attempt != 2; ++attempt) {
-			if (tryOpen()) {
+		auto aside = QString();
+		auto foreign = false; // set aside for another key: nothing in it reads
+		auto retries = 0;
+		while (true) {
+			auto result = tryOpen();
+			if (result == OpenResult::Ok && !aside.isEmpty() && !foreign) {
+				// Before sealing: rows that come over plain are sealed with
+				// the rest (INSERT OR IGNORE: a retry copies nothing twice).
+				salvage(aside);
+			}
+			if (result == OpenResult::Ok) {
+				result = seal();
+				foreign = foreign || _foreignKey;
+			}
+			if (result == OpenResult::Ok) {
 				_ready = true;
+				if (!aside.isEmpty()) {
+					Database::Wipe(aside);
+				}
 				return;
 			}
-			// A damaged file or one written by a newer build: the cache is
-			// disposable, start over once.
-			{
-				auto db = QSqlDatabase::database(_connection, false);
-				db.close();
+			closeConnection();
+			if (result == OpenResult::Unavailable) {
+				if (retries == int(std::size(kOpenRetryDelaysMs))) {
+					break;
+				}
+				QThread::msleep(kOpenRetryDelaysMs[retries++]);
+			} else if (!aside.isEmpty()) {
+				break; // a fresh file is no better
+			} else if (aside = setAside(); aside.isEmpty()) {
+				break;
 			}
-			QSqlDatabase::removeDatabase(_connection);
+		}
+		if (!aside.isEmpty()) {
+			// Not even a new file opens: the old one goes back where it was.
 			Database::Wipe(_path);
+			moveFiles(aside, _path);
 		}
 		// Not the path: it has the name of the user's home folder in it.
 		fail(u"could not open the database file"_s);
 	}
 
-	[[nodiscard]] bool tryOpen() {
-		if (!QSqlDatabase::isDriverAvailable(u"QSQLITE"_s)) {
-			fail(u"the QSQLITE driver is not available"_s);
+	void closeConnection() {
+		{
+			auto db = QSqlDatabase::database(_connection, false);
+			db.close();
+		}
+		QSqlDatabase::removeDatabase(_connection);
+	}
+
+	// A file that cannot be used is moved out of the way (not deleted: what
+	// waits to be sent may still be read from it).
+	[[nodiscard]] QString setAside() {
+		const auto aside = _path + u".broken"_s;
+		Database::Wipe(aside);
+		return moveFiles(_path, aside) ? aside : QString();
+	}
+
+	static bool moveFiles(const QString &from, const QString &to) {
+		if (QFileInfo::exists(from) && !QFile::rename(from, to)) {
 			return false;
 		}
+		for (const auto suffix : { "-wal", "-shm", "-journal" }) {
+			const auto file = from + QLatin1StringView(suffix);
+			if (QFileInfo::exists(file)) {
+				QFile::rename(file, to + QLatin1StringView(suffix));
+			}
+		}
+		return true;
+	}
+
+	// The cache starts over, but not what the user wrote: the queued
+	// messages and the drafts come over from the old file when it still
+	// reads (a newer build's file, a file damaged elsewhere).
+	void salvage(const QString &aside) {
+		// Quietly: a file that does not read is no failure of this one.
+		const auto run = [&](const QString &sql, const QVariantList &values = {}) {
+			auto query = QSqlQuery(QSqlDatabase::database(_connection, false));
+			if (!query.prepare(sql)) {
+				return false;
+			}
+			for (const auto &value : values) {
+				query.addBindValue(value);
+			}
+			return query.exec();
+		};
+		if (!run(u"ATTACH DATABASE ? AS aside"_s, { aside })) {
+			return;
+		}
+		run(u"INSERT OR IGNORE INTO outbox (id, chat, created, data)"
+			" SELECT id, chat, created, data FROM aside.outbox ORDER BY created, position"_s);
+		run(u"INSERT OR IGNORE INTO drafts (chat, data) SELECT chat, data FROM aside.drafts"_s);
+		run(u"DETACH DATABASE aside"_s);
+	}
+
+	[[nodiscard]] OpenResult tryOpen() {
+		if (!QSqlDatabase::isDriverAvailable(u"QSQLITE"_s)) {
+			fail(u"the QSQLITE driver is not available"_s);
+			return OpenResult::Unavailable;
+		}
+		_lastError = QSqlError();
 		auto db = QSqlDatabase::addDatabase(u"QSQLITE"_s, _connection);
 		db.setDatabaseName(_path);
 		db.setConnectOptions(u"QSQLITE_BUSY_TIMEOUT=5000"_s);
 		if (!db.open()) {
 			fail(db.lastError().text());
-			return false;
+			return Damaged(db.lastError()) ? OpenResult::Replace : OpenResult::Unavailable;
 		}
 #ifndef Q_OS_WIN
 		QFile::setPermissions(_path, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
 #endif // !Q_OS_WIN
+		const auto failed = [&] {
+			return Damaged(_lastError) ? OpenResult::Replace : OpenResult::Unavailable;
+		};
 		auto query = QSqlQuery();
 		if (!exec(u"PRAGMA journal_mode = WAL"_s)
 			|| !exec(u"PRAGMA synchronous = NORMAL"_s)
-			|| !exec(u"PRAGMA user_version"_s, {}, &query)
-			|| !query.next()) {
-			return false;
+			|| !exec(u"PRAGMA user_version"_s, {}, &query)) {
+			return failed();
+		} else if (!query.next()) {
+			return OpenResult::Unavailable;
 		}
 		const auto version = query.value(0).toInt();
 		query = QSqlQuery();
 		if (version > kVersion || version < 0) {
-			return false;
+			return OpenResult::Replace;
 		}
 		for (auto i = version; i != kVersion; ++i) {
 			if (!db.transaction()) {
-				return false;
+				_lastError = db.lastError();
+				return failed();
 			}
 			auto ok = true;
 			const auto statements = QString::fromLatin1(kMigrations[i]).split(u';', Qt::SkipEmptyParts);
@@ -221,12 +402,103 @@ private:
 				}
 			}
 			ok = ok && exec(u"PRAGMA user_version = %1"_s.arg(i + 1));
-			if (!ok || !db.commit()) {
+			if (ok && !db.commit()) {
+				_lastError = db.lastError();
+				ok = false;
+			}
+			if (!ok) {
 				db.rollback();
-				return false;
+				return failed();
 			}
 		}
-		return true;
+		return OpenResult::Ok;
+	}
+
+	// With a data key: deleted rows leave no readable remains, the file is
+	// one of this key (a file of another key, whose key is gone, is not:
+	// Replace, and it is started over), and rows from before the encryption
+	// are sealed now. A failure that may pass (locked, disk full) is
+	// Unavailable, like tryOpen's: the file is tried again, never dropped.
+	[[nodiscard]] OpenResult seal() {
+		const auto failed = [&] {
+			return Damaged(_lastError) ? OpenResult::Replace : OpenResult::Unavailable;
+		};
+		if (_key.isEmpty()) {
+			return OpenResult::Ok;
+		}
+		auto query = QSqlQuery();
+		if (!exec(u"PRAGMA secure_delete = ON"_s)
+			|| !exec(u"SELECT value FROM meta WHERE key = ?"_s, { kSealedMarker }, &query)) {
+			return failed();
+		} else if (query.next()) {
+			const auto bytes = query.value(0).toByteArray();
+			if (IsSealed(bytes) && Unseal(_key, bytes).has_value()) {
+				return OpenResult::Ok;
+			}
+			_foreignKey = true;
+			return OpenResult::Replace;
+		}
+		query = QSqlQuery();
+		auto db = QSqlDatabase::database(_connection, false);
+		if (!db.transaction()) {
+			return failed();
+		}
+		auto sealed = 0;
+		for (const auto &table : kSealedTables) {
+			const auto name = QLatin1StringView(table.name);
+			const auto keys = QString::fromLatin1(table.keys).split(u", "_s);
+			const auto data = (name == u"meta"_s || name == u"kv"_s) ? u"value"_s : u"data"_s;
+			auto where = QStringList();
+			for (const auto &key : keys) {
+				where.push_back(key + u" = ?"_s);
+			}
+			const auto select = u"SELECT %1, %2 FROM %3 WHERE substr(%2, 1, 1) <> X'00' LIMIT 256"_s
+				.arg(keys.join(u", "_s), data, name);
+			const auto update = u"UPDATE %1 SET %2 = ? WHERE %3"_s
+				.arg(name, data, where.join(u" AND "_s));
+			// In batches, each read to its end before the rows change: a
+			// sealed row is not selected again.
+			for (;;) {
+				auto batch = QVector<QVariantList>();
+				{
+					auto found = QSqlQuery();
+					if (!exec(select, {}, &found)) {
+						db.rollback();
+						return failed();
+					}
+					while (found.next()) {
+						auto values = QVariantList{ found.value(keys.size()).toByteArray() };
+						for (auto i = 0; i != keys.size(); ++i) {
+							values.push_back(found.value(i));
+						}
+						batch.push_back(std::move(values));
+					}
+				}
+				if (batch.isEmpty()) {
+					break;
+				}
+				for (const auto &values : batch) {
+					if (!exec(update, values)) {
+						db.rollback();
+						return failed();
+					}
+				}
+				sealed += int(batch.size());
+			}
+		}
+		if (!exec(
+				u"INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)"_s,
+				{ kSealedMarker, SerializeValue(true) })
+			|| !db.commit()) {
+			db.rollback();
+			return failed();
+		}
+		if (sealed > 0) {
+			// The pages the plain rows were on, and the log, are rewritten.
+			exec(u"VACUUM"_s);
+			exec(u"PRAGMA wal_checkpoint(TRUNCATE)"_s);
+		}
+		return OpenResult::Ok;
 	}
 
 	void fail(const QString &error) {
@@ -239,9 +511,13 @@ private:
 
 	Database *_owner = nullptr;
 	QString _path;
+	QByteArray _key;
 	QString _connection;
+	QSqlError _lastError;     // of the statement that failed last
+	QElapsedTimer _openedAt;  // the last try to open the file
 	bool _opened = false;
 	bool _ready = false;
+	bool _foreignKey = false; // the file was sealed with another key (seal)
 
 };
 
@@ -252,9 +528,13 @@ int Database::CurrentVersion() {
 }
 
 Database::Database(const QString &path, QObject *parent)
+: Database(path, QByteArray(), parent) {
+}
+
+Database::Database(const QString &path, const QByteArray &dataKey, QObject *parent)
 : QObject(parent)
 , _path(path)
-, _worker(new details::DatabaseWorker(this, path)) {
+, _worker(new details::DatabaseWorker(this, path, dataKey)) {
 	_thread.setObjectName(u"eleza-db"_s);
 	_worker->moveToThread(&_thread);
 	_thread.start();
@@ -563,7 +843,7 @@ void Database::users(
 				auto query = QSqlQuery();
 				if (worker.exec(u"SELECT data FROM users WHERE id = ?"_s, { id }, &query)
 					&& query.next()) {
-					result.insert(id, Parse(query.value(0)));
+					result.insert(id, worker.parse(query.value(0)));
 				}
 			}
 		}
@@ -629,7 +909,7 @@ void Database::drafts(base::Guard guard, Fn<void(QHash<QString, QJsonObject>)> d
 		auto query = QSqlQuery();
 		if (worker.ready() && worker.exec(u"SELECT chat, data FROM drafts"_s, {}, &query)) {
 			while (query.next()) {
-				result.insert(query.value(0).toString(), Parse(query.value(1)));
+				result.insert(query.value(0).toString(), worker.parse(query.value(1)));
 			}
 		}
 		reply<QHash<QString, QJsonObject>>(guard, done, std::move(result));

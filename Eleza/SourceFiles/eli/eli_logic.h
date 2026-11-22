@@ -7,6 +7,7 @@
 #pragma once
 
 #include <QtCore/QHash>
+#include <QtCore/QJsonObject>
 #include <QtCore/QMap>
 #include <QtCore/QRect>
 #include <QtCore/QSet>
@@ -111,6 +112,39 @@ enum class ComposeProblem {
 [[nodiscard]] ComposeProblem ValidateCompose(
 	const ComposeDraft &draft,
 	const ComposeLimits &limits);
+
+// What a compose box keeps until it is published or discarded: written while
+// it is typed in and when it closes any other way (a navigation, a crash
+// loses at most the last second), read when the same box opens again.
+struct StoredDraft {
+	struct Media {
+		QString path;
+		bool video = false;
+		QString alt;
+		friend bool operator==(const Media &, const Media &) = default;
+	};
+	QString text;
+	QStringList parts;
+	QVector<Media> media;
+	bool poll = false;
+	QStringList pollOptions;
+	int pollHours = 0;
+	QString policy;
+	// An edit: the post's text it was made from (an edit of a text that has
+	// changed since is not offered again).
+	QString original;
+
+	[[nodiscard]] bool empty() const;
+	[[nodiscard]] QJsonObject toJson() const;
+	[[nodiscard]] static StoredDraft FromJson(const QJsonObject &json);
+	friend bool operator==(const StoredDraft &, const StoredDraft &) = default;
+};
+// The settings key of the draft of one box: «الی تازه» has one, a reply /
+// quote / edit one per post, an invitation one per conversation.
+[[nodiscard]] QString DraftKey(
+	ComposeKind kind,
+	const QString &userId,
+	const QString &target);
 
 // "text" | "media" | "poll" | "thread" | "quote" | "conversation_invite".
 [[nodiscard]] QString ComposeType(const ComposeDraft &draft);

@@ -6,6 +6,7 @@
 #include "storage/storage_key_value.h"
 
 #include <QtCore/QJsonArray>
+#include <QtCore/QUrl>
 
 namespace Rt {
 namespace {
@@ -13,25 +14,55 @@ namespace {
 const auto kCacheKey = u"rt.keys"_s;
 constexpr auto kStaleAfterMs = qint64(3600) * 1000;
 
-// Seed for the first connection of a fresh install (production gateway, key id 1).
-constexpr auto kBakedId = 1;
-const auto kBakedKey = u"6ac378aa14d587c46de508bd15d493c2124f6a6525e73a79481d39ba98ac650d"_s;
+// id -> X25519 public key (hex), copied from the production GET /v2/keys
+// (the public half of the gateway's rt_static_<id>.key). The first entry is
+// preferred until the server names another baked id. To rotate: add the
+// next key here, ship, and only then switch the server (the same list as
+// RtKeys.BAKED on Android and RtKeys.baked on iOS).
+struct BakedKey {
+	int id = 0;
+	const char *hex = nullptr;
+};
+constexpr BakedKey kBaked[] = {
+	// Production, Noise_NK_25519_ChaChaPoly_SHA256, id 1.
+	{ 1, "6ac378aa14d587c46de508bd15d493c2124f6a6525e73a79481d39ba98ac650d" },
+};
+
+// The API host the baked keys belong to. It comes from the build or from the
+// user's own command line / environment, never from the network.
+const auto kPinnedHost = u"api.eleza.me"_s;
 
 } // namespace
 
 Keys::Keys(Api::Client *api, Storage::KeyValue *cache, QObject *parent)
 : QObject(parent)
 , _api(api)
-, _cache(cache) {
-	_keys.insert(kBakedId, base::bytes::fromHex(kBakedKey));
-	_preferredId = kBakedId;
+, _cache(cache)
+, _pinned(api && IsPinnedBase(api->base())) {
+	if (_pinned) {
+		for (const auto &baked : kBaked) {
+			const auto key = base::bytes::fromHex(QString::fromLatin1(baked.hex));
+			if (key.size() == 32) {
+				_keys.insert(baked.id, key);
+			}
+		}
+		_preferredId = kBaked[0].id;
+	}
 	if (_cache) {
 		apply(_cache->object(kCacheKey), true);
 	}
 }
 
+bool Keys::IsPinnedBase(const QString &apiBase) {
+	const auto url = QUrl(apiBase, QUrl::StrictMode);
+	return url.isValid()
+		&& url.scheme() == u"https"_s
+		&& url.host().compare(kPinnedHost, Qt::CaseInsensitive) == 0
+		&& (url.port(443) == 443);
+}
+
 bool Keys::stale() const {
-	return (base::unixtime::nowMs() - _fetchedAt) > kStaleAfterMs;
+	return !_pinned && (base::unixtime::nowMs() - _fetchedAt) > kStaleAfterMs;
 }
 
 bool Keys::apply(const QJsonObject &listing, bool fromCache) {
@@ -51,11 +82,35 @@ bool Keys::apply(const QJsonObject &listing, bool fromCache) {
 		return false;
 	}
 	const auto preferred = base::SafeInt(listing.value(u"preferred"_s).toDouble());
-	_keys = fresh;
-	_preferredId = fresh.contains(preferred) ? preferred : fresh.firstKey();
 	if (!fromCache) {
 		_fetchedAt = base::unixtime::nowMs();
 	}
+	if (_pinned) {
+		// The listing may only point at a key this build has, byte for byte.
+		const auto known = [&](int id) {
+			return _keys.contains(id) && fresh.value(id) == _keys.value(id);
+		};
+		if (known(preferred)) {
+			_preferredId = preferred;
+			return true;
+		}
+		auto any = false;
+		for (auto i = _keys.cbegin(); i != _keys.cend(); ++i) {
+			if (known(i.key())) {
+				any = true;
+				if (!known(_preferredId)) {
+					_preferredId = i.key();
+				}
+				break;
+			}
+		}
+		if (!any && !fromCache) {
+			qWarning("Rt: GET /v2/keys lists none of the built-in keys; keeping them");
+		}
+		return any;
+	}
+	_keys = fresh;
+	_preferredId = fresh.contains(preferred) ? preferred : fresh.firstKey();
 	return true;
 }
 

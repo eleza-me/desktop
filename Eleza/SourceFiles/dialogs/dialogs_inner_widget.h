@@ -5,11 +5,14 @@
 // Rows: the «درخواست‌ها» and «بایگانی‌شده» entries (main folder, no search), then
 // the chats — pinned first in the user's own order (drag a pinned row to change
 // it), then by the newest of the last message and the draft.
+// Screen readers see the rows as a list (title; preview, time, unread); the
+// keyboard selection (Up / Down in the column) is their focus.
 #pragma once
 
 #include "data/data_types.h"
 #include "dialogs/dialogs_logic.h"
 #include "support/media_image.h"
+#include "ui/accessibility.h"
 #include "ui/effects/ripple_animation.h"
 #include "ui/rp_widget.h"
 
@@ -37,7 +40,9 @@ class SessionController;
 
 namespace Dialogs {
 
-class InnerWidget final : public Ui::RpWidget {
+class InnerWidget final
+	: public Ui::RpWidget
+	, public Ui::Accessibility::ItemsSource {
 	Q_OBJECT
 
 public:
@@ -67,6 +72,17 @@ public:
 	// The chat `direction` rows away from `id` (from the first / last row when
 	// `id` is not listed); empty when there is none.
 	[[nodiscard]] QString neighbourChat(const QString &id, int direction) const;
+
+	int accessibilityItemsCount() const override {
+		return rowsCount();
+	}
+	Ui::Accessibility::Item accessibilityItem(int index) const override;
+	void accessibilityItemPress(int index) override {
+		activate(index);
+	}
+	int accessibilityFocusedItem() const override {
+		return _selected;
+	}
 
 Q_SIGNALS:
 	void chatChosen(const QString &id);

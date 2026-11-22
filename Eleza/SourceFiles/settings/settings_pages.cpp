@@ -4,6 +4,8 @@
 
 #include "api/api_client_config.h"
 #include "boxes/about_box.h"
+#include "conversation/conversation_boxes.h"
+#include "conversation/conversation_time.h"
 #include "core/core_application.h"
 #include "data/data_chats.h"
 #include "data/data_graph.h"
@@ -34,6 +36,8 @@
 #include <QtGui/QClipboard>
 #include <QtGui/QGuiApplication>
 
+#include <algorithm>
+
 namespace Settings {
 namespace {
 
@@ -54,9 +58,13 @@ namespace {
 [[nodiscard]] Option Nobody() {
 	return { u"nobody"_s, tr::lng_settings_audience_nobody(tr::now) };
 }
+[[nodiscard]] Option Contacts() {
+	return { u"contacts"_s, tr::lng_settings_audience_contacts(tr::now) };
+}
 
+// privacy.mentions and privacy.messages (the server takes nothing else).
 [[nodiscard]] std::vector<Option> MessageAudience() {
-	return { Everyone(), Followers(), Following(), Nobody() };
+	return { Everyone(), Followers(), Nobody() };
 }
 
 // ---- privacy
@@ -96,7 +104,7 @@ private:
 		addPicker(
 			tr::lng_settings_who_mention(tr::now),
 			u"privacy.mentions"_s,
-			{ Everyone(), Followers(), Following() },
+			MessageAudience(),
 			u"everyone"_s);
 		addPicker(
 			tr::lng_settings_who_message(tr::now),
@@ -149,7 +157,15 @@ private:
 		addPicker(
 			tr::lng_settings_birthday(tr::now),
 			u"privacy.birthday_visibility"_s,
-			{ Everyone(), Followers(), Nobody() },
+			{
+				Everyone(),
+				Followers(),
+				{
+					u"mutuals"_s,
+					tr::lng_settings_audience_mutuals(tr::now),
+				},
+				Nobody(),
+			},
 			u"followers"_s);
 		addToggle(
 			tr::lng_settings_birthday_year(tr::now),
@@ -163,16 +179,14 @@ private:
 		addPicker(
 			tr::lng_settings_who_phone(tr::now),
 			u"privacy.phone_number"_s,
-			{
-				Everyone(),
-				{ u"contacts"_s, tr::lng_settings_audience_contacts(tr::now) },
-				Nobody(),
-			},
+			{ Everyone(), Contacts(), Nobody() },
 			u"contacts"_s);
-		addToggle(
+		// Who finds me when their phone contacts have my number.
+		addPicker(
 			tr::lng_settings_find_by_phone(tr::now),
 			u"privacy.find_by_phone"_s,
-			true);
+			{ Everyone(), Contacts(), Nobody() },
+			u"everyone"_s);
 
 		AddDivider(content());
 		addToggle(
@@ -383,21 +397,10 @@ private:
 		AddDivider(content());
 		AddSubsectionTitle(content(), tr::lng_tab_talk(tr::now));
 		auto &config = session.account().clientConfig();
-		auto durations = std::vector<Option>();
-		const auto list = config.conversationDurations();
-		for (const auto &duration : list) {
-			durations.push_back({ duration, DurationTitle(duration) });
-		}
-		if (!durations.empty()) {
-			auto fallback = config.conversationDefaultDuration();
-			if (!list.contains(fallback)) {
-				fallback = list.back();
-			}
-			addPicker(
-				tr::lng_settings_default_duration(tr::now),
-				u"messages.default_expiry"_s,
-				durations,
-				fallback);
+		const auto list = Conversation::SortedDurations(
+			config.conversationDurations());
+		if (!list.isEmpty()) {
+			addDefaultDuration(list);
 		}
 		addToggle(
 			tr::lng_settings_masked_join(tr::now),
@@ -405,6 +408,7 @@ private:
 			true);
 
 		AddDivider(content());
+		// Synced settings the phone apps follow; nothing here reads them.
 		AddSubsectionTitle(content(), tr::lng_settings_media(tr::now));
 		addToggle(
 			tr::lng_settings_autodownload_wifi(tr::now),
@@ -423,6 +427,42 @@ private:
 				{ u"never"_s, tr::lng_settings_autoplay_never(tr::now) },
 			},
 			u"always"_s);
+		AddFootnote(content(), tr::lng_settings_media_phone_about(tr::now));
+	}
+
+	// «مدت پیش‌فرض گفتگو» is kept on this computer (the synced document has
+	// no such key, iOS keeps it on the phone too): what the box of a new
+	// conversation starts with.
+	void addDefaultDuration(const QStringList &sorted) {
+		const auto session = &controller()->session();
+		auto options = std::vector<Option>();
+		for (const auto &duration : sorted) {
+			options.push_back({ duration, DurationTitle(duration) });
+		}
+		const auto current = [=] {
+			return Conversation::DefaultDuration(
+				sorted,
+				Conversation::DefaultDurationPreference(session),
+				QString());
+		};
+		const auto title = tr::lng_settings_default_duration(tr::now);
+		const auto button = AddButton(content(), title);
+		const auto refresh = [=] {
+			button->setValueText(DurationTitle(current()));
+		};
+		refresh();
+		const auto window = controller();
+		button->setClickedCallback([=] {
+			ShowPickerBox(
+				window,
+				title,
+				options,
+				current(),
+				Guarded(button, [=](const QString &value) {
+					Conversation::SetDefaultDurationPreference(session, value);
+					refresh();
+				}));
+		});
 	}
 
 };
@@ -583,6 +623,42 @@ private:
 			Core::App().settings().sendByCtrlEnter(),
 			[](bool ctrl) { Core::App().settings().setSendByCtrlEnter(ctrl); });
 		AddFootnote(content(), tr::lng_settings_send_key_about(tr::now));
+
+		addAccessibilityOptions();
+	}
+
+	// «دسترس‌پذیری»: both are of this computer only (Core::Settings).
+	void addAccessibilityOptions() {
+		AddDivider(content());
+		AddSubsectionTitle(
+			content(),
+			tr::lng_settings_accessibility(tr::now));
+		AddToggle(
+			content(),
+			tr::lng_settings_reduce_motion(tr::now),
+			Core::App().reduceMotion(),
+			[](bool checked) { Core::App().setReduceMotion(checked); });
+		AddFootnote(content(), tr::lng_settings_reduce_motion_about(tr::now));
+
+		// QT_SCALE_FACTOR is read when the app starts: the next start.
+		AddSubsectionTitle(content(), tr::lng_settings_ui_scale(tr::now));
+		const auto current = Core::App().settings().uiScale();
+		auto scales = std::vector<int>{ 100, 110, 125, 150 };
+		if (std::find(scales.begin(), scales.end(), current) == scales.end()) {
+			scales.push_back(current);
+			std::sort(scales.begin(), scales.end());
+		}
+		auto options = std::vector<std::pair<int, QString>>();
+		for (const auto scale : scales) {
+			options.emplace_back(scale, tr::lng_settings_ui_scale_percent(
+				tr::now,
+				lt_percent,
+				Lang::Num(QString::number(scale))));
+		}
+		addRadios<int>(options, current, [](int scale) {
+			Core::App().settings().setUiScale(scale);
+		});
+		AddFootnote(content(), tr::lng_settings_ui_scale_about(tr::now));
 	}
 
 };
@@ -593,6 +669,16 @@ class AboutHeader final : public Ui::AbstractButton {
 public:
 	explicit AboutHeader(QWidget *parent) : AbstractButton(parent) {
 		resize(width(), st::settingsAboutHeight);
+	}
+
+	QString accessibilityName() const override {
+		return tr::lng_settings_app_name(tr::now);
+	}
+	QString accessibilityValue() const override {
+		return tr::lng_boxes_about_version(
+			tr::now,
+			lt_version,
+			Lang::Num(QString::fromLatin1(ELEZA_VERSION_STRING)));
 	}
 
 protected:

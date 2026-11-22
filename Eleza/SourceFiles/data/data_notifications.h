@@ -4,9 +4,32 @@
 
 #include "data/data_social_types.h"
 
+#include <QtCore/QJsonObject>
+
+class QDateTime;
+
 namespace Data {
 
 class Session;
+struct Chat;
+
+// The desktop gets no pushes and makes its own toasts: they follow the rules
+// the server applies before it pushes a chat's message
+// (internal/notification/push.go onChat, groups.go groupRecipientOf), read
+// from the synced settings document's `notifications` object.
+enum class ChatAlert {
+	None,      // nothing at all
+	Anonymous, // «الزا» / «پیام جدید»: no sender, no text, no chat
+	Full,
+};
+// Quiet hours ({enabled, start "23:00", end "07:00", tz}) at `now`.
+[[nodiscard]] bool InQuietHours(const QJsonObject &quietHours, const QDateTime &now);
+// A message in `chat` (not mine, the chat neither muted nor archived:
+// those are the caller's).
+[[nodiscard]] ChatAlert ChatAlertFor(
+	const Chat &chat,
+	const QJsonObject &notificationSettings,
+	const QDateTime &now);
 
 class Notifications final : public QObject {
 	Q_OBJECT

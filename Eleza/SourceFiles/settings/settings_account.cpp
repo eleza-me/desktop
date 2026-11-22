@@ -11,6 +11,7 @@
 
 #include "api/api_client.h"
 #include "api/api_client_config.h"
+#include "base/unixtime.h"
 #include "core/core_application.h"
 #include "data/data_graph.h"
 #include "data/data_session.h"
@@ -767,7 +768,7 @@ public:
 	, _session(session)
 	, _subtitle(SessionSubtitle(
 		session,
-		QDateTime::currentMSecsSinceEpoch()))
+		base::unixtime::serverNowMs()))
 	, _menu(std::move(menu)) {
 		if (_menu) {
 			setCursor(style::cur_pointer);

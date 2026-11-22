@@ -20,7 +20,8 @@
 //      swap would touch may sit behind a link either.
 //   3. The new files are brought next to the old ones, into
 //      <install>/_update_<version>/ (moved, or copied when the staging
-//      directory is on another volume). Until here a failure changes nothing.
+//      directory is on another volume), and Request::verify, when set,
+//      checks what arrived there. Until here a failure changes nothing.
 //   4. File by file: the old file moves to <install>/_backup_<version>/ and
 //      the new one takes its place. Every move is a rename inside one volume
 //      and is written to the journal (flushed to the disk) before it is made.
@@ -59,6 +60,16 @@ struct Request {
 	// How many more times a rename is tried, and the pause between the tries.
 	int retries = 0;
 	int retryDelayMs = 250;
+	// Called after step 3 with <install>/_update_<version>/ and the relative
+	// paths of every file in it, before anything of the old version is
+	// touched: false (with the reason) refuses the update and changes
+	// nothing. The elevated Windows updater checks the files against the
+	// signed manifest here (install_verify.h), where whoever wrote the
+	// staging directory cannot change them any more.
+	std::function<bool(
+		const Path &incoming,
+		const std::vector<std::string> &files,
+		std::string &error)> verify;
 };
 
 enum class Status {

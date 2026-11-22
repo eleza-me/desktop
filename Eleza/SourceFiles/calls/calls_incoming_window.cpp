@@ -75,10 +75,10 @@ IncomingWindow::IncomingWindow(
 	_accept->setIcon(&st::callsIncomingAcceptIcon);
 	_decline->setIcon(&st::callsIncomingDeclineIcon);
 	// The keys belong to the window, not to whichever button was clicked last.
-	_accept->setFocusPolicy(Qt::NoFocus);
-	_decline->setFocusPolicy(Qt::NoFocus);
+	_accept->setKeyboardFocusable(false);
+	_decline->setKeyboardFocusable(false);
 	_acceptVideo->setIcon(&st::callsIncomingVideoIcon);
-	_acceptVideo->setFocusPolicy(Qt::NoFocus);
+	_acceptVideo->setKeyboardFocusable(false);
 	_acceptVideo->setClickedCallback([this] {
 		if (_acceptCallback) {
 			_acceptCallback(true);

@@ -58,8 +58,9 @@
 "lng_intro_username_taken" = "That username is taken";
 // pwa: ✓ این شناسه آزاد است
 "lng_intro_username_available" = "✓ This username is available";
-// pwa: فقط حروف انگلیسی کوچک، عدد، نقطه و _ (۳ تا ۲۴ حرف)
-"lng_intro_username_rules" = "Lowercase letters, digits, dot and _ only (3–24)";
+"lng_intro_username_rules" = "Lowercase English letters, digits, dot and _ only";
+"lng_intro_username_letter_first" = "The username must start with an English letter";
+"lng_intro_username_dots" = "No dot at the start or the end, and no two dots in a row";
 
 // ---- Main: tabs, settings entry, sign out
 // pwa: پیام
@@ -381,8 +382,10 @@
 "lng_intro_code_has_expired_request_new" = "The code has expired. Request a new one.";
 // pwa: این حساب ایمیل بازیابی ندارد
 "lng_intro_account_has_no_recovery_e" = "This account has no recovery e-mail";
-// pwa: شناسه باید دست‌کم ۳ حرف انگلیسی باشد
-"lng_intro_username_needs_at_least_3" = "The username needs at least 3 letters";
+"lng_intro_username_too_short#one" = "The username needs at least {count} character";
+"lng_intro_username_too_short#other" = "The username needs at least {count} characters";
+"lng_intro_username_too_long#one" = "A username has at most {count} character";
+"lng_intro_username_too_long#other" = "A username has at most {count} characters";
 // pwa: در حال بررسی شناسه…
 "lng_intro_checking_username" = "Checking the username…";
 // pwa: بررسی شناسه ممکن نشد؛ هنگام ادامه دوباره بررسی می‌شود
@@ -1052,6 +1055,9 @@
 "lng_settings_audience_chat_people" = "People I chat with";
 "lng_settings_audience_chat_contacts" = "Chat contacts";
 "lng_settings_audience_contacts" = "Contacts";
+"lng_settings_audience_mutuals" = "Mutual followers";
+// A value set by a newer app that this one has no choice for.
+"lng_settings_value_custom" = "Custom";
 "lng_settings_notify_this_device" = "This computer";
 "lng_settings_notify_desktop" = "Desktop notifications";
 "lng_settings_notify_sender" = "Show the sender's name";
@@ -1080,7 +1086,8 @@
 "lng_settings_read_receipts_about" = "When off, others don't see that you read their messages, and you don't see theirs.";
 "lng_settings_default_duration" = "Default conversation length";
 "lng_settings_masked_join" = "Allow anonymous listeners";
-"lng_settings_media" = "Media";
+"lng_settings_media" = "Media on your phone";
+"lng_settings_media_phone_about" = "These sync with your account and only change what the phone app does, not this computer.";
 "lng_settings_autodownload_wifi" = "Auto-download media on Wi-Fi only";
 "lng_settings_autoplay_notes" = "Autoplay video messages";
 "lng_settings_autoplay_videos" = "Autoplay videos in Eli";
@@ -1236,6 +1243,7 @@
 "lng_history_tab_emoji" = "Emoji";
 "lng_history_tab_stickers" = "Stickers";
 "lng_history_spoiler" = "Spoiler";
+"lng_chat_preview_spoiler" = "Spoiler";
 "lng_history_forward_count#one" = "{count} forwarded message";
 "lng_history_forward_count#other" = "{count} forwarded messages";
 "lng_history_forward_title" = "Forward to…";
@@ -1437,6 +1445,9 @@
 "lng_eli_notif_follow_accepted" = "{who} accepted your follow request";
 "lng_eli_notif_post" = "{who} posted";
 "lng_eli_notif_joined" = "{who} joined your conversation and is listening";
+"lng_eli_notif_new_login" = "Sign-in to your account from a new device";
+"lng_eli_notif_two_step_recovered" = "Two-step verification was switched off with the recovery e-mail and a device signed in";
+"lng_eli_notif_new_login_hint" = "If it was not you, end it in “Devices”.";
 "lng_eli_notif_now_follows" = "{who} now follows you";
 "lng_eli_notif_failed" = "Could not load notifications";
 "lng_eli_notif_mark_read" = "Mark all as read";
@@ -1595,6 +1606,21 @@
 "lng_title_close" = "Close";
 "lng_title_use_system" = "Use system title bar";
 "lng_title_use_system_about" = "Takes effect after the app is restarted.";
+// ---- accessibility ----
+// What screen readers say of painted items, and the settings of «ظاهر».
+"lng_a11y_separator" = ", ";
+"lng_a11y_navigation" = "Navigation";
+"lng_a11y_story_unseen" = "Unseen story";
+"lng_a11y_story_muted" = "Hidden";
+"lng_a11y_previous" = "Previous";
+"lng_a11y_next" = "Next";
+"lng_a11y_playlist" = "Playlist";
+"lng_settings_accessibility" = "Accessibility";
+"lng_settings_ui_scale" = "Interface size";
+"lng_settings_ui_scale_percent" = "{percent}%";
+"lng_settings_ui_scale_about" = "The size of text and everything else in the app on this device. Takes effect after the app is restarted.";
+"lng_settings_reduce_motion" = "Reduce motion";
+"lng_settings_reduce_motion_about" = "Turns off the app's animations on this device. Until you choose, it follows the system setting.";
 // ---- update ----
 "lng_update_title" = "Updates";
 "lng_update_button" = "Update Eleza";
@@ -1939,6 +1965,8 @@
 "lng_groups_about" = "About";
 "lng_groups_administration" = "Administration";
 "lng_groups_slow_mode" = "Slow mode";
+// Between the items of a list (the permissions a restricted member lost).
+"lng_list_separator" = ", ";
 "lng_groups_member_restricted_until" = "Restricted for another {time}";
 "lng_groups_you_tag" = "You";
 "lng_groups_notify_mentioned" = "{name} mentioned you in “{group}”";

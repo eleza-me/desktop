@@ -68,6 +68,8 @@ public:
 	void setClosedCallback(std::function<void()> callback) {
 		_closedCallback = std::move(callback);
 	}
+	// Tab / Shift+Tab go round inside the layer: what is under it waits.
+	bool focusNextPrevChild(bool next) override;
 	// Asks the stack to close this layer.
 	void closeLayer() {
 		if (const auto callback = _closedCallback) {

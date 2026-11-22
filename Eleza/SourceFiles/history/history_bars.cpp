@@ -1,5 +1,6 @@
 #include "history/history_bars.h"
 
+#include "base/unixtime.h"
 #include "data/data_chats.h"
 #include "data/data_conversations.h"
 #include "data/data_group_rules.h"
@@ -37,7 +38,7 @@ constexpr auto kPinsRequestGap = 3000;
 
 [[nodiscard]] QString ClockRemaining(qint64 expiresAt) {
 	const auto left = std::max(
-		expiresAt * 1000 - QDateTime::currentMSecsSinceEpoch(),
+		expiresAt * 1000 - base::unixtime::serverNowMs(),
 		qint64(0));
 	const auto hours = left / 3600'000;
 	const auto minutes = (left % 3600'000) / 60'000;
@@ -50,7 +51,7 @@ constexpr auto kPinsRequestGap = 3000;
 }
 
 [[nodiscard]] int DaysLeft(qint64 until) {
-	const auto left = until * 1000 - QDateTime::currentMSecsSinceEpoch();
+	const auto left = until * 1000 - base::unixtime::serverNowMs();
 	return int(std::max((left + 86'400'000 - 1) / 86'400'000, qint64(1)));
 }
 

@@ -73,8 +73,9 @@ struct JalaliDate {
 // «۹۹۹», «۱٫۲ هزار», «۳٫۴ میلیون» / "999", "1.2K", "3.4M".
 [[nodiscard]] QString CompactCount(qint64 value);
 
-// Presence wording. `status`: "online", "recently", "within_week",
-// "within_month", "long_ago" or empty; `lastSeenAt`: unix seconds, 0 if unknown.
+// Presence wording. `status` as the server sends it: "online", "offline"
+// (with the exact time), "recently", "last_week", "last_month", "long_ago"
+// or empty; `lastSeenAt`: unix seconds, 0 if unknown.
 [[nodiscard]] QString LastSeen(
 	const QString &status,
 	qint64 lastSeenAt,

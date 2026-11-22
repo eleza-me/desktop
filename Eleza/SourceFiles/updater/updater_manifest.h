@@ -4,8 +4,13 @@
 //     "published_at": "2026-10-11T10:00:00Z", "min_supported": "0.1.0",
 //     "notes": { "fa": "…", "en": "…" },
 //     "packages": {
-//       "windows-x64":  { "size": 35123456, "sha256": "<64 hex>", "urls": [ "https://…zip", … ] },
+//       "windows-x64":  { "size": 35123456, "sha256": "<64 hex>", "urls": [ "https://…zip", … ],
+//                         "files": { "Eleza.exe": "<64 hex>", … } },
 //       "linux-x86_64": { … } } }
+//
+// "files" (the SHA-256 of every file in the package) is not read here: the
+// elevated Windows updater checks the installed files against it
+// (lib/install/install/install_verify.h).
 //
 // `update.json.sig` is the Ed25519 signature (64 bytes) of the exact bytes of
 // update.json, as base64 text. The order is fixed: VerifySignature() over the

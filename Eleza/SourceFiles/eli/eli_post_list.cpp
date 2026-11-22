@@ -17,6 +17,7 @@
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/tooltip.h"
 #include "window/window_routes.h"
+#include "window/window_section_widget.h"
 #include "window/window_session_controller.h"
 #include "styles/style_eli.h"
 
@@ -438,6 +439,58 @@ void PostList::rebuildIndex() {
 	_index.clear();
 	for (auto i = 0; i != int(_rows.size()); ++i) {
 		_index.insert(_rows[i].id, i);
+	}
+	Ui::Accessibility::ItemsChanged(this);
+}
+
+Ui::Accessibility::Item PostList::accessibilityItem(int index) const {
+	if (index < 0 || index >= int(_rows.size())) {
+		return {};
+	}
+	const auto &row = _rows[index];
+	if (!row.card) {
+		// «نمایش پاسخ‌های بیشتر»
+		return {
+			.name = row.moreText,
+			.description = QString(),
+			.role = QAccessible::Button,
+			.rect = cardRect(index),
+		};
+	}
+	const auto &post = row.card->post();
+	// The words a screen reader starts with; the rest is on the post's page.
+	constexpr auto kTextLimit = 600;
+	auto text = post.text.simplified();
+	if (text.size() > kTextLimit) {
+		text = text.left(kTextLimit) + QChar(0x2026);
+	}
+	auto parts = QStringList();
+	if (!text.isEmpty()) {
+		parts.push_back(text);
+	}
+	if (post.createdAt > 0) {
+		parts.push_back(PostTime(post.createdAt));
+	}
+	return {
+		.name = AuthorName(cardSession(), post.author),
+		.description = parts.join(tr::lng_a11y_separator(tr::now)),
+		.role = QAccessible::ListItem,
+		.rect = cardRect(index),
+		.selected = !_activeId.isEmpty() && (row.id == _activeId),
+	};
+}
+
+void PostList::accessibilityItemPress(int index) {
+	if (index < 0 || index >= int(_rows.size())) {
+		return;
+	} else if (!_rows[index].card) {
+		Q_EMIT moreRequested(_rows[index].id);
+		return;
+	}
+	// As Enter on the keyboard's post.
+	select(index);
+	if (_rows[index].card->options().mode == CardMode::Feed) {
+		OpenPost(_controller, _rows[index].id);
 	}
 }
 
@@ -935,6 +988,7 @@ void PostList::mouseReleaseEvent(QMouseEvent *e) {
 	if (e->button() != Qt::LeftButton) {
 		return;
 	}
+	_bodyClickId = QString();
 	const auto row = std::exchange(_pressedRow, -1);
 	const auto hit = std::exchange(_pressedHit, {});
 	updateRow(row);
@@ -947,12 +1001,27 @@ void PostList::mouseReleaseEvent(QMouseEvent *e) {
 	}
 	if (hit.type == HitType::Body
 		&& _rows[row].card->options().mode == CardMode::Feed) {
-		// Not yet: this may be the first click of a double click (a like).
-		_bodyPendingId = _rows[row].id;
-		_bodyTimer.callOnce(QApplication::doubleClickInterval());
-		return;
+		// This may be the first click of a double click (a like).
+		_bodyClickId = _rows[row].id;
+		if (postReplacesList()) {
+			// Not yet: the second click must not land on the post that
+			// takes the list's place.
+			_bodyPendingId = _rows[row].id;
+			_bodyTimer.callOnce(QApplication::doubleClickInterval());
+			return;
+		}
+		// The post opens beside the list: at once, a second click still
+		// reaches this list and likes it.
 	}
 	activate(row, hit, e->globalPosition().toPoint());
+}
+
+bool PostList::postReplacesList() const {
+	if (_controller->isSingleColumn()) {
+		return true;
+	}
+	const auto main = _controller->mainSection();
+	return main && main->isAncestorOf(this);
 }
 
 void PostList::openPendingBody() {
@@ -967,10 +1036,14 @@ void PostList::openPendingBody() {
 
 void PostList::mouseDoubleClickEvent(QMouseEvent *e) {
 	updateHover(e->pos());
+	// Only the second click on the text of the post clicked first likes it
+	// (not one that lands on a list just opened under the mouse).
+	const auto first = std::exchange(_bodyClickId, QString());
 	if (e->button() != Qt::LeftButton
 		|| _overRow < 0
 		|| !_rows[_overRow].card
-		|| _overHit.type != HitType::Body) {
+		|| _overHit.type != HitType::Body
+		|| _rows[_overRow].id != first) {
 		mousePressEvent(e);
 		return;
 	}
@@ -1192,6 +1265,7 @@ void PostList::select(int index) {
 	updateRow(was);
 	updateRow(index);
 	Q_EMIT scrollToRequested(_rows[index].top, _rows[index].top + _rows[index].height);
+	Ui::Accessibility::ItemFocused(this, index);
 }
 
 QString PostList::selectedId() const {

@@ -284,6 +284,14 @@ bool PeerListBox::rowClickable(int index) const {
 	return !row.disabled && !row.note;
 }
 
+QString PeerListBox::rowAccessibilityName(int index) const {
+	return shown(index).title;
+}
+
+QString PeerListBox::rowAccessibilityDescription(int index) const {
+	return shown(index).subtitle;
+}
+
 QRect PeerListBox::actionRect(const PeerListRow &row, int width) const {
 	if (row.action.isEmpty() || row.note) {
 		return QRect();

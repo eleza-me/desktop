@@ -39,7 +39,6 @@ namespace {
 
 constexpr auto kForYou = 0;
 constexpr auto kFollowing = 1;
-constexpr auto kFeedCap = 40;
 constexpr auto kRecheckAfterMs = qint64(30) * 1000;
 constexpr auto kMaxPillCount = 99;
 
@@ -61,6 +60,10 @@ public:
 		st::eliCardUserpic)) {
 		Ui::MakeTransparentForMouse(_userpic);
 		resize(width(), st::eliEntryHeight);
+	}
+
+	QString accessibilityName() const override {
+		return tr::lng_eli_whats_new(tr::now);
 	}
 
 protected:
@@ -159,6 +162,10 @@ public:
 		hide();
 	}
 
+	QString accessibilityName() const override {
+		return _text;
+	}
+
 	void setData(int count, const QStringList &authors) {
 		_count = count;
 		_authors = authors;
@@ -166,6 +173,7 @@ public:
 			tr::now,
 			lt_count,
 			double(std::min(count, kMaxPillCount)));
+		accessibilityNameChanged();
 		const auto faces = int(_authors.size());
 		_facesWidth = faces
 			? (st::eliPillFace + (faces - 1) * (st::eliPillFace - st::eliPillFaceOverlap))
@@ -473,21 +481,16 @@ void HomeSection::createPane(int index) {
 			base::Guard guard,
 			Fn<void(const ListPage &)> done,
 			Data::FailCallback fail) {
-		// «برای تو» has no cursor: one page per refresh.
+		// Both feeds page without end: «برای تو» continues the same scroll
+		// with its cursor (a refresh starts a new one), «دنبال‌شده» goes back
+		// to the oldest post. Cards far from the screen drop their media.
 		controller->session().data().feed().loadFeed(
 			tab,
-			(tab == Data::Feed::Tab::Following) ? cursor : QString(),
+			cursor,
 			guard,
-			[=](const Data::FeedPage &page) {
-				auto result = ListPage::From(page);
-				if (tab != Data::Feed::Tab::Following) {
-					result.next = QString();
-				}
-				done(result);
-			},
+			[=](const Data::FeedPage &page) { done(ListPage::From(page)); },
 			fail);
 	};
-	descriptor.cap = kFeedCap;
 	if (index == kFollowing) {
 		descriptor.empty = [=] {
 			auto result = Ui::EmptyPlaceholderDescriptor();

@@ -90,6 +90,12 @@ void UpdateRailButton::refresh() {
 	}
 }
 
+QString UpdateRailButton::accessibilityName() const {
+	return (_offer == UpdateOffer::Ready)
+		? tr::lng_update_rail(tr::now)
+		: tr::lng_update_rail_new(tr::now);
+}
+
 QRect UpdateRailButton::pillRect() const {
 	const auto pill = QSize(st::navRailPillSize);
 	return QRect(

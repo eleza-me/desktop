@@ -1,5 +1,6 @@
 #include "history/history_view_media.h"
 
+#include "base/unixtime.h"
 #include "history/history_album.h"
 
 #include "data/data_calls.h"
@@ -1282,7 +1283,7 @@ private:
 		return !message.live
 			|| message.live->stopped
 			|| (message.live->until > 0
-				&& message.live->until <= QDateTime::currentSecsSinceEpoch());
+				&& message.live->until <= base::unixtime::serverNow());
 	}
 	[[nodiscard]] bool canStop() const {
 		const auto &message = data();
@@ -2026,7 +2027,7 @@ private:
 			return true;
 		}
 		const auto session = delegate()->elementSession();
-		return story->gone(QDateTime::currentSecsSinceEpoch())
+		return story->gone(base::unixtime::serverNow())
 			|| (session && session->data().stories().isGone(story->storyId));
 	}
 

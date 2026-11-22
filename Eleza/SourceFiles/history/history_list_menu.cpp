@@ -8,6 +8,7 @@
 #include "groups/groups_tags.h"
 
 #include "api/api_client_config.h"
+#include "base/unixtime.h"
 #include "boxes/report_box.h"
 #include "data/data_chats.h"
 #include "data/data_outbox.h"
@@ -221,7 +222,7 @@ void ListWidget::showContextMenu(
 	const auto editWindow = config ? config->editWindow() : qint64(0);
 	// An album's caption lives on one of its items.
 	if (_canWrite
-		&& CanEdit(captioned, QDateTime::currentMSecsSinceEpoch(), editWindow)) {
+		&& CanEdit(captioned, base::unixtime::serverNowMs(), editWindow)) {
 		menu->addAction(tr::lng_edit(tr::now), [=, this] {
 			Q_EMIT editRequested(captioned);
 		}, &st::menuIconEdit);
@@ -323,7 +324,7 @@ void ListWidget::showContextMenu(
 			&& message.mine
 			&& message.live
 			&& !message.live->stopped
-			&& message.live->until > QDateTime::currentSecsSinceEpoch()) {
+			&& message.live->until > base::unixtime::serverNow()) {
 			menu->addAction(tr::lng_history_live_stop(tr::now), [=, this] {
 				_session->data().messages().stopLiveLocation(_chatId, message.seq);
 			}, &st::menuIconStop);

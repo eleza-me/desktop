@@ -210,6 +210,8 @@ EditSection::EditSection(
 		? config.displayNameMaxChars()
 		: kDefaultNameMax;
 	_bioMax = (config.bioMaxChars() > 0) ? config.bioMaxChars() : kDefaultBioMax;
+	_handleRules = config.handleRules();
+	_checker.setRules(_handleRules);
 	build();
 
 	auto &data = controller->session().data();
@@ -224,7 +226,19 @@ EditSection::EditSection(
 					? HandleChecker::Answer::Free
 					: HandleChecker::Answer::Taken);
 			},
-			[=](const Api::Error &) { done(HandleChecker::Answer::Failed); });
+			[=, this](const Api::Error &error) {
+				// 400 handle.invalid / handle.reserved_for_bots: a rule the
+				// server has and we do not know, in its words.
+				if (error.status == 400 && !error.offline()) {
+					_handleRefused = handle;
+					_handleRefusedText = Support::ErrorText(
+						error,
+						tr::lng_intro_username_rules(tr::now));
+					done(HandleChecker::Answer::Invalid);
+				} else {
+					done(HandleChecker::Answer::Failed);
+				}
+			});
 	});
 	_checker.setChanged([this] {
 		_handleError = QString();
@@ -311,7 +325,8 @@ void EditSection::build() {
 		Ui::object_ptr<Ui::InputField>(layout, st::profileEditField),
 		st::profileEditFieldMargin);
 	_handle->setForcedDirection(Qt::LeftToRight);
-	_handle->setMaxLength(32);
+	// A little over the limit: the hint says what the limit is.
+	_handle->setMaxLength(std::max(_handleRules.maxLength, 32));
 	_handleHint = hint();
 
 	caption(tr::lng_profile_link(tr::now));
@@ -362,6 +377,9 @@ void EditSection::build() {
 		st::defaultFlatButton);
 
 	_photo->setClickedCallback([this] { showPhotoMenu(); });
+	// «تغییر عکس» under it does the same for the keyboard.
+	_photo->setKeyboardFocusable(false);
+	_photo->setAccessibleName(tr::lng_profile_change_photo(tr::now));
 	_changePhoto->setClickedCallback([this] { showPhotoMenu(); });
 	connect(_name, &Ui::InputField::changed, this, [this] {
 		setHint(_nameHint, QString(), false);
@@ -538,10 +556,15 @@ void EditSection::refreshHandleHint() {
 	switch (state) {
 	case HandleState::Idle: break;
 	case HandleState::Invalid:
-		text = tr::lng_intro_username_rules(tr::now);
-		break;
 	case HandleState::Short:
-		text = tr::lng_intro_username_needs_at_least_3(tr::now);
+		text = (_checker.value() == _handleRefused)
+			? _handleRefusedText
+			: HandleProblemText(
+				Api::Auth::CheckHandle(_checker.value(), _handleRules),
+				_handleRules);
+		if (text.isEmpty()) {
+			text = tr::lng_intro_username_rules(tr::now);
+		}
 		break;
 	case HandleState::Checking:
 		text = tr::lng_intro_checking_username(tr::now);

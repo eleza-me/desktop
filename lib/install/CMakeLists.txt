@@ -7,6 +7,8 @@
 # above uses the runtime DLL like the rest of the project.
 
 set(_eleza_install_sources
+	install/install_crypto.cpp
+	install/install_crypto.h
 	install/install_file_ops.cpp
 	install/install_file_ops.h
 	install/install_helper.cpp
@@ -15,6 +17,8 @@ set(_eleza_install_sources
 	install/install_paths.h
 	install/install_swap.cpp
 	install/install_swap.h
+	install/install_verify.cpp
+	install/install_verify.h
 )
 
 function(eleza_install_target_options target)
@@ -51,7 +55,15 @@ if (WIN32)
 		MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
 		# Next to Eleza.exe, where the app looks for it.
 		RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/Eleza")
-	target_compile_definitions(Updater PRIVATE UNICODE _UNICODE)
+	target_compile_definitions(Updater PRIVATE
+		UNICODE
+		_UNICODE
+		# What it refuses to go back to (RunElevatedInstall).
+		ELEZA_UPDATER_VERSION="${PROJECT_VERSION}")
+	# updater/updater_keys.h: the keys the signed manifest is checked with.
+	# A header of constants only; nothing of the app is linked.
+	target_include_directories(Updater PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/../../Eleza/SourceFiles")
 	target_link_libraries(Updater PRIVATE shell32 ole32)
 	if (MINGW)
 		target_link_options(Updater PRIVATE -municode -static)

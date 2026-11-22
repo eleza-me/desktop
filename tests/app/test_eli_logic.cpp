@@ -3,6 +3,7 @@
 // replies tree, view beacons and the 60 s counts-freshness rule (fake clock).
 #include "eli/eli_logic.h"
 
+#include <QtCore/QJsonArray>
 #include <QtTest/QtTest>
 
 using namespace Eli::Logic;
@@ -178,6 +179,52 @@ private Q_SLOTS:
 		draft.kind = ComposeKind::Quote;
 		draft.mediaCount = 2;
 		QCOMPARE(ComposeType(draft), QStringLiteral("quote"));
+	}
+
+	// A compose box's kept draft: everything in it survives the round trip,
+	// one key per box.
+	void storedDrafts() {
+		auto draft = StoredDraft();
+		QVERIFY(draft.empty());
+		draft.parts = { U("  ") };
+		QVERIFY(draft.empty());
+		draft.poll = true;
+		draft.pollOptions = { U(""), U(" ") };
+		QVERIFY(draft.empty());
+		draft.pollOptions = { U("آره"), U("نه") };
+		draft.pollHours = 72;
+		QVERIFY(!draft.empty());
+		draft.text = U("کدام؟");
+		draft.parts = { U("دوم") };
+		draft.policy = U("followers");
+		const auto poll = StoredDraft::FromJson(draft.toJson());
+		QCOMPARE(poll, draft);
+
+		auto media = StoredDraft();
+		media.media = { { U("/tmp/a.jpg"), false, U("a cat") }, { U("/tmp/b.mp4"), true, QString() } };
+		QVERIFY(!media.empty());
+		QCOMPARE(StoredDraft::FromJson(media.toJson()), media);
+
+		auto edit = StoredDraft();
+		edit.text = U("new");
+		edit.original = U("old");
+		QCOMPARE(StoredDraft::FromJson(edit.toJson()).original, U("old"));
+		// The draft of «الی تازه» written before has text and parts only.
+		const auto old = StoredDraft::FromJson(QJsonObject{
+			{ U("text"), U("سلام") },
+			{ U("parts"), QJsonArray{ U("دو") } },
+		});
+		QCOMPARE(old.text, U("سلام"));
+		QCOMPARE(old.parts, QStringList{ U("دو") });
+		QVERIFY(old.media.isEmpty() && !old.poll);
+
+		QCOMPARE(DraftKey(ComposeKind::New, U("u1"), QString()), U("eli.draft.u1"));
+		QVERIFY(DraftKey(ComposeKind::Reply, U("u1"), U("p1"))
+			!= DraftKey(ComposeKind::Quote, U("u1"), U("p1")));
+		QVERIFY(DraftKey(ComposeKind::Reply, U("u1"), U("p1"))
+			!= DraftKey(ComposeKind::Reply, U("u1"), U("p2")));
+		// Gone with the user's sign-out (the keys "….<user id>").
+		QVERIFY(DraftKey(ComposeKind::Edit, U("u1"), U("p1")).endsWith(U(".u1")));
 	}
 
 	void threadSplitting() {

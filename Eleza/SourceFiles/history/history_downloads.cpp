@@ -218,6 +218,16 @@ void Downloads::save(
 	start(message, FileVariant(message), true, guard, std::move(done));
 }
 
+Data::MediaHandlePtr Downloads::handle(
+		const Data::Message &message,
+		Data::MediaVariant variant) const {
+	if (message.seq <= 0) {
+		return nullptr;
+	}
+	const auto i = _jobs.constFind(Key(message) + u':' + Data::MediaVariantName(variant));
+	return (i != _jobs.cend()) ? i->handle : nullptr;
+}
+
 void Downloads::fetch(
 		const Data::Message &message,
 		Data::MediaVariant variant,

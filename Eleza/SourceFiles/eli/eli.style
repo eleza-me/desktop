@@ -520,6 +520,7 @@ eliNotifIconRequest: icon {{ "request", accentLamp, 24px }};
 eliNotifIconFollowing: icon {{ "following", accentLamp, 24px }};
 eliNotifIconPost: icon {{ "eli_active", brandPrimary, 24px }};
 eliNotifIconListener: icon {{ "listener_active", anonAccent, 24px }};
+eliNotifIconSecurity: icon {{ "lock", statusError, 24px }};
 eliNotifIconOther: icon {{ "notifications_active", textTertiary, 24px }};
 eliNotifReadAll: IconButton(defaultIconButton) {
 	icon: icon {{ "check-double", iconButtonFg }};

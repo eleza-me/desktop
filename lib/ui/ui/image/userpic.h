@@ -66,8 +66,17 @@ public:
 		return _size;
 	}
 
+	// The person's name; a picture unless it is clickable.
+	QAccessible::Role accessibilityRole() const override {
+		return actionable() ? QAccessible::Button : QAccessible::Graphic;
+	}
+	QString accessibilityName() const override {
+		return _name;
+	}
+
 protected:
 	void paintEvent(QPaintEvent *e) override;
+	void paintFocusRing(QPainter &p) override;
 
 private:
 	void refreshFromSource();

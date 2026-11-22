@@ -2,12 +2,14 @@
 
 #include "base/platform_file.h"
 #include "core/core_application.h"
+#include "data/data_media_stream.h"
 #include "data/data_messages.h"
 #include "data/data_session.h"
 #include "data/data_shared_media.h"
 #include "data/data_types.h"
 #include "lang_auto.h"
 #include "main/main_session.h"
+#include "media/media_video_player.h"
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
@@ -131,6 +133,16 @@ AudioPlayer::AudioPlayer(QObject *parent)
 }
 
 AudioPlayer::~AudioPlayer() {
+	if (_stream) {
+		// A player thread waiting for bytes would keep the player from stopping.
+		_stream->abort();
+	}
+	if (_player) {
+		_player->stop();
+		_player->setSource(QUrl());
+	}
+	_player = nullptr;
+	_stream = nullptr;
 	if (!_temporaryFile.isEmpty()) {
 		QFile::remove(_temporaryFile);
 	}
@@ -166,7 +178,13 @@ void AudioPlayer::ensurePlayer() {
 		&QMediaPlayer::mediaStatusChanged,
 		this,
 		[this](QMediaPlayer::MediaStatus status) {
-			if (status == QMediaPlayer::EndOfMedia) {
+			if (_stream
+				&& !_stream->complete()
+				&& (status == QMediaPlayer::EndOfMedia
+					|| status == QMediaPlayer::InvalidMedia)) {
+				// The end of what has arrived, not of the file.
+				streamStalled();
+			} else if (status == QMediaPlayer::EndOfMedia) {
 				// Not inside the player's own signal: the next track may
 				// replace the player.
 				const auto generation = _generation;
@@ -202,17 +220,25 @@ void AudioPlayer::ensurePlayer() {
 }
 
 void AudioPlayer::destroyPlayer() {
+	if (_stream) {
+		_stream->abort();
+	}
 	if (_player) {
 		_player->disconnect(this);
 		_player->stop();
-		// Deleting it inside one of its own signals is not safe.
+		// Deleting it inside one of its own signals is not safe; the
+		// stream it reads goes after it.
 		const auto player = _player.release();
 		const auto output = _output.release();
+		const auto stream = _stream.release();
 		QTimer::singleShot(0, [=] {
 			delete player;
 			delete output;
+			delete stream;
 		});
 	}
+	_stream = nullptr;
+	_stalled = false;
 }
 
 void AudioPlayer::setState(State state) {
@@ -232,7 +258,11 @@ void AudioPlayer::fail(AudioFailure reason) {
 }
 
 void AudioPlayer::recover() {
-	if (_state == State::Stopped || _path.isEmpty() || _recovering) {
+	if (_stream && !_stream->complete() && !_stream->failed()) {
+		// Out of bytes, not broken: on once more of it has arrived.
+		streamStalled();
+		return;
+	} else if (_state == State::Stopped || _path.isEmpty() || _recovering) {
 		// (InvalidMedia and the error of one failure come together.)
 		return;
 	}
@@ -356,9 +386,17 @@ void AudioPlayer::request(bool force) {
 	const auto generation = _generation;
 	const auto handle = _handle.get();
 	const auto ready = [this, generation, handle] {
-		if (_generation != generation
-			|| _handle.get() != handle
-			|| _state != State::Loading) {
+		if (_generation != generation || _handle.get() != handle) {
+			return;
+		} else if (_stream) {
+			// It played while it arrived: the file is what to recover from.
+			_path = handle->filePath();
+			if (_stalled && !_path.isEmpty()) {
+				dropStream();
+				start(_path);
+			}
+			return;
+		} else if (_state != State::Loading) {
 			return;
 		}
 		auto path = handle->filePath();
@@ -406,7 +444,59 @@ void AudioPlayer::request(bool force) {
 				emit positionChanged(0, durationMs());
 			}
 		});
+		if (ProgressivePlayback()) {
+			QObject::connect(handle, &Data::MediaHandle::partialChanged, this, [=, this] {
+				if (_generation != generation
+					|| _handle.get() != handle
+					|| _state != State::Loading) {
+					return;
+				} else if (_stream
+					? (_stalled && _stream->available() >= _rebufferAt)
+					: Data::MediaStream::Streamable(*handle, Data::MediaStream::kAudioStart)) {
+					// Its beginning, or a few more seconds after it ran out.
+					startStream();
+				}
+			});
+		}
 	}
+}
+
+void AudioPlayer::startStream() {
+	dropStream();
+	ensurePlayer();
+	_stream = std::make_unique<Data::MediaStream>(_handle);
+	_stream->open(QIODevice::ReadOnly);
+	_stalled = false;
+	_path = QString();
+	_player->setSourceDevice(_stream.get(), QUrl(QStringLiteral("audio")));
+	applyRate();
+	_player->play();
+	setState(State::Playing);
+}
+
+void AudioPlayer::dropStream() {
+	if (!_stream) {
+		return;
+	}
+	_stream->abort();
+	if (_player) {
+		_player->stop();
+		_player->setSource(QUrl());
+	}
+	// Later: the player may hold it until its source change is done.
+	_stream.release()->deleteLater();
+	_stalled = false;
+}
+
+void AudioPlayer::streamStalled() {
+	if (_stalled || !_player) {
+		return;
+	}
+	_stalled = true;
+	_pendingSeek = std::max(_player->position(), qint64(0));
+	_rebufferAt = _stream->available()
+		+ Data::MediaStream::RebufferBytes(_stream->size(), durationMs());
+	setState(State::Loading);
 }
 
 void AudioPlayer::start(const QString &filePath) {
@@ -453,6 +543,7 @@ void AudioPlayer::resume() {
 }
 
 void AudioPlayer::stopPlayback() {
+	dropStream();
 	if (_player) {
 		_player->stop();
 		_player->setSource(QUrl());
@@ -674,6 +765,11 @@ void AudioPlayer::seek(double progress) {
 }
 
 void AudioPlayer::seekMs(qint64 position) {
+	if (_stream && !_stream->complete()) {
+		// Into what has arrived only.
+		const auto limit = qint64(durationMs() * _stream->availableShare()) - 1000;
+		position = std::min(position, std::max({ limit, positionMs(), qint64(0) }));
+	}
 	if (_state == State::Loading) {
 		_pendingSeek = position;
 	} else if (_player && _state != State::Stopped) {
